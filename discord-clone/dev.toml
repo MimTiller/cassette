@@ -1,0 +1,12 @@
+# Per-project dev-mode configuration. Read by `idealyst dev`.
+# All fields are optional — delete this file or any individual field
+# to fall back to defaults.
+
+# Pin the Robot bridge to a specific port. Default: ephemeral (the
+# bridge picks an unused port and writes it to
+# `.idealyst/bridge.port` for the MCP server to discover).
+#
+# Pin a port here only if an external tool needs a stable target —
+# normal Claude workflows use the discovery file. CLI flag
+# `--bridge-port <PORT>` overrides this setting per-run.
+# bridge_port = 9718
