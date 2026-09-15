@@ -52,6 +52,11 @@ const TEXT_CHANNEL: &str = "#c8cacf";
 const BORDER: &str = "#26272b";
 const COMPOSER: &str = "#383a40";
 const BUTTON: &str = "#5865f2";
+/// Active-server indicator pill on the rail (Discord's white sliver).
+const PILL: &str = "#f2f3f5";
+/// The user-profile section at the bottom of the sidebar sits a shade darker
+/// than the channel list above it.
+const USER_BAR: &str = "#232428";
 
 fn grow(v: f32) -> Tokenized<f32> {
     Tokenized::Literal(v)
@@ -289,10 +294,9 @@ fn voice_section(cat: &Category) -> Vec<Element> {
     }
     for v in cat.voice {
         let v_style = StyleRules {
-            padding_top: Some(px(6.0)),
-            padding_bottom: Some(px(2.0)),
+            height: Some(px(34.0)),
             padding_left: Some(px(16.0)),
-            padding_right: Some(px(16.0)),
+            padding_right: Some(px(8.0)),
             font_size: Some(px(15.0)),
             font_weight: Some(FontWeight::Normal),
             color: Some(col(TEXT_CHANNEL)),
@@ -308,8 +312,8 @@ fn voice_section(cat: &Category) -> Vec<Element> {
             let row_style = StyleRules {
                 padding_top: Some(px(2.0)),
                 padding_bottom: Some(px(2.0)),
-                padding_left: Some(px(32.0)),
-                padding_right: Some(px(16.0)),
+                padding_left: Some(px(44.0)),
+                padding_right: Some(px(8.0)),
                 gap: Some(px(8.0)),
                 flex_direction: Some(FlexDirection::Row),
                 align_items: Some(AlignItems::Center),
@@ -424,16 +428,14 @@ fn member_panel(server: &crate::data::Server) -> Element {
 fn user_panel() -> Element {
     let user: &Member = &USER;
     let row_style = StyleRules {
-        padding_top: Some(px(10.0)),
-        padding_bottom: Some(px(10.0)),
-        padding_left: Some(px(10.0)),
-        padding_right: Some(px(10.0)),
+        padding_top: Some(px(8.0)),
+        padding_bottom: Some(px(8.0)),
+        padding_left: Some(px(8.0)),
+        padding_right: Some(px(8.0)),
         gap: Some(px(10.0)),
         flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Center),
-        border_top_width: Some(border_width(1.0)),
-        border_top_color: Some(col(BORDER)),
-        background: Some(col(BG_SIDEBAR)),
+        background: Some(col(USER_BAR)),
         ..Default::default()
     };
     let avatar_style = StyleRules {
@@ -542,24 +544,28 @@ pub fn app() -> Element {
         let row_style = move || StyleRules {
             width: Some(px(48.0)),
             height: Some(px(48.0)),
+            // Positioning ancestor for the absolutely-positioned pill.
+            position: Some(Position::Relative),
             align_items: Some(AlignItems::Center),
             justify_content: Some(JustifyContent::Center),
             background: Some(col(if active.get() == s.id {
-                TEXT_CHANNEL
+                TEXT
             } else {
                 BG_SIDEBAR
             })),
-            border_top_left_radius: Some(px(24.0)),
-            border_top_right_radius: Some(px(24.0)),
-            border_bottom_left_radius: Some(px(24.0)),
-            border_bottom_right_radius: Some(px(24.0)),
+            // Discord's squircle is a 16px radius on a 48px icon, not a full
+            // circle.
+            border_top_left_radius: Some(px(16.0)),
+            border_top_right_radius: Some(px(16.0)),
+            border_bottom_left_radius: Some(px(16.0)),
+            border_bottom_right_radius: Some(px(16.0)),
             ..Default::default()
         };
         let label_style = move || StyleRules {
             font_size: Some(px(18.0)),
             font_weight: Some(FontWeight::Bold),
             color: Some(col(if active.get() == s.id {
-                TEXT
+                BG_RAIL
             } else {
                 TEXT_CHANNEL
             })),
@@ -567,6 +573,30 @@ pub fn app() -> Element {
         };
         ui! {
             view(style = row_style) {
+                // The active-server pill: Discord's white vertical sliver on
+                // the far-left edge of the rail. The row is the positioning
+                // ancestor (default Static is not, so the pill would anchor
+                // to the rail — we want it at the row's left edge). The row
+                // is 48px centered in the 72px rail (12px offset), so
+                // left: -12 puts the pill flush with the screen edge.
+                view(style = move || StyleRules {
+                    position: Some(Position::Absolute),
+                    left: Some(px(-12.0)),
+                    top: Some(px(14.0)),
+                    width: Some(px(4.0)),
+                    height: Some(px(20.0)),
+                    background: Some(col(PILL)),
+                    border_top_left_radius: Some(px(2.0)),
+                    border_top_right_radius: Some(px(2.0)),
+                    border_bottom_left_radius: Some(px(2.0)),
+                    border_bottom_right_radius: Some(px(2.0)),
+                    opacity: Some(Tokenized::Literal(if active.get() == s.id {
+                        1.0
+                    } else {
+                        0.0
+                    })),
+                    ..Default::default()
+                }) {}
                 text(style = label_style) { s.initial }
             }
             .on_touch(move |ev| {
@@ -585,7 +615,7 @@ pub fn app() -> Element {
 
     // --- channel sidebar -------------------------------------------------
     let sidebar_style = StyleRules {
-        width: Some(px(244.0)),
+        width: Some(px(240.0)),
         background: Some(col(BG_SIDEBAR)),
         border_right_width: Some(border_width(1.0)),
         border_right_color: Some(col(BORDER)),
@@ -594,19 +624,26 @@ pub fn app() -> Element {
         ..Default::default()
     };
     let sidebar_header_style = StyleRules {
-        padding_top: Some(px(16.0)),
-        padding_bottom: Some(px(12.0)),
+        padding_top: Some(px(14.0)),
+        padding_bottom: Some(px(14.0)),
         padding_left: Some(px(16.0)),
         padding_right: Some(px(16.0)),
         border_bottom_width: Some(border_width(1.0)),
         border_bottom_color: Some(col(BORDER)),
+        flex_direction: Some(FlexDirection::Row),
+        align_items: Some(AlignItems::Center),
+        gap: Some(px(6.0)),
         ..Default::default()
     };
     let sidebar_title_style = StyleRules {
-        font_size: Some(px(15.0)),
+        font_size: Some(px(16.0)),
         font_weight: Some(FontWeight::SemiBold),
         color: Some(col(TEXT)),
-        text_transform: Some(TextTransform::Uppercase),
+        ..Default::default()
+    };
+    let chevron_style = StyleRules {
+        font_size: Some(px(11.0)),
+        color: Some(col(TEXT_MUTED)),
         ..Default::default()
     };
     // Category section header: the small uppercase "TEXT CHANNELS" label.
@@ -630,6 +667,7 @@ pub fn app() -> Element {
             let sidebar_style = sidebar_style.clone();
             let sidebar_header_style = sidebar_header_style.clone();
             let sidebar_title_style = sidebar_title_style.clone();
+            let chevron_style = chevron_style.clone();
             let cat_style = cat_style.clone();
             let channel = active_channel;
             let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
@@ -642,16 +680,25 @@ pub fn app() -> Element {
                 rows.push(ui! { text(style = cat_style) { cat_label } });
                 for c in cat.text {
                     let active = channel;
+                    // Discord's channel rows are 48px tall with a 20px-wide
+                    // rounded pill (inset 8px each side) that fills with the
+                    // hover/active colour — the row itself stays transparent.
                     let row_style = move || StyleRules {
-                        padding_top: Some(px(7.0)),
-                        padding_bottom: Some(px(7.0)),
-                        padding_left: Some(px(16.0)),
-                        padding_right: Some(px(16.0)),
+                        height: Some(px(48.0)),
+                        margin_left: Some(px(8.0)),
+                        margin_right: Some(px(8.0)),
+                        padding_left: Some(px(12.0)),
+                        padding_right: Some(px(8.0)),
                         background: Some(col(if active.get() == c.id {
                             BG_ACTIVE
                         } else {
                             "transparent"
                         })),
+                        border_top_left_radius: Some(px(8.0)),
+                        border_top_right_radius: Some(px(8.0)),
+                        border_bottom_left_radius: Some(px(8.0)),
+                        border_bottom_right_radius: Some(px(8.0)),
+                        align_items: Some(AlignItems::Center),
                         ..Default::default()
                     };
                     let label_style = move || StyleRules {
@@ -668,7 +715,10 @@ pub fn app() -> Element {
                         })),
                         ..Default::default()
                     };
-                    let label = format!("#{}", c.name);
+                    let label = format!(
+                        "#{}",
+                        c.name
+                    );
                     rows.push(ui! {
                         view(style = row_style) {
                             text(style = label_style) { label }
@@ -691,6 +741,7 @@ pub fn app() -> Element {
             ui! {
                 view(style = sidebar_style) {
                     view(style = sidebar_header_style) {
+                        text(style = chevron_style) { "▾".to_string() }
                         text(style = sidebar_title_style) { title }
                     }
                     view(style = StyleRules {
