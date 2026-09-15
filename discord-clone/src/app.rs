@@ -31,9 +31,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use runtime_core::{
-    AlignItems, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow,
-    Position, Signal, StyleRules, TextTransform, Tokenized, TouchPhase, TouchResponse, signal,
-    switch, ui,
+    AlignItems, AlignSelf, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent, KeyOutcome,
+    Overflow, Position, Signal, StyleRules, TextAlign, TextTransform, Tokenized, TouchPhase,
+    TouchResponse,
+    signal, switch, ui,
 };
 
 use runtime_shared::time::local_offset_minutes;
@@ -586,6 +587,7 @@ fn member_panel(server: &crate::data::Server, user: &Member) -> Element {
 fn user_panel(
     user_status: Signal<Status>,
     joined_voice: Signal<Option<(u32, u32)>>,
+    authed: Signal<bool>,
 ) -> Element {
     switch(
         move || (user_status.get(), voice_name_for(joined_voice.get())),
@@ -757,6 +759,44 @@ fn user_panel(
                     TouchResponse::CONSUMED
                 })
             };
+            // Log Out: flips the shared `authed` signal back to false, which
+            // unmounts this tree and re-mounts the login screen (the `switch`
+            // key in `app()` re-evaluates on it). Same view+on_touch pill the
+            // Leave button uses, so it fits the row's styling.
+            let logout_style = StyleRules {
+                height: Some(px(26.0)),
+                padding_left: Some(px(10.0)),
+                padding_right: Some(px(10.0)),
+                background: Some(col(BG_SIDEBAR)),
+                color: Some(col(TEXT_MUTED)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                font_size: Some(px(12.0)),
+                font_weight: Some(FontWeight::SemiBold),
+                border_top_left_radius: Some(px(6.0)),
+                border_top_right_radius: Some(px(6.0)),
+                border_bottom_left_radius: Some(px(6.0)),
+                border_bottom_right_radius: Some(px(6.0)),
+                ..Default::default()
+            };
+            let logout = authed.clone();
+            let logout_text_style = StyleRules {
+                color: Some(col(TEXT_MUTED)),
+                font_size: Some(px(12.0)),
+                font_weight: Some(FontWeight::SemiBold),
+                ..Default::default()
+            };
+            let logout_btn = ui! {
+                view(style = logout_style) {
+                    text(style = logout_text_style) { "Log Out".to_string() }
+                }
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        logout.set(false);
+                    }
+                    TouchResponse::CONSUMED
+                })
+            };
             ui! {
                 view(style = row_style) {
                     avatar
@@ -767,6 +807,7 @@ fn user_panel(
                     if let Some(btn) = leave_btn {
                         btn
                     }
+                    logout_btn
                 }
             }
         },
@@ -784,9 +825,301 @@ fn voice_name_for(joined: Option<(u32, u32)>) -> Option<String> {
     Some(server.find_voice_channel(voice_id)?.name.to_string())
 }
 
+// --- mock login screen -------------------------------------------------------
+
+/// The mock login screen, shown while `authed` is false. No backend: any
+/// non-empty email + password signs in (the password field is `secure`, so
+/// it masks input like a real login); empty fields show an inline error
+/// instead. "Continue as guest" skips the fields entirely — the mock has one
+/// identity ("you"), so guest == you. State is local to this function — it
+/// unmounts the moment `authed` flips, so no session survives a reload.
+fn login_screen(authed: Signal<bool>) -> Element {
+    // "you" is the only identity in this mock build; authing in just flips
+    // the shared signal the app tree is keyed on.
+    let email: Signal<String> = signal(String::new());
+    let password: Signal<String> = signal(String::new());
+    let error: Signal<String> = signal(String::new());
+
+    // Card + text styles (static — built once, cloned into the render).
+    let card_style = StyleRules {
+        width: Some(px(380.0)),
+        padding_top: Some(px(40.0)),
+        padding_bottom: Some(px(32.0)),
+        padding_left: Some(px(32.0)),
+        padding_right: Some(px(32.0)),
+        background: Some(col(BG_SIDEBAR)),
+        border_top_width: Some(border_width(1.0)),
+        border_right_width: Some(border_width(1.0)),
+        border_bottom_width: Some(border_width(1.0)),
+        border_left_width: Some(border_width(1.0)),
+        border_top_color: Some(col(BORDER)),
+        border_right_color: Some(col(BORDER)),
+        border_bottom_color: Some(col(BORDER)),
+        border_left_color: Some(col(BORDER)),
+        border_top_left_radius: Some(px(12.0)),
+        border_top_right_radius: Some(px(12.0)),
+        border_bottom_left_radius: Some(px(12.0)),
+        border_bottom_right_radius: Some(px(12.0)),
+        flex_direction: Some(FlexDirection::Column),
+        align_items: Some(AlignItems::Center),
+        ..Default::default()
+    };
+    let logo_style = StyleRules {
+        width: Some(px(64.0)),
+        height: Some(px(64.0)),
+        align_items: Some(AlignItems::Center),
+        justify_content: Some(JustifyContent::Center),
+        background: Some(col(BUTTON)),
+        border_top_left_radius: Some(px(20.0)),
+        border_top_right_radius: Some(px(20.0)),
+        border_bottom_left_radius: Some(px(20.0)),
+        border_bottom_right_radius: Some(px(20.0)),
+        ..Default::default()
+    };
+    let logo_text_style = StyleRules {
+        font_size: Some(px(30.0)),
+        font_weight: Some(FontWeight::Bold),
+        color: Some(col(TEXT)),
+        ..Default::default()
+    };
+    let heading_style = StyleRules {
+        margin_top: Some(px(20.0)),
+        font_size: Some(px(22.0)),
+        font_weight: Some(FontWeight::Bold),
+        color: Some(col(TEXT)),
+        ..Default::default()
+    };
+    let sub_style = StyleRules {
+        margin_top: Some(px(4.0)),
+        margin_bottom: Some(px(24.0)),
+        font_size: Some(px(14.0)),
+        color: Some(col(TEXT_MUTED)),
+        text_align: Some(TextAlign::Center),
+        ..Default::default()
+    };
+    let label_style = StyleRules {
+        align_self: Some(AlignSelf::Stretch),
+        margin_top: Some(px(12.0)),
+        margin_bottom: Some(px(6.0)),
+        font_size: Some(px(11.0)),
+        font_weight: Some(FontWeight::SemiBold),
+        color: Some(col(TEXT_MUTED)),
+        text_transform: Some(TextTransform::Uppercase),
+        ..Default::default()
+    };
+    let field_style = StyleRules {
+        align_self: Some(AlignSelf::Stretch),
+        height: Some(px(40.0)),
+        padding_left: Some(px(12.0)),
+        padding_right: Some(px(12.0)),
+        background: Some(col(COMPOSER)),
+        color: Some(col(TEXT)),
+        font_size: Some(px(15.0)),
+        border_top_left_radius: Some(px(8.0)),
+        border_top_right_radius: Some(px(8.0)),
+        border_bottom_left_radius: Some(px(8.0)),
+        border_bottom_right_radius: Some(px(8.0)),
+        ..Default::default()
+    };
+    let submit_style = StyleRules {
+        align_self: Some(AlignSelf::Stretch),
+        margin_top: Some(px(20.0)),
+        height: Some(px(40.0)),
+        background: Some(col(BUTTON)),
+        color: Some(col(TEXT)),
+        font_size: Some(px(15.0)),
+        font_weight: Some(FontWeight::SemiBold),
+        align_items: Some(AlignItems::Center),
+        justify_content: Some(JustifyContent::Center),
+        border_top_left_radius: Some(px(8.0)),
+        border_top_right_radius: Some(px(8.0)),
+        border_bottom_left_radius: Some(px(8.0)),
+        border_bottom_right_radius: Some(px(8.0)),
+        ..Default::default()
+    };
+    let footer_style = StyleRules {
+        margin_top: Some(px(16.0)),
+        font_size: Some(px(13.0)),
+        color: Some(col(TEXT_MUTED)),
+        ..Default::default()
+    };
+
+    // The shared login action: validate, then auth in. `authed` flipping is
+    // what unmounts this screen and mounts the app tree (the `switch` key in
+    // `app()` re-evaluates on it). Every captured signal is `Copy`.
+    let do_login = {
+        let authed = authed.clone();
+        move || {
+            let em = email.get();
+            let pw = password.get();
+            if em.trim().is_empty() || pw.trim().is_empty() {
+                error.set("Email and password are required.".to_string());
+                return;
+            }
+            // No backend: any non-empty email + password signs in as "you".
+            // A real login would `spawn` a network call here and resolve the
+            // session before flipping `authed`.
+            error.set(String::new());
+            authed.set(true);
+        }
+    };
+    let on_submit_click = move || do_login();
+    let on_pw_enter = move |ev: &KeyEvent| {
+        if ev.key == "Enter" && !ev.shift && !ev.ctrl && !ev.alt && !ev.meta {
+            do_login();
+            KeyOutcome::PreventDefault
+        } else {
+            KeyOutcome::Default
+        }
+    };
+    // "Continue as guest" — skips the fields entirely (the mock has no real
+    // accounts, so guest == you).
+    let on_guest = move || authed.set(true);
+
+    // The form. The inline error is reactive: a nested `switch` keyed on the
+    // `error` signal rebuilds the form whenever a failed submit sets it (the
+    // same `switch(key, render)` pattern the sidebar/message list use —
+    // `ui!` doesn't re-read signal state on its own, only on rebuild).
+    let em_change = email.clone();
+    let pw_change = password.clone();
+    let on_email_change = move |s: String| em_change.set(s);
+    let on_pw_change = move |s: String| pw_change.set(s);
+    // The "Continue as guest" pill's parts. The pill `Element` is built *inside*
+    // the render closure (Elements aren't `Copy` and the closure is `Fn`, so a
+    // pre-built one would be moved on the first rebuild and gone the second).
+    let guest_style = StyleRules {
+        margin_top: Some(px(8.0)),
+        padding_top: Some(px(2.0)),
+        padding_bottom: Some(px(2.0)),
+        font_size: Some(px(13.0)),
+        font_weight: Some(FontWeight::SemiBold),
+        ..Default::default()
+    };
+    let guest_text_style = StyleRules {
+        color: Some(col(BUTTON)),
+        font_size: Some(px(13.0)),
+        font_weight: Some(FontWeight::SemiBold),
+        ..Default::default()
+    };
+    let form = switch(
+        move || error.get(),
+        move |err: &String| {
+            // The inline error, shown only while non-empty (a failed submit
+            // sets it; a successful sign-in clears it and unmounts the screen).
+            let err_style = StyleRules {
+                margin_top: Some(px(12.0)),
+                font_size: Some(px(13.0)),
+                color: Some(col("#f23f43")),
+                text_align: Some(TextAlign::Center),
+                ..Default::default()
+            };
+            let err_text = err.clone();
+            let err_el = if err_text.is_empty() {
+                None
+            } else {
+                Some(ui! { text(style = err_style) { err_text } })
+            };
+            let guest = on_guest.clone();
+            let guest_style_i = guest_style.clone();
+            let guest_text_style_i = guest_text_style.clone();
+            let guest_btn = ui! {
+                view(style = guest_style_i) {
+                    text(style = guest_text_style_i) { "Continue as guest".to_string() }
+                }
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        guest();
+                    }
+                    TouchResponse::CONSUMED
+                })
+            };
+            ui! {
+                // `ui!` moves each style into its render closure (the
+                // whiteboard idiom: clone outer styles per use inside a
+                // `switch` render).
+                view(style = StyleRules {
+                    align_self: Some(AlignSelf::Stretch),
+                    flex_direction: Some(FlexDirection::Column),
+                    ..Default::default()
+                }) {
+                    text(style = label_style.clone()) { "Email".to_string() }
+                    text_input(
+                        value = email,
+                        on_change = on_email_change,
+                        placeholder = "you@example.com",
+                        style = field_style.clone(),
+                    )
+                    text(style = label_style.clone()) { "Password".to_string() }
+                    text_input(
+                        value = password,
+                        on_change = on_pw_change,
+                        placeholder = "••••••••",
+                        secure = true,
+                        style = field_style.clone(),
+                    )
+                    .on_key_down(on_pw_enter)
+                    // The inline error, spliced in only when present.
+                    if let Some(el) = err_el {
+                        el
+                    }
+                    button(
+                        label = "Sign In".to_string(),
+                        on_click = on_submit_click,
+                        style = submit_style.clone(),
+                    )
+                    text(style = footer_style.clone()) { "No account?".to_string() }
+                    guest_btn
+                }
+            }
+        },
+    );
+
+    // Full-screen backdrop (Discord's login page: dark, centred card).
+    ui! {
+        view(style = StyleRules {
+            width: Some(pct(100.0)),
+            height: Some(pct(100.0)),
+            background: Some(col(BG_RAIL)),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(JustifyContent::Center),
+            overflow: Some(Overflow::Hidden),
+            ..Default::default()
+        }) {
+            view(style = card_style) {
+                view(style = logo_style) {
+                    text(style = logo_text_style) { "D".to_string() }
+                }
+                text(style = heading_style) { "Welcome back!".to_string() }
+                text(style = sub_style) { "We're so excited to see you again!".to_string() }
+                form
+            }
+        }
+    }
+}
+
 // --- the tree ----------------------------------------------------------------
 
 pub fn app() -> Element {
+    // Mock auth gate: starts signed out (login screen). There's no backend, so
+    // "auth" is just a `bool` signal — the login screen sets it true on Sign In
+    // (or Continue as guest) and a Log Out in the user panel flips it back. A
+    // real build would replace this with a session/token and a network login.
+    let authed: Signal<bool> = signal(false);
+    let authed_copy = authed; // `Signal` is `Copy`; the render closure only
+                              // receives the current value, so pass the signal in.
+    switch(
+        move || authed.get(),
+        move |authed: &bool| {
+            if *authed {
+                app_shell(authed_copy)
+            } else {
+                login_screen(authed_copy)
+            }
+        },
+    )
+}
+
+fn app_shell(authed: Signal<bool>) -> Element {
     let active_server: Signal<u32> = signal(SERVERS[0].id);
     let active_channel: Signal<u32> = signal(SERVERS[0].first_text_channel().id);
     let composer: Signal<String> = signal(String::new());
@@ -1039,7 +1372,7 @@ pub fn app() -> Element {
             // The user profile is the bottom-left of the sidebar (Discord
             // convention). The member list is a separate right-side panel —
             // see `members_switch` further down — so it's not built here.
-            let user = user_panel(user_status, joined_voice);
+            let user = user_panel(user_status, joined_voice, authed);
             ui! {
                 view(style = sidebar_style) {
                     view(style = sidebar_header_style) {

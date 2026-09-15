@@ -52,7 +52,20 @@ the mock data lives in `src/data.rs`.
   changes.
 - **Composer**: type a message, send via the **Send button** OR the **Enter
   key**. Shift/Ctrl/Alt/Meta+Enter fall through to the platform default.
-- **State**: `active_server`, `active_channel`, `composer` (text), `sent`
+- **Mock login screen**: `app()` gates on `authed: Signal<bool>` (a root
+  `switch`) — false → `login_screen(authed)`, true → the full app tree
+  (renamed `app_shell`). The login screen is a centered card on the rail
+  background: D logo, "Welcome back!", email + password fields (`text_input`,
+  `secure = true` on the password), a Sign In `button`, and a "Continue as
+  guest" `view.on_touch` pill. No backend: any non-empty email+password signs
+  in (guest skips the fields); empty submit shows an inline red
+  "Email and password are required." error that is reactive — the form is a
+  nested `switch` keyed on `error` (see pitfall 8). A **Log Out** pill was
+  added to `user_panel` (it now takes `authed`) to round-trip back to login;
+  re-login resets the fields to empty. Verified in-browser (CDP input):
+  render, masked password, empty→error, valid→app, Log Out→login, guest→app.
+- **State**: `authed` (login gate, `bool`), `active_server`, `active_channel`,
+  `composer` (text), `sent`
   (per-session log of `(channel_id, author, body, ts_secs)` — user-sent
   messages get a real `now_secs()` stamp), `revision` (bumped on every send
   so the message list re-renders), `joined_voice`
@@ -139,7 +152,21 @@ pill you may still prefer `view(style=…).on_touch(…)` + child `text(…)`
 (the voice-bar Leave button uses that for consistency with the row-click
 idiom). Either is fine.
 
-### 7. Stale dead `python http.server` on port 8000 from old sessions
+### 8. `ui!` trees are one-shot — reactivity only comes from `switch` keys
+A `ui!` block evaluates its children (including `signal.get()` reads and
+`if let` splices) ONCE, at build time. Setting a captured signal afterwards
+does NOT re-run it — the live unit of reactivity is `switch(key, render)`.
+Concrete bite: the login screen's inline error was a `let err_el = …error.get()`
+spliced with `if let` — an empty submit set `error`, the button handler
+ran, but the error text never appeared. Fix: wrap the form in
+`switch(move || error.get(), move |err: &String| …)` and build the error
+element inside the render closure. Corollary: `switch`'s render is `Fn`
+(rebuilds many times), so it must not *move* captured non-`Copy` values —
+build pre-made `Element`s (guest pill, error row) INSIDE the render closure
+on each rebuild; `StyleRules` (which IS `Clone`) can be captured +
+`.clone()`d per use (the sidebar idiom).
+
+### 9. Stale dead `python http.server` on port 8000 from old sessions
 Before serving, `ss -tlnp | grep 8000` — a dead (stuck, returns
 ERR_EMPTY_RESPONSE) server from a previous session may hold the port and
 make the fresh `http.server` exit with "Address already in use". Kill the
@@ -168,5 +195,7 @@ old pid (`ls -la /proc/<pid>/cwd` shows what it's serving).
 - ~~Voice-channel join~~ — done (commit `c7496cb6`, see "Current state").
 - ~~Signed-in user as a data-model entry with editable status~~ — done
   (commit `c7496cb6`).
+- ~~Mock login screen~~ — done (see "Current state"). Round-trips: login →
+  app, Log Out → login, guest → app.
 - Member-list interactions (mute / hide-activity / kick) — the one remaining
   item from the plan; lowest impact, mostly scaffolding.
