@@ -44,6 +44,16 @@ impl Server {
         }
         None
     }
+
+    /// A voice channel by id (None if the id is a text channel's or unknown).
+    pub fn find_voice_channel(&self, id: u32) -> Option<&VoiceChannel> {
+        for c in self.categories {
+            if let Some(v) = c.voice.iter().find(|v| v.id == id) {
+                return Some(v);
+            }
+        }
+        None
+    }
 }
 
 /// One sidebar section, Discord-style: "TEXT CHANNELS" / "VOICE CHANNELS".
@@ -100,6 +110,16 @@ pub enum Status {
 }
 
 impl Status {
+    /// Profile-strip name, Discord's casing: "Online", "Idle", …
+    pub fn name(self) -> &'static str {
+        match self {
+            Status::Online => "Online",
+            Status::Idle => "Idle",
+            Status::DoNotDisturb => "Do Not Disturb",
+            Status::Offline => "Offline",
+        }
+    }
+
     /// Group header text, e.g. "ONLINE — 4".
     pub fn label(self) -> &'static str {
         match self {
@@ -119,6 +139,17 @@ impl Status {
             Status::Offline => "#80848e",
         }
     }
+
+    /// The next status in the profile-strip click cycle:
+    /// Online → Idle → DoNotDisturb → back to Online.
+    pub fn next(self) -> Self {
+        match self {
+            Status::Online => Status::Idle,
+            Status::Idle => Status::DoNotDisturb,
+            Status::DoNotDisturb => Status::Online,
+            Status::Offline => Status::Online,
+        }
+    }
 }
 
 pub struct Member {
@@ -128,13 +159,33 @@ pub struct Member {
     pub status: Status,
 }
 
-/// The signed-in user. Rendered in the bottom-left profile section; also the
-/// author of every message sent this session.
-pub const USER: Member = Member {
+/// The signed-in user's static identity. The live presence status is NOT part
+/// of this constant — it's app-level signal state (see `app()`), so the
+/// profile strip and member panel can change it without touching the data.
+/// The user is also the author of every message sent this session.
+pub struct User {
+    pub name: &'static str,
+    /// Hex tint for the avatar chip.
+    pub color: &'static str,
+}
+
+pub const USER: User = User {
     name: "you",
     color: "#5865f2",
-    status: Status::Online,
 };
+
+/// The current user rendered as a regular member entry (the member panel and
+/// voice rows treat "you" like any other presence row). `status` is the
+/// live presence from app-level signal state — this constant never holds it.
+impl User {
+    pub fn as_member(&self, status: Status) -> Member {
+        Member {
+            name: self.name,
+            color: self.color,
+            status,
+        }
+    }
+}
 
 /// Message ages are stored inline on each `Message` as `age_secs` (see the
 /// field doc on `Message::age_secs`) — resolved to real instants at render

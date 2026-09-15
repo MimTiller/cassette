@@ -287,9 +287,22 @@ fn member_row(m: &Member) -> Element {
 /// A voice-channel row in the sidebar: "🔊 name" (a speaker glyph rendered as
 /// the Unicode speaker character — the `icon` primitive isn't available in
 /// the `ui!` macro here, so a text glyph keeps the row dependency-free), with
-/// the connected members listed beneath it in smaller, indented rows. Not
-/// interactive in this build — voice presence only.
-fn voice_section(cat: &Category) -> Vec<Element> {
+/// the connected members listed beneath it in smaller, indented rows.
+///
+/// Interactive: clicking the row **joins** the channel (Discord's click-to-
+/// join). While joined, the user's row appears in the member list beneath
+/// the name and the profile strip turns into a voice-connection bar. Clicking
+/// a joined row again leaves. Join state is the app-level `joined_voice`
+/// signal — this function's output is only valid for `server_id` (the signal
+/// is keyed by server), and it's rebuilt whenever that signal changes (the
+/// sidebar `switch`'s key includes it).
+fn voice_section(
+    cat: &Category,
+    server_id: u32,
+    active_server: Signal<u32>,
+    joined_voice: Signal<Option<(u32, u32)>>,
+    user_status: Signal<Status>,
+) -> Vec<Element> {
     let mut out: Vec<Element> = Vec::new();
     if cat.voice.is_empty() {
         return out;
@@ -298,6 +311,7 @@ fn voice_section(cat: &Category) -> Vec<Element> {
         // Voice rows get the same compact pill + hover treatment as text
         // rows (Discord treats voice rows identically here).
         let hovered = signal(false);
+        let joined = joined_voice.clone();
         let row_style = move || StyleRules {
             height: Some(px(34.0)),
             margin_left: Some(px(8.0)),
@@ -318,19 +332,50 @@ fn voice_section(cat: &Category) -> Vec<Element> {
             gap: Some(px(6.0)),
             ..Default::default()
         };
-        let v_label_style = StyleRules {
+        let v_label_style = move || StyleRules {
             font_size: Some(px(15.0)),
-            font_weight: Some(FontWeight::Normal),
-            color: Some(col(TEXT_CHANNEL)),
+            font_weight: Some(if joined.get() == Some((server_id, v.id)) {
+                FontWeight::SemiBold
+            } else {
+                FontWeight::Normal
+            }),
+            color: Some(col(if joined.get() == Some((server_id, v.id)) {
+                TEXT
+            } else {
+                TEXT_CHANNEL
+            })),
             ..Default::default()
         };
         let label = format!("🔊 {}", v.name);
-        out.push(ui! {
+        let row = ui! {
             view(style = row_style) {
                 text(style = v_label_style) { label }
             }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    // Join/leave toggle, Discord-style: only one channel at a
+                    // time, and a voice join always belongs to the server you
+                    //'re looking at. Switching servers clears the join
+                    // (handled in the rail handler).
+                    let is_here = active_server.get() == server_id;
+                    match joined.get() {
+                        Some((sv, _)) if sv == server_id => {
+                            // Already in a voice channel on this server: a
+                            // click leaves it (even on a different row).
+                            joined.set(None);
+                        }
+                        None if is_here => joined.set(Some((server_id, v.id))),
+                        // Joined on a different server: switching to this
+                        // server already cleared the join — but if it
+                        // somehow survived, don't double-join.
+                        _ => {}
+                    }
+                }
+                TouchResponse::CONSUMED
+            })
             .on_hover(move |on| hovered.set(on))
-        });
+        };
+        out.push(row);
         // Connected members, Discord's voice layout (avatar + name, indented).
         for sp in v.speakers {
             let row_style = StyleRules {
@@ -376,19 +421,95 @@ fn voice_section(cat: &Category) -> Vec<Element> {
                 }
             });
         }
+        // While joined, the user's own row appears beneath the seed members —
+        // Discord shows you in the channel you're in. Built as a plain row
+        // (no `member_row` — the dot ring is a separate concern and this one
+        // reuses the sidebar's 20px avatar scale).
+        if joined_voice.get() == Some((server_id, v.id)) {
+            let you = USER;
+            let ustatus = user_status.get();
+            let row_style = StyleRules {
+                padding_top: Some(px(2.0)),
+                padding_bottom: Some(px(2.0)),
+                padding_left: Some(px(44.0)),
+                padding_right: Some(px(8.0)),
+                gap: Some(px(8.0)),
+                flex_direction: Some(FlexDirection::Row),
+                align_items: Some(AlignItems::Center),
+                ..Default::default()
+            };
+            let av_style = StyleRules {
+                width: Some(px(20.0)),
+                height: Some(px(20.0)),
+                position: Some(Position::Relative),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                background: Some(col(you.color)),
+                border_top_left_radius: Some(px(10.0)),
+                border_top_right_radius: Some(px(10.0)),
+                border_bottom_left_radius: Some(px(10.0)),
+                border_bottom_right_radius: Some(px(10.0)),
+                ..Default::default()
+            };
+            let av_text = StyleRules {
+                font_size: Some(px(9.0)),
+                font_weight: Some(FontWeight::Bold),
+                color: Some(col(TEXT)),
+                ..Default::default()
+            };
+            let dot_style = StyleRules {
+                position: Some(Position::Absolute),
+                right: Some(px(0.0)),
+                bottom: Some(px(0.0)),
+                width: Some(px(8.0)),
+                height: Some(px(8.0)),
+                background: Some(col(ustatus.color())),
+                border_top_width: Some(border_width(1.5)),
+                border_right_width: Some(border_width(1.5)),
+                border_bottom_width: Some(border_width(1.5)),
+                border_left_width: Some(border_width(1.5)),
+                border_top_color: Some(col(BG_SIDEBAR)),
+                border_right_color: Some(col(BG_SIDEBAR)),
+                border_bottom_color: Some(col(BG_SIDEBAR)),
+                border_left_color: Some(col(BG_SIDEBAR)),
+                border_top_left_radius: Some(px(4.0)),
+                border_top_right_radius: Some(px(4.0)),
+                border_bottom_left_radius: Some(px(4.0)),
+                border_bottom_right_radius: Some(px(4.0)),
+                ..Default::default()
+            };
+            let name_style = StyleRules {
+                font_size: Some(px(13.0)),
+                color: Some(col(TEXT)),
+                ..Default::default()
+            };
+            let initial = you.name.chars().next().unwrap_or(' ').to_string();
+            out.push(ui! {
+                view(style = row_style) {
+                    view(style = av_style) {
+                        text(style = av_text) { initial }
+                        view(style = dot_style) {}
+                    }
+                    text(style = name_style) { you.name.to_string() }
+                }
+            });
+        }
     }
     out
 }
 
 /// The member-list panel for the right side of the window: a
 /// "MEMBER COUNT — N" header (Discord's style), then members grouped by
-/// status (online → idle → DND → offline). Pure data in, self-contained
-/// `Element` out — spliced in as the right-most column for whichever server
-/// is active (rebuilds when the active server changes).
-fn member_panel(server: &crate::data::Server) -> Element {
+/// status (online → idle → DND → offline). `user` is the signed-in user
+/// rendered as a regular member entry under their *live* presence status —
+/// cycling the status in the profile strip regroups them here (the panel
+/// is rebuilt on `user_status` changes; see `members_switch`). Spliced in
+/// as the right-most column for whichever server is active.
+fn member_panel(server: &crate::data::Server, user: &Member) -> Element {
     let mut body: Vec<Element> = Vec::new();
-    // Header: "MEMBER COUNT — N" where N is the total members on this server.
-    let header = format!("MEMBER COUNT — {}", server.members.len());
+    // Header: "MEMBER COUNT — N" where N is the roster plus the signed-in
+    // user, who counts as a member like anyone else.
+    let header = format!("MEMBER COUNT — {}", server.members.len() + 1);
     let header_style = StyleRules {
         padding_top: Some(px(14.0)),
         padding_bottom: Some(px(6.0)),
@@ -401,13 +522,16 @@ fn member_panel(server: &crate::data::Server) -> Element {
     };
     body.push(ui! { text(style = header_style) { header } });
 
-    // Status groups in Discord order: Online, Idle, DND, Offline.
+    // Status groups in Discord order: Online, Idle, DND, Offline. The
+    // signed-in user is appended to their live-status group (last, Discord's
+    // "you" placement for the mock roster).
     for status in [Status::Online, Status::Idle, Status::DoNotDisturb, Status::Offline] {
         let group: Vec<&Member> = server.members.iter().filter(|m| m.status == status).collect();
-        if group.is_empty() {
+        let with_user = user.status == status;
+        if group.is_empty() && !with_user {
             continue;
         }
-        let group_label = format!("{} — {}", status.label(), group.len());
+        let group_label = format!("{} — {}", status.label(), group.len() + usize::from(with_user));
         let group_style = StyleRules {
             padding_top: Some(px(10.0)),
             padding_bottom: Some(px(2.0)),
@@ -421,6 +545,9 @@ fn member_panel(server: &crate::data::Server) -> Element {
         body.push(ui! { text(style = group_style) { group_label } });
         for m in group.iter() {
             body.push(member_row(m));
+        }
+        if with_user {
+            body.push(member_row(user));
         }
     }
 
@@ -446,93 +573,215 @@ fn member_panel(server: &crate::data::Server) -> Element {
 }
 
 /// The bottom-left user profile section: avatar (with status dot), name, and
-/// status line — now sourced from the data model's `USER` entry instead of
-/// hardcoded strings. Rendered once per sidebar rebuild (same user across all
-/// servers).
-fn user_panel() -> Element {
-    let user: &Member = &USER;
-    let row_style = StyleRules {
-        padding_top: Some(px(8.0)),
-        padding_bottom: Some(px(8.0)),
-        padding_left: Some(px(8.0)),
-        padding_right: Some(px(8.0)),
-        gap: Some(px(10.0)),
-        flex_direction: Some(FlexDirection::Row),
-        align_items: Some(AlignItems::Center),
-        background: Some(col(USER_BAR)),
-        ..Default::default()
-    };
-    let avatar_style = StyleRules {
-        width: Some(px(32.0)),
-        height: Some(px(32.0)),
-        position: Some(Position::Relative),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        background: Some(col(user.color)),
-        border_top_left_radius: Some(px(16.0)),
-        border_top_right_radius: Some(px(16.0)),
-        border_bottom_left_radius: Some(px(16.0)),
-        border_bottom_right_radius: Some(px(16.0)),
-        ..Default::default()
-    };
-    let initial_style = StyleRules {
-        font_size: Some(px(14.0)),
-        font_weight: Some(FontWeight::Bold),
-        color: Some(col(TEXT)),
-        ..Default::default()
-    };
-    let dot_style = StyleRules {
-        position: Some(Position::Absolute),
-        right: Some(px(0.0)),
-        bottom: Some(px(0.0)),
-        width: Some(px(11.0)),
-        height: Some(px(11.0)),
-        background: Some(col(user.status.color())),
-        border_top_width: Some(border_width(2.0)),
-        border_right_width: Some(border_width(2.0)),
-        border_bottom_width: Some(border_width(2.0)),
-        border_left_width: Some(border_width(2.0)),
-        border_top_color: Some(col(BG_SIDEBAR)),
-        border_right_color: Some(col(BG_SIDEBAR)),
-        border_bottom_color: Some(col(BG_SIDEBAR)),
-        border_left_color: Some(col(BG_SIDEBAR)),
-        border_top_left_radius: Some(px(6.0)),
-        border_top_right_radius: Some(px(6.0)),
-        border_bottom_left_radius: Some(px(6.0)),
-        border_bottom_right_radius: Some(px(6.0)),
-        ..Default::default()
-    };
-    let text_stack = StyleRules {
-        flex_direction: Some(FlexDirection::Column),
-        flex_grow: Some(grow(1.0)),
-        ..Default::default()
-    };
-    let name_style = StyleRules {
-        font_size: Some(px(14.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
-        ..Default::default()
-    };
-    let status_style = StyleRules {
-        font_size: Some(px(12.0)),
-        color: Some(col(TEXT_MUTED)),
-        ..Default::default()
-    };
-    let initial = user.name.chars().next().unwrap_or(' ').to_string();
-    let name = user.name.to_string();
-    let status = user.status.label().to_lowercase();
-    ui! {
-        view(style = row_style) {
-            view(style = avatar_style) {
-                text(style = initial_style) { initial }
-                view(style = dot_style) {}
+/// status line. Identity comes from the data model's `USER` constant; the
+/// live presence status comes from the `user_status` signal, so the strip can
+/// show Idle / DND without touching the data.
+///
+/// While the user is in a voice channel, the name + status line becomes a
+/// voice-connection line: a green "Voice Connected" (Discord's actual text),
+/// the channel name beneath it, and a **Leave** button that disconnects.
+/// The whole strip is wrapped in a `switch` keyed on `(status, voice_name?)`
+/// so any of those changes re-renders the strip (the key is value-deduped,
+/// like every other `switch` here).
+fn user_panel(
+    user_status: Signal<Status>,
+    joined_voice: Signal<Option<(u32, u32)>>,
+) -> Element {
+    switch(
+        move || (user_status.get(), voice_name_for(joined_voice.get())),
+        move |(status, voice_name): &(Status, Option<String>)| {
+            let user = USER;
+            let voice_name = voice_name.clone();
+            let row_style = StyleRules {
+                padding_top: Some(px(8.0)),
+                padding_bottom: Some(px(8.0)),
+                padding_left: Some(px(8.0)),
+                padding_right: Some(px(8.0)),
+                gap: Some(px(10.0)),
+                flex_direction: Some(FlexDirection::Row),
+                align_items: Some(AlignItems::Center),
+                background: Some(col(USER_BAR)),
+                ..Default::default()
+            };
+            let avatar_style = StyleRules {
+                width: Some(px(32.0)),
+                height: Some(px(32.0)),
+                position: Some(Position::Relative),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                background: Some(col(user.color)),
+                border_top_left_radius: Some(px(16.0)),
+                border_top_right_radius: Some(px(16.0)),
+                border_bottom_left_radius: Some(px(16.0)),
+                border_bottom_right_radius: Some(px(16.0)),
+                ..Default::default()
+            };
+            let initial_style = StyleRules {
+                font_size: Some(px(14.0)),
+                font_weight: Some(FontWeight::Bold),
+                color: Some(col(TEXT)),
+                ..Default::default()
+            };
+            let dot_style = StyleRules {
+                position: Some(Position::Absolute),
+                right: Some(px(0.0)),
+                bottom: Some(px(0.0)),
+                width: Some(px(11.0)),
+                height: Some(px(11.0)),
+                background: Some(col(status.color())),
+                border_top_width: Some(border_width(2.0)),
+                border_right_width: Some(border_width(2.0)),
+                border_bottom_width: Some(border_width(2.0)),
+                border_left_width: Some(border_width(2.0)),
+                border_top_color: Some(col(USER_BAR)),
+                border_right_color: Some(col(USER_BAR)),
+                border_bottom_color: Some(col(USER_BAR)),
+                border_left_color: Some(col(USER_BAR)),
+                border_top_left_radius: Some(px(6.0)),
+                border_top_right_radius: Some(px(6.0)),
+                border_bottom_left_radius: Some(px(6.0)),
+                border_bottom_right_radius: Some(px(6.0)),
+                ..Default::default()
+            };
+            let text_stack = StyleRules {
+                flex_direction: Some(FlexDirection::Column),
+                flex_grow: Some(grow(1.0)),
+                overflow: Some(Overflow::Hidden),
+                ..Default::default()
+            };
+            let name_style = StyleRules {
+                font_size: Some(px(14.0)),
+                font_weight: Some(FontWeight::SemiBold),
+                color: Some(col(TEXT)),
+                ..Default::default()
+            };
+            let initial = user.name.chars().next().unwrap_or(' ').to_string();
+            let name = user.name.to_string();
+
+            // In a voice channel? Replace the name/status pair with the
+            // Discord-style connection line: green "Voice Connected" + the
+            // channel name, and a Leave button.
+            let second_line = match voice_name {
+                Some(ref channel) => {
+                    let vc_style = StyleRules {
+                        font_size: Some(px(12.0)),
+                        font_weight: Some(FontWeight::SemiBold),
+                        color: Some(col("#23a559")),
+                        ..Default::default()
+                    };
+                    let ch_style = StyleRules {
+                        font_size: Some(px(11.0)),
+                        color: Some(col(TEXT_MUTED)),
+                        overflow: Some(Overflow::Hidden),
+                        ..Default::default()
+                    };
+                    ui! {
+                        text(style = vc_style) { "Voice Connected".to_string() }
+                        text(style = ch_style) { channel.clone() }
+                    }
+                }
+                None => {
+                    let status_style = StyleRules {
+                        font_size: Some(px(12.0)),
+                        color: Some(col(TEXT_MUTED)),
+                        ..Default::default()
+                    };
+                    let status = status.name().to_string();
+                    ui! {
+                        text(style = status_style) { status }
+                    }
+                }
+            };
+
+            // The Leave button only exists while connected. Built as a
+            // view + on_touch — the app's standard click pattern (the
+            // runtime's `button` helper takes a fixed `label` prop, which
+            // doesn't fit a styled pill; a view gives full style control).
+            let leave_btn = match voice_name {
+                Some(_) => {
+                    let leave_style = StyleRules {
+                        height: Some(px(26.0)),
+                        padding_left: Some(px(10.0)),
+                        padding_right: Some(px(10.0)),
+                        background: Some(col(BG_SIDEBAR)),
+                        color: Some(col(TEXT)),
+                        align_items: Some(AlignItems::Center),
+                        justify_content: Some(JustifyContent::Center),
+                        font_size: Some(px(12.0)),
+                        font_weight: Some(FontWeight::SemiBold),
+                        border_top_left_radius: Some(px(6.0)),
+                        border_top_right_radius: Some(px(6.0)),
+                        border_bottom_left_radius: Some(px(6.0)),
+                        border_bottom_right_radius: Some(px(6.0)),
+                        ..Default::default()
+                    };
+                    // `None` clears the join; the sidebar `switch` key
+                    // includes `joined_voice`, so the voice rows rebuild too.
+                    let leave = joined_voice.clone();
+                    let leave_text_style = StyleRules {
+                        color: Some(col(TEXT)),
+                        font_size: Some(px(12.0)),
+                        font_weight: Some(FontWeight::SemiBold),
+                        ..Default::default()
+                    };
+                    Some(ui! {
+                        view(style = leave_style) {
+                            text(style = leave_text_style) { "Leave".to_string() }
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                leave.set(None);
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                    })
+                }
+                None => None,
+            };
+
+            // Click the avatar to cycle the live status (Discord's
+            // avatar-click status menu, simplified to a one-click cycle:
+            // Online → Idle → DND → Online). The touch target is the avatar
+            // only, not the whole row — the Leave button lives in the same
+            // row while connected, and its own `on_touch` owns that region.
+            let avatar = ui! {
+                view(style = avatar_style) {
+                    text(style = initial_style) { initial }
+                    view(style = dot_style) {}
+                }
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        let touch = user_status;
+                        touch.set(touch.get().next());
+                    }
+                    TouchResponse::CONSUMED
+                })
+            };
+            ui! {
+                view(style = row_style) {
+                    avatar
+                    view(style = text_stack) {
+                        text(style = name_style) { name }
+                        second_line
+                    }
+                    if let Some(btn) = leave_btn {
+                        btn
+                    }
+                }
             }
-            view(style = text_stack) {
-                text(style = name_style) { name }
-                text(style = status_style) { status }
-            }
-        }
-    }
+        },
+    )
+}
+
+/// The name of the voice channel the user is currently joined to, resolved
+/// from the `(server_id, voice_id)` pair in `joined_voice`. Used to build the
+/// `user_panel` switch key (value-deduped — `String` compares by content, so
+/// two joins of the same channel on different servers would be equal, which
+/// is exactly the "same visible state, no rebuild" behavior we want).
+fn voice_name_for(joined: Option<(u32, u32)>) -> Option<String> {
+    let (server_id, voice_id) = joined?;
+    let server = SERVERS.iter().find(|s| s.id == server_id)?;
+    Some(server.find_voice_channel(voice_id)?.name.to_string())
 }
 
 // --- the tree ----------------------------------------------------------------
@@ -541,6 +790,16 @@ pub fn app() -> Element {
     let active_server: Signal<u32> = signal(SERVERS[0].id);
     let active_channel: Signal<u32> = signal(SERVERS[0].first_text_channel().id);
     let composer: Signal<String> = signal(String::new());
+    // The voice channel the user is currently joined to, keyed by (server_id,
+    // voice_channel_id). Joining a voice row in the sidebar sets it; leaving
+    // (from the profile strip) or switching servers clears it. `None` = not
+    // in a voice channel. Drives the voice-row membership lists AND the
+    // profile strip's voice-connection bar.
+    let joined_voice: Signal<Option<(u32, u32)>> = signal(None);
+    // The signed-in user's live presence status. A signal (not the `USER`
+    // constant) because the profile strip can change it; the member panel
+    // renders the user under this status, so a change regroups them there too.
+    let user_status: Signal<Status> = signal(Status::Online);
     // (channel_id, author, body, ts_secs) of every message the user has sent
     // this session, so each channel keeps its own additions. Read at rebuild.
     let sent: Rc<RefCell<Vec<(u32, &'static str, String, i64)>>> = Rc::new(RefCell::new(Vec::new()));
@@ -564,6 +823,7 @@ pub fn app() -> Element {
     let server_rows: Vec<Element> = SERVERS.iter().map(|s| {
         let active = active_server.clone();
         let channel = active_channel.clone();
+        let voice = joined_voice.clone();
         // Reactive style: re-runs whenever `active_server` changes.
         let row_style = move || StyleRules {
             width: Some(px(48.0)),
@@ -631,6 +891,10 @@ pub fn app() -> Element {
                         // aren't selectable in this build.
                         channel.set(srv.first_text_channel().id);
                     }
+                    // Switching servers drops the voice join: you can't stay
+                    // connected in a channel you're no longer looking at
+                    // (Discord's per-server voice behavior, simplified).
+                    voice.set(None);
                 }
                 TouchResponse::CONSUMED
             })
@@ -684,8 +948,8 @@ pub fn app() -> Element {
     };
 
     let sidebar = switch(
-        move || (active_server.get(), active_channel.get()),
-        move |(server_id, _channel_id): &(u32, u32)| {
+        move || (active_server.get(), active_channel.get(), joined_voice.get()),
+        move |(server_id, _channel_id, _voice): &(u32, u32, Option<(u32, u32)>)| {
             // `switch`'s render is `Fn` — clone the captured styles so the
             // closure borrows them rather than moving them out (whiteboard idiom).
             let sidebar_style = sidebar_style.clone();
@@ -763,13 +1027,19 @@ pub fn app() -> Element {
                         .on_hover(move |on| hovered.set(on))
                     });
                 }
-                rows.extend(voice_section(cat));
+                rows.extend(voice_section(
+                    cat,
+                    server.id,
+                    active_server.clone(),
+                    joined_voice.clone(),
+                    user_status.clone(),
+                ));
             }
             let title = server.name.to_string();
             // The user profile is the bottom-left of the sidebar (Discord
             // convention). The member list is a separate right-side panel —
             // see `members_switch` further down — so it's not built here.
-            let user = user_panel();
+            let user = user_panel(user_status, joined_voice);
             ui! {
                 view(style = sidebar_style) {
                     view(style = sidebar_header_style) {
@@ -945,12 +1215,14 @@ pub fn app() -> Element {
 
     // --- member list (right side) ----------------------------------------
     // Rebuilds when the active server changes (each server has its own
-    // roster). Rendered as the right-most top-level column.
+    // roster) AND when the signed-in user's live status changes — the user
+    // regroups to their new status bucket, and the member count follows.
+    // Rendered as the right-most top-level column.
     let members_switch = switch(
-        move || active_server.get(),
-        move |server_id: &u32| {
+        move || (active_server.get(), user_status.get()),
+        move |(server_id, user_status): &(u32, Status)| {
             let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
-            member_panel(server)
+            member_panel(server, &USER.as_member(*user_status))
         },
     );
 
