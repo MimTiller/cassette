@@ -1,5 +1,6 @@
-//! `app()` — the Discord-style layout: a server rail, a channel sidebar, and a
-//! main message view with a composer. State is a few signals (active server,
+//! `app()` — the Discord-style layout: a server rail, a channel sidebar (with
+//! category sections and voice-channel presence rows), a main message view with
+//! a composer, and a member list. State is a few signals (active server,
 //! active channel, composer text) plus a per-session log of sent messages; the
 //! tree is declarative around them.
 //!
@@ -18,6 +19,13 @@
 //!   inside the closure, exactly as whiteboard does);
 //! - a precomputed `Element` / `Vec<Element>` splices in as a bare child —
 //!   `whiteboard-demo` `scroll_view { rows }`.
+//!
+//! Timestamps: message rows show "Today at …" / "Yesterday at …" lines,
+//! computed at rebuild from the runtime's wall clock (`runtime_shared::time`
+//! — `epoch_millis()` / `local_offset_minutes()`; the web backend installs a
+//! `js Date`-backed source during bootstrap). No `chrono`/`time` needed: a
+//! days-ago comparison plus a civil-time formatter is all a "Today at" label
+//! needs.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -28,7 +36,9 @@ use runtime_core::{
     switch, ui,
 };
 
-use crate::data::{SERVERS, Member, Status};
+use runtime_shared::time::local_offset_minutes;
+
+use crate::data::{SERVERS, Category, Member, Status, USER};
 use crate::style_helpers::{col, pct, px};
 
 // Discord dark palette (Blurple-flavoured).
@@ -51,41 +61,110 @@ fn border_width(px: f32) -> Tokenized<f32> {
     Tokenized::Literal(px)
 }
 
-/// A row's background: `active ? active_col : base_col` — the highlight.
-fn active_bg(active: bool, active_col: &str, base_col: &str) -> Tokenized<runtime_core::Color> {
-    col(if active { active_col } else { base_col })
+// --- timestamps --------------------------------------------------------------
+
+const DAY_MS: i64 = 86_400_000;
+
+/// Civil local time (day number, hour, minute) for a Unix-seconds instant.
+/// Pure math on the wall clock — no date library: all a "Today at …" label
+/// needs is *which day* (relative to now) and the clock time.
+fn local_day_clock(unix_secs: i64) -> (i64, u32, u32) {
+    let local_ms = unix_secs * 1_000 + local_offset_minutes() as i64 * 60_000;
+    // Floor-divide: local_ms can be negative for pre-1970 instants.
+    let day = local_ms.div_euclid(DAY_MS);
+    let rem = local_ms.rem_euclid(DAY_MS);
+    let h = (rem / 3_600_000) as u32;
+    let m = ((rem % 3_600_000) / 60_000) as u32;
+    (day, h, m)
 }
 
-/// One message row: avatar chip, author, body. Takes `&str`s so it serves both
-/// the static seed data and runtime-authored messages (the strings are copied
-/// into the node, so the returned `Element` is self-contained).
-fn message_row(author: &str, color: &str, body: &str) -> Element {
+/// Convert a day number (days since 1970-01-01) to a civil (year, month, day)
+/// triple using the standard 4-00-04 leap-year rule. Only exercised by the
+/// "older than a day" fallback in `format_when` — mock seed messages never
+/// reach it, but the branch shouldn't emit garbage if it ever does.
+fn civil_ymd_from_day(day: i64) -> (i64, u32, u32) {
+    // Howard Hinnant's `days_to_ymd` — pure integer math, valid for all
+    // positive day numbers (and most negative ones).
+    let z = day + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    (if m <= 2 { y + 1 } else { y }, m as u32, d as u32)
+}
+
+/// Discord-style message time line: "Today at 10:14 AM", "Yesterday at …",
+/// or "9/12/2026" once it's older than a day.
+fn format_when(unix_secs: i64, now_secs: i64) -> String {
+    let (day, h, m) = local_day_clock(unix_secs);
+    let (now_day, _, _) = local_day_clock(now_secs);
+    let (suffix, h12) = {
+        let h12 = h % 12;
+        let h12 = if h12 == 0 { 12 } else { h12 };
+        (if h < 12 { "AM" } else { "PM" }, h12)
+    };
+    let time = format!("{h12}:{m:02} {suffix}");
+    match now_day - day {
+        0 => format!("Today at {time}"),
+        1 => format!("Yesterday at {time}"),
+        // Older than a day: fall back to a month/day/year built from the day
+        // number. (Mock data is always ≤ ~1 day old, so this is the safety
+        // branch — kept simple on purpose.)
+        _ => {
+            let (y, m, d) = civil_ymd_from_day(day);
+            format!("{m}/{d}/{y}")
+        }
+    }
+}
+
+// --- small reusable rows -----------------------------------------------------
+
+/// One message row: avatar chip, then author + "Today at …" line, then body.
+/// Takes `&str`s so it serves both the static seed data and runtime-authored
+/// messages (the strings are copied into the node, so the returned `Element`
+/// is self-contained).
+fn message_row(author: &str, color: &str, body: &str, when: String) -> Element {
     let row_style = StyleRules {
-        padding_top: Some(px(6.0)),
-        padding_bottom: Some(px(6.0)),
+        padding_top: Some(px(8.0)),
+        padding_bottom: Some(px(2.0)),
         padding_left: Some(px(16.0)),
         padding_right: Some(px(16.0)),
         gap: Some(px(10.0)),
         flex_direction: Some(FlexDirection::Row),
-        align_items: Some(AlignItems::Center),
         ..Default::default()
     };
     let avatar_style = StyleRules {
-        width: Some(px(28.0)),
-        height: Some(px(28.0)),
+        width: Some(px(40.0)),
+        height: Some(px(40.0)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         background: Some(col(color)),
-        border_top_left_radius: Some(px(14.0)),
-        border_top_right_radius: Some(px(14.0)),
-        border_bottom_left_radius: Some(px(14.0)),
-        border_bottom_right_radius: Some(px(14.0)),
+        border_top_left_radius: Some(px(20.0)),
+        border_top_right_radius: Some(px(20.0)),
+        border_bottom_left_radius: Some(px(20.0)),
+        border_bottom_right_radius: Some(px(20.0)),
         ..Default::default()
     };
     let avatar_text_style = StyleRules {
-        font_size: Some(px(13.0)),
+        font_size: Some(px(15.0)),
         font_weight: Some(FontWeight::Bold),
         color: Some(col(TEXT)),
+        ..Default::default()
+    };
+    let stack_style = StyleRules {
+        flex_direction: Some(FlexDirection::Column),
+        flex_grow: Some(grow(1.0)),
+        gap: Some(px(2.0)),
+        ..Default::default()
+    };
+    let meta_style = StyleRules {
+        flex_direction: Some(FlexDirection::Row),
+        align_items: Some(AlignItems::Baseline),
+        gap: Some(px(6.0)),
         ..Default::default()
     };
     let author_style = StyleRules {
@@ -94,9 +173,14 @@ fn message_row(author: &str, color: &str, body: &str) -> Element {
         color: Some(col(TEXT)),
         ..Default::default()
     };
+    let when_style = StyleRules {
+        font_size: Some(px(11.0)),
+        color: Some(col(TEXT_MUTED)),
+        ..Default::default()
+    };
     let body_style = StyleRules {
         font_size: Some(px(15.0)),
-        color: Some(col(TEXT_MUTED)),
+        color: Some(col(TEXT)),
         flex_grow: Some(grow(1.0)),
         ..Default::default()
     };
@@ -106,8 +190,13 @@ fn message_row(author: &str, color: &str, body: &str) -> Element {
             view(style = avatar_style) {
                 text(style = avatar_text_style) { initial }
             }
-            text(style = author_style) { author.to_string() }
-            text(style = body_style) { body.to_string() }
+            view(style = stack_style) {
+                view(style = meta_style) {
+                    text(style = author_style) { author.to_string() }
+                    text(style = when_style) { when }
+                }
+                text(style = body_style) { body.to_string() }
+            }
         }
     }
 }
@@ -188,6 +277,81 @@ fn member_row(m: &Member) -> Element {
     }
 }
 
+/// A voice-channel row in the sidebar: "🔊 name" (a speaker glyph rendered as
+/// the Unicode speaker character — the `icon` primitive isn't available in
+/// the `ui!` macro here, so a text glyph keeps the row dependency-free), with
+/// the connected members listed beneath it in smaller, indented rows. Not
+/// interactive in this build — voice presence only.
+fn voice_section(cat: &Category) -> Vec<Element> {
+    let mut out: Vec<Element> = Vec::new();
+    if cat.voice.is_empty() {
+        return out;
+    }
+    for v in cat.voice {
+        let v_style = StyleRules {
+            padding_top: Some(px(6.0)),
+            padding_bottom: Some(px(2.0)),
+            padding_left: Some(px(16.0)),
+            padding_right: Some(px(16.0)),
+            font_size: Some(px(15.0)),
+            font_weight: Some(FontWeight::Normal),
+            color: Some(col(TEXT_CHANNEL)),
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            gap: Some(px(6.0)),
+            ..Default::default()
+        };
+        let label = format!("🔊 {}", v.name);
+        out.push(ui! { text(style = v_style) { label } });
+        // Connected members, Discord's voice layout (avatar + name, indented).
+        for sp in v.speakers {
+            let row_style = StyleRules {
+                padding_top: Some(px(2.0)),
+                padding_bottom: Some(px(2.0)),
+                padding_left: Some(px(32.0)),
+                padding_right: Some(px(16.0)),
+                gap: Some(px(8.0)),
+                flex_direction: Some(FlexDirection::Row),
+                align_items: Some(AlignItems::Center),
+                ..Default::default()
+            };
+            let av_style = StyleRules {
+                width: Some(px(20.0)),
+                height: Some(px(20.0)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                background: Some(col(sp.color)),
+                border_top_left_radius: Some(px(10.0)),
+                border_top_right_radius: Some(px(10.0)),
+                border_bottom_left_radius: Some(px(10.0)),
+                border_bottom_right_radius: Some(px(10.0)),
+                ..Default::default()
+            };
+            let av_text = StyleRules {
+                font_size: Some(px(9.0)),
+                font_weight: Some(FontWeight::Bold),
+                color: Some(col(TEXT)),
+                ..Default::default()
+            };
+            let name_style = StyleRules {
+                font_size: Some(px(13.0)),
+                color: Some(col(TEXT_MUTED)),
+                ..Default::default()
+            };
+            let initial = sp.name.chars().next().unwrap_or(' ').to_string();
+            out.push(ui! {
+                view(style = row_style) {
+                    view(style = av_style) {
+                        text(style = av_text) { initial }
+                    }
+                    text(style = name_style) { sp.name.to_string() }
+                }
+            });
+        }
+    }
+    out
+}
+
 /// The member-list panel for the right side of the window: a
 /// "MEMBER COUNT — N" header (Discord's style), then members grouped by
 /// status (online → idle → DND → offline). Pure data in, self-contained
@@ -254,9 +418,11 @@ fn member_panel(server: &crate::data::Server) -> Element {
 }
 
 /// The bottom-left user profile section: avatar (with status dot), name, and
-/// a muted "Online" status line. Static (same user across all servers) —
-/// rendered once per sidebar rebuild.
+/// status line — now sourced from the data model's `USER` entry instead of
+/// hardcoded strings. Rendered once per sidebar rebuild (same user across all
+/// servers).
 fn user_panel() -> Element {
+    let user: &Member = &USER;
     let row_style = StyleRules {
         padding_top: Some(px(10.0)),
         padding_bottom: Some(px(10.0)),
@@ -276,7 +442,7 @@ fn user_panel() -> Element {
         position: Some(Position::Relative),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        background: Some(col(BUTTON)),
+        background: Some(col(user.color)),
         border_top_left_radius: Some(px(16.0)),
         border_top_right_radius: Some(px(16.0)),
         border_bottom_left_radius: Some(px(16.0)),
@@ -295,7 +461,7 @@ fn user_panel() -> Element {
         bottom: Some(px(0.0)),
         width: Some(px(11.0)),
         height: Some(px(11.0)),
-        background: Some(col(Status::Online.color())),
+        background: Some(col(user.status.color())),
         border_top_width: Some(border_width(2.0)),
         border_right_width: Some(border_width(2.0)),
         border_bottom_width: Some(border_width(2.0)),
@@ -326,27 +492,32 @@ fn user_panel() -> Element {
         color: Some(col(TEXT_MUTED)),
         ..Default::default()
     };
+    let initial = user.name.chars().next().unwrap_or(' ').to_string();
+    let name = user.name.to_string();
+    let status = user.status.label().to_lowercase();
     ui! {
         view(style = row_style) {
             view(style = avatar_style) {
-                text(style = initial_style) { "Y".to_string() }
+                text(style = initial_style) { initial }
                 view(style = dot_style) {}
             }
             view(style = text_stack) {
-                text(style = name_style) { "you".to_string() }
-                text(style = status_style) { "Online".to_string() }
+                text(style = name_style) { name }
+                text(style = status_style) { status }
             }
         }
     }
 }
 
+// --- the tree ----------------------------------------------------------------
+
 pub fn app() -> Element {
     let active_server: Signal<u32> = signal(SERVERS[0].id);
-    let active_channel: Signal<u32> = signal(SERVERS[0].channels[0].id);
+    let active_channel: Signal<u32> = signal(SERVERS[0].first_text_channel().id);
     let composer: Signal<String> = signal(String::new());
-    // (channel_id, author, body) of every message the user has sent this
-    // session, so each channel keeps its own additions. Read at rebuild.
-    let sent: Rc<RefCell<Vec<(u32, &'static str, String)>>> = Rc::new(RefCell::new(Vec::new()));
+    // (channel_id, author, body, ts_secs) of every message the user has sent
+    // this session, so each channel keeps its own additions. Read at rebuild.
+    let sent: Rc<RefCell<Vec<(u32, &'static str, String, i64)>>> = Rc::new(RefCell::new(Vec::new()));
     // Bumped on every send. `switch` dedups on its scrutinee VALUE (equal
     // re-fire keeps the mounted arm), so re-setting `active_channel` to its
     // current value does NOT rebuild the message list — this counter does.
@@ -373,7 +544,11 @@ pub fn app() -> Element {
             height: Some(px(48.0)),
             align_items: Some(AlignItems::Center),
             justify_content: Some(JustifyContent::Center),
-            background: Some(active_bg(active.get() == s.id, TEXT_CHANNEL, BG_SIDEBAR)),
+            background: Some(col(if active.get() == s.id {
+                TEXT_CHANNEL
+            } else {
+                BG_SIDEBAR
+            })),
             border_top_left_radius: Some(px(24.0)),
             border_top_right_radius: Some(px(24.0)),
             border_bottom_left_radius: Some(px(24.0)),
@@ -383,7 +558,11 @@ pub fn app() -> Element {
         let label_style = move || StyleRules {
             font_size: Some(px(18.0)),
             font_weight: Some(FontWeight::Bold),
-            color: Some(active_bg(active.get() == s.id, TEXT, TEXT_CHANNEL)),
+            color: Some(col(if active.get() == s.id {
+                TEXT
+            } else {
+                TEXT_CHANNEL
+            })),
             ..Default::default()
         };
         ui! {
@@ -394,7 +573,9 @@ pub fn app() -> Element {
                 if ev.phase == TouchPhase::Ended {
                     active.set(s.id);
                     if let Some(srv) = SERVERS.iter().find(|x| x.id == s.id) {
-                        channel.set(srv.channels[0].id);
+                        // Default to the first *text* channel — voice channels
+                        // aren't selectable in this build.
+                        channel.set(srv.first_text_channel().id);
                     }
                 }
                 TouchResponse::CONSUMED
@@ -428,6 +609,18 @@ pub fn app() -> Element {
         text_transform: Some(TextTransform::Uppercase),
         ..Default::default()
     };
+    // Category section header: the small uppercase "TEXT CHANNELS" label.
+    let cat_style = StyleRules {
+        padding_top: Some(px(14.0)),
+        padding_bottom: Some(px(4.0)),
+        padding_left: Some(px(16.0)),
+        padding_right: Some(px(16.0)),
+        font_size: Some(px(11.0)),
+        font_weight: Some(FontWeight::SemiBold),
+        color: Some(col(TEXT_MUTED)),
+        text_transform: Some(TextTransform::Uppercase),
+        ..Default::default()
+    };
 
     let sidebar = switch(
         move || (active_server.get(), active_channel.get()),
@@ -437,41 +630,59 @@ pub fn app() -> Element {
             let sidebar_style = sidebar_style.clone();
             let sidebar_header_style = sidebar_header_style.clone();
             let sidebar_title_style = sidebar_title_style.clone();
+            let cat_style = cat_style.clone();
             let channel = active_channel;
             let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
-            let rows: Vec<Element> = server.channels.iter().map(|c| {
-                let active = channel;
-                let row_style = move || StyleRules {
-                    padding_top: Some(px(7.0)),
-                    padding_bottom: Some(px(7.0)),
-                    padding_left: Some(px(16.0)),
-                    padding_right: Some(px(16.0)),
-                    background: Some(active_bg(active.get() == c.id, "transparent", BG_ACTIVE)),
-                    ..Default::default()
-                };
-                let label_style = move || StyleRules {
-                    font_size: Some(px(15.0)),
-                    font_weight: Some(if active.get() == c.id {
-                        FontWeight::SemiBold
-                    } else {
-                        FontWeight::Normal
-                    }),
-                    color: Some(active_bg(active.get() == c.id, TEXT, TEXT_CHANNEL)),
-                    ..Default::default()
-                };
-                let label = format!("#{}", c.name);
-                ui! {
-                    view(style = row_style) {
-                        text(style = label_style) { label }
-                    }
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            active.set(c.id);
+            let mut rows: Vec<Element> = Vec::new();
+            // Category sections, in data order: each section is a small
+            // uppercase header, its text-channel rows, then its voice rows.
+            for cat in server.categories {
+                let cat_label = cat.title.to_string();
+                let cat_style = cat_style.clone();
+                rows.push(ui! { text(style = cat_style) { cat_label } });
+                for c in cat.text {
+                    let active = channel;
+                    let row_style = move || StyleRules {
+                        padding_top: Some(px(7.0)),
+                        padding_bottom: Some(px(7.0)),
+                        padding_left: Some(px(16.0)),
+                        padding_right: Some(px(16.0)),
+                        background: Some(col(if active.get() == c.id {
+                            BG_ACTIVE
+                        } else {
+                            "transparent"
+                        })),
+                        ..Default::default()
+                    };
+                    let label_style = move || StyleRules {
+                        font_size: Some(px(15.0)),
+                        font_weight: Some(if active.get() == c.id {
+                            FontWeight::SemiBold
+                        } else {
+                            FontWeight::Normal
+                        }),
+                        color: Some(col(if active.get() == c.id {
+                            TEXT
+                        } else {
+                            TEXT_CHANNEL
+                        })),
+                        ..Default::default()
+                    };
+                    let label = format!("#{}", c.name);
+                    rows.push(ui! {
+                        view(style = row_style) {
+                            text(style = label_style) { label }
                         }
-                        TouchResponse::CONSUMED
-                    })
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                active.set(c.id);
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                    });
                 }
-            }).collect();
+                rows.extend(voice_section(cat));
+            }
             let title = server.name.to_string();
             // The user profile is the bottom-left of the sidebar (Discord
             // convention). The member list is a separate right-side panel —
@@ -523,7 +734,7 @@ pub fn app() -> Element {
             let title_style = title_style.clone();
             let topic_style = topic_style.clone();
             let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
-            let channel = server.channels.iter().find(|c| c.id == *channel_id).unwrap();
+            let channel = server.find_text_channel(*channel_id).unwrap();
             let title = channel.name.to_string();
             let topic = channel.topic.to_string();
             ui! {
@@ -546,15 +757,18 @@ pub fn app() -> Element {
         move || (active_server.get(), active_channel.get(), revision.get()),
         move |(server_id, channel_id, _revision): &(u32, u32, u32)| {
             let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
-            let channel = server.channels.iter().find(|c| c.id == *channel_id).unwrap();
+            let channel = server.find_text_channel(*channel_id).unwrap();
             let cid = *channel_id;
+            let now = crate::data::now_secs();
             let mut rows: Vec<Element> = Vec::with_capacity(channel.messages.len());
             for m in channel.messages.iter() {
-                rows.push(message_row(m.author, m.color, m.body));
+                let when = format_when(m.ts_secs(now), now);
+                rows.push(message_row(m.author, m.color, m.body, when));
             }
-            let mine: Vec<(u32, &'static str, String)> = sent_read.borrow().clone();
-            for (_mcid, author, body) in mine.iter().filter(|(mcid, _, _)| *mcid == cid) {
-                rows.push(message_row(author, BUTTON, body.as_str()));
+            let mine: Vec<(u32, &'static str, String, i64)> = sent_read.borrow().clone();
+            for (_mcid, author, body, ts) in mine.iter().filter(|(mcid, _, _, _)| *mcid == cid) {
+                let when = format_when(*ts, now);
+                rows.push(message_row(author, BUTTON, body.as_str(), when));
             }
             ui! {
                 view(style = StyleRules {
@@ -622,7 +836,7 @@ pub fn app() -> Element {
             return;
         }
         let cid = active_channel.get();
-        sent_write.borrow_mut().push((cid, "you", body));
+        sent_write.borrow_mut().push((cid, "you", body, crate::data::now_secs()));
         send_composer.set(String::new());
         // Bump the revision so the message-list `switch` rebuilds (its key
         // dedups on value, so re-setting the same channel alone would not).
