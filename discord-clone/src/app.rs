@@ -46,6 +46,8 @@ const BG_RAIL: &str = "#1e1f22";
 const BG_SIDEBAR: &str = "#2b2d31";
 const BG_MAIN: &str = "#313338";
 const BG_ACTIVE: &str = "#404249";
+/// Discord's row hover colour (lighter than `#2b2d31`, darker than active).
+const BG_HOVER: &str = "#35373c";
 const TEXT: &str = "#f2f3f5";
 const TEXT_MUTED: &str = "#949ba4";
 const TEXT_CHANNEL: &str = "#c8cacf";
@@ -293,20 +295,42 @@ fn voice_section(cat: &Category) -> Vec<Element> {
         return out;
     }
     for v in cat.voice {
-        let v_style = StyleRules {
+        // Voice rows get the same compact pill + hover treatment as text
+        // rows (Discord treats voice rows identically here).
+        let hovered = signal(false);
+        let row_style = move || StyleRules {
             height: Some(px(34.0)),
-            padding_left: Some(px(16.0)),
+            margin_left: Some(px(8.0)),
+            margin_right: Some(px(8.0)),
+            padding_left: Some(px(12.0)),
             padding_right: Some(px(8.0)),
-            font_size: Some(px(15.0)),
-            font_weight: Some(FontWeight::Normal),
-            color: Some(col(TEXT_CHANNEL)),
+            background: Some(col(if hovered.get() {
+                BG_HOVER
+            } else {
+                "transparent"
+            })),
+            border_top_left_radius: Some(px(8.0)),
+            border_top_right_radius: Some(px(8.0)),
+            border_bottom_left_radius: Some(px(8.0)),
+            border_bottom_right_radius: Some(px(8.0)),
             flex_direction: Some(FlexDirection::Row),
             align_items: Some(AlignItems::Center),
             gap: Some(px(6.0)),
             ..Default::default()
         };
+        let v_label_style = StyleRules {
+            font_size: Some(px(15.0)),
+            font_weight: Some(FontWeight::Normal),
+            color: Some(col(TEXT_CHANNEL)),
+            ..Default::default()
+        };
         let label = format!("🔊 {}", v.name);
-        out.push(ui! { text(style = v_style) { label } });
+        out.push(ui! {
+            view(style = row_style) {
+                text(style = v_label_style) { label }
+            }
+            .on_hover(move |on| hovered.set(on))
+        });
         // Connected members, Discord's voice layout (avatar + name, indented).
         for sp in v.speakers {
             let row_style = StyleRules {
@@ -680,26 +704,33 @@ pub fn app() -> Element {
                 rows.push(ui! { text(style = cat_style) { cat_label } });
                 for c in cat.text {
                     let active = channel;
-                    // Discord's channel rows are 48px tall with a 20px-wide
+                    // Discord's channel rows are compact (~34px) with a
                     // rounded pill (inset 8px each side) that fills with the
-                    // hover/active colour — the row itself stays transparent.
-                    let row_style = move || StyleRules {
-                        height: Some(px(48.0)),
-                        margin_left: Some(px(8.0)),
-                        margin_right: Some(px(8.0)),
-                        padding_left: Some(px(12.0)),
-                        padding_right: Some(px(8.0)),
-                        background: Some(col(if active.get() == c.id {
-                            BG_ACTIVE
-                        } else {
-                            "transparent"
-                        })),
-                        border_top_left_radius: Some(px(8.0)),
-                        border_top_right_radius: Some(px(8.0)),
-                        border_bottom_left_radius: Some(px(8.0)),
-                        border_bottom_right_radius: Some(px(8.0)),
-                        align_items: Some(AlignItems::Center),
-                        ..Default::default()
+                    // hover colour, and the active colour when selected — the
+                    // row itself stays transparent otherwise.
+                    let hovered = signal(false);
+                    let row_style = move || {
+                        let on = active.get() == c.id;
+                        StyleRules {
+                            height: Some(px(34.0)),
+                            margin_left: Some(px(8.0)),
+                            margin_right: Some(px(8.0)),
+                            padding_left: Some(px(12.0)),
+                            padding_right: Some(px(8.0)),
+                            background: Some(col(if on {
+                                BG_ACTIVE
+                            } else if hovered.get() {
+                                BG_HOVER
+                            } else {
+                                "transparent"
+                            })),
+                            border_top_left_radius: Some(px(8.0)),
+                            border_top_right_radius: Some(px(8.0)),
+                            border_bottom_left_radius: Some(px(8.0)),
+                            border_bottom_right_radius: Some(px(8.0)),
+                            align_items: Some(AlignItems::Center),
+                            ..Default::default()
+                        }
                     };
                     let label_style = move || StyleRules {
                         font_size: Some(px(15.0)),
@@ -729,6 +760,7 @@ pub fn app() -> Element {
                             }
                             TouchResponse::CONSUMED
                         })
+                        .on_hover(move |on| hovered.set(on))
                     });
                 }
                 rows.extend(voice_section(cat));
