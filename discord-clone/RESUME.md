@@ -8,18 +8,32 @@ the mock data lives in `src/data.rs`.
 ## Current state (working)
 
 - **Server rail** (left): 3 servers — Rust & Beers, Pixel Forge, Trailhead.
-- **Channel sidebar** (left): per-server channel list + user profile pinned at
-  the bottom (avatar with green Online dot, "you", "Online").
+- **Channel sidebar** (left): per-server list, grouped into `Category`
+  sections — an uppercase "TEXT CHANNELS" / "VOICE CHANNELS" header followed
+  by its text-channel rows (`#name`) and voice rows. Text rows are
+  interactive (select → main view rebuilds). Voice rows are a speaker glyph
+  (`🔊 name`) + the connected members listed beneath (avatar + name, indented);
+  presence only, not interactive. User profile pinned at the bottom (avatar
+  with green Online dot, "you", "Online").
 - **Main view** (middle): header (channel name + topic), message list (seed
-  messages + any sent this session), composer.
+  messages + any sent this session), composer. Each message shows a
+  Discord-style time line above the body: "Today at 10:14 AM", "Yesterday at
+  9:02 PM", or "m/d/yyyy" when older than a day (see timestamps below).
+- **Message timestamps**: seed `Message`s store an `age_secs` offset (not a
+  frozen Unix time); at render, `Message::ts_secs(now_secs())` resolves it
+  against the live wall clock so "Today at …" stays true whenever the app is
+  opened. `now_secs()` reads `runtime_shared::time::epoch_millis()` (the web
+  backend installs a `js Date`-backed source). Day math is pure integer
+  (`local_day_clock` + Hinnant `civil_ymd_from_day`); no `chrono`.
 - **Member panel** (right, 240px): "MEMBER COUNT — N" header, then members
   grouped by status (ONLINE → IDLE → DO NOT DISTURB → OFFLINE), each group
   with a count. Rebuilds when the active server changes.
 - **Composer**: type a message, send via the **Send button** OR the **Enter
   key**. Shift/Ctrl/Alt/Meta+Enter fall through to the platform default.
 - **State**: `active_server`, `active_channel`, `composer` (text), `sent`
-  (per-session log of `(channel_id, author, body)`), `revision` (bumped on
-  every send so the message list re-renders).
+  (per-session log of `(channel_id, author, body, ts_secs)` — user-sent
+  messages get a real `now_secs()` stamp), `revision` (bumped on every send
+  so the message list re-renders).
 
 ## Build / run
 
@@ -42,7 +56,9 @@ React or external frameworks.
 
 - No AI-attribution trailers in commits.
 - No `git stash`.
-- `discord-clone/` is untracked in the parent repo (independent workspace).
+- `discord-clone/` is **tracked** in the parent repo (its own Cargo workspace,
+  but committed under `/root/idealyst-native` — `git log -- discord-clone`
+  works from the parent).
 
 ## Framework pitfalls (learned the hard way)
 
@@ -71,13 +87,26 @@ Each branch must build its own instance (or pass in the data and call the
 builder fn per branch). This is why `member_panel(server)` takes `&Server`
 and is called inside the `switch` render closure.
 
+### 4. Testing interactions from the browser: use CDP input, not DOM events
+The rail / channel rows / composer are wired with `on_touch` (and the
+`text_input` `on_key_down`), not `on_click`. A JS `element.click()` or a
+synthetic `TouchEvent` dispatched via `dispatchEvent` does NOT reach the
+runtime's touch handling, so the selection never updates. In the browser tool,
+`click_at_xy(x, y)` (CDP-level `Input.dispatchMouseEvent`) is what actually
+triggers the handlers: read the target's `getBoundingClientRect()` with
+`js(...)` and pass the center to `click_at_xy`. The composer's Enter path is
+reached by `fill_input(...)` then dispatching a real `keydown` `Enter`
+`KeyboardEvent` (that one *does* fire `on_key_down`).
+
 ## Files
 
 - `src/app.rs` — the app: server rail, channel sidebar (with user profile),
   header, message list, composer, member panel. All the `ui!` trees and the
   `switch` closures live here.
-- `src/data.rs` — mock data: 3 servers, channels, messages, members (with
-  `Status` enum: Online/Idle/DoNotDisturb/Offline). All `&'static`.
+- `src/data.rs` — mock data: 3 servers, `Category` groups (text + voice
+  channels), messages (`age_secs` offsets), members (with `Status` enum:
+  Online/Idle/DoNotDisturb/Offline). All `&'static`. Exposes `now_secs()`
+  (runtime wall clock) for the composer's message stamps.
 - `src/lib.rs` — crate root: `mod data; mod style_helpers; mod app;` + the
   SDK-handler registration seams (empty for this app).
 - `src/main.rs` — entry point (`idealyst::entry!(discord_clone)`).
@@ -85,10 +114,14 @@ and is called inside the `switch` render closure.
 
 ## Not yet done
 
-- Dead welcome-app files deleted (components/, coordinator.rs, constants.rs,
-  color.rs, typeface.rs) — done.
-- Commit — not yet (discord-clone/ is untracked in the parent repo).
-- Voice channels, channel categories, timestamps, member list interactions
-  (mute/hide-activity), user profile as a data model entry (currently static).
-- The user profile is hardcoded ("you / Online") — could be moved to `data.rs`
-  for future interactivity.
+- ~~Commit~~ — done (first commit `6670cb6d` added the app; `ef98615c` added
+  categories/voice/timestamps). `discord-clone/` is now tracked in the parent.
+- ~~Channel categories~~, ~~voice channels~~, ~~message timestamps~~ — done
+  (see "Current state").
+- Member-list interactions (mute / hide-activity / kick).
+- User profile as a data-model entry (currently a hardcoded "you / Online"
+  row); wire it into `data.rs` for future interactivity (e.g. a real
+  `you` `Member` with editable status).
+- Voice-channel interaction: clicking a voice row currently does nothing;
+  Discord joins the channel + shows a "voice connection" bar in the user
+  profile area. Could be modeled as a `joined_voice: Signal<Option<u32>>`.
