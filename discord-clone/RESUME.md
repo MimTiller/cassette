@@ -33,15 +33,30 @@ the mock data lives in `src/data.rs`.
   opened. `now_secs()` reads `runtime_shared::time::epoch_millis()` (the web
   backend installs a `js Date`-backed source). Day math is pure integer
   (`local_day_clock` + Hinnant `civil_ymd_from_day`); no `chrono`.
+- **Voice-channel join** (commit `c7496cb6`): voice rows are interactive.
+  Click one and "you" join — `joined_voice: Signal<Option<(u32, u32)>>`
+  (server, channel). The row's speaker stack gains your avatar, and the
+  profile strip turns into a green "Voice Connected <channel>" bar with a
+  Leave pill. The sidebar `switch` key is
+  `(active_server, active_channel, joined_voice)` so voice rows rebuild on
+  join/leave; switching servers clears the join.
+- **Signed-in user in the data model** (commit `c7496cb6`): `data::USER` is
+  static identity (name + avatar color); live presence is app-level
+  `user_status: Signal<Status>`. `Status::name()` (strip casing) vs
+  `label()` (group headers), `next()` for cycling. The member panel groups
+  "you" into the live-status group (rebuilds on status change); clicking
+  the profile avatar cycles Online → Idle → DND → Online.
 - **Member panel** (right, 240px): "MEMBER COUNT — N" header, then members
   grouped by status (ONLINE → IDLE → DO NOT DISTURB → OFFLINE), each group
-  with a count. Rebuilds when the active server changes.
+  with a count. Rebuilds when the active server OR the user's status
+  changes.
 - **Composer**: type a message, send via the **Send button** OR the **Enter
   key**. Shift/Ctrl/Alt/Meta+Enter fall through to the platform default.
 - **State**: `active_server`, `active_channel`, `composer` (text), `sent`
   (per-session log of `(channel_id, author, body, ts_secs)` — user-sent
   messages get a real `now_secs()` stamp), `revision` (bumped on every send
-  so the message list re-renders).
+  so the message list re-renders), `joined_voice`
+  (`Option<(server, channel)>`), `user_status` (`Status`).
 
 ## Build / run
 
@@ -114,6 +129,22 @@ is *supposed* to host an absolute pill must set `position: Relative`
 itself, or the pill escapes to the viewport (rendered off-screen at
 negative x). Both bit us on the rail's active-server pill.
 
+### 6. `button(label, on_click)` has no style arg — but `ui!` lifts `style` onto any element
+The vocabulary's `button` takes exactly two args (label + action); there's no
+style *parameter*. However the `ui!` macro (crates/runtime/macros/src/jsx.rs)
+pulls a `style = …` prop out of the prop list on ANY element and emits
+`.with_style(…)` — so `button("Send", on_click, style = send_style)` compiles
+and works (the composer's Send pill does exactly this). For a fully custom
+pill you may still prefer `view(style=…).on_touch(…)` + child `text(…)`
+(the voice-bar Leave button uses that for consistency with the row-click
+idiom). Either is fine.
+
+### 7. Stale dead `python http.server` on port 8000 from old sessions
+Before serving, `ss -tlnp | grep 8000` — a dead (stuck, returns
+ERR_EMPTY_RESPONSE) server from a previous session may hold the port and
+make the fresh `http.server` exit with "Address already in use". Kill the
+old pid (`ls -la /proc/<pid>/cwd` shows what it's serving).
+
 ## Files
 
 - `src/app.rs` — the app: server rail, channel sidebar (with user profile),
@@ -134,10 +165,8 @@ negative x). Both bit us on the rail's active-server pill.
   categories/voice/timestamps). `discord-clone/` is now tracked in the parent.
 - ~~Channel categories~~, ~~voice channels~~, ~~message timestamps~~ — done
   (see "Current state").
-- Member-list interactions (mute / hide-activity / kick).
-- User profile as a data-model entry (currently a hardcoded "you / Online"
-  row); wire it into `data.rs` for future interactivity (e.g. a real
-  `you` `Member` with editable status).
-- Voice-channel interaction: clicking a voice row currently does nothing;
-  Discord joins the channel + shows a "voice connection" bar in the user
-  profile area. Could be modeled as a `joined_voice: Signal<Option<u32>>`.
+- ~~Voice-channel join~~ — done (commit `c7496cb6`, see "Current state").
+- ~~Signed-in user as a data-model entry with editable status~~ — done
+  (commit `c7496cb6`).
+- Member-list interactions (mute / hide-activity / kick) — the one remaining
+  item from the plan; lowest impact, mostly scaffolding.
