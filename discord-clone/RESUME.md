@@ -7,6 +7,14 @@ the mock data lives in `src/data.rs`.
 
 ## Current state (working)
 
+- **Theme / layout**: Discord's classic dark palette (`#1e1f22` rail,
+  `#2b2d31` sidebar, `#313338` chat, `#404249` hover/active, blurple
+  `#5865f2` accent). Proportions match Discord: 72px rail with 48px
+  squircle server icons + white active-server pill (4x20, rail's left
+  edge, `opacity`-toggled per active server); 240px sidebar with
+  server-name header + chevron and 48px rounded channel rows (8px inset);
+  240px member panel with right border; user profile on a fixed darker
+  strip (`#232428`) at the sidebar bottom. (Commit `baf0a8f0`.)
 - **Server rail** (left): 3 servers — Rust & Beers, Pixel Forge, Trailhead.
 - **Channel sidebar** (left): per-server list, grouped into `Category`
   sections — an uppercase "TEXT CHANNELS" / "VOICE CHANNELS" header followed
@@ -97,6 +105,14 @@ triggers the handlers: read the target's `getBoundingClientRect()` with
 `js(...)` and pass the center to `click_at_xy`. The composer's Enter path is
 reached by `fill_input(...)` then dispatching a real `keydown` `Enter`
 `KeyboardEvent` (that one *does* fire `on_key_down`).
+
+### 5. `opacity` is `Tokenized<f32>`, and absolute children anchor to the nearest *non-static* ancestor
+`StyleRules.opacity` takes `Tokenized<f32>` — a bare `f32` is a type error;
+wrap with `Tokenized::Literal(1.0)`. And an `Position::Absolute` child
+anchors to the nearest positioned (non-Static) ancestor: an icon row that
+is *supposed* to host an absolute pill must set `position: Relative`
+itself, or the pill escapes to the viewport (rendered off-screen at
+negative x). Both bit us on the rail's active-server pill.
 
 ## Files
 
