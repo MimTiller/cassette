@@ -1,0 +1,28 @@
+//! `app()` — composes the welcome scene from the components in
+//! [`crate::components`]. The coordinator's [`use_welcome`] hook
+//! creates every ref + wires the animations; this function just
+//! lays out the tree.
+
+use runtime_core::{ui, Element};
+
+use crate::components::content_layer::ContentLayer;
+use crate::components::page::page_sheet;
+use crate::components::planet::Planet;
+use crate::components::sun_glare::SunGlare;
+use crate::components::vignette::Vignette;
+use crate::coordinator::use_welcome;
+
+pub fn app() -> Element {
+    let refs = use_welcome();
+    let page = page_sheet();
+    ui! {
+        view(style = page) {
+            Vignette(refs = refs)
+            SunGlare(refs = refs)
+            for i in 0..3 {
+                Planet(idx = i, refs = refs)
+            }
+            ContentLayer(refs = refs)
+        }.bind(refs.page)
+    }
+}

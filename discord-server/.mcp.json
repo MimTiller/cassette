@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "idealyst": {
+      "command": "idealyst",
+      "args": ["mcp"]
+    }
+  }
+}
