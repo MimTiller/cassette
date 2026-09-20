@@ -361,9 +361,50 @@ impl Db {
         c.query_row(
             "SELECT id, username FROM users WHERE username = ?1",
             rusqlite::params![username],
-            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .ok()
+    }
+
+    // ── presence ───────────────────────────────────────────────────────────
+    //
+    // One status per user: 'online' / 'away' / 'offline', driven entirely by
+    // the realtime gateway (set on connect, idle-timeout, and disconnect).
+
+    /// The user's current presence status ('online' / 'away' / 'offline').
+    /// `None` if the user row doesn't exist.
+    pub fn presence(&self, user_id: i64) -> Option<String> {
+        let c = self.lock().ok()?;
+        c.query_row(
+            "SELECT presence_status FROM users WHERE id = ?1",
+            rusqlite::params![user_id],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
+    }
+
+    /// Set the user's presence status. `Ok(true)` when the value changed
+    /// (callers use that to decide whether to broadcast an update),
+    /// `Ok(false)` when it was already the given status. `Err` only on a
+    /// non-status string or a DB failure.
+    pub fn set_presence(&self, user_id: i64, status: &str) -> Result<bool, rusqlite::Error> {
+        match status {
+            "online" | "away" | "offline" => {}
+            other => return Err(sqlite_err(format!("invalid presence status: {other}"))),
+        }
+        let c = self.lock()?;
+        // Read the current status first (QueryReturnedNoRows if the user row
+        // doesn't exist — surfaced as Err rather than a silent no-op).
+        let old: String = c.query_row(
+            "SELECT presence_status FROM users WHERE id = ?1",
+            rusqlite::params![user_id],
+            |r| r.get(0),
+        )?;
+        c.execute(
+            "UPDATE users SET presence_status = ?2 WHERE id = ?1",
+            rusqlite::params![user_id, status],
+        )?;
+        Ok(old != status)
     }
 
     // ── channels ───────────────────────────────────────────────────────────

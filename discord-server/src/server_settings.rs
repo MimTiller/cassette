@@ -54,8 +54,12 @@ fn acting_user() -> Option<i64> {
 // upgrade header via the `server::Headers` reserved extractor, so auth works
 // in the channel body (the task-local `use_request_header` does not).
 //
-// Scope: channel messages only. Presence (typing / voice / online state) is a
-// separate follow-up task and is intentionally NOT here.
+// Scope: channel messages + a per-user presence heartbeat. Presence is the
+// user's one status field ('online' / 'away' / 'offline'), driven by this
+// socket: 'online' at open, 'away' after `PRESENCE_IDLE_SECS` of silence,
+// 'offline' when the handler returns. Changes are persisted to
+// `users.presence_status` and announced on the wire as `WsServerMsg::Presence`
+// (echoed to the user's own socket; a cross-user broadcast is a follow-up).
 
 /// Inbound frames the client sends.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,9 +86,16 @@ pub enum WsServerMsg {
     },
     /// The most recent `Message { new: false }` frames for `History`.
     History { channel_id: i64 },
+    /// A presence status change for a user: 'online' / 'away' / 'offline'.
+    Presence { user_id: i64, status: String },
     /// A gateway error for a specific operation.
     Error { reason: String },
 }
+
+/// How long an idle (no inbound frame) socket may sit before its owner's
+/// presence flips from 'online' to 'away'. Any inbound frame resets the
+/// clock back to 'online'.
+const PRESENCE_IDLE_SECS: u64 = 30;
 
 /// The realtime message gateway. Mounted at `GET /_srv/_ws/message_gateway`.
 ///
@@ -105,7 +116,59 @@ pub async fn message_gateway(
 
     let db = db_from_state()?;
 
-    while let Some(Ok(msg)) = ch.recv().await {
+    // Presence heartbeat: 'online' the moment the socket is authenticated.
+    // `db.set_presence` returns whether the value actually changed, so we only
+    // announce a transition the client doesn't already know about.
+    let mut presence = "online".to_string();
+    if db.set_presence(user_id, &presence).is_ok_and(|changed| changed) {
+        let _ = ch
+            .send(WsServerMsg::Presence {
+                user_id,
+                status: presence.clone(),
+            })
+            .await;
+    }
+
+    loop {
+        // Idle timeout: no inbound frame within PRESENCE_IDLE_SECS → the user
+        // is treated as away (their socket is still open). Any inbound frame
+        // (message or history request) counts as activity, so the timer resets
+        // implicitly on the next iteration.
+        let frame = tokio::select! {
+            r = ch.recv() => r,
+            _ = tokio::time::sleep(std::time::Duration::from_secs(PRESENCE_IDLE_SECS)) => {
+                if db
+                    .set_presence(user_id, "away")
+                    .is_ok_and(|changed| changed)
+                {
+                    presence = "away".to_string();
+                    let _ = ch
+                        .send(WsServerMsg::Presence {
+                            user_id,
+                            status: presence.clone(),
+                        })
+                        .await;
+                }
+                continue;
+            }
+        };
+        let Some(Ok(msg)) = frame else {
+            // Transport error or close: the loop exits and the user goes
+            // 'offline' below.
+            break;
+        };
+        // Any inbound frame is activity → back to 'online'.
+        if presence != "online"
+            && db.set_presence(user_id, "online").is_ok_and(|changed| changed)
+        {
+            presence = "online".to_string();
+            let _ = ch
+                .send(WsServerMsg::Presence {
+                    user_id,
+                    status: presence.clone(),
+                })
+                .await;
+        }
         match msg {
             WsClientMsg::Send {
                 channel_id,
@@ -175,6 +238,16 @@ pub async fn message_gateway(
                 }
             }
         }
+    }
+    // Disconnect: the socket has closed (client went away, transport died,
+    // or the loop broke on an error). Mark the user 'offline'.
+    if db.set_presence(user_id, "offline").is_ok_and(|changed| changed) {
+        let _ = ch
+            .send(WsServerMsg::Presence {
+                user_id,
+                status: "offline".to_string(),
+            })
+            .await;
     }
     Ok(())
 }
@@ -586,6 +659,18 @@ mod tests {
         )
     }
 
+    /// The e2e gateway tests all install their `Db` into the same
+    /// process-wide `server::install_state` slot (the macro reads it back via
+    /// `use_state`). They therefore MUST run one at a time or they clobber
+    /// each other's state mid-test. This guard serializes them.
+    static E2E_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Acquire the e2e serialization guard; hold it for the whole test body.
+    /// (Poisoned if a prior holder panicked — recover rather than re-panic.)
+    fn e2e_guard() -> std::sync::MutexGuard<'static, ()> {
+        E2E_LOCK.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
     #[tokio::test]
     async fn gateway_send_and_history_round_trip() {
         use futures_util::{SinkExt, StreamExt};
@@ -593,6 +678,7 @@ mod tests {
         use tokio_tungstenite::tungstenite::http::header;
 
         let (dir, db, channel_id) = setup_db_with_channel();
+        let _guard = e2e_guard();
         server::install_state(db.clone());
 
         // Boot the macro-mounted router on an ephemeral port.
@@ -618,6 +704,12 @@ mod tests {
             content: "hello channel".into(),
         };
         ws.send(encode_client(&send)).await.unwrap();
+        // The connect-time Presence frame arrives first (online at open); the
+        // echoed message follows it.
+        match decode_gateway(ws.next().await.unwrap().expect("socket open")) {
+            WsServerMsg::Presence { status, .. } => assert_eq!(status, "online"),
+            other => panic!("expected an online Presence frame at open, got {other:?}"),
+        }
         let echo = decode_gateway(ws.next().await.unwrap().expect("socket open"));
         match echo {
             WsServerMsg::Message {
@@ -679,6 +771,7 @@ mod tests {
         use tokio_tungstenite::tungstenite::http::header;
 
         let (dir, db, channel_id) = setup_db_with_channel();
+        let _guard = e2e_guard();
         server::install_state(db.clone());
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -696,7 +789,12 @@ mod tests {
             .await
             .expect("gateway upgrade succeeds (authenticated)");
 
-        // Empty content is rejected with an Error frame, not stored.
+        // Empty content is rejected with an Error frame, not stored. The
+        // connect-time Presence frame arrives first.
+        match decode_gateway(ws.next().await.unwrap().expect("socket open")) {
+            WsServerMsg::Presence { status, .. } => assert_eq!(status, "online"),
+            other => panic!("expected an online Presence frame at open, got {other:?}"),
+        }
         let send = WsClientMsg::Send {
             channel_id,
             content: "   ".into(),
@@ -712,11 +810,96 @@ mod tests {
         drop(dir);
     }
 
+    // ── presence ───────────────────────────────────────────────────────────
+    //
+    // The status field is driven by the gateway socket itself: 'online' at
+    // open (announced as the first frame), 'offline' once the socket closes.
+    // The idle→'away' transition uses the same code path but with a 30s
+    // timer, so it is not covered by an e2e test (too slow); the unit test
+    // below pins `set_presence`'s change-detection instead.
+
+    #[test]
+    fn presence_set_and_change_detection() {
+        let (_dir, db) = setup_db();
+        // Fresh user is 'offline' (the migration default).
+        assert_eq!(db.presence(1).as_deref(), Some("offline"));
+        // Setting the same value is a no-op (no change to broadcast).
+        assert_eq!(db.set_presence(1, "offline").unwrap(), false);
+        // A different value is a change.
+        assert_eq!(db.set_presence(1, "online").unwrap(), true);
+        assert_eq!(db.presence(1).as_deref(), Some("online"));
+        // Unknown user → QueryReturnedNoRows, not a silent no-op.
+        assert!(db.set_presence(999, "online").is_err());
+        // Invalid status strings are rejected.
+        assert!(db.set_presence(1, "sleeping").is_err());
+    }
+
+    #[tokio::test]
+    async fn gateway_presence_online_on_open_and_offline_on_close() {
+        use futures_util::{SinkExt, StreamExt};
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+        use tokio_tungstenite::tungstenite::http::header;
+
+        let (dir, db, _channel_id) = setup_db_with_channel();
+        let _guard = e2e_guard();
+        server::install_state(db.clone());
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, server::router()).await;
+        });
+
+        let url = format!("ws://{addr}/_srv/_ws/message_gateway");
+        let mut req = url.into_client_request().expect("connect URL parses");
+        req.headers_mut()
+            .insert(header::USER_AGENT, "discord-server-presence-test".parse().unwrap());
+        req.headers_mut().insert("x-user-id", "1".parse().unwrap());
+        let (mut ws, _) = tokio_tungstenite::connect_async(req)
+            .await
+            .expect("gateway upgrade succeeds (authenticated)");
+
+        // 1. On open the first frame is a Presence 'online' announcement.
+        let frame = decode_gateway(
+            ws.next()
+                .await
+                .unwrap()
+                .expect("socket open after connect"),
+        );
+        match frame {
+            WsServerMsg::Presence { user_id, status } => {
+                assert_eq!(user_id, 1);
+                assert_eq!(status, "online");
+            }
+            other => panic!("expected an online Presence frame at open, got {other:?}"),
+        }
+        // ...and it is persisted.
+        assert_eq!(db.presence(1).as_deref(), Some("online"));
+
+        // 2. Close the socket → the handler returns and marks the user offline.
+        drop(ws);
+        // The disconnect happens on the server's task; poll until persisted.
+        for _ in 0..100 {
+            if db.presence(1).as_deref() == Some("offline") {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert_eq!(
+            db.presence(1).as_deref(),
+            Some("offline"),
+            "user should be offline after the socket closes"
+        );
+
+        drop(dir);
+    }
+
     #[tokio::test]
     async fn gateway_rejects_missing_auth() {
         use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
         let (dir, db, _channel_id) = setup_db_with_channel();
+        let _guard = e2e_guard();
         server::install_state(db.clone());
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
