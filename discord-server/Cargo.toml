@@ -4,55 +4,138 @@ version = "0.0.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 
-# The library half stays platform-agnostic — no `web.rs` / `ios.rs` /
-# `android.rs`, no `#[cfg(target_os = "...")]` blocks, no `wasm-bindgen`
-# / `backend-*` direct deps. Same source ships to every backend.
+# Full-stack server project for the Discord clone — the backend half.
 #
-# The platform-specific half is `src/main.rs`: one `idealyst::entry!`
-# line whose shell is picked by the target triple. The iOS / Android
-# wrappers the CLI still generates at build time depend on this crate as
-# an `rlib` and supply their own `staticlib` / `cdylib` crate-type.
+# This is the idealyst-native "server target": a single crate that is BOTH
+# the web client (a plain idealyst app built to wasm) and the API server.
+#
+#   - The web client is an idealyst app — `pub fn app() -> Element`, built
+#     via `idealyst build --web` into a wasm bundle in `pkg/`.
+#   - The server (`--bin server --features server`) hosts the `#[server]`
+#     API at `/_srv/*` AND serves the static bundle at `/`, so the whole
+#     app — UI + API — comes from one process at `http://127.0.0.1:3000`.
+#   - The `#[server]` macro keys off the `server` cargo feature to emit real
+#     fn bodies (server) vs RPC stubs (client). The wasm build uses default
+#     features (stubs); the server bin uses `--features server` (bodies +
+#     inventory registration).
+#
+# Data layer: users / servers / channels / messages / server_memberships,
+# persisted in SQLite (rusqlite, bundled) via numbered SQL migrations under
+# `migrations/`. See `src/db/`.
+#
+# Standalone scaffold (NOT a member of the parent workspace): the empty
+# `[workspace]` table below detaches it so cargo doesn't pull it in and it
+# keeps its own warm `target/`. Framework crates are path deps to the local
+# checkout (the idealyst registry is flaky in this environment) — same
+# convention as the sibling `discord-clone` UI project.
+[workspace]
+
 [lib]
 crate-type = ["rlib"]
 
-# No `catalog` feature or catalog binary is needed for the MCP server:
-# `idealyst mcp` generates an ephemeral wrapper crate on demand that turns
-# on the `catalog` feature (and each component-library dependency's own
-# `catalog` feature) across the whole graph and force-links those deps, so
-# every `#[component]` plus dependency-provided catalog entries (icon sets,
-# …) surface. See the `catalog_wrapper` module in the CLI.
-
+# `server`: the full-stack server build. Pulls the server-side machinery of
+# the `server` SDK (axum router + handler inventory) plus the web-server
+# stack the `--bin server` bin needs to host the API and serve the bundle.
+# The wasm client build NEVER enables this, so it compiles with none of
+# axum/tokio/tower-http.
+#
+# `sidecar`: enabled ONLY by the CLI-generated runtime-server sidecar wrapper
+# (`idealyst dev`). Pulls `dev-server` so the recorder-side registration
+# seams compile.
 [features]
-# `sidecar`: enabled ONLY by the CLI-generated runtime-server sidecar
-# wrapper (`idealyst dev`). Pulls `dev-server` so the recorder-side
-# registration seams compile.
+default = []
+server = [
+    "server/server",
+    "dep:rusqlite",
+    "dep:axum",
+    "dep:tokio",
+    "dep:tower-http",
+    "dep:futures-util",
+    "dep:sha2",
+    "dep:hmac",
+    "dep:rand",
+]
 sidecar = ["dep:dev-server"]
 
 [dependencies]
-# The platform surface, used by `src/main.rs` only. It carries whatever
-# the target needs — `backend-web` + the wasm-bindgen glue on wasm, a
-# native shell otherwise — so this manifest names no backend directly
-# and `cargo build` alone produces a runnable artifact.
+# The platform surface, used by `src/main.rs` only. It carries whatever the
+# target needs — `backend-web` + the wasm-bindgen glue on wasm, a native
+# shell otherwise — so this manifest names no backend directly and `cargo
+# build` alone produces a runnable artifact.
 idealyst = { path = "/root/idealyst-native/crates/idealyst" }
-# The author surface. `runtime-core` is the crate this project aliases
-# to `runtime_core` at its root (see src/lib.rs). `runtime-vocabulary` is
+# The author surface. `runtime-core` is the crate this project aliases to
+# `runtime_core` at its root (see src/lib.rs). `runtime-vocabulary` is
 # needed because the `ui!` emission spells absolute
 # `::runtime_vocabulary::glue::…` paths, and `runtime-scene` because
 # `register_scene_extensions` is generic over the scene `Registry` host.
 runtime-core = { path = "/root/idealyst-native/crates/runtime/core" }
 runtime-vocabulary = { path = "/root/idealyst-native/crates/runtime/vocabulary" }
 runtime-scene = { path = "/root/idealyst-native/crates/runtime/scene" }
+# Server-functions SDK. The `#[server]` attribute macro + the client RPC
+# transport live here; enabling its `server` feature (via the `server`
+# feature above) compiles the server-side router + handler registration.
+server = { path = "/root/idealyst-native/crates/api/server" }
 # Recorder backend for the runtime-server sidecar wrapper. Optional —
 # pulled in only by the `sidecar` feature (host-side sidecar build);
 # never compiled for device/web targets.
 dev-server = { path = "/root/idealyst-native/crates/dev/server", optional = true }
 
-# No backend deps: `register_scene_extensions` is generic over the scene
-# `Host` (this scaffold registers no third-party SDKs), so the app crate
-# is fully platform-agnostic — the CLI-generated wrappers bring their own
-# concrete backend. A project that adds an SDK with a backend-CONCRETE
-# scene handler specializes `register_scene_extensions` to that backend's
-# registry type and adds the matching backend dep then.
+# Wire types are shared between the server and the wasm client, so serde is
+# a normal (non-optional) dependency — the client build needs it too.
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+
+# Data layer: SQLite via rusqlite. `bundled` compiles libsqlite3 from source
+# (no system SQLite required), so the server bin is self-contained. Gated by
+# the `server` feature so the wasm client build never pulls a native C dep.
+rusqlite = { version = "0.40", features = ["bundled"], optional = true }
+
+# Server-only web-server stack. Gated by the `server` feature so the wasm
+# build never compiles axum/tokio/tower-http.
+axum = { version = "0.7.9", optional = true }
+tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "sync", "time"], optional = true }
+tower-http = { version = "0.6.11", features = ["fs"], optional = true }
+# Server-only: the `#[server]` runtime uses it for streaming/SSE support.
+futures-util = { version = "0.3.32", optional = true }
+
+# Auth KDF (server-only): PBKDF2-HMAC-SHA256 for password storage. We hand-roll
+# PBKDF2 over `hmac`+`sha2` (the `pbkdf2` crate isn't in the local registry) and
+# use `rand` for the per-password salt. All three are already vendored. Gated by
+# `server` so the wasm client build never pulls a native crypto dep.
+sha2 = { version = "0.10.9", optional = true }
+hmac = { version = "0.12.1", optional = true }
+rand = { version = "0.8.6", optional = true }
+
+# Pin the wasm-bindgen family to exactly what the installed `wasm-bindgen-cli`
+# (0.2.122, matching the parent repo's lockfile) produces. `idealyst build
+# --web` fails with a schema-version mismatch otherwise. Declared as exact
+# direct deps so the whole interlocked family (web-sys -> js-sys ->
+# wasm-bindgen, plus wasm-bindgen-futures) resolves down together.
+wasm-bindgen = "=0.2.122"
+js-sys = "=0.3.99"
+web-sys = "=0.3.99"
+wasm-bindgen-futures = "=0.4.72"
+
+# `web-sys` is required (client-side) to read `window.location.origin` for
+# `server::configure`.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3.99", features = ["Window", "Location"] }
+
+# Test-only helpers. `tempfile` backs the server-settings unit tests
+# (temp-file SQLite DBs); `tokio-tungstenite` backs the round-trip test for
+# the `#[server::channel]` message gateway — a raw WS client that can attach
+# the `x-user-id` header to the upgrade handshake (the framework's
+# `net::WebSocket::connect(url)` is URL-only and can't). Pinned to 0.24 to
+# match the vendored registry + this workspace's lock.
+[dev-dependencies]
+tempfile = "3"
+tokio-tungstenite = "0.24"
+
+# The full-stack API + static-server binary. Only compiles with `server`.
+[[bin]]
+name = "server"
+path = "src/bin/server.rs"
+required-features = ["server"]
 
 # Idealyst project config. The CLI reads this on `idealyst build`,
 # `idealyst run`, `idealyst dev`, etc.
@@ -60,14 +143,11 @@ dev-server = { path = "/root/idealyst-native/crates/dev/server", optional = true
 name      = "Discord Server"
 bundle_id = "ai.truday.idealyst.discord_server"
 version   = "0.0.1"
-# Platforms `idealyst dev` and `idealyst build` fan out across when
-# no `--web` / `--ios` / `--android` flag is passed on the command
-# line. We default to web-only because it's the broadest target with
-# zero per-platform toolchain setup (no Xcode, no NDK) — a fresh
-# clone of this project will `idealyst dev` straight into a hot-
-# reloading browser preview. Add the mobile targets when you're
-# ready: `targets = ["web", "ios", "android"]`. The `run ios` /
-# `run android` subcommands work regardless of what's listed here
-# (they take an explicit platform argument), so you can also just
-# leave this alone and invoke them directly.
+# Web-only for now: the server target is exercised in the browser against the
+# same-process API. Add `ios`/`android` when the client should be built for a
+# simulator/emulator.
 targets   = ["web"]
+# Full-stack: `idealyst dev --web` / `idealyst run server` run THIS bin
+# instead of the default static-file dev server. The bin serves both the wasm
+# bundle (from `pkg/` / `dist/web/`) and the `/_srv/*` API.
+server_bin = "server"

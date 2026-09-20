@@ -22,6 +22,18 @@ mod coordinator;
 mod style_helpers;
 mod typeface;
 
+// Data layer + server-settings API. Compiled ONLY under the `server`
+// feature: they pull in `rusqlite` (a native C dep) and the server-side
+// `server::` extractors (`use_state` / `use_request_header`), neither of
+// which exist in the wasm client build. `server_settings`' `#[server]` fns
+// emit client RPC stubs by default, but the bodies + DB they reference are
+// server-only, so gating the whole module keeps the wasm build free of the
+// native SQLite dep.
+#[cfg(feature = "server")]
+pub mod db;
+#[cfg(feature = "server")]
+pub mod server_settings;
+
 pub use app::app;
 
 // Recorder-side registration seam for the runtime-server sidecar
