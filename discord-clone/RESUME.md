@@ -186,8 +186,33 @@ old pid (`ls -la /proc/<pid>/cwd` shows what it's serving).
 - `src/main.rs` — entry point (`idealyst::entry!(discord_clone)`).
 - `src/style_helpers.rs` — `px()`, `pct()`, `col()` tokenizers.
 
+## Server side (discord-server/, branch discord-server-clone)
+
+The backend lives in the sibling `../discord-server` crate (its own
+`server` cargo feature; `src/db` + `migrations` + `src/bin/server.rs`).
+
+- **WebSocket message gateway — done** (commit `1ac7f48d`):
+  `#[server::channel] message_gateway` in `src/server_settings.rs`, mounted
+  at `GET /_srv/_ws/message_gateway`. Send/receive only, **no presence**
+  (separate follow-up). Wire types `WsClientMsg::{Send,History}` →
+  `WsServerMsg::{Message,History,Error}`. Auth = the reserved
+  `server::Headers` extractor reading `x-user-id` (the same stand-in
+  identity the `#[server]` fns use) — the framework completes the 101
+  handshake, then the handler's early `?` tears the session down if the
+  header is missing. 3 e2e tests (raw tokio-tungstenite client, booted
+  `server::router()` on an ephemeral port) pass; 15 total green.
+  NOTE: `net::WebSocket::connect(url)` is URL-only (no header injection),
+  so tests use a raw `tokio-tungstenite` client with `x-user-id` set on the
+  upgrade request; read frames with `ws.next()` (StreamExt), not `ws.recv()`.
+- **Orphaned / not yet wired**: `src/rate_limit.rs` exists in the tree but is
+  NOT declared in `lib.rs` (not compiled) and its IP window limiter is not
+  hooked into login yet. Separate concern.
+
 ## Not yet done
 
+- **Presence** over the gateway — the explicitly deferred follow-up to the
+  message gateway.
+- Wire the orphaned `rate_limit.rs` (declare in `lib.rs`, hook into login).
 - ~~Commit~~ — done (first commit `6670cb6d` added the app; `ef98615c` added
   categories/voice/timestamps). `discord-clone/` is now tracked in the parent.
 - ~~Channel categories~~, ~~voice channels~~, ~~message timestamps~~ — done
