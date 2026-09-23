@@ -37,6 +37,8 @@ pub mod roles;
 pub mod server_settings;
 #[cfg(feature = "server")]
 pub mod invites;
+#[cfg(feature = "server")]
+pub mod auth;
 
 pub use app::app;
 

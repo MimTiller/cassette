@@ -146,6 +146,16 @@ pub fn verify_password(stored: &str, password: &str) -> bool {
     constant_time_eq(&actual, &expected)
 }
 
+/// Current UTC wall-clock time as epoch **milliseconds** (the schema
+/// convention for every `created_at` / `edited_at` column).
+#[cfg(feature = "server")]
+fn now_epoch_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 /// Constant-time byte comparison (avoids a length/timing oracle on the hash).
 #[cfg(feature = "server")]
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
@@ -324,10 +334,14 @@ impl Db {
     /// domain error.
     #[cfg(feature = "server")]
     pub fn insert_user(&self, username: &str, password_hash: &str) -> Result<i64, rusqlite::Error> {
+        // `users.created_at` is NOT NULL (UTC epoch millis, the schema
+        // convention) — the data layer stamps it so app-layer callers
+        // (signup) don't have to.
+        let created_at = now_epoch_ms();
         let c = self.lock()?;
         c.execute(
-            "INSERT INTO users (username, password_hash) VALUES (?1, ?2)",
-            rusqlite::params![username, password_hash],
+            "INSERT INTO users (username, password_hash, created_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![username, password_hash, created_at],
         )?;
         Ok(c.last_insert_rowid())
     }
