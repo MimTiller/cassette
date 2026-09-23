@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 use server::{server, ServerError};
 
 use crate::db::Db;
+use crate::roles::{Action, ChannelKind, Role};
 
 /// Read the acting user id from the request header. Returns `None` if the
 /// header is absent (the adapter turns that into an unauthenticated error).
@@ -289,13 +290,10 @@ impl ServerSettings {
             .db
             .server_by_id(server_id)
             .ok_or("server not found")?;
-        // Owner-only: the caller must be the row with role='owner'.
-        let role = self
-            .db
-            .membership_role(server_id, caller_id)
-            .ok_or("not the server owner")?;
-        if role != "owner" {
-            return Err("not the server owner".into());
+        // Owner-only: the caller's standing in this server.
+        let role = self.caller_role(server_id, caller_id)?;
+        if !role.can(Action::RenameServer) {
+            return Err("permission denied: only the server owner can rename the server".into());
         }
         self.db.rename_server(sid, new_name).map_err(|e| e.to_string())?;
         // Re-read to return a consistent snapshot (the rename already updated
@@ -324,12 +322,9 @@ impl ServerSettings {
             .db
             .server_by_id(server_id)
             .ok_or("server not found")?;
-        let role = self
-            .db
-            .membership_role(server_id, caller_id)
-            .ok_or("not the server owner")?;
-        if role != "owner" {
-            return Err("not the server owner".into());
+        let role = self.caller_role(server_id, caller_id)?;
+        if !role.can(Action::SetServerIcon) {
+            return Err("permission denied: only the server owner or an admin can set the server icon".into());
         }
         // Reject an empty string URL — treat it as an error rather than
         // silently storing garbage.
@@ -356,7 +351,7 @@ impl ServerSettings {
     ///
     /// # Errors
     /// - `not found` — the server id doesn't exist.
-    /// - `not the server owner` — the caller is not the current owner.
+    /// - `permission denied` — the caller is not the current owner.
     /// - `new owner is not a member of this server` — the target user has no
     ///   membership row for this server.
     pub fn transfer_ownership(
@@ -371,7 +366,7 @@ impl ServerSettings {
             .ok_or("server not found")?;
         // Owner-only: the caller must be the current owner.
         if owner_id != caller_id {
-            return Err("not the server owner".into());
+            return Err("permission denied: only the server owner can transfer ownership".into());
         }
         self.db
             .transfer_server_ownership(server_id, caller_id, new_owner_id)
@@ -387,11 +382,319 @@ impl ServerSettings {
             owner_id,
         })
     }
+
+    // ── shared authorization helpers ───────────────────────────────────────
+
+    /// Resolve the caller's [`Role`] in `server_id`.
+    ///
+    /// Returns `permission denied: not a member of this server` when the
+    /// caller has no membership row. An unparseable role string (schema
+    /// drift) is treated as a *denied* standing rather than trusted, so a
+    /// corrupt row can never grant power.
+    fn caller_role(&self, server_id: i64, caller_id: i64) -> Result<Role, String> {
+        let role_str = self
+            .db
+            .membership_role(server_id, caller_id)
+            .ok_or_else(|| "permission denied: not a member of this server".to_string())?;
+        Role::from_db_str(&role_str).ok_or_else(|| {
+            format!("permission denied: unknown stored role {role_str:?}")
+        })
+    }
+
+    /// Check that `caller_id` may perform `action` in `server_id`, and
+    /// return the caller's role on success. Combines membership resolution
+    /// with the [`Role::can`] policy in one call — the single gate every
+    /// mutation below goes through.
+    fn require(&self, caller_id: i64, server_id: i64, action: Action) -> Result<Role, String> {
+        let role = self.caller_role(server_id, caller_id)?;
+        if !role.can(action) {
+            return Err(format!(
+                "permission denied: requires role '{}' or above (you are '{}')",
+                action.minimum_role().label(),
+                role.label()
+            ));
+        }
+        Ok(role)
+    }
+
+    /// The current wall-clock seconds since the Unix epoch, for the
+    /// `joined_at` / `created_at` timestamps the DB layer stores as `i64`.
+    fn now_secs() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(1_000)
+    }
+
+    // ── channel management ─────────────────────────────────────────────────
+
+    /// Create a channel in `server_id`. Admin+ (owner or admin).
+    ///
+    /// # Errors
+    /// - `not found` — the server id doesn't exist.
+    /// - `permission denied` — the caller's role is below admin.
+    /// - `channel name must not be empty` / `channel name is already taken`.
+    pub fn create_channel(
+        &self,
+        caller_id: i64,
+        server_id: i64,
+        name: &str,
+        kind: ChannelKind,
+        parent_channel_id: Option<i64>,
+    ) -> Result<i64, String> {
+        if name.trim().is_empty() {
+            return Err("channel name must not be empty".into());
+        }
+        self.db
+            .server_by_id(server_id)
+            .ok_or("server not found")?;
+        self.require(caller_id, server_id, Action::CreateChannel)?;
+        self.db
+            .insert_channel(server_id, name.trim(), kind, parent_channel_id, Self::now_secs())
+            .map_err(|e| format!("failed to create channel: {e}"))
+    }
+
+    /// Rename a channel. Moderator+ (owner, admin, or moderator).
+    ///
+    /// # Errors
+    /// - `channel not found` — the id doesn't exist.
+    /// - `permission denied` — the caller's role is below moderator, or the
+    ///   channel lives in a different server than `server_id`.
+    pub fn rename_channel(
+        &self,
+        caller_id: i64,
+        server_id: i64,
+        channel_id: i64,
+        new_name: &str,
+    ) -> Result<String, String> {
+        if new_name.trim().is_empty() {
+            return Err("channel name must not be empty".into());
+        }
+        // Resolve the channel first so the permission check runs against the
+        // channel's *own* server (a caller can't rename a channel in a server
+        // they don't hold the role in by passing a foreign server_id).
+        let (_cid, chan_server, _name, _kind, _pos, _parent) = self
+            .db
+            .channel_full(channel_id)
+            .ok_or("channel not found")?;
+        if chan_server != server_id {
+            return Err("channel not found".into());
+        }
+        self.require(caller_id, server_id, Action::RenameChannel)?;
+        self.db
+            .rename_channel(channel_id, new_name.trim())
+            .map_err(|e| format!("failed to rename channel: {e}"))
+    }
+
+    /// Delete a channel. Admin+ (owner or admin).
+    ///
+    /// # Errors
+    /// - `channel not found` — the id doesn't exist (or is in another server).
+    /// - `permission denied` — the caller's role is below admin.
+    pub fn delete_channel(&self, caller_id: i64, server_id: i64, channel_id: i64) -> Result<(), String> {
+        let (_cid, chan_server, _name, _kind, _pos, _parent) = self
+            .db
+            .channel_full(channel_id)
+            .ok_or("channel not found")?;
+        if chan_server != server_id {
+            return Err("channel not found".into());
+        }
+        self.require(caller_id, server_id, Action::DeleteChannel)?;
+        let removed = self
+            .db
+            .delete_channel(channel_id)
+            .map_err(|e| format!("failed to delete channel: {e}"))?;
+        if removed == 0 {
+            return Err("channel not found".into());
+        }
+        Ok(())
+    }
+
+    // ── member management ──────────────────────────────────────────────────
+
+    /// Add (or re-role) a member in `server_id` with `role`. Moderator+ for
+    /// `AddMember`; granting `admin`/`owner` additionally requires `admin+`
+    /// (enforced via `SetMemberRole`) because a plain moderator must not be
+    /// able to promote someone above themselves.
+    ///
+    /// The caller can never be demoted or removed from the server by this
+    /// path (that is `remove_member`), and the owner role cannot be granted
+    /// here — only `transfer_ownership` moves it.
+    pub fn add_member(
+        &self,
+        caller_id: i64,
+        server_id: i64,
+        user_id: i64,
+        role: Role,
+    ) -> Result<String, String> {
+        // The owner role is reserved for the creator; it moves only via
+        // transfer_ownership.
+        if role == Role::Owner {
+            return Err("cannot assign the owner role (use transfer_ownership)".into());
+        }
+        self.db
+            .server_by_id(server_id)
+            .ok_or("server not found")?;
+        // Adding someone (even as a plain member) is a moderator+ duty.
+        self.require(caller_id, server_id, Action::AddMember)?;
+        // Granting admin is an admin+ duty: a moderator may add members but
+        // not promote them to admin.
+        if role >= Role::Admin {
+            self.require(caller_id, server_id, Action::SetMemberRole)?;
+        }
+        self.db
+            .upsert_membership(server_id, user_id, role, Self::now_secs())
+            .map_err(|e| format!("failed to add member: {e}"))?;
+        Ok(role.db_str().to_string())
+    }
+
+    /// Remove a member from `server_id`. Moderator+ (owner, admin, or
+    /// moderator). The owner can never be removed through this path —
+    /// ownership must be transferred first (the DB layer demotes, never
+    /// deletes, the owner row, and this method refuses to target it).
+    ///
+    /// # Errors
+    /// - `not found` — the server id doesn't exist.
+    /// - `permission denied` — the caller's role is below moderator.
+    /// - `cannot remove the server owner` — `user_id` is the owner.
+    /// - `member not found` — `user_id` has no membership row.
+    pub fn remove_member(&self, caller_id: i64, server_id: i64, user_id: i64) -> Result<(), String> {
+        let (_sid, _name, owner_id, _icon_url) = self
+            .db
+            .server_by_id(server_id)
+            .ok_or("server not found")?;
+        self.require(caller_id, server_id, Action::RemoveMember)?;
+        // The owner is protected: removing them would orphan the server.
+        if user_id == owner_id {
+            return Err("cannot remove the server owner (transfer ownership first)".into());
+        }
+        let removed = self
+            .db
+            .remove_membership(server_id, user_id)
+            .map_err(|e| format!("failed to remove member: {e}"))?;
+        if removed == 0 {
+            return Err("member not found".into());
+        }
+        Ok(())
+    }
+
+    /// Change an existing member's role in `server_id`. Admin+ (owner or
+    /// admin). The owner's role can't be changed and the owner role can't be
+    /// assigned — ownership moves only via `transfer_ownership`.
+    ///
+    /// # Errors
+    /// - `not found` — the server id doesn't exist.
+    /// - `permission denied` — the caller's role is below admin.
+    /// - `cannot change the server owner's role` / `cannot assign the owner
+    ///   role`.
+    /// - `member not found` — `user_id` has no membership row.
+    pub fn set_member_role(
+        &self,
+        caller_id: i64,
+        server_id: i64,
+        user_id: i64,
+        new_role: Role,
+    ) -> Result<String, String> {
+        let (_sid, _name, owner_id, _icon_url) = self
+            .db
+            .server_by_id(server_id)
+            .ok_or("server not found")?;
+        self.require(caller_id, server_id, Action::SetMemberRole)?;
+        if new_role == Role::Owner {
+            return Err("cannot assign the owner role (use transfer_ownership)".into());
+        }
+        if user_id == owner_id {
+            return Err("cannot change the server owner's role (transfer ownership first)".into());
+        }
+        // The target must already be a member (this is a *change*, not an
+        // invite — invites go through add_member).
+        if self.db.membership_role(server_id, user_id).is_none() {
+            return Err("member not found".into());
+        }
+        self.db
+            .upsert_membership(server_id, user_id, new_role, Self::now_secs())
+            .map_err(|e| format!("failed to set member role: {e}"))?;
+        Ok(new_role.db_str().to_string())
+    }
+
+    // ── channel reads / unread counts ──────────────────────────────────────
+    //
+    // Per-user read state, gated on server membership. These are the two
+    // operations the client needs to draw the unread badge: mark a channel
+    // read up to a message id, and fetch the unread count for every channel in
+    // a server.
+
+    /// Record that `caller_id` has read up to and including `message_id` in
+    /// `channel_id`.
+    ///
+    /// The caller must be a member of the server that owns the channel. The
+    /// write is monotonic (the stored id only ever moves forward), so marking
+    /// read with an older id is a harmless no-op rather than a regression.
+    ///
+    /// # Errors
+    /// - `channel not found` — the id doesn't exist.
+    /// - `permission denied: not a member of this server` — no membership.
+    /// - `failed to mark channel read: …` — the write failed.
+    pub fn mark_read(
+        &self,
+        caller_id: i64,
+        channel_id: i64,
+        message_id: i64,
+    ) -> Result<(), String> {
+        // Resolve the owning server from the channel (a channel id maps to
+        // exactly one server); membership is then checked against that server.
+        let (_, server_id, _, _, _, _) = self
+            .db
+            .channel_full(channel_id)
+            .ok_or("channel not found")?;
+        if self.db.membership_role(server_id, caller_id).is_none() {
+            return Err("permission denied: not a member of this server".into());
+        }
+        self.db
+            .mark_channel_read(caller_id, channel_id, message_id, Self::now_millis())
+            .map_err(|e| format!("failed to mark channel read: {e}"))
+    }
+
+    /// The unread message count for every channel in `server_id` that
+    /// `caller_id` belongs to.
+    ///
+    /// # Errors
+    /// - `server not found` — the id doesn't exist.
+    /// - `permission denied: not a member of this server` — no membership.
+    pub fn unread_counts(
+        &self,
+        caller_id: i64,
+        server_id: i64,
+    ) -> Result<Vec<UnreadCount>, String> {
+        if self.db.server_by_id(server_id).is_none() {
+            return Err("server not found".into());
+        }
+        if self.db.membership_role(server_id, caller_id).is_none() {
+            return Err("permission denied: not a member of this server".into());
+        }
+        let counts = self.db.unread_counts_for_server(caller_id, server_id);
+        Ok(counts
+            .into_iter()
+            .map(|(channel_id, count)| UnreadCount {
+                channel_id,
+                count,
+            })
+            .collect())
+    }
+
+    /// The current wall-clock milliseconds since the Unix epoch, for
+    /// `read_at` timestamps (the `messages.created_at` convention).
+    fn now_millis() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(1_000_000)
+    }
 }
 
 // ── #[server] endpoints ─────────────────────────────────────────────────────
 
-/// Rename a server. Only the current owner may call.
+/// Rename a server. Only the current owner may call (owner-only by policy).
 ///
 /// The acting user is read from the `x-user-id` request header.
 #[server]
@@ -403,7 +706,7 @@ pub async fn rename_server(input: RenameServerInput) -> Result<ServerSettingsRes
         .map_err(ServerError::failed)
 }
 
-/// Set (or clear) a server's icon. Only the current owner may call.
+/// Set (or clear) a server's icon. Owner or admin may call.
 ///
 /// `icon` is a URL string, or `null` to clear the icon.
 #[server]
@@ -422,6 +725,113 @@ pub async fn transfer_server_ownership(input: TransferOwnershipInput) -> Result<
     let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
     ServerSettings::new(db)
         .transfer_ownership(caller, input.server_id, input.new_owner_id)
+        .map_err(ServerError::failed)
+}
+
+// ── channel management endpoints ────────────────────────────────────────────
+
+/// Create a channel in a server. Owner or admin may call.
+#[server]
+pub async fn create_channel(input: CreateChannelInput) -> Result<ChannelResult, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let kind = ChannelKind::from_db_str(&input.kind)
+        .ok_or_else(|| ServerError::failed(format!("unknown channel kind: {}", input.kind)))?;
+    let id = ServerSettings::new(db)
+        .create_channel(caller, input.server_id, &input.name, kind, input.parent_channel_id)
+        .map_err(ServerError::failed)?;
+    Ok(ChannelResult { channel_id: id, server_id: input.server_id, name: Some(input.name) })
+}
+
+/// Rename a channel. Owner, admin, or moderator may call.
+#[server]
+pub async fn rename_channel(input: RenameChannelInput) -> Result<ChannelResult, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let name = ServerSettings::new(db)
+        .rename_channel(caller, input.server_id, input.channel_id, &input.new_name)
+        .map_err(ServerError::failed)?;
+    Ok(ChannelResult { channel_id: input.channel_id, server_id: input.server_id, name: Some(name) })
+}
+
+/// Delete a channel. Owner or admin may call.
+#[server]
+pub async fn delete_channel(input: DeleteChannelInput) -> Result<ChannelResult, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    ServerSettings::new(db)
+        .delete_channel(caller, input.server_id, input.channel_id)
+        .map_err(ServerError::failed)?;
+    Ok(ChannelResult { channel_id: input.channel_id, server_id: input.server_id, name: None })
+}
+
+// ── member management endpoints ─────────────────────────────────────────────
+
+/// Add (or re-role) a member in a server. Moderator+ to add; admin+ to grant
+/// an admin role. The owner role is not assignable here.
+#[server]
+pub async fn add_member(input: AddMemberInput) -> Result<MemberResult, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let role = Role::from_db_str(&input.role)
+        .ok_or_else(|| ServerError::failed(format!("unknown role: {}", input.role)))?;
+    let role_str = ServerSettings::new(db)
+        .add_member(caller, input.server_id, input.user_id, role)
+        .map_err(ServerError::failed)?;
+    Ok(MemberResult { server_id: input.server_id, user_id: input.user_id, role: role_str })
+}
+
+/// Remove a member from a server. Owner, admin, or moderator may call. The
+/// server owner can't be removed.
+#[server]
+pub async fn remove_member(input: RemoveMemberInput) -> Result<MemberResult, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    ServerSettings::new(db)
+        .remove_member(caller, input.server_id, input.user_id)
+        .map_err(ServerError::failed)?;
+    Ok(MemberResult { server_id: input.server_id, user_id: input.user_id, role: String::new() })
+}
+
+/// Change an existing member's role. Owner or admin may call. The owner's
+/// role can't be changed and the owner role can't be assigned.
+#[server]
+pub async fn set_member_role(input: SetMemberRoleInput) -> Result<MemberResult, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let role = Role::from_db_str(&input.role)
+        .ok_or_else(|| ServerError::failed(format!("unknown role: {}", input.role)))?;
+    let role_str = ServerSettings::new(db)
+        .set_member_role(caller, input.server_id, input.user_id, role)
+        .map_err(ServerError::failed)?;
+    Ok(MemberResult { server_id: input.server_id, user_id: input.user_id, role: role_str })
+}
+
+// ── channel reads / unread counts ───────────────────────────────────────────
+
+/// Mark a channel read up to a message id for the caller. Any member of the
+/// owning server may call; the write is monotonic so it never regresses.
+#[server]
+pub async fn mark_read(input: MarkReadInput) -> Result<MarkReadResult, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    ServerSettings::new(db)
+        .mark_read(caller, input.channel_id, input.message_id)
+        .map_err(ServerError::failed)?;
+    Ok(MarkReadResult {
+        channel_id: input.channel_id,
+        message_id: input.message_id,
+    })
+}
+
+/// Unread message counts, per channel, for the caller across a server. Every
+/// channel the caller is a member of is included, even when its count is 0.
+#[server]
+pub async fn unread_counts(input: UnreadCountsInput) -> Result<Vec<UnreadCount>, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    ServerSettings::new(db)
+        .unread_counts(caller, input.server_id)
         .map_err(ServerError::failed)
 }
 
@@ -454,6 +864,102 @@ pub struct TransferOwnershipInput {
     pub new_owner_id: i64,
 }
 
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+pub struct CreateChannelInput {
+    pub server_id: i64,
+    pub name: String,
+    /// `'text'` / `'voice'` / `'category'`.
+    pub kind: String,
+    /// Parent (category) channel id, or `None` for top-level.
+    #[serde(default)]
+    pub parent_channel_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+pub struct RenameChannelInput {
+    pub server_id: i64,
+    pub channel_id: i64,
+    pub new_name: String,
+}
+
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+pub struct DeleteChannelInput {
+    pub server_id: i64,
+    pub channel_id: i64,
+}
+
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+pub struct AddMemberInput {
+    pub server_id: i64,
+    pub user_id: i64,
+    /// `'owner'` / `'admin'` / `'moderator'` / `'member'` (owner rejected).
+    pub role: String,
+}
+
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+pub struct RemoveMemberInput {
+    pub server_id: i64,
+    pub user_id: i64,
+}
+
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+pub struct SetMemberRoleInput {
+    pub server_id: i64,
+    pub user_id: i64,
+    pub role: String,
+}
+
+/// The id of the newest message the caller has read in a channel. The caller's
+/// read state is advanced to (at least) this message id.
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+pub struct MarkReadInput {
+    pub channel_id: i64,
+    pub message_id: i64,
+}
+
+/// The server whose channels the caller wants unread counts for.
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+pub struct UnreadCountsInput {
+    pub server_id: i64,
+}
+
+/// Confirmation that a channel was marked read: the channel and the message id
+/// the read state was advanced to.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct MarkReadResult {
+    pub channel_id: i64,
+    pub message_id: i64,
+}
+
+/// The result of a channel-management operation. `name` is the channel's name
+/// after the op (absent when the channel was deleted, or on a create where the
+/// client already knows the name).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ChannelResult {
+    pub channel_id: i64,
+    pub server_id: i64,
+    pub name: Option<String>,
+}
+
+/// The result of a member-management operation. `role` is the member's role
+/// after the op (empty string when the member was removed).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct MemberResult {
+    pub server_id: i64,
+    pub user_id: i64,
+    pub role: String,
+}
+
+/// One entry in a per-channel unread list: the count of messages the caller has
+/// not yet read in a single channel (every message whose id is greater than the
+/// caller's stored `channel_reads.last_read_message_id`). `count` is 0 when the
+/// channel is fully read or has no messages.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct UnreadCount {
+    pub channel_id: i64,
+    pub count: i64,
+}
+
 // ── tests ────────────────────────────────────────────────────────────────────
 //
 // The tests exercise the owner-only policy directly against the `ServerSettings`
@@ -465,6 +971,17 @@ mod tests {
     use super::*;
     use crate::db::Db;
     use std::path::Path;
+    // The raw-tokio-TCP e2e clients (the `#[server]` HTTP round-trip tests)
+    // call `.write_all` / `.read_to_end` on the split socket halves; those come
+    // from the async io extension traits (in scope here via tokio's feature
+    // unification with tokio-tungstenite, but still needing the `use`).
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// A boxed future — used by the raw-HTTP e2e client below so the closure
+    /// can name its return type without a `-> impl Future` annotation.
+    type BoxFuture<T> = std::pin::Pin<
+        Box<dyn std::future::Future<Output = T> + Send>,
+    >;
 
     /// Build a temp-file database, run migrations, seed one server with an
     /// owner (user 1) and two members (users 2 and 3), and return the `Db`.
@@ -494,6 +1011,45 @@ mod tests {
         (dir, db)
     }
 
+    /// On top of `setup_db`, seed two text channels (ids 1 and 2) into server 1
+    /// and return `(dir, db)`. Channel ids are chosen explicitly so the tests
+    /// can address them by literal.
+    fn setup_db_with_channels() -> (tempfile::TempDir, Db) {
+        let (dir, db) = setup_db();
+        let c = db.lock().unwrap();
+        c.execute_batch(
+            "INSERT INTO channels (id, server_id, name, kind, position, parent_channel_id, created_at)
+             VALUES (1, 1, 'general', 'text', 0, NULL, 1000),
+                    (2, 1, 'random',  'text', 1, NULL, 1000);",
+        )
+        .unwrap();
+        drop(c);
+        (dir, db)
+    }
+
+    /// Post `count` messages into `channel_id` authored by `author_id`,
+    /// returning the id of the most recent one (ids are strictly increasing).
+    fn post_messages(db: &Db, channel_id: i64, author_id: i64, count: i64) -> i64 {
+        let mut last = 0i64;
+        for i in 0..count {
+            last = db
+                .insert_message(channel_id, author_id, &format!("msg {i}"), 1000 + i)
+                .unwrap();
+        }
+        last
+    }
+
+    /// Look up one channel's unread count in an `unread_counts` result,
+    /// panicking if the channel is absent (the contract is that every member
+    /// channel appears, even with count 0).
+    fn count_for(counts: &[UnreadCount], channel_id: i64) -> i64 {
+        counts
+            .iter()
+            .find(|c| c.channel_id == channel_id)
+            .unwrap_or_else(|| panic!("channel {channel_id} missing from unread list: {counts:?}"))
+            .count
+    }
+
     #[test]
     fn owner_can_rename() {
         let (_dir, db) = setup_db();
@@ -508,7 +1064,7 @@ mod tests {
         let (_dir, db) = setup_db();
         let svc = ServerSettings::new(db.clone());
         let err = svc.rename(2, 1, "Hacked").unwrap_err();
-        assert!(err.contains("not the server owner"), "got: {err}");
+        assert!(err.contains("permission denied"), "got: {err}");
         // Name unchanged.
         assert_eq!(db.server_by_id(1).unwrap().1, "My Server");
     }
@@ -519,7 +1075,7 @@ mod tests {
         let svc = ServerSettings::new(db);
         // User 999 is not in the server at all.
         let err = svc.rename(999, 1, "Hacked").unwrap_err();
-        assert!(err.contains("not the server owner"), "got: {err}");
+        assert!(err.contains("not a member"), "got: {err}");
     }
 
     #[test]
@@ -552,7 +1108,7 @@ mod tests {
         let (_dir, db) = setup_db();
         let svc = ServerSettings::new(db.clone());
         let err = svc.set_icon(2, 1, Some("https://evil.example.com/x.png")).unwrap_err();
-        assert!(err.contains("not the server owner"), "got: {err}");
+        assert!(err.contains("permission denied"), "got: {err}");
         // Icon unchanged.
         assert!(db.server_by_id(1).unwrap().3.is_none());
     }
@@ -573,7 +1129,7 @@ mod tests {
         let (_dir, db) = setup_db();
         let svc = ServerSettings::new(db.clone());
         let err = svc.transfer_ownership(2, 1, 3).unwrap_err();
-        assert!(err.contains("not the server owner"), "got: {err}");
+        assert!(err.contains("permission denied"), "got: {err}");
         // Ownership unchanged.
         assert_eq!(db.server_by_id(1).unwrap().2, 1, "owner should still be user 1");
     }
@@ -608,6 +1164,290 @@ mod tests {
         let svc = ServerSettings::new(db);
         let err = svc.rename(1, 999, "X").unwrap_err();
         assert!(err.contains("not found"), "got: {err}");
+    }
+
+    // ── channel reads / unread counts ───────────────────────────────────────
+    //
+    // Service-level tests for the per-channel read state: marking a channel
+    // read, the unread-count computation, and the membership/authz guards.
+    // The e2e test that drives the real `#[server]` HTTP routes lives at the
+    // bottom of this module with the other gateway round-trip tests.
+
+    #[test]
+    fn mark_read_creates_state_and_is_idempotent() {
+        let (_dir, db) = setup_db_with_channels();
+        let svc = ServerSettings::new(db.clone());
+        let last = post_messages(&db, 1, 1, 3); // 3 messages in channel 1
+
+        svc.mark_read(1, 1, last).unwrap();
+        // The read state was persisted to the newest message id.
+        assert_eq!(db.last_read_message_id(1, 1), Some(last));
+
+        // Marking the same channel read again with the same id is a no-op that
+        // doesn't error and doesn't move the pointer.
+        svc.mark_read(1, 1, last).unwrap();
+        assert_eq!(db.last_read_message_id(1, 1), Some(last));
+    }
+
+    #[test]
+    fn mark_read_is_monotonic_not_backward() {
+        let (_dir, db) = setup_db_with_channels();
+        let svc = ServerSettings::new(db.clone());
+        let last = post_messages(&db, 1, 1, 5);
+
+        // Read up to the newest, then attempt to mark read at an OLDER id.
+        svc.mark_read(1, 1, last).unwrap();
+        svc.mark_read(1, 1, 1).unwrap(); // id 1 < last
+        // The pointer must not regress.
+        assert_eq!(db.last_read_message_id(1, 1), Some(last));
+    }
+
+    #[test]
+    fn mark_read_per_user_isolated() {
+        let (_dir, db) = setup_db_with_channels();
+        let svc = ServerSettings::new(db.clone());
+        let last = post_messages(&db, 1, 1, 3);
+
+        svc.mark_read(1, 1, last).unwrap();
+        // User 2 has not read anything yet.
+        assert_eq!(db.last_read_message_id(2, 1), None);
+        // User 2 marking read is independent.
+        svc.mark_read(2, 1, 1).unwrap();
+        assert_eq!(db.last_read_message_id(1, 1), Some(last));
+        assert_eq!(db.last_read_message_id(2, 1), Some(1));
+    }
+
+    #[test]
+    fn mark_read_rejects_unknown_channel() {
+        let (_dir, db) = setup_db();
+        let svc = ServerSettings::new(db);
+        let err = svc.mark_read(1, 999, 1).unwrap_err();
+        assert!(err.contains("channel not found"), "got: {err}");
+    }
+
+    #[test]
+    fn mark_read_rejects_non_member() {
+        let (_dir, db) = setup_db_with_channels();
+        let svc = ServerSettings::new(db.clone());
+        // User 999 has no membership in server 1, so they can't touch its
+        // channel 1 even though the channel exists.
+        let err = svc.mark_read(999, 1, 1).unwrap_err();
+        assert!(err.contains("not a member"), "got: {err}");
+        // No read state was written.
+        assert_eq!(db.last_read_message_id(999, 1), None);
+    }
+
+    #[test]
+    fn unread_counts_full_when_unread() {
+        let (_dir, db) = setup_db_with_channels();
+        let svc = ServerSettings::new(db.clone());
+        post_messages(&db, 1, 1, 4); // channel 1: 4 msgs
+        post_messages(&db, 2, 2, 2); // channel 2: 2 msgs
+
+        // User 1 has read nothing → every message in every channel is unread.
+        let counts = svc.unread_counts(1, 1).unwrap();
+        assert_eq!(counts.len(), 2, "both member channels are listed");
+        assert_eq!(count_for(&counts, 1), 4);
+        assert_eq!(count_for(&counts, 2), 2);
+    }
+
+    #[test]
+    fn unread_counts_zero_after_read() {
+        let (_dir, db) = setup_db_with_channels();
+        let svc = ServerSettings::new(db.clone());
+        let last1 = post_messages(&db, 1, 1, 4);
+        let last2 = post_messages(&db, 2, 2, 2);
+
+        svc.mark_read(1, 1, last1).unwrap();
+        svc.mark_read(1, 2, last2).unwrap();
+        let counts = svc.unread_counts(1, 1).unwrap();
+        assert_eq!(count_for(&counts, 1), 0);
+        assert_eq!(count_for(&counts, 2), 0);
+    }
+
+    #[test]
+    fn unread_counts_partial_read_counts_only_newer() {
+        let (_dir, db) = setup_db_with_channels();
+        let svc = ServerSettings::new(db.clone());
+        let last = post_messages(&db, 1, 1, 5); // ids 1..=5
+        // Read only up to id 2 → messages 3, 4, 5 remain unread.
+        svc.mark_read(1, 1, 2).unwrap();
+        let counts = svc.unread_counts(1, 1).unwrap();
+        assert_eq!(count_for(&counts, 1), 3);
+        assert_eq!(count_for(&counts, 2), 0, "channel 2 has no messages");
+        // Sanity: the read pointer really is at id 2.
+        assert_eq!(db.last_read_message_id(1, 1), Some(2));
+        // And marking read up to the newest zeroes it out.
+        svc.mark_read(1, 1, last).unwrap();
+        assert_eq!(count_for(&svc.unread_counts(1, 1).unwrap(), 1), 0);
+    }
+
+    #[test]
+    fn unread_counts_empty_channel_is_zero_not_absent() {
+        let (_dir, db) = setup_db_with_channels();
+        let svc = ServerSettings::new(db);
+        // No messages anywhere, no read state. Both channels must still appear,
+        // each with count 0 — the client distinguishes "0 unread" from
+        // "no such channel".
+        let counts = svc.unread_counts(1, 1).unwrap();
+        assert_eq!(counts.len(), 2);
+        assert_eq!(count_for(&counts, 1), 0);
+        assert_eq!(count_for(&counts, 2), 0);
+    }
+
+    #[test]
+    fn unread_counts_rejects_unknown_server() {
+        let (_dir, db) = setup_db();
+        let svc = ServerSettings::new(db);
+        let err = svc.unread_counts(1, 999).unwrap_err();
+        assert!(err.contains("not found"), "got: {err}");
+    }
+
+    #[test]
+    fn unread_counts_rejects_non_member() {
+        let (_dir, db) = setup_db_with_channels();
+        let svc = ServerSettings::new(db);
+        let err = svc.unread_counts(999, 1).unwrap_err();
+        assert!(err.contains("not a member"), "got: {err}");
+    }
+
+    #[test]
+    fn unread_counts_isolated_per_user() {
+        let (_dir, db) = setup_db_with_channels();
+        let svc = ServerSettings::new(db.clone());
+        let last = post_messages(&db, 1, 1, 3);
+
+        svc.mark_read(1, 1, last).unwrap(); // user 1 reads up to date
+        // User 2, who has not read, still sees all 3 as unread.
+        let c1 = svc.unread_counts(1, 1).unwrap();
+        let c2 = svc.unread_counts(2, 1).unwrap();
+        assert_eq!(count_for(&c1, 1), 0);
+        assert_eq!(count_for(&c2, 1), 3);
+    }
+
+    #[tokio::test]
+    async fn unread_counts_and_mark_read_over_http() {
+        let (_dir, db) = setup_db_with_channels();
+        let _guard = e2e_guard();
+        server::install_state(db.clone());
+
+        let last1 = post_messages(&db, 1, 1, 3); // channel 1: 3 msgs
+
+        // Boot the macro-mounted router on an ephemeral port.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, server::router()).await;
+        });
+
+        // A tiny raw-HTTP client: POST a JSON args-tuple to /_srv/<fn> with the
+        // x-user-id auth header, return the parsed `{"Ok":…}`/`{"Err":…}` body.
+        // (A raw socket, like the gateway tests, because the `#[server]` HTTP
+        // transport isn't in the vendored registry as a dev-dep.)
+        let call =
+            |path: String, user_id: String, body: String| -> BoxFuture<serde_json::Value> {
+                Box::pin(async move {
+                    let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+                    let (mut reader, mut writer) = stream.into_split();
+                    let req = format!(
+                        "POST /_srv/{path} HTTP/1.1\r\n\
+                         Host: {addr}\r\n\
+                         x-user-id: {user_id}\r\n\
+                         content-type: application/json\r\n\
+                         content-length: {}\r\n\
+                         connection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    writer.write_all(req.as_bytes()).await.unwrap();
+                    let mut buf = Vec::new();
+                    reader.read_to_end(&mut buf).await.unwrap();
+                    let text = String::from_utf8(buf).unwrap();
+                    // Body is everything after the first blank line.
+                    let body = text
+                        .split_once("\r\n\r\n")
+                        .map(|(_, b)| b.to_string())
+                        .unwrap_or_default();
+                    let v: serde_json::Value = serde_json::from_str(&body).unwrap();
+                    v
+                })
+            };
+
+        // 1. unread_counts before any read: user 1 sees 3 in channel 1, 0 in 2.
+        let resp = call(
+            "unread_counts".to_string(),
+            "1".to_string(),
+            serde_json::to_string(&[serde_json::json!({ "server_id": 1 })]).unwrap(),
+        )
+        .await;
+        let counts: Vec<UnreadCount> = resp["Ok"]
+            .as_array()
+            .cloned()
+            .expect("HTTP unread_counts returns Ok(array)")
+            .into_iter()
+            .map(|v| serde_json::from_value(v).unwrap())
+            .collect();
+        assert_eq!(count_for(&counts, 1), 3, "all 3 messages unread before read");
+        assert_eq!(count_for(&counts, 2), 0);
+
+        // 2. mark_read up to the newest message in channel 1.
+        let resp = call(
+            "mark_read".to_string(),
+            "1".to_string(),
+            serde_json::to_string(&[serde_json::json!({
+                "channel_id": 1,
+                "message_id": last1
+            })])
+            .unwrap(),
+        )
+        .await;
+        let mark: MarkReadResult = serde_json::from_value(resp["Ok"].clone())
+            .expect("HTTP mark_read returns Ok(MarkReadResult)");
+        assert_eq!(mark.channel_id, 1);
+        assert_eq!(mark.message_id, last1);
+
+        // 3. unread_counts again: channel 1 is now 0.
+        let resp = call(
+            "unread_counts".to_string(),
+            "1".to_string(),
+            serde_json::to_string(&[serde_json::json!({ "server_id": 1 })]).unwrap(),
+        )
+        .await;
+        let counts: Vec<UnreadCount> = resp["Ok"]
+            .as_array()
+            .cloned()
+            .unwrap()
+            .into_iter()
+            .map(|v| serde_json::from_value(v).unwrap())
+            .collect();
+        assert_eq!(count_for(&counts, 1), 0, "channel 1 is read up to date");
+        assert_eq!(count_for(&counts, 2), 0);
+
+        // 4. Unauthenticated (no x-user-id) is rejected by the endpoint.
+        let resp = {
+            let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+            let (mut reader, mut writer) = stream.into_split();
+            let body = serde_json::to_string(&[serde_json::json!({ "server_id": 1 })]).unwrap();
+            let req = format!(
+                "POST /_srv/unread_counts HTTP/1.1\r\nHost: {addr}\r\n\
+                 content-type: application/json\r\ncontent-length: {}\r\n\
+                 connection: close\r\n\r\n{body}",
+                body.len()
+            );
+            writer.write_all(req.as_bytes()).await.unwrap();
+            let mut buf = Vec::new();
+            reader.read_to_end(&mut buf).await.unwrap();
+            String::from_utf8(buf).unwrap()
+        };
+        let v: serde_json::Value = resp
+            .split_once("\r\n\r\n")
+            .map(|(_, b)| b.to_string())
+            .unwrap_or_default()
+            .parse()
+            .unwrap();
+        assert!(
+            v.get("Err").is_some(),
+            "unauthenticated unread_counts must fail, got {v:?}"
+        );
     }
 
     // ── realtime gateway: send/receive round-trip ────────────────────────────
@@ -836,7 +1676,7 @@ mod tests {
 
     #[tokio::test]
     async fn gateway_presence_online_on_open_and_offline_on_close() {
-        use futures_util::{SinkExt, StreamExt};
+        use futures_util::StreamExt;
         use tokio_tungstenite::tungstenite::client::IntoClientRequest;
         use tokio_tungstenite::tungstenite::http::header;
 

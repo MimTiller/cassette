@@ -15,6 +15,8 @@ use std::sync::Mutex;
 
 use rusqlite::Connection;
 
+use crate::roles::{ChannelKind, Role};
+
 // ── password KDF ───────────────────────────────────────────────────────────
 //
 // Passwords are stored as a self-describing PBKDF2-HMAC-SHA256 secret:
@@ -38,7 +40,6 @@ const PBKDF2_ITERATIONS: u32 = 100_000;
 /// Derive a key from `password` using PBKDF2-HMAC-SHA256.
 #[cfg(feature = "server")]
 fn pbkdf2(password: &[u8], salt: &[u8], iterations: u32, dk_len: usize) -> Vec<u8> {
-    use sha2::Digest;
     // HMAC-SHA256 output is fixed at 32 bytes (SHA256's digest size).
     let mac_len = 32usize;
     let blocks = dk_len.div_ceil(mac_len);
@@ -471,6 +472,87 @@ impl Db {
         out
     }
 
+    // ── channel reads ──────────────────────────────────────────────────────
+    //
+    // Per-user, per-channel read state (`channel_reads`): the latest message id
+    // a user has seen in a channel. Unread = messages whose id is greater than
+    // this id (every message when there is no read row). See migration
+    // `0010_channel_reads.sql`.
+
+    /// The newest message id `user_id` has read in `channel_id`, or `None` when
+    /// the user has no read state for that channel (i.e. it is entirely unread).
+    pub fn last_read_message_id(&self, user_id: i64, channel_id: i64) -> Option<i64> {
+        let c = self.lock().ok()?;
+        c.query_row(
+            "SELECT last_read_message_id FROM channel_reads WHERE user_id = ?1 AND channel_id = ?2",
+            rusqlite::params![user_id, channel_id],
+            |r| r.get::<_, Option<i64>>(0),
+        )
+        .ok()
+        .flatten()
+    }
+
+    /// Record that `user_id` has read up to and including message id
+    /// `message_id` in `channel_id`. Upserts: a new channel read is created, an
+    /// existing one is advanced. The id is monotonic, so this never moves the
+    /// read state backwards even if called with an older id.
+    ///
+    /// # Errors
+    /// - the channel does not exist (FK violation), or the write fails.
+    pub fn mark_channel_read(
+        &self,
+        user_id: i64,
+        channel_id: i64,
+        message_id: i64,
+        read_at: i64,
+    ) -> Result<(), rusqlite::Error> {
+        let c = self.lock()?;
+        c.execute(
+            "INSERT INTO channel_reads (user_id, channel_id, last_read_message_id, read_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (user_id, channel_id) DO UPDATE SET
+                last_read_message_id = MAX(channel_reads.last_read_message_id, excluded.last_read_message_id),
+                read_at = excluded.read_at",
+            rusqlite::params![user_id, channel_id, message_id, read_at],
+        )?;
+        Ok(())
+    }
+
+    /// Unread message counts for every channel in `server_id` that `user_id`
+    /// belongs to (a membership row exists), one row per channel. A channel the
+    /// user has never read comes back with count = its total message count; a
+    /// channel read up to date comes back with 0. Channels with zero unread
+    /// messages are still included (so the client can distinguish "0 unread"
+    /// from "no channel").
+    ///
+    /// Returns `(channel_id, unread_count)` pairs, ordered by channel id for
+    /// determinism.
+    pub fn unread_counts_for_server(&self, user_id: i64, server_id: i64) -> Vec<(i64, i64)> {
+        let Ok(c) = self.lock() else {
+            return Vec::new();
+        };
+        let sql = "SELECT ch.id AS channel_id,
+                          (SELECT COUNT(*) FROM messages m
+                            WHERE m.channel_id = ch.id
+                              AND m.id > COALESCE(cr.last_read_message_id, -1)) AS unread
+                   FROM channels ch
+                   JOIN server_memberships sm ON sm.server_id = ch.server_id AND sm.user_id = ?1
+                   LEFT JOIN channel_reads cr ON cr.user_id = ?1 AND cr.channel_id = ch.id
+                   WHERE ch.server_id = ?2
+                   ORDER BY ch.id";
+        let mut stmt = match c.prepare(sql) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = match stmt.query_map(rusqlite::params![user_id, server_id], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+        }) {
+            Ok(rows) => rows,
+            Err(_) => return Vec::new(),
+        };
+        rows.filter_map(Result::ok).collect()
+    }
+
     // ── servers ────────────────────────────────────────────────────────────
 
     /// Look up a server by id. Returns `(id, name, owner_id, icon_url)`.
@@ -489,6 +571,153 @@ impl Db {
             },
         )
         .ok()
+    }
+
+    // ── channels: management (create / rename / delete) ────────────────────
+
+    /// The channel kind as stored in `channels.kind` (`'text'` / `'voice'` /
+    /// `'category'`).
+    pub const fn channel_kind_db_str(kind: ChannelKind) -> &'static str {
+        kind.db_str()
+    }
+
+    /// A channel's identity, as read by the management layer: id, server,
+    /// name, kind, position, and parent (category) channel id.
+    pub fn channel_full(&self, id: i64) -> Option<(i64, i64, String, String, i64, Option<i64>)> {
+        let c = self.lock().ok()?;
+        c.query_row(
+            "SELECT id, server_id, name, kind, position, parent_channel_id
+             FROM channels WHERE id = ?1",
+            rusqlite::params![id],
+            |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, i64>(4)?,
+                    r.get::<_, Option<i64>>(5)?,
+                ))
+            },
+        )
+        .ok()
+    }
+
+    /// The lowest in-category position, so a new channel appends to the end
+    /// (0 when the server has no channels).
+    fn next_channel_position(&self, server_id: i64) -> i64 {
+        let c = match self.lock() {
+            Ok(c) => c,
+            Err(_) => return 0,
+        };
+        c.query_row(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM channels WHERE server_id = ?1",
+            rusqlite::params![server_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0)
+    }
+
+    /// Create a channel in `server_id`. Returns the new channel id.
+    pub fn insert_channel(
+        &self,
+        server_id: i64,
+        name: &str,
+        kind: ChannelKind,
+        parent_channel_id: Option<i64>,
+        created_at: i64,
+    ) -> Result<i64, rusqlite::Error> {
+        let position = self.next_channel_position(server_id);
+        let c = self.lock()?;
+        c.execute(
+            "INSERT INTO channels (server_id, name, kind, position, parent_channel_id, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![server_id, name, kind.db_str(), position, parent_channel_id, created_at],
+        )?;
+        Ok(c.last_insert_rowid())
+    }
+
+    /// Rename a channel. Returns the new name. `Err` if the channel doesn't
+    /// exist.
+    pub fn rename_channel(&self, id: i64, name: &str) -> Result<String, rusqlite::Error> {
+        let c = self.lock()?;
+        let updated = c.execute(
+            "UPDATE channels SET name = ?2 WHERE id = ?1",
+            rusqlite::params![id, name],
+        )?;
+        if updated == 0 {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+        Ok(name.to_string())
+    }
+
+    /// Soft-delete a channel (the schema has no `deleted_at` on channels, so
+    /// "soft" here means: delete the row and let SQLite cascade to its
+    /// messages + child category channels). Returns the number of rows
+    /// deleted (0 if the id didn't exist).
+    pub fn delete_channel(&self, id: i64) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        Ok(c.execute("DELETE FROM channels WHERE id = ?1", rusqlite::params![id])?)
+    }
+
+    // ── members: role management ───────────────────────────────────────────
+
+    /// Insert or update `user_id`'s membership in `server_id`, setting their
+    /// role. Returns the new role string. Uses `ON CONFLICT DO UPDATE` so a
+    /// re-invite / role-change is a single atomic statement.
+    pub fn upsert_membership(
+        &self,
+        server_id: i64,
+        user_id: i64,
+        role: Role,
+        joined_at: i64,
+    ) -> Result<(), rusqlite::Error> {
+        let c = self.lock()?;
+        c.execute(
+            "INSERT INTO server_memberships (server_id, user_id, role, joined_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (server_id, user_id) DO UPDATE SET role = ?3",
+            rusqlite::params![server_id, user_id, role.db_str(), joined_at],
+        )?;
+        Ok(())
+    }
+
+    /// Remove a member from a server. Returns the number of rows deleted (0
+    /// if they were not a member).
+    pub fn remove_membership(&self, server_id: i64, user_id: i64) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        Ok(c.execute(
+            "DELETE FROM server_memberships WHERE server_id = ?1 AND user_id = ?2",
+            rusqlite::params![server_id, user_id],
+        )?)
+    }
+
+    /// All members of a server with their role, ordered by role (owner first)
+    /// then user id. Returns `(user_id, username, role_string)`.
+    pub fn server_members(&self, server_id: i64) -> Vec<(i64, String, String)> {
+        let c = match self.lock() {
+            Ok(c) => c,
+            Err(_) => return Vec::new(),
+        };
+        let mut stmt = match c.prepare(
+            "SELECT m.user_id, u.username, m.role
+             FROM server_memberships m
+             JOIN users u ON u.id = m.user_id
+             WHERE m.server_id = ?1
+             ORDER BY CASE m.role
+                     WHEN 'owner' THEN 0 WHEN 'admin' THEN 1
+                     WHEN 'moderator' THEN 2 ELSE 3 END, m.user_id",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = match stmt.query_map(rusqlite::params![server_id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        }) {
+            Ok(rows) => rows,
+            Err(_) => return Vec::new(),
+        };
+        rows.filter_map(Result::ok).collect()
     }
 
     /// The role of `user_id`'s membership in `server_id` (`'owner'`, `'admin'`,
@@ -598,6 +827,150 @@ impl Db {
         tx.commit()?;
         Ok(())
     }
+
+    // ── invites ────────────────────────────────────────────────────────────
+
+    /// Insert a new invite and return its full row. The `code` is generated
+    /// by the caller (the service layer); a duplicate `code` trips the global
+    /// `UNIQUE` constraint, which the caller maps to a retry.
+    pub fn insert_invite(
+        &self,
+        server_id: i64,
+        code: &str,
+        created_by: i64,
+        created_at: i64,
+        expires_at: Option<i64>,
+        max_uses: Option<i64>,
+    ) -> Result<InviteRow, rusqlite::Error> {
+        let c = self.lock()?;
+        c.execute(
+            "INSERT INTO server_invites
+                 (server_id, code, created_by, created_at, expires_at, max_uses, uses)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)",
+            rusqlite::params![server_id, code, created_by, created_at, expires_at, max_uses],
+        )?;
+        let id = c.last_insert_rowid();
+        Ok(Self::read_invite_row(c.query_row(
+            "SELECT id, server_id, code, created_by, created_at, expires_at, max_uses, uses
+             FROM server_invites WHERE id = ?1",
+            rusqlite::params![id],
+            Self::map_invite,
+        )?))
+    }
+
+    /// Look up an invite by its (globally unique) code.
+    pub fn invite_by_code(&self, code: &str) -> Option<InviteRow> {
+        let c = self.lock().ok()?;
+        let row = c
+            .query_row(
+                "SELECT id, server_id, code, created_by, created_at, expires_at, max_uses, uses
+                 FROM server_invites WHERE code = ?1",
+                rusqlite::params![code],
+                Self::map_invite,
+            )
+            .ok()?;
+        Some(Self::read_invite_row(row))
+    }
+
+    /// All live invites for a server, ordered by creation. (An "expired"
+    /// invite is still a row; callers filter by `expires_at` if they want
+    /// only the still-valid ones.)
+    pub fn invites_for_server(&self, server_id: i64) -> Vec<InviteRow> {
+        let c = match self.lock() {
+            Ok(c) => c,
+            Err(_) => return Vec::new(),
+        };
+        let mut stmt = match c.prepare(
+            "SELECT id, server_id, code, created_by, created_at, expires_at, max_uses, uses
+             FROM server_invites WHERE server_id = ?1 ORDER BY created_at, id",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = match stmt.query_map(rusqlite::params![server_id], Self::map_invite) {
+            Ok(rows) => rows,
+            Err(_) => return Vec::new(),
+        };
+        rows.filter_map(|r| r.ok()).map(Self::read_invite_row).collect()
+    }
+
+    /// Atomically consume one use of an invite. Increments `uses` only if the
+    /// invite still has budget (i.e. it is unlimited or `uses < max_uses`),
+    /// so concurrent redemptions can't overspend a capped code. Returns the
+    /// new `uses` count on success, `0` if the code was already spent.
+    pub fn redeem_invite_use(&self, invite_id: i64) -> Result<i64, rusqlite::Error> {
+        let c = self.lock()?;
+        let updated = c
+            .execute(
+                "UPDATE server_invites
+                 SET uses = uses + 1
+                 WHERE id = ?1 AND (max_uses IS NULL OR uses < max_uses)",
+                rusqlite::params![invite_id],
+            )? as i64;
+        if updated == 0 {
+            // No row was updated: the code was already spent (or missing).
+            return Ok(0);
+        }
+        // Return the post-increment count for the caller to report.
+        Ok(c.query_row(
+            "SELECT uses FROM server_invites WHERE id = ?1",
+            rusqlite::params![invite_id],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// Revoke (delete) an invite for a server. Returns the number of rows
+    /// deleted (0 if the code did not exist on that server).
+    pub fn revoke_invite(&self, server_id: i64, code: &str) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        Ok(c.execute(
+            "DELETE FROM server_invites WHERE server_id = ?1 AND code = ?2",
+            rusqlite::params![server_id, code],
+        )?)
+    }
+
+    fn map_invite(
+        row: &rusqlite::Row<'_>,
+    ) -> Result<(i64, i64, String, i64, i64, Option<i64>, Option<i64>, i64), rusqlite::Error> {
+        Ok((
+            row.get(0)?,
+            row.get(1)?,
+            row.get(2)?,
+            row.get(3)?,
+            row.get(4)?,
+            row.get(5)?,
+            row.get(6)?,
+            row.get(7)?,
+        ))
+    }
+
+    fn read_invite_row(t: (i64, i64, String, i64, i64, Option<i64>, Option<i64>, i64)) -> InviteRow {
+        InviteRow {
+            id: t.0,
+            server_id: t.1,
+            code: t.2,
+            created_by: t.3,
+            created_at: t.4,
+            expires_at: t.5,
+            max_uses: t.6,
+            uses: t.7,
+        }
+    }
+}
+
+/// The fields of one invite row, as read by the invite layer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InviteRow {
+    pub id: i64,
+    pub server_id: i64,
+    pub code: String,
+    pub created_by: i64,
+    pub created_at: i64,
+    /// Expiry in UTC epoch seconds; `None` = never expires.
+    pub expires_at: Option<i64>,
+    /// Maximum redemptions; `None` = unlimited.
+    pub max_uses: Option<i64>,
+    pub uses: i64,
 }
 
 /// A single chat message, as persisted.
