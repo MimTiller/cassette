@@ -9,6 +9,12 @@ mod style_helpers;
 mod app;
 mod profile_settings;
 
+// Standalone component, not wired into any screen yet — same "declared so it
+// compiles, referenced by nothing" shape as `profile_settings`. Lives under
+// `components/`; the `#[path]` keeps this a one-file add (no `mod.rs`).
+#[path = "components/server_folder_group.rs"]
+mod server_folder_group;
+
 pub use app::app;
 
 // SDK-handler registration seam, invoked by the CLI-generated wrappers (web
