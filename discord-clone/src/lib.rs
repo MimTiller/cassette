@@ -68,6 +68,8 @@ mod send_failed_indicator;
 mod featured_server_banner;
 #[path = "components/code_block.rs"]
 mod code_block;
+#[path = "components/user_bio_block.rs"]
+mod user_bio_block;
 
 pub use app::app;
 
