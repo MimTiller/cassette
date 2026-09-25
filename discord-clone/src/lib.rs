@@ -24,6 +24,8 @@ mod server_discovery_card;
 mod mic_selector;
 #[path = "components/verified_badge.rs"]
 mod verified_badge;
+#[path = "components/jump_to_bottom_button.rs"]
+mod jump_to_bottom_button;
 
 pub use app::app;
 
