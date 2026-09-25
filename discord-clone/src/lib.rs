@@ -9,6 +9,8 @@ mod style_helpers;
 mod app;
 mod auth;
 mod servers;
+#[allow(dead_code)]
+mod invite;
 mod profile_settings;
 
 pub use app::app;
