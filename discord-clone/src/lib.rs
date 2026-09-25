@@ -92,6 +92,8 @@ mod template_gallery_grid;
 mod invite_expiry_selector;
 #[path = "components/latency_badge.rs"]
 mod latency_badge;
+#[path = "components/soundboard_button.rs"]
+mod soundboard_button;
 
 pub use app::app;
 
