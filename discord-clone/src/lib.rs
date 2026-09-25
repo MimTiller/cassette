@@ -96,6 +96,8 @@ mod latency_badge;
 mod soundboard_button;
 #[path = "components/thread_list_row.rs"]
 mod thread_list_row;
+#[path = "components/afk_timer_display.rs"]
+mod afk_timer_display;
 
 pub use app::app;
 
