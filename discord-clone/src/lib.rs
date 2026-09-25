@@ -32,6 +32,8 @@ mod emoji_upload_slot;
 mod rules_accept_checkbox;
 #[path = "components/welcome_banner.rs"]
 mod welcome_banner;
+#[path = "components/translate_toggle.rs"]
+mod translate_toggle;
 
 pub use app::app;
 
