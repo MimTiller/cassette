@@ -52,18 +52,25 @@ the mock data lives in `src/data.rs`.
   changes.
 - **Composer**: type a message, send via the **Send button** OR the **Enter
   key**. Shift/Ctrl/Alt/Meta+Enter fall through to the platform default.
-- **Mock login screen**: `app()` gates on `authed: Signal<bool>` (a root
-  `switch`) — false → `login_screen(authed)`, true → the full app tree
-  (renamed `app_shell`). The login screen is a centered card on the rail
-  background: D logo, "Welcome back!", email + password fields (`text_input`,
-  `secure = true` on the password), a Sign In `button`, and a "Continue as
-  guest" `view.on_touch` pill. No backend: any non-empty email+password signs
-  in (guest skips the fields); empty submit shows an inline red
-  "Email and password are required." error that is reactive — the form is a
-  nested `switch` keyed on `error` (see pitfall 8). A **Log Out** pill was
-  added to `user_panel` (it now takes `authed`) to round-trip back to login;
-  re-login resets the fields to empty. Verified in-browser (CDP input):
-  render, masked password, empty→error, valid→app, Log Out→login, guest→app.
+- **Real login screen** (commit `faea6b2f`): `app()` gates on
+  `authed: Signal<bool>` (a root `switch`) — false → `login_screen(authed)`,
+  true → the full app tree (renamed `app_shell`). Centered card: D logo,
+  "Welcome back!", email + password fields (`text_input`, `secure = true` on
+  the password), a Sign In `button`, and a "Continue as guest" `view.on_touch`
+  pill. Submit now calls the backend `#[server] login` (via
+  `crate::auth::login`, commit `3b70598f`) through
+  `runtime_core::driver::spawn_async` (the submit closure is sync). On success
+  the returned numeric id is stored process-wide in `CURRENT_USER_ID`
+  (`static AtomicI64` inside `login_screen`) — the value the app threads back
+  as the `x-user-id` header on backend calls (the stand-in session convention
+  every endpoint reads) — and `authed` flips; on failure the server's message
+  is shown via the `error` signal. Empty submit still shows the inline red
+  "Email and password are required." error (reactive — the form is a nested
+  `switch` keyed on `error`, pitfall 8). "Continue as guest" still sets
+  `authed` directly (no id). **Note:** `server::configure` is not yet called
+  from the client, so the `#[server]` stub has no base URL until that wiring
+  lands; the id is stored regardless. A **Log Out** pill in `user_panel`
+  (takes `authed`) round-trips back to login.
 - **State**: `authed` (login gate, `bool`), `active_server`, `active_channel`,
   `composer` (text), `sent`
   (per-session log of `(channel_id, author, body, ts_secs)` — user-sent
@@ -220,7 +227,16 @@ The backend lives in the sibling `../discord-server` crate (its own
 - ~~Voice-channel join~~ — done (commit `c7496cb6`, see "Current state").
 - ~~Signed-in user as a data-model entry with editable status~~ — done
   (commit `c7496cb6`).
-- ~~Mock login screen~~ — done (see "Current state"). Round-trips: login →
-  app, Log Out → login, guest → app.
+- ~~Mock login screen~~ — done. Then **real login wired in** (commit
+  `faea6b2f`, see "Current state"): submit calls the backend `#[server] login`,
+  stores the returned id as `x-user-id` (`CURRENT_USER_ID`), flips `authed` on
+  success, shows the server error inline on failure. No signup UI (a test user
+  is created by calling the backend `#[server] signup` fn directly).
+- **Client `server::configure` base URL** — `login_screen` now stores the
+  logged-in id, but the client still never calls `server::configure(...)`, so
+  the `#[server]` stub (incl. login) has no base URL yet. Wire it at app start
+  (`server::dev_base_url()` on native / document origin on web), ideally with a
+  `credentials_from_fn` provider that reads `CURRENT_USER_ID` → `x-user-id`,
+  so the id is actually threaded on every backend call.
 - Member-list interactions (mute / hide-activity / kick) — the one remaining
   item from the plan; lowest impact, mostly scaffolding.
