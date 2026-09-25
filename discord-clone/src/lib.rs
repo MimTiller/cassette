@@ -66,6 +66,8 @@ mod category_filter_chips;
 mod send_failed_indicator;
 #[path = "components/featured_server_banner.rs"]
 mod featured_server_banner;
+#[path = "components/code_block.rs"]
+mod code_block;
 
 pub use app::app;
 
