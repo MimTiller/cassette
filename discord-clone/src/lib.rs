@@ -62,6 +62,8 @@ mod timeout_duration_picker;
 mod notification_permission_prompt;
 #[path = "components/category_filter_chips.rs"]
 mod category_filter_chips;
+#[path = "components/send_failed_indicator.rs"]
+mod send_failed_indicator;
 
 pub use app::app;
 
