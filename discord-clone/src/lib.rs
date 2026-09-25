@@ -14,6 +14,8 @@ mod profile_settings;
 // `components/`; the `#[path]` keeps this a one-file add (no `mod.rs`).
 #[path = "components/server_folder_group.rs"]
 mod server_folder_group;
+#[path = "components/idle_timer_badge.rs"]
+mod idle_timer_badge;
 
 pub use app::app;
 
