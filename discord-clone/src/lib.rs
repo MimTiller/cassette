@@ -38,6 +38,8 @@ mod translate_toggle;
 mod permission_override_row;
 #[path = "components/server_icon_fallback.rs"]
 mod server_icon_fallback;
+#[path = "components/message_rating.rs"]
+mod message_rating;
 
 pub use app::app;
 
