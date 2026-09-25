@@ -40,6 +40,8 @@ mod permission_override_row;
 mod server_icon_fallback;
 #[path = "components/message_rating.rs"]
 mod message_rating;
+#[path = "components/server_event_card.rs"]
+mod server_event_card;
 
 pub use app::app;
 
