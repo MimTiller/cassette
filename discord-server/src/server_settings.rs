@@ -111,21 +111,17 @@ const PRESENCE_IDLE_SECS: u64 = 30;
 
 /// The realtime message gateway. Mounted at `GET /_srv/_ws/message_gateway`.
 ///
-/// `headers` is the reserved `server::Headers` extractor (the WebSocket
-/// upgrade's `HeaderMap`); the acting user is read from `x-user-id` exactly
-/// as the `#[server]` fns do.
+/// `user_id` is a wire arg — encoded by the client stub into the connect
+/// URL's `?args=` query param and decoded by the `#[server::channel]` macro
+/// before this body runs (a malformed or missing arg is a 400 the client
+/// never reaches this code for). The acting user is passed as a connect-time
+/// argument rather than a header: a browser WebSocket cannot set custom
+/// upgrade headers, so header-based auth was impossible from a client.
 #[server::channel]
 pub async fn message_gateway(
     mut ch: server::Socket<WsClientMsg, WsServerMsg>,
-    headers: server::Headers,
+    user_id: i64,
 ) -> Result<(), ServerError> {
-    // Authenticated once at open: the existing session mechanism.
-    let user_id = headers
-        .get("x-user-id")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| ServerError::failed("unauthenticated: missing x-user-id"))?;
-
     let db = db_from_state()?;
 
     // Presence heartbeat: 'online' the moment the socket is authenticated.

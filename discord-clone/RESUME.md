@@ -271,4 +271,14 @@ The backend lives in the sibling `../discord-server` crate (its own
   exposes channel data for a server.
 - Member-list interactions (mute / hide-activity / kick) — the one remaining
   item from the plan; lowest impact, mostly scaffolding.
+- **WebSocket-auth blocker (integration-1b3) — resolved**: `message_gateway`
+  now takes the user id as a **connect-time wire arg**
+  (`message_gateway(user_id: i64)`) carried in the connect URL's `?args=`
+  query, instead of the reserved `server::Headers` extractor reading
+  `x-user-id` (which a browser WebSocket handshake cannot set). The
+  in-file websocket e2e tests in `discord-server/src/server_settings.rs`
+  still build their upgrade requests with the `x-user-id` header and need
+  `?args=` updates to match the new signature. The client-side
+  `message_gateway(user_id)` hook and the real message-feed UI are
+  follow-ups (integration-1b3c and later).
 
