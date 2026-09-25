@@ -18,6 +18,8 @@ mod server_folder_group;
 mod idle_timer_badge;
 #[path = "components/edited_label.rs"]
 mod edited_label;
+#[path = "components/server_discovery_card.rs"]
+mod server_discovery_card;
 
 pub use app::app;
 
