@@ -34,6 +34,8 @@ mod rules_accept_checkbox;
 mod welcome_banner;
 #[path = "components/translate_toggle.rs"]
 mod translate_toggle;
+#[path = "components/permission_override_row.rs"]
+mod permission_override_row;
 
 pub use app::app;
 
