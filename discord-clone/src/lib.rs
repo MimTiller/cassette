@@ -76,6 +76,8 @@ mod server_tag_chips;
 mod reaction_summary;
 #[path = "components/setup_checklist_item.rs"]
 mod setup_checklist_item;
+#[path = "components/dm_request_card.rs"]
+mod dm_request_card;
 
 pub use app::app;
 
