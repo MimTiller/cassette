@@ -26,6 +26,8 @@ mod mic_selector;
 mod verified_badge;
 #[path = "components/jump_to_bottom_button.rs"]
 mod jump_to_bottom_button;
+#[path = "components/emoji_upload_slot.rs"]
+mod emoji_upload_slot;
 
 pub use app::app;
 
