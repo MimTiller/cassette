@@ -30,6 +30,8 @@ mod jump_to_bottom_button;
 mod emoji_upload_slot;
 #[path = "components/rules_accept_checkbox.rs"]
 mod rules_accept_checkbox;
+#[path = "components/welcome_banner.rs"]
+mod welcome_banner;
 
 pub use app::app;
 
