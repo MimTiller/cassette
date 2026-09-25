@@ -944,6 +944,13 @@ fn login_screen(authed: Signal<bool>) -> Element {
         ..Default::default()
     };
 
+    // The signed-in account's numeric id, kept process-wide so it outlives
+    // this screen (which unmounts the moment `authed` flips). This is the
+    // value the app threads back as the `x-user-id` header on backend calls —
+    // the stand-in session convention every other endpoint reads.
+    static CURRENT_USER_ID: std::sync::atomic::AtomicI64 =
+        std::sync::atomic::AtomicI64::new(0);
+
     // The shared login action: validate, then auth in. `authed` flipping is
     // what unmounts this screen and mounts the app tree (the `switch` key in
     // `app()` re-evaluates on it). Every captured signal is `Copy`.
@@ -956,11 +963,22 @@ fn login_screen(authed: Signal<bool>) -> Element {
                 error.set("Email and password are required.".to_string());
                 return;
             }
-            // No backend: any non-empty email + password signs in as "you".
-            // A real login would `spawn` a network call here and resolve the
-            // session before flipping `authed`.
+            // Real login: spawn the backend `#[server]` login call and resolve
+            // the session before flipping `authed`. On success the returned
+            // numeric id becomes the `x-user-id` the app threads on backend
+            // calls; on failure the server's message is shown inline.
             error.set(String::new());
-            authed.set(true);
+            runtime_core::driver::spawn_async(async move {
+                match crate::auth::login(&em, &pw).await {
+                    Ok(user_id) => {
+                        CURRENT_USER_ID.store(user_id, std::sync::atomic::Ordering::SeqCst);
+                        authed.set(true);
+                    }
+                    Err(message) => {
+                        error.set(message);
+                    }
+                }
+            });
         }
     };
     let on_submit_click = move || do_login();
