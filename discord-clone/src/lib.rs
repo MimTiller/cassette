@@ -54,6 +54,8 @@ mod audit_log_row;
 mod link_embed_preview;
 #[path = "components/member_role_list.rs"]
 mod member_role_list;
+#[path = "components/timeout_duration_picker.rs"]
+mod timeout_duration_picker;
 
 pub use app::app;
 
