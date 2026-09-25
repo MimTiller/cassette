@@ -64,6 +64,12 @@ dev-server = { path = "/root/idealyst-native/crates/dev/server", optional = true
 # no manual HTTP in this crate. `serde` comes along transitively (the shared
 # wire types are `Serialize`/`Deserialize`), so no direct serde dep is needed.
 discord-server = { path = "/root/idealyst-native/discord-server" }
+# The server-fn client SDK. `discord-clone` depends on it directly so it can
+# call `server::configure(...)` at startup (pointing the RPC stubs at a base
+# URL) and attach the signed-in user id as the `x-user-id` header via
+# `server::credentials_from_fn`. `discord-server` also pulls it in transitively
+# for its codegen'd stubs; the direct dep is for the `configure` call site.
+server = { path = "/root/idealyst-native/crates/api/server" }
 
 # No backend deps: `register_scene_extensions` is generic over the scene
 # `Host` (this scaffold registers no third-party SDKs), so the app crate

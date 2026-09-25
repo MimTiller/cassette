@@ -39,3 +39,33 @@ pub async fn login(username: &str, password: &str) -> Result<i64, String> {
         Err(error) => Err(error.to_string()),
     }
 }
+
+/// The signed-in account's numeric id, kept process-wide so it outlives the
+/// login screen (which unmounts the moment `authed` flips). `0` means "not
+/// logged in" — the sentinel the store starts at. This is the value the app
+/// threads back as the `x-user-id` header on every backend call, the stand-in
+/// session convention every other endpoint reads.
+pub(crate) static CURRENT_USER_ID: std::sync::atomic::AtomicI64 =
+    std::sync::atomic::AtomicI64::new(0);
+
+/// Point the `#[server]` RPC stubs at a base URL and attach the signed-in
+/// user id as the `x-user-id` header on every outgoing call.
+///
+/// Called once at startup, before any backend call. The base URL comes from
+/// `server::dev_base_url()` (the dev server on native, `None` on the web
+/// target, where the stubs are same-origin and need no explicit base) with a
+/// localhost fallback. The credential provider reads [`CURRENT_USER_ID`] on
+/// each call, so the header appears only after a successful login.
+pub fn configure_server() {
+    let base = server::dev_base_url().unwrap_or_else(|| "http://127.0.0.1:3000".into());
+    server::configure(
+        server::ClientConfig::new(base).with_credentials(server::credentials_from_fn(|| {
+            let id = CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+            if id > 0 {
+                vec![("x-user-id".to_string(), id.to_string())]
+            } else {
+                Vec::new()
+            }
+        })),
+    );
+}

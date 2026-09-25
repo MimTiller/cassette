@@ -944,12 +944,10 @@ fn login_screen(authed: Signal<bool>) -> Element {
         ..Default::default()
     };
 
-    // The signed-in account's numeric id, kept process-wide so it outlives
-    // this screen (which unmounts the moment `authed` flips). This is the
-    // value the app threads back as the `x-user-id` header on backend calls —
-    // the stand-in session convention every other endpoint reads.
-    static CURRENT_USER_ID: std::sync::atomic::AtomicI64 =
-        std::sync::atomic::AtomicI64::new(0);
+    // The signed-in account's numeric id now lives in `crate::auth`
+    // (`CURRENT_USER_ID`) so the `server::configure` credential provider can
+    // read it to thread the `x-user-id` header — declared there, referenced
+    // here. `0` means "not logged in".
 
     // The shared login action: validate, then auth in. `authed` flipping is
     // what unmounts this screen and mounts the app tree (the `switch` key in
@@ -971,7 +969,8 @@ fn login_screen(authed: Signal<bool>) -> Element {
             runtime_core::driver::spawn_async(async move {
                 match crate::auth::login(&em, &pw).await {
                     Ok(user_id) => {
-                        CURRENT_USER_ID.store(user_id, std::sync::atomic::Ordering::SeqCst);
+                        crate::auth::CURRENT_USER_ID
+                            .store(user_id, std::sync::atomic::Ordering::SeqCst);
                         authed.set(true);
                     }
                     Err(message) => {
@@ -1118,6 +1117,11 @@ fn login_screen(authed: Signal<bool>) -> Element {
 // --- the tree ----------------------------------------------------------------
 
 pub fn app() -> Element {
+    // Point the backend `#[server]` RPC stubs at a base URL and attach the
+    // signed-in user id as the `x-user-id` header on every outgoing call.
+    // Runs once per process (the `app()` entry), so no "only once" guard is
+    // needed.
+    crate::auth::configure_server();
     // Mock auth gate: starts signed out (login screen). There's no backend, so
     // "auth" is just a `bool` signal — the login screen sets it true on Sign In
     // (or Continue as guest) and a Log Out in the user panel flips it back. A
