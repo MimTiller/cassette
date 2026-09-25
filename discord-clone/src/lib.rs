@@ -48,6 +48,8 @@ mod connection_quality_indicator;
 mod transfer_ownership_confirm;
 #[path = "components/activity_card.rs"]
 mod activity_card;
+#[path = "components/audit_log_row.rs"]
+mod audit_log_row;
 
 pub use app::app;
 
