@@ -94,6 +94,8 @@ mod invite_expiry_selector;
 mod latency_badge;
 #[path = "components/soundboard_button.rs"]
 mod soundboard_button;
+#[path = "components/thread_list_row.rs"]
+mod thread_list_row;
 
 pub use app::app;
 
