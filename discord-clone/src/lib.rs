@@ -74,6 +74,8 @@ mod user_bio_block;
 mod server_tag_chips;
 #[path = "components/reaction_summary.rs"]
 mod reaction_summary;
+#[path = "components/setup_checklist_item.rs"]
+mod setup_checklist_item;
 
 pub use app::app;
 
