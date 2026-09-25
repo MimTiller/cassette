@@ -44,6 +44,8 @@ mod message_rating;
 mod server_event_card;
 #[path = "components/connection_quality_indicator.rs"]
 mod connection_quality_indicator;
+#[path = "components/transfer_ownership_confirm.rs"]
+mod transfer_ownership_confirm;
 
 pub use app::app;
 
