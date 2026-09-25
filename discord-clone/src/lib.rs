@@ -56,6 +56,8 @@ mod link_embed_preview;
 mod member_role_list;
 #[path = "components/timeout_duration_picker.rs"]
 mod timeout_duration_picker;
+#[path = "components/notification_permission_prompt.rs"]
+mod notification_permission_prompt;
 
 pub use app::app;
 
