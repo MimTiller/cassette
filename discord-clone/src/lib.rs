@@ -42,6 +42,8 @@ mod server_icon_fallback;
 mod message_rating;
 #[path = "components/server_event_card.rs"]
 mod server_event_card;
+#[path = "components/connection_quality_indicator.rs"]
+mod connection_quality_indicator;
 
 pub use app::app;
 
