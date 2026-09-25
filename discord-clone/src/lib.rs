@@ -72,6 +72,8 @@ mod code_block;
 mod user_bio_block;
 #[path = "components/server_tag_chips.rs"]
 mod server_tag_chips;
+#[path = "components/reaction_summary.rs"]
+mod reaction_summary;
 
 pub use app::app;
 
