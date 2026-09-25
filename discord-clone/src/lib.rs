@@ -82,6 +82,8 @@ mod dm_request_card;
 mod icon_change_confirm;
 #[path = "components/pin_count_badge.rs"]
 mod pin_count_badge;
+#[path = "components/ban_reason_input.rs"]
+mod ban_reason_input;
 
 pub use app::app;
 
