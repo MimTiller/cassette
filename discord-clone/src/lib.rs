@@ -84,6 +84,8 @@ mod icon_change_confirm;
 mod pin_count_badge;
 #[path = "components/ban_reason_input.rs"]
 mod ban_reason_input;
+#[path = "components/template_gallery_grid.rs"]
+mod template_gallery_grid;
 
 pub use app::app;
 
