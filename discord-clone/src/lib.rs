@@ -36,6 +36,8 @@ mod welcome_banner;
 mod translate_toggle;
 #[path = "components/permission_override_row.rs"]
 mod permission_override_row;
+#[path = "components/server_icon_fallback.rs"]
+mod server_icon_fallback;
 
 pub use app::app;
 
