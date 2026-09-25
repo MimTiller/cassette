@@ -70,6 +70,8 @@ mod featured_server_banner;
 mod code_block;
 #[path = "components/user_bio_block.rs"]
 mod user_bio_block;
+#[path = "components/server_tag_chips.rs"]
+mod server_tag_chips;
 
 pub use app::app;
 
