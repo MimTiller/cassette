@@ -78,6 +78,8 @@ mod reaction_summary;
 mod setup_checklist_item;
 #[path = "components/dm_request_card.rs"]
 mod dm_request_card;
+#[path = "components/icon_change_confirm.rs"]
+mod icon_change_confirm;
 
 pub use app::app;
 
