@@ -90,6 +90,8 @@ mod ban_reason_input;
 mod template_gallery_grid;
 #[path = "components/invite_expiry_selector.rs"]
 mod invite_expiry_selector;
+#[path = "components/latency_badge.rs"]
+mod latency_badge;
 
 pub use app::app;
 
