@@ -1162,6 +1162,16 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // re-fire keeps the mounted arm), so re-setting `active_channel` to its
     // current value does NOT rebuild the message list — this counter does.
     let revision: Signal<u32> = signal(0);
+    // Live (backend) servers the signed-in user belongs to, fetched once from
+    // the `#[server]` RPC after `configure_server()` has pointed the stubs at
+    // a base URL. Rendered as its own section below the mock rows; see the
+    // rail for why these rows are not yet interactive.
+    let live_servers: Signal<Vec<crate::servers::ServerSummary>> = signal(Vec::new());
+    runtime_core::driver::spawn_async(async move {
+        if let Ok(servers) = crate::servers::list_servers().await {
+            live_servers.set(servers);
+        }
+    });
 
     // --- server rail -----------------------------------------------------
     let rail_style = StyleRules {
@@ -1255,6 +1265,69 @@ fn app_shell(authed: Signal<bool>) -> Element {
             })
         }
     }).collect();
+
+    // Live (backend) servers — a visually separate section below the mock
+    // rows. These rows are NOT clickable: the backend's `ServerSummary` only
+    // carries {id, name, icon_url} — no channels/categories — so there is no
+    // meaningful `active_server`/`active_channel` to set, and the existing
+    // `SERVERS.iter().find(...)` lookups would panic on a real id. A later
+    // task wires the touch handler once the backend exposes channel data.
+    let live_section = switch(
+        move || live_servers.get(),
+        move |servers: &Vec<crate::servers::ServerSummary>| {
+            let divider_style = StyleRules {
+                width: Some(px(32.0)),
+                height: Some(px(1.0)),
+                background: Some(col(BORDER)),
+                ..Default::default()
+            };
+            let label_style = StyleRules {
+                font_size: Some(px(10.0)),
+                color: Some(col(TEXT_MUTED)),
+                ..Default::default()
+            };
+            let row_style = StyleRules {
+                width: Some(px(48.0)),
+                height: Some(px(48.0)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                background: Some(col(BG_SIDEBAR)),
+                border_top_left_radius: Some(px(16.0)),
+                border_top_right_radius: Some(px(16.0)),
+                border_bottom_left_radius: Some(px(16.0)),
+                border_bottom_right_radius: Some(px(16.0)),
+                ..Default::default()
+            };
+            let initial_style = StyleRules {
+                font_size: Some(px(18.0)),
+                font_weight: Some(FontWeight::Bold),
+                color: Some(col(TEXT_CHANNEL)),
+                ..Default::default()
+            };
+            let rows: Vec<Element> = servers.iter().map(|s| {
+                let initial = s.name.chars().next().unwrap_or('?').to_string();
+                ui! {
+                    view(style = row_style.clone()) {
+                        text(style = initial_style.clone()) { initial }
+                    }
+                    // No on_touch handler by design — see the comment above:
+                    // live servers have no channel data server-side yet.
+                }
+            }).collect();
+            ui! {
+                view(style = StyleRules {
+                    flex_direction: Some(FlexDirection::Column),
+                    align_items: Some(AlignItems::Center),
+                    gap: Some(px(10.0)),
+                    ..Default::default()
+                }) {
+                    view(style = divider_style) {}
+                    text(style = label_style) { "(live)".to_string() }
+                    rows
+                }
+            }
+        },
+    );
 
     // --- channel sidebar -------------------------------------------------
     let sidebar_style = StyleRules {
@@ -1598,7 +1671,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             overflow: Some(Overflow::Hidden),
             ..Default::default()
         }) {
-            view(style = rail_style) { server_rows }
+            view(style = rail_style) { server_rows live_section }
             sidebar
             view(style = main_style) {
                 header

@@ -232,11 +232,20 @@ The backend lives in the sibling `../discord-server` crate (its own
   stores the returned id as `x-user-id` (`CURRENT_USER_ID`), flips `authed` on
   success, shows the server error inline on failure. No signup UI (a test user
   is created by calling the backend `#[server] signup` fn directly).
-- **Client `server::configure` base URL** — `login_screen` now stores the
-  logged-in id, but the client still never calls `server::configure(...)`, so
-  the `#[server]` stub (incl. login) has no base URL yet. Wire it at app start
-  (`server::dev_base_url()` on native / document origin on web), ideally with a
-  `credentials_from_fn` provider that reads `CURRENT_USER_ID` → `x-user-id`,
-  so the id is actually threaded on every backend call.
+- ~~Client `server::configure` base URL~~ — done (commit `082f3b5b`):
+  `auth::configure_server()` is called once at the top of `app()`, pointing the
+  `#[server]` RPC stubs at a base URL and threading `CURRENT_USER_ID` →
+  `x-user-id` on every backend call.
+- **Live-servers rail rows are visible but not clickable** — `app_shell` now
+  fetches `crate::servers::list_servers()` into a `live_servers` signal once at
+  startup and renders them as a separate "(live)" section below the mock rows
+  in the server rail (initial derived from `name.chars().next()`, mirroring the
+  mock `s.initial` style). They are deliberately **not** wired to
+  `active_server`/`active_channel`: the backend `ServerSummary` only carries
+  {id, name, icon_url} — no channels/categories — so there is no meaningful
+  selection, and the existing `SERVERS.iter().find(...)` lookups would panic on
+  a real (non-mock) id. A later task wires the touch handler once the backend
+  exposes channel data for a server.
 - Member-list interactions (mute / hide-activity / kick) — the one remaining
   item from the plan; lowest impact, mostly scaffolding.
+
