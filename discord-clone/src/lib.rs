@@ -86,6 +86,8 @@ mod pin_count_badge;
 mod ban_reason_input;
 #[path = "components/template_gallery_grid.rs"]
 mod template_gallery_grid;
+#[path = "components/invite_expiry_selector.rs"]
+mod invite_expiry_selector;
 
 pub use app::app;
 
