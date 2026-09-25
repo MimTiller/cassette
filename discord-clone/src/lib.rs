@@ -50,6 +50,8 @@ mod transfer_ownership_confirm;
 mod activity_card;
 #[path = "components/audit_log_row.rs"]
 mod audit_log_row;
+#[path = "components/link_embed_preview.rs"]
+mod link_embed_preview;
 
 pub use app::app;
 
