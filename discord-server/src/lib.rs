@@ -45,6 +45,7 @@ pub mod invites;
 // wasm client build, so the module itself is always compiled and only the
 // server-only internals are gated (see `src/auth.rs`).
 pub mod auth;
+pub mod servers;
 #[cfg(feature = "server")]
 pub mod dms;
 

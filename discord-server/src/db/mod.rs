@@ -773,6 +773,88 @@ impl Db {
         .ok()
     }
 
+    /// Create a server owned by `owner_id`, and make the owner its first
+    /// member (role='owner'). Returns the new server id.
+    pub fn insert_server(&self, owner_id: i64, name: &str) -> Result<i64, rusqlite::Error> {
+        let created_at = now_epoch_ms();
+        let c = self.lock()?;
+        c.execute(
+            "INSERT INTO servers (name, owner_id, created_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![name, owner_id, created_at],
+        )?;
+        let server_id = c.last_insert_rowid();
+        c.execute(
+            "INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES (?1, ?2, 'owner', ?3)",
+            rusqlite::params![server_id, owner_id, created_at],
+        )?;
+        Ok(server_id)
+    }
+
+    /// Servers `user_id` is a member of, as `(id, name, icon_url)`, excluding
+    /// soft-deleted servers.
+    pub fn servers_for_user(&self, user_id: i64) -> Vec<(i64, String, Option<String>)> {
+        let c = match self.lock() {
+            Ok(c) => c,
+            Err(_) => return Vec::new(),
+        };
+        let mut stmt = match c.prepare(
+            "SELECT s.id, s.name, s.icon_url FROM servers s
+             JOIN server_memberships m ON m.server_id = s.id
+             WHERE m.user_id = ?1 AND s.deleted_at IS NULL",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map(rusqlite::params![user_id], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, Option<String>>(2)?))
+        });
+        match rows {
+            Ok(rows) => rows.filter_map(Result::ok).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    /// Add `user_id` as a 'member' of `server_id`. Errors (via the UNIQUE
+    /// constraint) if already a member.
+    pub fn insert_membership(&self, server_id: i64, user_id: i64) -> Result<(), rusqlite::Error> {
+        let joined_at = now_epoch_ms();
+        let c = self.lock()?;
+        c.execute(
+            "INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES (?1, ?2, 'member', ?3)",
+            rusqlite::params![server_id, user_id, joined_at],
+        )?;
+        Ok(())
+    }
+
+    /// Channels in `server_id` as `(id, name, kind, position, parent_channel_id)`,
+    /// ordered by position.
+    pub fn channels_for_server(&self, server_id: i64) -> Vec<(i64, String, String, i64, Option<i64>)> {
+        let c = match self.lock() {
+            Ok(c) => c,
+            Err(_) => return Vec::new(),
+        };
+        let mut stmt = match c.prepare(
+            "SELECT id, name, kind, position, parent_channel_id FROM channels
+             WHERE server_id = ?1 ORDER BY position",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = stmt.query_map(rusqlite::params![server_id], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)?,
+                r.get::<_, Option<i64>>(4)?,
+            ))
+        });
+        match rows {
+            Ok(rows) => rows.filter_map(Result::ok).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
     // ── channels: management (create / rename / delete) ────────────────────
 
     /// The channel kind as stored in `channels.kind` (`'text'` / `'voice'` /
