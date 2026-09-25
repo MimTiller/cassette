@@ -48,16 +48,30 @@ pub async fn login(username: &str, password: &str) -> Result<i64, String> {
 pub(crate) static CURRENT_USER_ID: std::sync::atomic::AtomicI64 =
     std::sync::atomic::AtomicI64::new(0);
 
+/// The page's own origin on the web target (the bundle is served same-origin
+/// with the API); `None` off-web.
+#[cfg(target_arch = "wasm32")]
+fn page_origin() -> Option<String> {
+    web_sys::window()?.location().origin().ok()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn page_origin() -> Option<String> {
+    None
+}
+
 /// Point the `#[server]` RPC stubs at a base URL and attach the signed-in
 /// user id as the `x-user-id` header on every outgoing call.
 ///
 /// Called once at startup, before any backend call. The base URL comes from
 /// `server::dev_base_url()` (the dev server on native, `None` on the web
-/// target, where the stubs are same-origin and need no explicit base) with a
-/// localhost fallback. The credential provider reads [`CURRENT_USER_ID`] on
+/// target), then the page origin on web (same-origin), then a localhost
+/// fallback. The credential provider reads [`CURRENT_USER_ID`] on
 /// each call, so the header appears only after a successful login.
 pub fn configure_server() {
-    let base = server::dev_base_url().unwrap_or_else(|| "http://127.0.0.1:3000".into());
+    let base = server::dev_base_url()
+        .or_else(page_origin)
+        .unwrap_or_else(|| "http://127.0.0.1:3000".into());
     server::configure(
         server::ClientConfig::new(base).with_credentials(server::credentials_from_fn(|| {
             let id = CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
