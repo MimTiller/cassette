@@ -20,6 +20,8 @@ mod idle_timer_badge;
 mod edited_label;
 #[path = "components/server_discovery_card.rs"]
 mod server_discovery_card;
+#[path = "components/mic_selector.rs"]
+mod mic_selector;
 
 pub use app::app;
 
