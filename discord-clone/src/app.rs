@@ -40,6 +40,7 @@ use runtime_core::{
 use runtime_shared::time::local_offset_minutes;
 
 use crate::data::{SERVERS, Category, Member, Status, USER};
+use crate::profile_settings::profile_settings;
 use crate::style_helpers::{col, pct, px};
 
 // Discord dark palette (Blurple-flavoured).
@@ -588,6 +589,7 @@ fn user_panel(
     user_status: Signal<Status>,
     joined_voice: Signal<Option<(u32, u32)>>,
     authed: Signal<bool>,
+    profile_mode: Signal<bool>,
 ) -> Element {
     switch(
         move || (user_status.get(), voice_name_for(joined_voice.get())),
@@ -797,6 +799,38 @@ fn user_panel(
                     TouchResponse::CONSUMED
                 })
             };
+            // Profile Settings entry: a "Profile" pill (styled like Log Out)
+            // that opens the full-screen `profile_settings` screen. `app_shell`
+            // owns `profile_mode` and renders the overlay when it flips on.
+            let profile_open = profile_mode.clone();
+            let profile_btn = ui! {
+                view(style = StyleRules {
+                    height: Some(px(26.0)),
+                    padding_left: Some(px(10.0)),
+                    padding_right: Some(px(10.0)),
+                    background: Some(col(BG_SIDEBAR)),
+                    align_items: Some(AlignItems::Center),
+                    justify_content: Some(JustifyContent::Center),
+                    border_top_left_radius: Some(px(6.0)),
+                    border_top_right_radius: Some(px(6.0)),
+                    border_bottom_left_radius: Some(px(6.0)),
+                    border_bottom_right_radius: Some(px(6.0)),
+                    ..Default::default()
+                }) {
+                    text(style = StyleRules {
+                        color: Some(col(TEXT_MUTED)),
+                        font_size: Some(px(12.0)),
+                        font_weight: Some(FontWeight::SemiBold),
+                        ..Default::default()
+                    }) { "Profile".to_string() }
+                }
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        profile_open.set(true);
+                    }
+                    TouchResponse::CONSUMED
+                })
+            };
             ui! {
                 view(style = row_style) {
                     avatar
@@ -807,6 +841,7 @@ fn user_panel(
                     if let Some(btn) = leave_btn {
                         btn
                     }
+                    profile_btn
                     logout_btn
                 }
             }
@@ -1140,6 +1175,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // re-fire keeps the mounted arm), so re-setting `active_channel` to its
     // current value does NOT rebuild the message list — this counter does.
     let revision: Signal<u32> = signal(0);
+    // Profile Settings screen: a "Profile" entry in the user panel opens it as
+    // a full-screen overlay (built once, shown/hidden by this signal — the same
+    // toggle idiom as the DM rail). No re-mount, no rebuild of the underlying tree.
+    let profile_mode: Signal<bool> = signal(false);
 
     // --- server rail -----------------------------------------------------
     let rail_style = StyleRules {
@@ -1280,6 +1319,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
         ..Default::default()
     };
 
+    // Profile panel toggle, cloned so the `move` switch closure below can
+    // own this copy while the overlay (built later) keeps the original.
+    let user_profile_mode = profile_mode.clone();
     let sidebar = switch(
         move || (active_server.get(), active_channel.get(), joined_voice.get()),
         move |(server_id, _channel_id, _voice): &(u32, u32, Option<(u32, u32)>)| {
@@ -1372,7 +1414,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // The user profile is the bottom-left of the sidebar (Discord
             // convention). The member list is a separate right-side panel —
             // see `members_switch` further down — so it's not built here.
-            let user = user_panel(user_status, joined_voice, authed);
+            let user = user_panel(user_status, joined_voice, authed, user_profile_mode);
             ui! {
                 view(style = sidebar_style) {
                     view(style = sidebar_header_style) {
@@ -1567,12 +1609,86 @@ fn app_shell(authed: Signal<bool>) -> Element {
         ..Default::default()
     };
 
+    // Profile Settings screen (built once; its fields are bound to local
+    // component state). Rendered as a full-screen overlay on top of the rest
+    // of the app: when `profile_mode` is off it collapses to zero size, when
+    // on it fills the whole window. A "Done" pill in the header flips
+    // `profile_mode` back off to close it.
+    let profile_el = profile_settings();
+    let profile_close = profile_mode.clone();
+    let profile_header = ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(JustifyContent::SpaceBetween),
+            padding_top: Some(px(16.0)),
+            padding_bottom: Some(px(16.0)),
+            padding_left: Some(px(16.0)),
+            padding_right: Some(px(16.0)),
+            ..Default::default()
+        }) {
+            text(style = StyleRules {
+                font_size: Some(px(18.0)),
+                font_weight: Some(FontWeight::Bold),
+                color: Some(col(TEXT)),
+                ..Default::default()
+            }) { "Profile".to_string() }
+            view(style = StyleRules {
+                height: Some(px(26.0)),
+                padding_left: Some(px(12.0)),
+                padding_right: Some(px(12.0)),
+                background: Some(col(BG_SIDEBAR)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                border_top_left_radius: Some(px(6.0)),
+                border_top_right_radius: Some(px(6.0)),
+                border_bottom_left_radius: Some(px(6.0)),
+                border_bottom_right_radius: Some(px(6.0)),
+                ..Default::default()
+            }) {
+                text(style = StyleRules {
+                    color: Some(col(TEXT)),
+                    font_size: Some(px(12.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    ..Default::default()
+                }) { "Done".to_string() }
+            }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    profile_close.set(false);
+                }
+                TouchResponse::CONSUMED
+            })
+        }
+    };
+    let profile_open_chk = profile_mode.clone();
+    let profile_wrap = move || StyleRules {
+        position: Some(Position::Absolute),
+        left: Some(px(0.0)),
+        top: Some(px(0.0)),
+        width: Some(if profile_open_chk.get() { pct(100.0) } else { px(0.0) }),
+        height: Some(if profile_open_chk.get() { pct(100.0) } else { px(0.0) }),
+        background: Some(col(BG_MAIN)),
+        flex_direction: Some(FlexDirection::Column),
+        overflow: Some(Overflow::Hidden),
+        ..Default::default()
+    };
+    let profile_region = ui! {
+        view(style = profile_wrap) {
+            profile_header
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) { profile_el }
+        }
+    };
+
     ui! {
         view(style = StyleRules {
             width: Some(pct(100.0)),
             height: Some(pct(100.0)),
             background: Some(col(BG_MAIN)),
             flex_direction: Some(FlexDirection::Row),
+            // Positioned ancestor for the full-screen Profile overlay, so
+            // `Position::Absolute` children anchor to the whole window.
+            position: Some(Position::Relative),
             overflow: Some(Overflow::Hidden),
             ..Default::default()
         }) {
@@ -1587,6 +1703,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 }
             }
             members_switch
+            // Painted last so it sits on top of everything when open.
+            profile_region
         }
     }
 }
