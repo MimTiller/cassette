@@ -37,8 +37,32 @@ pub mod roles;
 pub mod server_settings;
 #[cfg(feature = "server")]
 pub mod invites;
-#[cfg(feature = "server")]
+// `auth` is compiled in BOTH halves: the `#[server]` fns emit client RPC stubs
+// by default (the wire types `LoginInput` / `SignupInput` + the stubs are the
+// client surface `discord-clone` calls), while the DB-backed service (`Db`,
+// `rusqlite`, KDF) lives inside the module behind `#[cfg(feature = "server")]`.
+// Gating the WHOLE module here would hide the stubs from the default-features
+// wasm client build, so the module itself is always compiled and only the
+// server-only internals are gated (see `src/auth.rs`).
 pub mod auth;
+#[cfg(feature = "server")]
+pub mod dms;
+
+/// Shared e2e serialization guard. Every HTTP/WebSocket e2e test installs its
+/// `Db` into the same process-wide `server::install_state` slot (the macro
+/// reads it back via `use_state`), so all such tests MUST run one at a time
+/// or they clobber each other's state mid-test. Defined here (rather than in
+/// `server_settings::tests`) so every e2e module shares the ONE lock.
+#[cfg(test)]
+pub(crate) mod e2e_lock {
+    static E2E_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Acquire the e2e serialization guard; hold it for the whole test body.
+    /// (Poisoned if a prior holder panicked — recover rather than re-panic.)
+    pub(crate) fn guard() -> std::sync::MutexGuard<'static, ()> {
+        E2E_LOCK.lock().unwrap_or_else(|p| p.into_inner())
+    }
+}
 
 pub use app::app;
 

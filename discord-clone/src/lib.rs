@@ -7,9 +7,11 @@
 mod data;
 mod style_helpers;
 mod app;
+mod auth;
 mod profile_settings;
 
 pub use app::app;
+pub use auth::login;
 
 // SDK-handler registration seam, invoked by the CLI-generated wrappers (web
 // `start_in`/`hydrate_in`, macOS `run_with`, iOS `run_in_view`, terminal

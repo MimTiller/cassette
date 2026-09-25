@@ -1499,16 +1499,12 @@ mod tests {
         )
     }
 
-    /// The e2e gateway tests all install their `Db` into the same
-    /// process-wide `server::install_state` slot (the macro reads it back via
-    /// `use_state`). They therefore MUST run one at a time or they clobber
-    /// each other's state mid-test. This guard serializes them.
-    static E2E_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     /// Acquire the e2e serialization guard; hold it for the whole test body.
     /// (Poisoned if a prior holder panicked — recover rather than re-panic.)
+    /// Delegates to the crate-level [`crate::e2e_lock`] so the HTTP/WS e2e
+    /// tests here share ONE lock with the DM e2e test in `dms`.
     fn e2e_guard() -> std::sync::MutexGuard<'static, ()> {
-        E2E_LOCK.lock().unwrap_or_else(|p| p.into_inner())
+        crate::e2e_lock::guard()
     }
 
     #[tokio::test]

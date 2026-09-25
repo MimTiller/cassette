@@ -21,6 +21,12 @@
 use serde::{Deserialize, Serialize};
 use server::{server, ServerError};
 
+// The `Db` handle + password KDF are server-only (native SQLite / crypto),
+// pulled in only under the `server` feature. The wire types (`LoginInput` /
+// `SignupInput` / `LoginResult` / `SignupResult`) and the `#[server]` fns are
+// shared: on the default-features wasm client build the fns compile to RPC
+// stubs, so this import is only needed for the server body.
+#[cfg(feature = "server")]
 use crate::db::{hash_password, Db};
 
 /// The wire input for [`signup`].
@@ -43,12 +49,18 @@ pub struct SignupResult {
 }
 
 // ── service ──────────────────────────────────────────────────────────────────
+//
+// The `AuthService` + its two `impl` blocks are server-only: they take the
+// `Db` handle and run the persistence / KDF logic, none of which exists in the
+// wasm client build. The `#[server]` fns below are the shared surface.
 
+#[cfg(feature = "server")]
 /// The auth service. Wraps a `Db` handle.
 pub struct AuthService {
     db: Db,
 }
 
+#[cfg(feature = "server")]
 impl AuthService {
     pub fn new(db: Db) -> Self {
         Self { db }
@@ -94,8 +106,11 @@ pub async fn signup(input: SignupInput) -> Result<SignupResult, ServerError> {
 // ── login ───────────────────────────────────────────────────────────────────
 
 /// The per-account login-failure policy: after `LOGIN_MAX_FAILURES` wrong
-/// passwords, the account is locked for `LOGIN_LOCKOUT_SECS`.
+/// passwords, the account is locked for `LOGIN_LOCKOUT_SECS`. Server-only —
+/// the wire types below are shared with the client build.
+#[cfg(feature = "server")]
 const LOGIN_MAX_FAILURES: i64 = 5;
+#[cfg(feature = "server")]
 const LOGIN_LOCKOUT_SECS: i64 = 300;
 
 /// The wire input for [`login`].
@@ -114,6 +129,7 @@ pub struct LoginResult {
     pub user_id: i64,
 }
 
+#[cfg(feature = "server")]
 impl AuthService {
     /// Authenticate `username` / `password` against the stored PBKDF2 hash.
     ///
@@ -207,6 +223,8 @@ pub async fn login(input: LoginInput) -> Result<LoginResult, ServerError> {
 
 /// Pull the shared `Db` out of server state (installed at startup by the
 /// server bin via `server::install_state(db)`). `Db` is cheap to clone.
+/// Server-only — the client RPC stub never executes a body.
+#[cfg(feature = "server")]
 fn db_from_state() -> Result<Db, ServerError> {
     server::use_state::<Db>()
         .ok_or_else(|| ServerError::failed("database not installed"))
@@ -218,7 +236,7 @@ fn db_from_state() -> Result<Db, ServerError> {
 // (no HTTP / no server state needed), the same way [`crate::invites::tests`]
 // does.
 
-#[cfg(test)]
+#[cfg(all(test, feature = "server"))]
 mod tests {
     use super::*;
     use std::path::Path;
