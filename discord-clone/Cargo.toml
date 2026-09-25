@@ -105,3 +105,8 @@ version   = "0.0.1"
 # (they take an explicit platform argument), so you can also just
 # leave this alone and invoke them directly.
 targets   = ["web"]
+# Full-stack dev: `idealyst dev --web` builds + runs this backend beside the
+# bundle and serves the UI and the /_srv API from one origin (the server
+# serves the staged dist/web via WEB_DIST; see discord-server/src/bin/server.rs).
+server_manifest = "../discord-server/Cargo.toml"
+server_bin      = "server"
