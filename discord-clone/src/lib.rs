@@ -22,6 +22,8 @@ mod edited_label;
 mod server_discovery_card;
 #[path = "components/mic_selector.rs"]
 mod mic_selector;
+#[path = "components/verified_badge.rs"]
+mod verified_badge;
 
 pub use app::app;
 
