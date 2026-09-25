@@ -46,6 +46,8 @@ mod server_event_card;
 mod connection_quality_indicator;
 #[path = "components/transfer_ownership_confirm.rs"]
 mod transfer_ownership_confirm;
+#[path = "components/activity_card.rs"]
+mod activity_card;
 
 pub use app::app;
 
