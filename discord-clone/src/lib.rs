@@ -8,6 +8,7 @@ mod data;
 mod style_helpers;
 mod app;
 mod auth;
+mod servers;
 mod profile_settings;
 
 pub use app::app;
