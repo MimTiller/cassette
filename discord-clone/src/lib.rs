@@ -58,6 +58,8 @@ mod member_role_list;
 mod timeout_duration_picker;
 #[path = "components/notification_permission_prompt.rs"]
 mod notification_permission_prompt;
+#[path = "components/category_filter_chips.rs"]
+mod category_filter_chips;
 
 pub use app::app;
 
