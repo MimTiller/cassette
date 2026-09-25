@@ -28,6 +28,8 @@ mod verified_badge;
 mod jump_to_bottom_button;
 #[path = "components/emoji_upload_slot.rs"]
 mod emoji_upload_slot;
+#[path = "components/rules_accept_checkbox.rs"]
+mod rules_accept_checkbox;
 
 pub use app::app;
 
