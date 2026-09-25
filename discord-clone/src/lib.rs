@@ -80,6 +80,8 @@ mod setup_checklist_item;
 mod dm_request_card;
 #[path = "components/icon_change_confirm.rs"]
 mod icon_change_confirm;
+#[path = "components/pin_count_badge.rs"]
+mod pin_count_badge;
 
 pub use app::app;
 
