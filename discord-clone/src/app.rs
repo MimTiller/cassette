@@ -1173,6 +1173,28 @@ fn app_shell(authed: Signal<bool>) -> Element {
         }
     });
 
+    // Realtime gateway proof-of-life: the user id rides the connect URL as a
+    // ?args= query arg (integration-1b3b). Non-async hook; call it once here.
+    let gateway = discord_server::server_settings::message_gateway(
+        crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst),
+    );
+    // The muted 10px label mirrors the live-section label style below. The
+    // label is reactive: `switch` re-runs the arm whenever the status string
+    // changes, so the rail tracks Connecting -> Open -> Closed/Error live.
+    let gateway_label_style = StyleRules {
+        font_size: Some(px(10.0)),
+        color: Some(col(TEXT_MUTED)),
+        ..Default::default()
+    };
+    let gateway_status = switch(
+        move || format!("messaging: {:?}", gateway.status()),
+        move |label: &String| {
+            ui! {
+                text(style = gateway_label_style.clone()) { label.clone() }
+            }
+        },
+    );
+
     // --- server rail -----------------------------------------------------
     let rail_style = StyleRules {
         width: Some(px(72.0)),
@@ -1671,7 +1693,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             overflow: Some(Overflow::Hidden),
             ..Default::default()
         }) {
-            view(style = rail_style) { server_rows live_section }
+            view(style = rail_style) { server_rows live_section gateway_status }
             sidebar
             view(style = main_style) {
                 header
