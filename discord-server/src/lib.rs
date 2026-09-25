@@ -31,9 +31,7 @@ mod typeface;
 // native SQLite dep.
 #[cfg(feature = "server")]
 pub mod db;
-#[cfg(feature = "server")]
 pub mod roles;
-#[cfg(feature = "server")]
 pub mod server_settings;
 #[cfg(feature = "server")]
 pub mod invites;

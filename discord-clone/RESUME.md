@@ -211,6 +211,29 @@ The backend lives in the sibling `../discord-server` crate (its own
   NOTE: `net::WebSocket::connect(url)` is URL-only (no header injection),
   so tests use a raw `tokio-tungstenite` client with `x-user-id` set on the
   upgrade request; read frames with `ws.next()` (StreamExt), not `ws.recv()`.
+- **Module gating in `lib.rs` — fixed** (this commit): `roles` and
+  `server_settings` were over-gated at module level
+  (`#[cfg(feature = "server")] pub mod …`), so the wasm client (default
+  features, `server` OFF) never saw their wire types or `#[server]` stubs.
+  Both modules are now **always compiled** (like `auth.rs`); server-only
+  pieces inside `server_settings.rs` are gated individually with
+  `#[cfg(feature = "server")]` — the `db::Db` and `roles` imports,
+  `acting_user()`, `PRESENCE_IDLE_SECS`, the `ServerSettings` struct + impl,
+  and `db_from_state()` — and the tests module is `#[cfg(all(test,
+  feature = "server"))]`. Wire types and `#[server]` / `#[server::channel]`
+  fns stay ungated: the macros emit client stubs on their own. `WsServerMsg`
+  additionally derives `PartialEq` — the `#[server::channel]` client stub
+  calls `server::use_socket::<WsServerMsg, _>`, whose where-clause requires
+  `In: DeserializeOwned + Clone + PartialEq + 'static`.
+- **`message_gateway` auth is client-unusable as-is (next task:
+  integration-1b3b)**: it still authenticates via the reserved
+  `server::Headers` extractor reading the `x-user-id` HTTP header. The
+  client WebSocket API cannot set that — browsers cannot set custom headers
+  on a WebSocket handshake, and `net::WebSocket::connect` takes only a URL.
+  Chosen fix: pass the user id as a **connect-time wire arg** via the
+  macro's built-in `?args=` mechanism (changing the fn from
+  `headers: server::Headers` to a `user_id: i64` arg). That is the next
+  task, integration-1b3b.
 - **Orphaned / not yet wired**: `src/rate_limit.rs` exists in the tree but is
   NOT declared in `lib.rs` (not compiled) and its IP window limiter is not
   hooked into login yet. Separate concern.

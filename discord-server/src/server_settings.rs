@@ -35,11 +35,17 @@
 use serde::{Deserialize, Serialize};
 use server::{server, ServerError};
 
+#[cfg(feature = "server")]
 use crate::db::Db;
+// roles is pure logic and client-visible, but only the server-gated code in
+// this file uses its names (the `#[server]` client stubs do not reference the
+// arg types), so the import is gated too.
+#[cfg(feature = "server")]
 use crate::roles::{Action, ChannelKind, Role};
 
 /// Read the acting user id from the request header. Returns `None` if the
 /// header is absent (the adapter turns that into an unauthenticated error).
+#[cfg(feature = "server")]
 fn acting_user() -> Option<i64> {
     server::use_request_header("x-user-id")?.parse().ok()
 }
@@ -72,7 +78,11 @@ pub enum WsClientMsg {
 }
 
 /// Outbound frames the server sends.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `PartialEq` is required on the client side: the `#[server::channel]`
+/// macro's generated stub calls `server::use_socket::<WsServerMsg, _>`, whose
+/// where-clause demands `In: DeserializeOwned + Clone + PartialEq + 'static`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum WsServerMsg {
     /// A message, either a freshly posted one (`new: true`) or history
     /// (`new: false`).
@@ -96,6 +106,7 @@ pub enum WsServerMsg {
 /// How long an idle (no inbound frame) socket may sit before its owner's
 /// presence flips from 'online' to 'away'. Any inbound frame resets the
 /// clock back to 'online'.
+#[cfg(feature = "server")]
 const PRESENCE_IDLE_SECS: u64 = 30;
 
 /// The realtime message gateway. Mounted at `GET /_srv/_ws/message_gateway`.
@@ -268,10 +279,12 @@ pub struct ServerSettingsResult {
 ///
 /// Every method takes the acting user id explicitly so the authorization is
 /// testable without any request context.
+#[cfg(feature = "server")]
 pub struct ServerSettings {
     db: Db,
 }
 
+#[cfg(feature = "server")]
 impl ServerSettings {
     pub fn new(db: Db) -> Self {
         Self { db }
@@ -838,6 +851,7 @@ pub async fn unread_counts(input: UnreadCountsInput) -> Result<Vec<UnreadCount>,
 /// Pull the shared `Db` out of server state, installed at startup by the
 /// server bin via `server::install_state(db)`. `Db` is cheap to clone (it's
 /// just an `Arc<Mutex<Connection>>`), so each request gets its own handle.
+#[cfg(feature = "server")]
 fn db_from_state() -> Result<Db, ServerError> {
     server::use_state::<Db>()
         .ok_or_else(|| ServerError::failed("database not installed"))
@@ -966,7 +980,7 @@ pub struct UnreadCount {
 // service (no HTTP / no server state needed). A rejection case is included for
 // each mutation.
 
-#[cfg(test)]
+#[cfg(all(test, feature = "server"))]
 mod tests {
     use super::*;
     use crate::db::Db;
