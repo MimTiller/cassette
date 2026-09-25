@@ -32,7 +32,16 @@ async fn main() {
     // Open (or create + migrate) the SQLite database.
     let db_path = std::env::var("DISCORD_DB").unwrap_or_else(|_| "discord.db".to_string());
     let db_path = PathBuf::from(db_path);
-    let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    // This file is also built as the bin of the `discord-server-run` wrapper
+    // crate, where CARGO_MANIFEST_DIR is the wrapper dir -- so fall back to the
+    // sibling `discord-server/migrations` (or set DISCORD_MIGRATIONS).
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let migrations = std::env::var_os("DISCORD_MIGRATIONS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let own = manifest_dir.join("migrations");
+            if own.is_dir() { own } else { manifest_dir.join("../discord-server/migrations") }
+        });
 
     let db = discord_server::db::Db::migrate(&db_path, &migrations)
         .unwrap_or_else(|e| panic!("failed to open/migrate database at {db_path:?}: {e}"));

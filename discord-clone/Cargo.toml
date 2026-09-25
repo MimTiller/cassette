@@ -108,5 +108,5 @@ targets   = ["web"]
 # Full-stack dev: `idealyst dev --web` builds + runs this backend beside the
 # bundle and serves the UI and the /_srv API from one origin (the server
 # serves the staged dist/web via WEB_DIST; see discord-server/src/bin/server.rs).
-server_manifest = "../discord-server/Cargo.toml"
+server_manifest = "../discord-server-run/Cargo.toml"
 server_bin      = "server"
