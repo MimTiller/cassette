@@ -64,6 +64,8 @@ mod notification_permission_prompt;
 mod category_filter_chips;
 #[path = "components/send_failed_indicator.rs"]
 mod send_failed_indicator;
+#[path = "components/featured_server_banner.rs"]
+mod featured_server_banner;
 
 pub use app::app;
 
