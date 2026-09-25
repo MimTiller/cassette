@@ -52,6 +52,8 @@ mod activity_card;
 mod audit_log_row;
 #[path = "components/link_embed_preview.rs"]
 mod link_embed_preview;
+#[path = "components/member_role_list.rs"]
+mod member_role_list;
 
 pub use app::app;
 
