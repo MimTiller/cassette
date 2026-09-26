@@ -140,6 +140,8 @@ mod voice_join_button;
 mod server_template_card;
 #[path = "components/forward_message_dialog.rs"]
 mod forward_message_dialog;
+#[path = "components/two_factor_toggle.rs"]
+mod two_factor_toggle;
 
 pub use app::app;
 
