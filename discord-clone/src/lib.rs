@@ -124,6 +124,8 @@ mod ban_list_row;
 mod role_badge;
 #[path = "components/screen_share_indicator.rs"]
 mod screen_share_indicator;
+#[path = "components/delete_message_confirm.rs"]
+mod delete_message_confirm;
 
 pub use app::app;
 
