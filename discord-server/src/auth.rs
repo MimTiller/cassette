@@ -120,13 +120,15 @@ pub struct LoginInput {
     pub password: String,
 }
 
-/// The result of a successful [`login`]: the account's numeric id. The client
-/// sends it back as the `x-user-id` header — the same stand-in session
-/// convention every other endpoint in this codebase uses
-/// (`acting_user()` in [`crate::invites`] / [`crate::server_settings`]).
+/// The result of a successful [`login`]: the account's numeric id and a
+/// signed, expiring session [`token`]. The client sends the token back as
+/// `Authorization: Bearer <token>` on every subsequent request — identity
+/// comes only from a token whose HMAC-SHA256 signature verifies against the
+/// server secret (see [`crate::session`]).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct LoginResult {
     pub user_id: i64,
+    pub token: String,
 }
 
 #[cfg(feature = "server")]
@@ -175,7 +177,7 @@ impl AuthService {
         self.db
             .clear_login_failures(user_id)
             .map_err(|e| format!("failed to clear login failures: {e}"))?;
-        Ok(LoginResult { user_id })
+        Ok(LoginResult { user_id, token: crate::session::issue_token(user_id) })
     }
 
     /// Seconds until the account's lockout window slides past its oldest
@@ -204,9 +206,10 @@ impl AuthService {
 }
 
 /// Authenticate with a username + password. On success returns the account's
-/// numeric id, which the client must send back as the `x-user-id` header on
-/// every subsequent request (the stand-in session convention used by every
-/// other endpoint in this codebase).
+/// numeric id and a signed, expiring session token, which the client must
+/// send back as `Authorization: Bearer <token>` on every subsequent request
+/// (identity is resolved from the token's HMAC-SHA256 signature — see
+/// [`crate::session`] — rather than from a client-supplied id).
 ///
 /// Wrong passwords are rejected with a uniform error (the account is never
 /// named) and record a per-account failure; after `LOGIN_MAX_FAILURES`

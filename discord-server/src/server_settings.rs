@@ -43,12 +43,10 @@ use crate::db::Db;
 #[cfg(feature = "server")]
 use crate::roles::{Action, ChannelKind, Role};
 
-/// Read the acting user id from the request header. Returns `None` if the
-/// header is absent (the adapter turns that into an unauthenticated error).
+/// The acting user for the current request, resolved from a verified session
+/// token (see [`crate::session`]); `None` when unauthenticated.
 #[cfg(feature = "server")]
-fn acting_user() -> Option<i64> {
-    server::use_request_header("x-user-id")?.parse().ok()
-}
+use crate::session::acting_user;
 
 // ===========================================================================
 // Realtime gateway: send/receive chat messages in a channel over WebSocket.
