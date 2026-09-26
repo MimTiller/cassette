@@ -26,4 +26,6 @@ pub mod welcome_phrase;
 #[macro_use]
 pub mod status_picker;
 #[macro_use]
+pub mod pinned_messages_panel;
+#[macro_use]
 pub mod content_layer;
