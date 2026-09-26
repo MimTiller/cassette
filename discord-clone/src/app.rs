@@ -603,7 +603,7 @@ fn user_panel(
                 padding_bottom: Some(px(8.0)),
                 padding_left: Some(px(8.0)),
                 padding_right: Some(px(8.0)),
-                gap: Some(px(10.0)),
+                gap: Some(px(8.0)),
                 flex_direction: Some(FlexDirection::Row),
                 align_items: Some(AlignItems::Center),
                 background: Some(col(USER_BAR)),
@@ -616,6 +616,8 @@ fn user_panel(
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
                 background: Some(col(user.color)),
+                // Fixed 32px circle: never squeeze it when the row is tight.
+                flex_shrink: Some(grow(0.0)),
                 border_top_left_radius: Some(px(16.0)),
                 border_top_right_radius: Some(px(16.0)),
                 border_bottom_left_radius: Some(px(16.0)),
@@ -652,6 +654,10 @@ fn user_panel(
             let text_stack = StyleRules {
                 flex_direction: Some(FlexDirection::Column),
                 flex_grow: Some(grow(1.0)),
+                // Only this column absorbs row shrinkage (avatar and the two
+                // pills are fixed): the name must keep ~40px so "you" renders
+                // in full instead of clipping to "yo".
+                min_width: Some(px(40.0)),
                 overflow: Some(Overflow::Hidden),
                 ..Default::default()
             };
@@ -670,7 +676,7 @@ fn user_panel(
             let second_line = match voice_name {
                 Some(ref channel) => {
                     let vc_style = StyleRules {
-                        font_size: Some(px(12.0)),
+                        font_size: Some(px(10.0)),
                         font_weight: Some(FontWeight::SemiBold),
                         color: Some(col("#23a559")),
                         ..Default::default()
@@ -706,15 +712,16 @@ fn user_panel(
             let leave_btn = match voice_name {
                 Some(_) => {
                     let leave_style = StyleRules {
-                        height: Some(px(26.0)),
-                        padding_left: Some(px(10.0)),
-                        padding_right: Some(px(10.0)),
+                        height: Some(px(24.0)),
+                        padding_left: Some(px(8.0)),
+                        padding_right: Some(px(8.0)),
                         background: Some(col(BG_SIDEBAR)),
                         color: Some(col(TEXT)),
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),
-                        font_size: Some(px(12.0)),
+                        font_size: Some(px(11.0)),
                         font_weight: Some(FontWeight::SemiBold),
+                        flex_shrink: Some(grow(0.0)),
                         border_top_left_radius: Some(px(6.0)),
                         border_top_right_radius: Some(px(6.0)),
                         border_bottom_left_radius: Some(px(6.0)),
@@ -726,7 +733,7 @@ fn user_panel(
                     let leave = joined_voice.clone();
                     let leave_text_style = StyleRules {
                         color: Some(col(TEXT)),
-                        font_size: Some(px(12.0)),
+                        font_size: Some(px(11.0)),
                         font_weight: Some(FontWeight::SemiBold),
                         ..Default::default()
                     };
@@ -767,16 +774,21 @@ fn user_panel(
             // unmounts this tree and re-mounts the login screen (the `switch`
             // key in `app()` re-evaluates on it). Same view+on_touch pill the
             // Leave button uses, so it fits the row's styling.
+            // Compact pill: 8px padding + 11px type so it fits the 240px
+            // sidebar row next to the avatar and the Profile pill.
             let logout_style = StyleRules {
-                height: Some(px(26.0)),
-                padding_left: Some(px(10.0)),
-                padding_right: Some(px(10.0)),
+                height: Some(px(24.0)),
+                padding_left: Some(px(8.0)),
+                padding_right: Some(px(8.0)),
                 background: Some(col(BG_SIDEBAR)),
                 color: Some(col(TEXT_MUTED)),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
-                font_size: Some(px(12.0)),
+                font_size: Some(px(11.0)),
                 font_weight: Some(FontWeight::SemiBold),
+                // The row must shrink the name column, never the pills:
+                // a squashed pill is what made "Log Out" wrap to two lines.
+                flex_shrink: Some(grow(0.0)),
                 border_top_left_radius: Some(px(6.0)),
                 border_top_right_radius: Some(px(6.0)),
                 border_bottom_left_radius: Some(px(6.0)),
@@ -786,7 +798,7 @@ fn user_panel(
             let logout = authed.clone();
             let logout_text_style = StyleRules {
                 color: Some(col(TEXT_MUTED)),
-                font_size: Some(px(12.0)),
+                font_size: Some(px(11.0)),
                 font_weight: Some(FontWeight::SemiBold),
                 ..Default::default()
             };
@@ -805,14 +817,18 @@ fn user_panel(
             // that opens the full-screen `profile_settings` screen. `app_shell`
             // owns `profile_mode` and renders the overlay when it flips on.
             let profile_open = profile_mode.clone();
+            // Compact like Log Out, so both pills fit one 240px row.
             let profile_btn = ui! {
                 view(style = StyleRules {
-                    height: Some(px(26.0)),
-                    padding_left: Some(px(10.0)),
-                    padding_right: Some(px(10.0)),
+                    height: Some(px(24.0)),
+                    padding_left: Some(px(8.0)),
+                    padding_right: Some(px(8.0)),
                     background: Some(col(BG_SIDEBAR)),
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
+                    font_size: Some(px(11.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    flex_shrink: Some(grow(0.0)),
                     border_top_left_radius: Some(px(6.0)),
                     border_top_right_radius: Some(px(6.0)),
                     border_bottom_left_radius: Some(px(6.0)),
@@ -821,7 +837,7 @@ fn user_panel(
                 }) {
                     text(style = StyleRules {
                         color: Some(col(TEXT_MUTED)),
-                        font_size: Some(px(12.0)),
+                        font_size: Some(px(11.0)),
                         font_weight: Some(FontWeight::SemiBold),
                         ..Default::default()
                     }) { "Profile".to_string() }
