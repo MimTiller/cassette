@@ -334,9 +334,26 @@ pub async fn list_dms() -> Result<Vec<Dm>, ServerError> {
 pub async fn send_dm_message(input: SendDmMessageInput) -> Result<SendDmMessageResult, ServerError> {
     let db = db_from_state()?;
     let user = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
-    let message = DmService::new(db)
+    let message = DmService::new(db.clone())
         .send_message(user, input.channel_id, &input.content)
         .map_err(ServerError::failed)?;
+    // Push it to every connected participant (the sender's other sockets too).
+    let audience: Vec<i64> = db
+        .dm_participants_of(message.channel_id)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    crate::realtime::hub().publish(
+        &audience,
+        &crate::server_settings::WsServerMsg::DmMessage {
+            message_id: message.message_id,
+            dm_id: message.channel_id,
+            author_id: message.author_id,
+            author_username: message.author_username.clone(),
+            content: message.content.clone(),
+            created_at: message.created_at,
+        },
+    );
     Ok(SendDmMessageResult { message })
 }
 
