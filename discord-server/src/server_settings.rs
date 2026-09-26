@@ -49,23 +49,15 @@ use crate::roles::{Action, ChannelKind, Role};
 use crate::session::acting_user;
 
 // ===========================================================================
-// Realtime gateway: send/receive chat messages in a channel over WebSocket.
+// Realtime gateway: session-token auth, realtime hub fan-out.
 // ===========================================================================
 //
-// A full-duplex `#[server::channel]` endpoint. A client opens it with a
-// `x-user-id` request header (the same stand-in session mechanism the
-// `#[server]` fns use via `acting_user`) and a `channel_id`, then exchanges
-// `WsClientMsg`/`WsServerMsg` frames. The acting user is read from the
-// upgrade header via the `server::Headers` reserved extractor, so auth works
-// in the channel body (the task-local `use_request_header` does not).
-//
-// Scope: channel messages + a per-user presence heartbeat. Presence is the
-// user's one status field ('online' / 'away' / 'offline'), driven by this
-// socket: 'online' at open, 'away' after `PRESENCE_IDLE_SECS` of silence,
-// 'offline' when the handler returns. Changes are persisted to
-// `users.presence_status` and announced on the wire as `WsServerMsg::Presence`
-// (echoed to the user's own socket; a cross-user broadcast is a follow-up).
-
+// A full-duplex `#[server::channel]` endpoint. The client connects with the
+// signed session token `login` returned (a wire arg in the connect URL, since
+// a browser WebSocket cannot set custom upgrade headers). The token is
+// verified before any frame is exchanged; the user id is taken from the
+// verified token. All events (channel messages, DMs, presence) are fanned out
+// through `crate::realtime` to every socket that should hear them.
 /// Inbound frames the client sends.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum WsClientMsg {
@@ -95,6 +87,8 @@ pub enum WsServerMsg {
     },
     /// The most recent `Message { new: false }` frames for `History`.
     History { channel_id: i64 },
+    /// A direct message pushed to a participant of the DM (always `new`).
+    DmMessage { message_id: i64, dm_id: i64, author_id: i64, author_username: String, content: String, created_at: i64 },
     /// A presence status change for a user: 'online' / 'away' / 'offline'.
     Presence { user_id: i64, status: String },
     /// A gateway error for a specific operation.
@@ -109,151 +103,122 @@ const PRESENCE_IDLE_SECS: u64 = 30;
 
 /// The realtime message gateway. Mounted at `GET /_srv/_ws/message_gateway`.
 ///
-/// `user_id` is a wire arg — encoded by the client stub into the connect
-/// URL's `?args=` query param and decoded by the `#[server::channel]` macro
-/// before this body runs (a malformed or missing arg is a 400 the client
-/// never reaches this code for). The acting user is passed as a connect-time
-/// argument rather than a header: a browser WebSocket cannot set custom
-/// upgrade headers, so header-based auth was impossible from a client.
+/// `token` is a wire arg (encoded into the connect URL's `?args=` query by the
+/// client stub): the signed session token `login` returned. A browser
+/// WebSocket cannot set custom upgrade headers, so the token rides the URL. It
+/// is verified before any frame is exchanged: a missing, forged or expired
+/// token gets no working socket, and the user id is taken from the verified
+/// token, never from the client.
+///
+/// Delivery: every event goes through [`crate::realtime::hub`]. A message
+/// posted in a channel reaches every open socket of every member of that
+/// channel's server (including the sender's own, which is its echo); DMs are
+/// pushed the same way (see `dms::send_dm_message`); presence changes reach the
+/// user's fellow server members. Reading or posting requires membership of the
+/// channel's server and a text channel, and posts are size- and rate-limited.
 #[server::channel]
 pub async fn message_gateway(
     mut ch: server::Socket<WsClientMsg, WsServerMsg>,
-    user_id: i64,
+    token: String,
 ) -> Result<(), ServerError> {
-    let db = db_from_state()?;
+    use crate::realtime::{announce_presence, history_for, hub, post_channel_message};
 
-    // Presence heartbeat: 'online' the moment the socket is authenticated.
+    let db = db_from_state()?;
+    let user_id = crate::session::verify_token(&token)
+        .ok_or_else(|| ServerError::failed("unauthenticated"))?;
+
+    let hub = hub();
+    let (conn_id, mut events) = hub.register(user_id);
+
+    // Presence: 'online' the moment the socket is authenticated.
     // `db.set_presence` returns whether the value actually changed, so we only
-    // announce a transition the client doesn't already know about.
+    // announce a transition the audience doesn't already know about.
     let mut presence = "online".to_string();
     if db.set_presence(user_id, &presence).is_ok_and(|changed| changed) {
-        let _ = ch
-            .send(WsServerMsg::Presence {
-                user_id,
-                status: presence.clone(),
-            })
-            .await;
+        announce_presence(&db, user_id, &presence);
     }
 
+    // Only inbound client frames count as activity (events pushed to this
+    // socket must not keep an idle user "online").
+    let mut last_activity = tokio::time::Instant::now();
     loop {
-        // Idle timeout: no inbound frame within PRESENCE_IDLE_SECS → the user
-        // is treated as away (their socket is still open). Any inbound frame
-        // (message or history request) counts as activity, so the timer resets
-        // implicitly on the next iteration.
+        let idle_at = last_activity + std::time::Duration::from_secs(PRESENCE_IDLE_SECS);
         let frame = tokio::select! {
             r = ch.recv() => r,
-            _ = tokio::time::sleep(std::time::Duration::from_secs(PRESENCE_IDLE_SECS)) => {
-                if db
-                    .set_presence(user_id, "away")
-                    .is_ok_and(|changed| changed)
-                {
-                    presence = "away".to_string();
-                    let _ = ch
-                        .send(WsServerMsg::Presence {
-                            user_id,
-                            status: presence.clone(),
-                        })
-                        .await;
+            ev = events.recv() => {
+                match ev {
+                    Some(m) => {
+                        if ch.send(m).await.is_err() {
+                            break;
+                        }
+                    }
+                    None => break,
+                }
+                continue;
+            }
+            _ = tokio::time::sleep_until(idle_at), if presence == "online" => {
+                presence = "away".to_string();
+                if db.set_presence(user_id, "away").is_ok_and(|changed| changed) {
+                    announce_presence(&db, user_id, "away");
                 }
                 continue;
             }
         };
         let Some(Ok(msg)) = frame else {
-            // Transport error or close: the loop exits and the user goes
-            // 'offline' below.
             break;
         };
-        // Any inbound frame is activity → back to 'online'.
-        if presence != "online"
-            && db.set_presence(user_id, "online").is_ok_and(|changed| changed)
-        {
+        last_activity = tokio::time::Instant::now();
+        if presence != "online" {
             presence = "online".to_string();
-            let _ = ch
-                .send(WsServerMsg::Presence {
-                    user_id,
-                    status: presence.clone(),
-                })
-                .await;
+            if db.set_presence(user_id, "online").is_ok_and(|changed| changed) {
+                announce_presence(&db, user_id, "online");
+            }
         }
         match msg {
             WsClientMsg::Send {
                 channel_id,
                 content,
             } => {
-                // Reject an empty message rather than storing garbage.
-                if content.trim().is_empty() {
-                    let _ = ch
-                        .send(WsServerMsg::Error {
-                            reason: "empty message".into(),
-                        })
-                        .await;
-                    continue;
+                // Success fans out through the hub (the sender's own echo
+                // included); only failures are answered on this socket.
+                if let Err(reason) = post_channel_message(&db, user_id, channel_id, &content) {
+                    let _ = ch.send(WsServerMsg::Error { reason }).await;
                 }
-                // The channel must exist.
-                let Some((_id, _name)) = db.channel_by_id(channel_id) else {
-                    let _ = ch
-                        .send(WsServerMsg::Error {
-                            reason: "channel not found".into(),
-                        })
-                        .await;
-                    continue;
-                };
-                let created_at = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_millis() as i64)
-                    .unwrap_or(0);
-                match db.insert_message(channel_id, user_id, &content, created_at) {
-                    Ok(message_id) => {
+            }
+            WsClientMsg::History { channel_id } => match history_for(&db, user_id, channel_id, 50) {
+                Ok(messages) => {
+                    let _ = ch.send(WsServerMsg::History { channel_id }).await;
+                    for m in messages {
                         let _ = ch
                             .send(WsServerMsg::Message {
-                                message_id,
-                                channel_id,
-                                author_id: user_id,
-                                content,
-                                created_at,
-                                edited_at: None,
-                                new: true,
-                            })
-                            .await;
-                    }
-                    Err(e) => {
-                        let _ = ch
-                            .send(WsServerMsg::Error {
-                                reason: e.to_string(),
+                                message_id: m.id,
+                                channel_id: m.channel_id,
+                                author_id: m.author_id,
+                                content: m.content,
+                                created_at: m.created_at,
+                                edited_at: m.edited_at,
+                                new: false,
                             })
                             .await;
                     }
                 }
-            }
-            WsClientMsg::History { channel_id } => {
-                let _ = ch
-                    .send(WsServerMsg::History { channel_id })
-                    .await;
-                for m in db.recent_messages(channel_id, 50) {
+                Err(reason) => {
                     let _ = ch
-                        .send(WsServerMsg::Message {
-                            message_id: m.id,
-                            channel_id: m.channel_id,
-                            author_id: m.author_id,
-                            content: m.content,
-                            created_at: m.created_at,
-                            edited_at: m.edited_at,
-                            new: false,
+                        .send(WsServerMsg::Error {
+                            reason: reason.to_string(),
                         })
                         .await;
                 }
-            }
+            },
         }
     }
-    // Disconnect: the socket has closed (client went away, transport died,
-    // or the loop broke on an error). Mark the user 'offline'.
-    if db.set_presence(user_id, "offline").is_ok_and(|changed| changed) {
-        let _ = ch
-            .send(WsServerMsg::Presence {
-                user_id,
-                status: "offline".to_string(),
-            })
-            .await;
+    // Disconnect: the socket has closed (client went away, transport died, or
+    // the loop broke on an error). When it was the user's last socket, mark
+    // them 'offline' and tell their fellow server members.
+    if hub.unregister(user_id, conn_id)
+        && db.set_presence(user_id, "offline").is_ok_and(|changed| changed)
+    {
+        announce_presence(&db, user_id, "offline");
     }
     Ok(())
 }
@@ -1458,323 +1423,11 @@ mod tests {
         );
     }
 
-    // ── realtime gateway: send/receive round-trip ────────────────────────────
-    //
-    // E2E through the macro-mounted route: boot `server::router()` (which
-    // folds the `#[server::channel]` WsEntry into `GET /_srv/_ws/
-    // message_gateway`), install the shared `Db`, connect a raw WebSocket
-    // client, and prove a message sent over the socket is persisted +
-    // echoed back, and that `History` replays it.
-    //
-    // A raw `tokio-tungstenite` client is used instead of the framework's
-    // `net::WebSocket::connect(url)` because that API is URL-only and cannot
-    // attach the `x-user-id` header the upgrade handshake needs for auth.
-
-    /// Seed one server (owner = user 1) and one text channel, returning the
-    /// channel id. The messages table is created empty — the test posts into
-    /// it over the gateway.
-    fn setup_db_with_channel() -> (tempfile::TempDir, Db, i64) {
-        let dir = tempfile::tempdir().unwrap();
-        let db_path = dir.path().join("test.db");
-        let migrations_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
-        let db = Db::migrate(&db_path, &migrations_dir).unwrap();
-
-        let c = db.lock().unwrap();
-        c.execute_batch(
-            "INSERT INTO users (id, username, email, created_at) VALUES
-                (1, 'owner', 'owner@example.com', 1000);
-            INSERT INTO servers (id, name, owner_id, icon_url, created_at)
-                VALUES (1, 'My Server', 1, NULL, 1000);
-            INSERT INTO channels (id, server_id, name, kind, position, parent_channel_id, created_at)
-                VALUES (1, 1, 'general', 'text', 0, NULL, 1000);",
-        )
-        .unwrap();
-        drop(c);
-
-        (dir, db, 1)
-    }
-
-    fn decode_gateway(msg: tokio_tungstenite::tungstenite::Message) -> WsServerMsg {
-        let tokio_tungstenite::tungstenite::Message::Text(s) = msg else {
-            panic!("expected a text frame, got {msg:?}");
-        };
-        serde_json::from_str(&s).expect("frame is valid WsServerMsg JSON")
-    }
-
-    fn encode_client(msg: &WsClientMsg) -> tokio_tungstenite::tungstenite::Message {
-        tokio_tungstenite::tungstenite::Message::Text(
-            serde_json::to_string(msg).unwrap(),
-        )
-    }
-
     /// Acquire the e2e serialization guard; hold it for the whole test body.
     /// (Poisoned if a prior holder panicked — recover rather than re-panic.)
     /// Delegates to the crate-level [`crate::e2e_lock`] so the HTTP/WS e2e
     /// tests here share ONE lock with the DM e2e test in `dms`.
     fn e2e_guard() -> std::sync::MutexGuard<'static, ()> {
         crate::e2e_lock::guard()
-    }
-
-    #[tokio::test]
-    async fn gateway_send_and_history_round_trip() {
-        use futures_util::{SinkExt, StreamExt};
-        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-        use tokio_tungstenite::tungstenite::http::header;
-
-        let (dir, db, channel_id) = setup_db_with_channel();
-        let _guard = e2e_guard();
-        server::install_state(db.clone());
-
-        // Boot the macro-mounted router on an ephemeral port.
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move {
-            let _ = axum::serve(listener, server::router()).await;
-        });
-
-        // Authenticated client: x-user-id on the upgrade handshake.
-        let url = format!("ws://{addr}/_srv/_ws/message_gateway");
-        let mut req = url.into_client_request().expect("connect URL parses");
-        req.headers_mut()
-            .insert(header::USER_AGENT, "discord-server-gateway-test".parse().unwrap());
-        req.headers_mut().insert("x-user-id", "1".parse().unwrap());
-        let (mut ws, _) = tokio_tungstenite::connect_async(req)
-            .await
-            .expect("gateway upgrade succeeds (authenticated)");
-
-        // 1. Send a message → the server persists it and echoes it back with new: true.
-        let send = WsClientMsg::Send {
-            channel_id,
-            content: "hello channel".into(),
-        };
-        ws.send(encode_client(&send)).await.unwrap();
-        // The connect-time Presence frame arrives first (online at open); the
-        // echoed message follows it.
-        match decode_gateway(ws.next().await.unwrap().expect("socket open")) {
-            WsServerMsg::Presence { status, .. } => assert_eq!(status, "online"),
-            other => panic!("expected an online Presence frame at open, got {other:?}"),
-        }
-        let echo = decode_gateway(ws.next().await.unwrap().expect("socket open"));
-        match echo {
-            WsServerMsg::Message {
-                message_id,
-                channel_id: ch,
-                author_id,
-                content,
-                edited_at,
-                new,
-                ..
-            } => {
-                assert_eq!(ch, channel_id);
-                assert_eq!(author_id, 1, "author is the x-user-id");
-                assert_eq!(content, "hello channel");
-                assert!(new, "a freshly posted message is new");
-                assert!(edited_at.is_none());
-                // It was really persisted.
-                let stored = db.recent_messages(channel_id, 10);
-                assert_eq!(stored.len(), 1);
-                assert_eq!(stored[0].id, message_id);
-                assert_eq!(stored[0].content, "hello channel");
-            }
-            other => panic!("expected an echo Message, got {other:?}"),
-        }
-
-        // 2. History → a History marker followed by the posted message, new: false.
-        let hist = WsClientMsg::History { channel_id };
-        ws.send(encode_client(&hist)).await.unwrap();
-        let marker = decode_gateway(ws.next().await.unwrap().expect("socket open"));
-        match marker {
-            WsServerMsg::History { channel_id: ch } => assert_eq!(ch, channel_id),
-            other => panic!("expected a History marker, got {other:?}"),
-        }
-        let replayed = decode_gateway(ws.next().await.unwrap().expect("socket open"));
-        match replayed {
-            WsServerMsg::Message {
-                channel_id: ch,
-                author_id,
-                content,
-                new,
-                ..
-            } => {
-                assert_eq!(ch, channel_id);
-                assert_eq!(author_id, 1);
-                assert_eq!(content, "hello channel");
-                assert!(!new, "history replays are not new");
-            }
-            other => panic!("expected a replayed Message, got {other:?}"),
-        }
-
-        drop(ws);
-        drop(dir);
-    }
-
-    #[tokio::test]
-    async fn gateway_rejects_empty_message() {
-        use futures_util::{SinkExt, StreamExt};
-        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-        use tokio_tungstenite::tungstenite::http::header;
-
-        let (dir, db, channel_id) = setup_db_with_channel();
-        let _guard = e2e_guard();
-        server::install_state(db.clone());
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move {
-            let _ = axum::serve(listener, server::router()).await;
-        });
-
-        let url = format!("ws://{addr}/_srv/_ws/message_gateway");
-        let mut req = url.into_client_request().expect("connect URL parses");
-        req.headers_mut()
-            .insert(header::USER_AGENT, "discord-server-gateway-test".parse().unwrap());
-        req.headers_mut().insert("x-user-id", "1".parse().unwrap());
-        let (mut ws, _) = tokio_tungstenite::connect_async(req)
-            .await
-            .expect("gateway upgrade succeeds (authenticated)");
-
-        // Empty content is rejected with an Error frame, not stored. The
-        // connect-time Presence frame arrives first.
-        match decode_gateway(ws.next().await.unwrap().expect("socket open")) {
-            WsServerMsg::Presence { status, .. } => assert_eq!(status, "online"),
-            other => panic!("expected an online Presence frame at open, got {other:?}"),
-        }
-        let send = WsClientMsg::Send {
-            channel_id,
-            content: "   ".into(),
-        };
-        ws.send(encode_client(&send)).await.unwrap();
-        match decode_gateway(ws.next().await.unwrap().expect("socket open")) {
-            WsServerMsg::Error { reason } => assert!(reason.contains("empty"), "got: {reason}"),
-            other => panic!("expected an Error frame, got {other:?}"),
-        }
-        assert!(db.recent_messages(channel_id, 10).is_empty(), "nothing stored");
-
-        drop(ws);
-        drop(dir);
-    }
-
-    // ── presence ───────────────────────────────────────────────────────────
-    //
-    // The status field is driven by the gateway socket itself: 'online' at
-    // open (announced as the first frame), 'offline' once the socket closes.
-    // The idle→'away' transition uses the same code path but with a 30s
-    // timer, so it is not covered by an e2e test (too slow); the unit test
-    // below pins `set_presence`'s change-detection instead.
-
-    #[test]
-    fn presence_set_and_change_detection() {
-        let (_dir, db) = setup_db();
-        // Fresh user is 'offline' (the migration default).
-        assert_eq!(db.presence(1).as_deref(), Some("offline"));
-        // Setting the same value is a no-op (no change to broadcast).
-        assert_eq!(db.set_presence(1, "offline").unwrap(), false);
-        // A different value is a change.
-        assert_eq!(db.set_presence(1, "online").unwrap(), true);
-        assert_eq!(db.presence(1).as_deref(), Some("online"));
-        // Unknown user → QueryReturnedNoRows, not a silent no-op.
-        assert!(db.set_presence(999, "online").is_err());
-        // Invalid status strings are rejected.
-        assert!(db.set_presence(1, "sleeping").is_err());
-    }
-
-    #[tokio::test]
-    async fn gateway_presence_online_on_open_and_offline_on_close() {
-        use futures_util::StreamExt;
-        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-        use tokio_tungstenite::tungstenite::http::header;
-
-        let (dir, db, _channel_id) = setup_db_with_channel();
-        let _guard = e2e_guard();
-        server::install_state(db.clone());
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move {
-            let _ = axum::serve(listener, server::router()).await;
-        });
-
-        let url = format!("ws://{addr}/_srv/_ws/message_gateway");
-        let mut req = url.into_client_request().expect("connect URL parses");
-        req.headers_mut()
-            .insert(header::USER_AGENT, "discord-server-presence-test".parse().unwrap());
-        req.headers_mut().insert("x-user-id", "1".parse().unwrap());
-        let (mut ws, _) = tokio_tungstenite::connect_async(req)
-            .await
-            .expect("gateway upgrade succeeds (authenticated)");
-
-        // 1. On open the first frame is a Presence 'online' announcement.
-        let frame = decode_gateway(
-            ws.next()
-                .await
-                .unwrap()
-                .expect("socket open after connect"),
-        );
-        match frame {
-            WsServerMsg::Presence { user_id, status } => {
-                assert_eq!(user_id, 1);
-                assert_eq!(status, "online");
-            }
-            other => panic!("expected an online Presence frame at open, got {other:?}"),
-        }
-        // ...and it is persisted.
-        assert_eq!(db.presence(1).as_deref(), Some("online"));
-
-        // 2. Close the socket → the handler returns and marks the user offline.
-        drop(ws);
-        // The disconnect happens on the server's task; poll until persisted.
-        for _ in 0..100 {
-            if db.presence(1).as_deref() == Some("offline") {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        }
-        assert_eq!(
-            db.presence(1).as_deref(),
-            Some("offline"),
-            "user should be offline after the socket closes"
-        );
-
-        drop(dir);
-    }
-
-    #[tokio::test]
-    async fn gateway_rejects_missing_auth() {
-        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-
-        let (dir, db, _channel_id) = setup_db_with_channel();
-        let _guard = e2e_guard();
-        server::install_state(db.clone());
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move {
-            let _ = axum::serve(listener, server::router()).await;
-        });
-
-        // No x-user-id header → the handler returns Err at open. The framework
-        // completes the 101 handshake first (it cannot reject it), then the
-        // handler's early return tears down the session: the socket is closed
-        // promptly rather than held open for anonymous sends.
-        let url = format!("ws://{addr}/_srv/_ws/message_gateway");
-        let req = url
-            .into_client_request()
-            .expect("connect URL parses");
-        let (mut ws, _) = tokio_tungstenite::connect_async(req)
-            .await
-            .expect("handshake completes; auth is enforced by the handler");
-        use futures_util::StreamExt;
-        let close = tokio::time::timeout(std::time::Duration::from_secs(3), ws.next()).await;
-        let frame = match close {
-            Err(_) => panic!("socket stayed open after unauthenticated open — anonymous sender would be accepted"),
-            Ok(frame) => frame,
-        };
-        match frame {
-            None => {} // clean EOF: handler returned and dropped the socket
-            Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_))) => {}
-            Some(Ok(other)) => panic!("expected a close, got {other:?}"),
-            Some(Err(_)) => {} // transport-level close
-        }
-        drop(dir);
     }
 }
