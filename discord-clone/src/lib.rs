@@ -108,6 +108,8 @@ mod reply_preview_bar;
 mod mute_channel_toggle;
 #[path = "components/friend_request_card.rs"]
 mod friend_request_card;
+#[path = "components/server_icon_upload_placeholder.rs"]
+mod server_icon_upload_placeholder;
 
 pub use app::app;
 
