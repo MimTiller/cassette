@@ -1,0 +1,123 @@
+//! `pin_confirm_toast` — a self-contained "message pinned" toast for the
+//! Discord clone. A small banner that renders only while a local `visible`
+//! boolean signal is `true` (hardcoded to start `true` for now), showing the
+//! text `"Message pinned!"` with a close "x" button that sets `visible` to
+//! `false`, dismissing the banner.
+//!
+//! Everything is hardcoded local state — no backend call, no props, no wiring
+//! into any screen yet. Declared in `lib.rs` so it compiles as part of the
+//! crate, but referenced by nothing (the same shape `welcome_banner` /
+//! `jump_to_bottom_button` ship in).
+//!
+//! Idioms, each verified against this crate's `components/welcome_banner.rs`:
+//! - styles are plain `StyleRules` via the `style_helpers` `px` / `col`
+//!   constructors (one static pass, no live style engine);
+//! - the banner-vs-nothing swap is a node-level reactive
+//!   `if visible.get() { … }` inside `ui!` — the `if` condition reads a
+//!   signal (`.get()`), so it lowers to the `when` primitive (mounts the
+//!   banner while visible, unmounts it the moment the "x" sets it false).
+//!   `StyleRules` is not `Copy`, so every style is written INLINE (created
+//!   fresh per evaluation, never captured across the `when` boundary);
+//! - the close "x" is a `view` + `.on_touch(|ev| …)` box with the
+//!   `TouchPhase::Ended` guard — the app's standard click pattern (the
+//!   runtime's `button` helper takes a fixed `label` prop, which doesn't fit
+//!   a small glyph tap target).
+
+use crate::style_helpers::{col, px};
+use runtime_core::{
+    component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, Position,
+    StyleRules, TouchPhase, TouchResponse,
+};
+
+// Discord dark palette — kept local so the component is self-contained.
+const TOAST_BG: &str = "#313338"; // toast surface (Discord sidebar gray)
+const TEXT: &str = "#f2f3f5"; // primary text
+const MUTED_BORDER: &str = "#4e5058"; // close-button ring
+const TEXT_MUTED: &str = "#949ba4"; // close "x" glyph
+
+// The hardcoded toast copy. No backend fetch.
+const TOAST_TEXT: &str = "Message pinned!";
+
+/// The "message pinned" toast. Renders the `"Message pinned!"` banner while
+/// the local `visible` signal is `true` (hardcoded to start `true`); tapping
+/// the close "x" sets `visible` to `false`, which unmounts the banner.
+#[component]
+#[allow(non_snake_case)]
+pub fn PinConfirmToast() -> Element {
+    // Hardcoded to start `true` so the banner is visible on mount. Flipped
+    // to `false` by the close "x" below. No backend call.
+    let visible = signal(true);
+
+    ui! {
+        // Reactive branch: `if visible.get() {…}` lowers to a `when` that
+        // mounts the banner while visible and unmounts it the moment the "x"
+        // is tapped. A top-level `if` with no wrapping node is a legal `ui!`
+        // tree (the grammar is `ui! := node*`), so the fragment root holds —
+        // same shape `welcome_banner` uses for its banner.
+        if visible.get() {
+            view(style = StyleRules {
+                width: Some(px(320.0)),
+                flex_direction: Some(FlexDirection::Row),
+                align_items: Some(AlignItems::Center),
+                gap: Some(px(10.0)),
+                padding_top: Some(px(14.0)),
+                padding_bottom: Some(px(14.0)),
+                padding_left: Some(px(16.0)),
+                padding_right: Some(px(16.0)),
+                background: Some(col(TOAST_BG)),
+                border_top_left_radius: Some(px(8.0)),
+                border_top_right_radius: Some(px(8.0)),
+                border_bottom_left_radius: Some(px(8.0)),
+                border_bottom_right_radius: Some(px(8.0)),
+                ..Default::default()
+            }) {
+                // The toast copy — a hardcoded local literal, so it bakes to
+                // a static text source (no reactive machinery).
+                text(style = StyleRules {
+                    flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
+                    font_size: Some(px(15.0)),
+                    color: Some(col(TEXT)),
+                    ..Default::default()
+                }) { TOAST_TEXT.to_string() }
+
+                // The close "x": a 24x24 tap target. `.on_touch` sets
+                // `visible` to `false` on `TouchPhase::Ended` — the app's
+                // standard click pattern. Style built inline (nothing
+                // captured across the `when` boundary).
+                view(style = StyleRules {
+                    width: Some(px(24.0)),
+                    height: Some(px(24.0)),
+                    position: Some(Position::Relative),
+                    flex_direction: Some(FlexDirection::Row),
+                    align_items: Some(AlignItems::Center),
+                    justify_content: Some(JustifyContent::Center),
+                    border_top_left_radius: Some(px(6.0)),
+                    border_top_right_radius: Some(px(6.0)),
+                    border_bottom_left_radius: Some(px(6.0)),
+                    border_bottom_right_radius: Some(px(6.0)),
+                    border_top_width: Some(runtime_core::Tokenized::Literal(1.0)),
+                    border_right_width: Some(runtime_core::Tokenized::Literal(1.0)),
+                    border_bottom_width: Some(runtime_core::Tokenized::Literal(1.0)),
+                    border_left_width: Some(runtime_core::Tokenized::Literal(1.0)),
+                    border_top_color: Some(col(MUTED_BORDER)),
+                    border_right_color: Some(col(MUTED_BORDER)),
+                    border_bottom_color: Some(col(MUTED_BORDER)),
+                    border_left_color: Some(col(MUTED_BORDER)),
+                    ..Default::default()
+                }) {
+                    text(style = StyleRules {
+                        font_size: Some(px(14.0)),
+                        color: Some(col(TEXT_MUTED)),
+                        ..Default::default()
+                    }) { "x".to_string() }
+                }
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        visible.set(false);
+                    }
+                    TouchResponse::CONSUMED
+                })
+            }
+        }
+    }
+}
