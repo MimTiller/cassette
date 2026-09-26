@@ -114,6 +114,8 @@ mod friend_request_card;
 mod server_icon_upload_placeholder;
 #[path = "components/kick_confirm_dialog.rs"]
 mod kick_confirm_dialog;
+#[path = "components/category_header.rs"]
+mod category_header;
 
 pub use app::app;
 
