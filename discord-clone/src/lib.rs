@@ -128,6 +128,8 @@ mod screen_share_indicator;
 mod delete_message_confirm;
 #[path = "components/channel_topic_banner.rs"]
 mod channel_topic_banner;
+#[path = "components/spoiler_tag.rs"]
+mod spoiler_tag;
 
 pub use app::app;
 
