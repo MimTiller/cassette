@@ -1521,11 +1521,30 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             // unread pill (default Static would anchor it to the
                             // sidebar instead of the row).
                             position: Some(Position::Relative),
+                            flex_direction: Some(FlexDirection::Row),
                             align_items: Some(AlignItems::Center),
                             ..Default::default()
                         }
                     };
+                    // Fixed-width '#' column so every channel name starts at the
+                    // same x, matching the voice rows' left edge below.
+                    let hash_style = move || StyleRules {
+                        width: Some(px(20.0)),
+                        align_items: Some(AlignItems::Center),
+                        justify_content: Some(JustifyContent::Center),
+                        flex_shrink: Some(grow(0.0)),
+                        font_size: Some(px(15.0)),
+                        font_weight: Some(if active.get() == c.id {
+                            FontWeight::SemiBold
+                        } else {
+                            FontWeight::Normal
+                        }),
+                        color: Some(col(TEXT_MUTED)),
+                        ..Default::default()
+                    };
                     let label_style = move || StyleRules {
+                        flex_grow: Some(grow(1.0)),
+                        flex_shrink: Some(grow(0.0)),
                         font_size: Some(px(15.0)),
                         font_weight: Some(if active.get() == c.id {
                             FontWeight::SemiBold
@@ -1539,13 +1558,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         })),
                         ..Default::default()
                     };
-                    let label = format!(
-                        "#{}",
-                        c.name
-                    );
+                    let name = c.name.to_string();
                     rows.push(ui! {
                         view(style = row_style) {
-                            text(style = label_style) { label }
+                            text(style = hash_style) { "#".to_string() }
+                            text(style = label_style) { name }
                             // The unread pill on the row's right edge, vertically
                             // centered in the 34px row. Mock count per channel;
                             // the real value comes from the gateway later.
