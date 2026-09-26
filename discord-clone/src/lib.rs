@@ -160,6 +160,8 @@ mod char_counter;
 mod slowmode_indicator;
 #[path = "components/message_search_bar.rs"]
 mod message_search_bar;
+#[path = "components/server_boost_badge.rs"]
+mod server_boost_badge;
 
 pub use app::app;
 
