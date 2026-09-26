@@ -112,6 +112,8 @@ mod mute_channel_toggle;
 mod friend_request_card;
 #[path = "components/server_icon_upload_placeholder.rs"]
 mod server_icon_upload_placeholder;
+#[path = "components/kick_confirm_dialog.rs"]
+mod kick_confirm_dialog;
 
 pub use app::app;
 
