@@ -16,6 +16,8 @@ mod profile_settings;
 mod server_folder_group;
 #[path = "components/idle_timer_badge.rs"]
 mod idle_timer_badge;
+#[path = "components/message_timestamp_tooltip.rs"]
+mod message_timestamp_tooltip;
 #[path = "components/edited_label.rs"]
 mod edited_label;
 #[path = "components/server_discovery_card.rs"]
