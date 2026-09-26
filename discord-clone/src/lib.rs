@@ -168,6 +168,8 @@ mod server_boost_badge;
 mod dm_notification_badge;
 #[path = "components/member_count_display.rs"]
 mod member_count_display;
+#[path = "components/slash_command_dropdown.rs"]
+mod slash_command_dropdown;
 
 pub use app::app;
 
