@@ -126,6 +126,8 @@ mod role_badge;
 mod screen_share_indicator;
 #[path = "components/delete_message_confirm.rs"]
 mod delete_message_confirm;
+#[path = "components/channel_topic_banner.rs"]
+mod channel_topic_banner;
 
 pub use app::app;
 
