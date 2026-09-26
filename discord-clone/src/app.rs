@@ -146,11 +146,15 @@ fn message_row(author: &str, color: &str, body: &str, when: String) -> Element {
         padding_right: Some(px(16.0)),
         gap: Some(px(10.0)),
         flex_direction: Some(FlexDirection::Row),
+        // Top-align so the avatar sits against the message head and a
+        // multi-line body never stretches it into a vertical pill.
+        align_items: Some(AlignItems::FlexStart),
         ..Default::default()
     };
     let avatar_style = StyleRules {
         width: Some(px(40.0)),
         height: Some(px(40.0)),
+        flex_shrink: Some(grow(0.0)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         background: Some(col(color)),
@@ -232,6 +236,7 @@ fn member_row(m: &Member) -> Element {
         width: Some(px(32.0)),
         height: Some(px(32.0)),
         position: Some(Position::Relative),
+        flex_shrink: Some(grow(0.0)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         background: Some(col(m.color)),
