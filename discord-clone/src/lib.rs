@@ -154,6 +154,8 @@ mod server_region_selector;
 mod delete_account_warning;
 #[path = "components/volume_slider.rs"]
 mod volume_slider;
+#[path = "components/char_counter.rs"]
+mod char_counter;
 
 pub use app::app;
 
