@@ -142,6 +142,8 @@ mod server_template_card;
 mod forward_message_dialog;
 #[path = "components/two_factor_toggle.rs"]
 mod two_factor_toggle;
+#[path = "components/language_picker.rs"]
+mod language_picker;
 
 pub use app::app;
 
