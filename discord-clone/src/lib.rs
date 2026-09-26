@@ -86,6 +86,8 @@ mod icon_change_confirm;
 mod nickname_edit_field;
 #[path = "components/pin_count_badge.rs"]
 mod pin_count_badge;
+#[path = "components/pin_confirm_toast.rs"]
+mod pin_confirm_toast;
 #[path = "components/ban_reason_input.rs"]
 mod ban_reason_input;
 #[path = "components/template_gallery_grid.rs"]
