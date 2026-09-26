@@ -118,6 +118,8 @@ mod kick_confirm_dialog;
 mod category_header;
 #[path = "components/custom_status_input.rs"]
 mod custom_status_input;
+#[path = "components/ban_list_row.rs"]
+mod ban_list_row;
 
 pub use app::app;
 
