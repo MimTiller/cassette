@@ -514,11 +514,16 @@ fn member_panel(server: &crate::data::Server, user: &Member) -> Element {
     // Header: "MEMBER COUNT — N" where N is the roster plus the signed-in
     // user, who counts as a member like anyone else.
     let header = format!("MEMBER COUNT — {}", server.members.len() + 1);
+    // Font slightly smaller than the group headers + a touch of negative
+    // letter-spacing so "MEMBER COUNT — N" stays on one line within the panel
+    // width (no white-space/nowrap property exists, so size is the lever).
+    // Left padding matches the group headers below (ONLINE, IDLE, …).
     let header_style = StyleRules {
         padding_top: Some(px(14.0)),
         padding_bottom: Some(px(6.0)),
         padding_left: Some(px(12.0)),
-        font_size: Some(px(11.0)),
+        font_size: Some(px(10.0)),
+        letter_spacing: Some(Tokenized::Literal(-0.5)),
         font_weight: Some(FontWeight::SemiBold),
         color: Some(col(TEXT_MUTED)),
         text_transform: Some(TextTransform::Uppercase),
