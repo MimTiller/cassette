@@ -164,6 +164,8 @@ mod message_search_bar;
 mod server_boost_badge;
 #[path = "components/dm_notification_badge.rs"]
 mod dm_notification_badge;
+#[path = "components/member_count_display.rs"]
+mod member_count_display;
 
 pub use app::app;
 
