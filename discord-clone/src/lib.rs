@@ -122,6 +122,8 @@ mod custom_status_input;
 mod ban_list_row;
 #[path = "components/role_badge.rs"]
 mod role_badge;
+#[path = "components/screen_share_indicator.rs"]
+mod screen_share_indicator;
 
 pub use app::app;
 
