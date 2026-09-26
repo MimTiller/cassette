@@ -116,6 +116,8 @@ mod server_icon_upload_placeholder;
 mod kick_confirm_dialog;
 #[path = "components/category_header.rs"]
 mod category_header;
+#[path = "components/custom_status_input.rs"]
+mod custom_status_input;
 
 pub use app::app;
 
