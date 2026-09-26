@@ -158,6 +158,8 @@ mod volume_slider;
 mod char_counter;
 #[path = "components/slowmode_indicator.rs"]
 mod slowmode_indicator;
+#[path = "components/message_search_bar.rs"]
+mod message_search_bar;
 
 pub use app::app;
 
