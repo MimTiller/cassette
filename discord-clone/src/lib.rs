@@ -130,6 +130,8 @@ mod delete_message_confirm;
 mod channel_topic_banner;
 #[path = "components/spoiler_tag.rs"]
 mod spoiler_tag;
+#[path = "components/invite_link_display.rs"]
+mod invite_link_display;
 
 pub use app::app;
 
