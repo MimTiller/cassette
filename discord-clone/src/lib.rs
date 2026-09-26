@@ -124,6 +124,8 @@ mod category_header;
 mod custom_status_input;
 #[path = "components/ban_list_row.rs"]
 mod ban_list_row;
+#[path = "components/blocked_user_row.rs"]
+mod blocked_user_row;
 #[path = "components/role_badge.rs"]
 mod role_badge;
 #[path = "components/screen_share_indicator.rs"]
