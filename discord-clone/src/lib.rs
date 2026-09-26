@@ -102,6 +102,8 @@ mod afk_timer_display;
 mod spoiler_image_placeholder;
 #[path = "components/attachment_preview_card.rs"]
 mod attachment_preview_card;
+#[path = "components/reply_preview_bar.rs"]
+mod reply_preview_bar;
 
 pub use app::app;
 
