@@ -138,6 +138,8 @@ mod invite_link_display;
 mod voice_join_button;
 #[path = "components/server_template_card.rs"]
 mod server_template_card;
+#[path = "components/forward_message_dialog.rs"]
+mod forward_message_dialog;
 
 pub use app::app;
 
