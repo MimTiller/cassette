@@ -150,6 +150,8 @@ mod language_picker;
 mod server_region_selector;
 #[path = "components/delete_account_warning.rs"]
 mod delete_account_warning;
+#[path = "components/volume_slider.rs"]
+mod volume_slider;
 
 pub use app::app;
 
