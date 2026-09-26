@@ -54,6 +54,15 @@ impl Server {
         }
         None
     }
+
+    /// Total unread messages across this server's text channels — the mock
+    /// feed for the server-rail badge (voice channels carry no messages).
+    pub fn total_unread(&self) -> u32 {
+        self.categories
+            .iter()
+            .flat_map(|c| c.text.iter().map(|t| t.unread))
+            .sum()
+    }
 }
 
 /// One sidebar section, Discord-style: "TEXT CHANNELS" / "VOICE CHANNELS".
@@ -69,6 +78,10 @@ pub struct TextChannel {
     pub name: &'static str,
     pub topic: &'static str,
     pub messages: &'static [Message],
+    /// Mock unread count for the sidebar badge. Static seed data for now —
+    /// the real value will come from the gateway; the app clears it locally
+    /// when the user opens the channel (see `app.rs` `read_marks`).
+    pub unread: u32,
 }
 
 /// A voice-channel row in the sidebar: name plus the connected member names
@@ -215,6 +228,7 @@ pub static SERVERS: &[Server] = &[
                         id: 101,
                         name: "general",
                         topic: "Lounge — talk about anything, Rust strongly encouraged",
+                        unread: 3,
                         messages: &[
                             Message {
                                 author: "miri",
@@ -240,6 +254,7 @@ pub static SERVERS: &[Server] = &[
                         id: 102,
                         name: "showcase",
                         topic: "Ship something and tell us about it",
+                        unread: 0,
                         messages: &[
                             Message {
                                 author: "dyno",
@@ -259,6 +274,7 @@ pub static SERVERS: &[Server] = &[
                         id: 103,
                         name: "random",
                         topic: "Everything else",
+                        unread: 1,
                         messages: &[Message {
                             author: "nara",
                             color: "#eb459e",
@@ -312,6 +328,7 @@ pub static SERVERS: &[Server] = &[
                         id: 201,
                         name: "work-in-progress",
                         topic: "Post renders, get feedback",
+                        unread: 2,
                         messages: &[
                             Message {
                                 author: "kai",
@@ -331,6 +348,7 @@ pub static SERVERS: &[Server] = &[
                         id: 202,
                         name: "assets",
                         topic: "Share textures, fonts, and sounds",
+                        unread: 5,
                         messages: &[Message {
                             author: "sol",
                             color: "#ed4245",
@@ -372,6 +390,7 @@ pub static SERVERS: &[Server] = &[
                     id: 301,
                     name: "trips",
                     topic: "Plan the next outing",
+                    unread: 0,
                     messages: &[
                         Message {
                             author: "rio",

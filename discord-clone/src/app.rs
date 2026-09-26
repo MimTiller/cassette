@@ -57,6 +57,8 @@ const COMPOSER: &str = "#383a40";
 const BUTTON: &str = "#5865f2";
 /// Active-server indicator pill on the rail (Discord's white sliver).
 const PILL: &str = "#f2f3f5";
+/// Discord's unread badge red (the pill on channels + the rail count).
+const BADGE: &str = "#f23f43";
 /// The user-profile section at the bottom of the sidebar sits a shade darker
 /// than the channel list above it.
 const USER_BAR: &str = "#232428";
@@ -1269,6 +1271,36 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     ..Default::default()
                 }) {}
                 text(style = label_style) { s.initial }
+                // The unread count: Discord's red badge overlapping the
+                // squircle's bottom-right corner. The row is the positioning
+                // ancestor (`position: Relative` above); the mock total is
+                // computed once at build — swap for a gateway-fed signal later.
+                if s.total_unread() > 0 {
+                    view(style = move || StyleRules {
+                        position: Some(Position::Absolute),
+                        right: Some(px(-4.0)),
+                        bottom: Some(px(-4.0)),
+                        min_width: Some(px(18.0)),
+                        height: Some(px(18.0)),
+                        background: Some(col(BADGE)),
+                        border_top_left_radius: Some(px(9.0)),
+                        border_top_right_radius: Some(px(9.0)),
+                        border_bottom_left_radius: Some(px(9.0)),
+                        border_bottom_right_radius: Some(px(9.0)),
+                        align_items: Some(AlignItems::Center),
+                        justify_content: Some(JustifyContent::Center),
+                        padding_left: Some(px(4.0)),
+                        padding_right: Some(px(4.0)),
+                        ..Default::default()
+                    }) {
+                        text(style = move || StyleRules {
+                            font_size: Some(px(12.0)),
+                            font_weight: Some(FontWeight::Bold),
+                            color: Some(col(TEXT)),
+                            ..Default::default()
+                        }) { s.total_unread().to_string() }
+                    }
+                }
             }
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
@@ -1442,6 +1474,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             border_top_right_radius: Some(px(8.0)),
                             border_bottom_left_radius: Some(px(8.0)),
                             border_bottom_right_radius: Some(px(8.0)),
+                            // Positioning ancestor for the absolutely-positioned
+                            // unread pill (default Static would anchor it to the
+                            // sidebar instead of the row).
+                            position: Some(Position::Relative),
                             align_items: Some(AlignItems::Center),
                             ..Default::default()
                         }
@@ -1467,6 +1503,35 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     rows.push(ui! {
                         view(style = row_style) {
                             text(style = label_style) { label }
+                            // The unread pill on the row's right edge, vertically
+                            // centered in the 34px row. Mock count per channel;
+                            // the real value comes from the gateway later.
+                            if c.unread > 0 {
+                                view(style = StyleRules {
+                                    position: Some(Position::Absolute),
+                                    top: Some(px(9.0)),
+                                    right: Some(px(8.0)),
+                                    min_width: Some(px(16.0)),
+                                    height: Some(px(16.0)),
+                                    background: Some(col(BADGE)),
+                                    border_top_left_radius: Some(px(8.0)),
+                                    border_top_right_radius: Some(px(8.0)),
+                                    border_bottom_left_radius: Some(px(8.0)),
+                                    border_bottom_right_radius: Some(px(8.0)),
+                                    align_items: Some(AlignItems::Center),
+                                    justify_content: Some(JustifyContent::Center),
+                                    padding_left: Some(px(4.0)),
+                                    padding_right: Some(px(4.0)),
+                                    ..Default::default()
+                                }) {
+                                    text(style = StyleRules {
+                                        font_size: Some(px(11.0)),
+                                        font_weight: Some(FontWeight::Bold),
+                                        color: Some(col(TEXT)),
+                                        ..Default::default()
+                                    }) { c.unread.to_string() }
+                                }
+                            }
                         }
                         .on_touch(move |ev| {
                             if ev.phase == TouchPhase::Ended {
