@@ -1241,19 +1241,29 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let gateway = discord_server::server_settings::message_gateway(
         crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst),
     );
-    // The muted 10px label mirrors the live-section label style below. The
-    // label is reactive: `switch` re-runs the arm whenever the status string
+    // Compact single-line status label for the 72px rail: "● Open" etc.
+    // (the wide `messaging: {:?}` form clipped/wrapped). The label is
+    // reactive: `switch` re-runs the arm whenever the status string
     // changes, so the rail tracks Connecting -> Open -> Closed/Error live.
-    let gateway_label_style = StyleRules {
-        font_size: Some(px(10.0)),
-        color: Some(col(TEXT_MUTED)),
-        ..Default::default()
-    };
+    // Per-status color: green Open, amber Connecting, red Closed/Error —
+    // inline hex like the rest of the rail's status accents.
     let gateway_status = switch(
-        move || format!("messaging: {:?}", gateway.status()),
-        move |label: &String| {
+        move || format!("{:?}", gateway.status()),
+        move |status: &String| {
+            let (label, color) = match status.as_str() {
+                "Open" => ("● Open", "#23a55a"),
+                "Connecting" => ("● Connecting", "#f0b232"),
+                // Closed and Error share the red accent.
+                _ => ("● Closed", "#f23f43"),
+            };
+            let status_style = StyleRules {
+                font_size: Some(px(10.0)),
+                color: Some(col(color)),
+                text_align: Some(TextAlign::Center),
+                ..Default::default()
+            };
             ui! {
-                text(style = gateway_label_style.clone()) { label.clone() }
+                text(style = status_style) { label.to_string() }
             }
         },
     );
@@ -1401,9 +1411,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 background: Some(col(BORDER)),
                 ..Default::default()
             };
+            // Uppercase "LIVE" caption under the thin divider: 10px, muted,
+            // centered with a touch of letter spacing (the old "(live)" text
+            // looked unstyled and the lowercase parens wasted rail width).
             let label_style = StyleRules {
                 font_size: Some(px(10.0)),
                 color: Some(col(TEXT_MUTED)),
+                letter_spacing: Some(Tokenized::Literal(0.5)),
+                text_align: Some(TextAlign::Center),
+                text_transform: Some(TextTransform::Uppercase),
                 ..Default::default()
             };
             let row_style = StyleRules {
@@ -1442,7 +1458,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     ..Default::default()
                 }) {
                     view(style = divider_style) {}
-                    text(style = label_style) { "(live)".to_string() }
+                    text(style = label_style) { "live".to_string() }
                     rows
                 }
             }
