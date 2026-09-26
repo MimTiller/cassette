@@ -106,6 +106,8 @@ mod attachment_preview_card;
 mod reply_preview_bar;
 #[path = "components/mute_channel_toggle.rs"]
 mod mute_channel_toggle;
+#[path = "components/friend_request_card.rs"]
+mod friend_request_card;
 
 pub use app::app;
 
