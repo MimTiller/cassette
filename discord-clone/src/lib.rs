@@ -136,6 +136,8 @@ mod spoiler_tag;
 mod invite_link_display;
 #[path = "components/voice_join_button.rs"]
 mod voice_join_button;
+#[path = "components/server_template_card.rs"]
+mod server_template_card;
 
 pub use app::app;
 
