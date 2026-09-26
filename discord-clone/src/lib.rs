@@ -94,6 +94,8 @@ mod invite_expiry_selector;
 mod latency_badge;
 #[path = "components/soundboard_button.rs"]
 mod soundboard_button;
+#[path = "components/poll_widget.rs"]
+mod poll_widget;
 #[path = "components/thread_list_row.rs"]
 mod thread_list_row;
 #[path = "components/afk_timer_display.rs"]
