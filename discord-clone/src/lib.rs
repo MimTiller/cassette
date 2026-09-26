@@ -156,6 +156,8 @@ mod delete_account_warning;
 mod volume_slider;
 #[path = "components/char_counter.rs"]
 mod char_counter;
+#[path = "components/slowmode_indicator.rs"]
+mod slowmode_indicator;
 
 pub use app::app;
 
