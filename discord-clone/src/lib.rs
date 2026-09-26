@@ -148,6 +148,8 @@ mod two_factor_toggle;
 mod language_picker;
 #[path = "components/server_region_selector.rs"]
 mod server_region_selector;
+#[path = "components/delete_account_warning.rs"]
+mod delete_account_warning;
 
 pub use app::app;
 
