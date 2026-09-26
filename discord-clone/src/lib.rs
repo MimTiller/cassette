@@ -48,6 +48,8 @@ mod message_action_bar;
 mod server_event_card;
 #[path = "components/connection_quality_indicator.rs"]
 mod connection_quality_indicator;
+#[path = "components/read_receipt_indicator.rs"]
+mod read_receipt_indicator;
 #[path = "components/transfer_ownership_confirm.rs"]
 mod transfer_ownership_confirm;
 #[path = "components/activity_card.rs"]
