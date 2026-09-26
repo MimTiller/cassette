@@ -162,6 +162,8 @@ mod slowmode_indicator;
 mod message_search_bar;
 #[path = "components/server_boost_badge.rs"]
 mod server_boost_badge;
+#[path = "components/dm_notification_badge.rs"]
+mod dm_notification_badge;
 
 pub use app::app;
 
