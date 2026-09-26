@@ -146,6 +146,8 @@ mod forward_message_dialog;
 mod two_factor_toggle;
 #[path = "components/language_picker.rs"]
 mod language_picker;
+#[path = "components/server_region_selector.rs"]
+mod server_region_selector;
 
 pub use app::app;
 
