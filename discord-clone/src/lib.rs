@@ -12,6 +12,7 @@ mod servers;
 #[allow(dead_code)]
 mod invite;
 mod typing_indicator;
+mod keyboard_shortcuts_overlay;
 mod profile_settings;
 
 pub use app::app;
