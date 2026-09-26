@@ -88,7 +88,13 @@ impl RateLimiter {
     pub fn check(&self, key: &str) -> Result<(), Duration> {
         let mut s = self.lock();
         let now = s.now();
-        let cutoff = now - s.window;
+        // Copy the policy fields into locals BEFORE taking the mutable `entry`
+        // borrow of `s.buckets` below — `Duration`/`usize` are `Copy`, and the
+        // borrow checker won't let us read `s.window` / `s.max_requests` while
+        // that borrow is live.
+        let window = s.window;
+        let max_requests = s.max_requests;
+        let cutoff = now - window;
         let b = s.buckets.entry(key.to_string()).or_default();
         // Prune attempts that have slid out of the window.
         while let Some(front) = b.front() {
@@ -98,11 +104,11 @@ impl RateLimiter {
                 break;
             }
         }
-        if b.len() >= s.max_requests {
+        if b.len() >= max_requests {
             // Over budget. The next slot frees when the oldest in-window
             // attempt exits the window: `oldest + window - now`.
             let oldest = b.front().copied().unwrap();
-            let retry = (oldest + s.window - now).max(Duration::from_secs(1));
+            let retry = (oldest + window - now).max(Duration::from_secs(1));
             return Err(retry);
         }
         b.push_back(now);
