@@ -120,6 +120,8 @@ mod category_header;
 mod custom_status_input;
 #[path = "components/ban_list_row.rs"]
 mod ban_list_row;
+#[path = "components/role_badge.rs"]
+mod role_badge;
 
 pub use app::app;
 
