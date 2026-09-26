@@ -104,6 +104,8 @@ mod spoiler_image_placeholder;
 mod attachment_preview_card;
 #[path = "components/reply_preview_bar.rs"]
 mod reply_preview_bar;
+#[path = "components/mute_channel_toggle.rs"]
+mod mute_channel_toggle;
 
 pub use app::app;
 
