@@ -170,6 +170,8 @@ mod dm_notification_badge;
 mod member_count_display;
 #[path = "components/slash_command_dropdown.rs"]
 mod slash_command_dropdown;
+#[path = "components/voice_participant_list.rs"]
+mod voice_participant_list;
 
 pub use app::app;
 
