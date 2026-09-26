@@ -98,6 +98,8 @@ mod soundboard_button;
 mod thread_list_row;
 #[path = "components/afk_timer_display.rs"]
 mod afk_timer_display;
+#[path = "components/spoiler_image_placeholder.rs"]
+mod spoiler_image_placeholder;
 
 pub use app::app;
 
