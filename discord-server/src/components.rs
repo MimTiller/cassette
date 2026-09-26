@@ -12,6 +12,8 @@
 
 pub mod page;
 #[macro_use]
+pub mod emoji_reaction_bar;
+#[macro_use]
 pub mod planet;
 #[macro_use]
 pub mod subtitle;
