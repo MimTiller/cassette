@@ -134,6 +134,8 @@ mod channel_topic_banner;
 mod spoiler_tag;
 #[path = "components/invite_link_display.rs"]
 mod invite_link_display;
+#[path = "components/voice_join_button.rs"]
+mod voice_join_button;
 
 pub use app::app;
 
