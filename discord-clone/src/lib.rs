@@ -100,6 +100,8 @@ mod thread_list_row;
 mod afk_timer_display;
 #[path = "components/spoiler_image_placeholder.rs"]
 mod spoiler_image_placeholder;
+#[path = "components/attachment_preview_card.rs"]
+mod attachment_preview_card;
 
 pub use app::app;
 
