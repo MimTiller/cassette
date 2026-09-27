@@ -1300,6 +1300,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // never overlap and the mock path keeps its exact existing behaviour.
     let active_live_server: Signal<Option<i64>> = signal(None);
     let live_channels: Signal<Vec<crate::servers::ChannelSummary>> = signal(Vec::new());
+    // The live channel the user tapped inside the active live server. Reset to
+    // None whenever `active_live_server` changes (new live server selected, or
+    // mock mode re-entered) — a channel id from a different server is stale.
+    let active_live_channel: Signal<Option<i64>> = signal(None);
 
     // Realtime gateway: the signed session token authenticates the connect
     // (the backend verifies it). It rides the connect URL's `?args=` query —
@@ -1360,6 +1364,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let channel = active_channel.clone();
         let voice = joined_voice.clone();
         let live_server = active_live_server.clone();
+        let live_channel = active_live_channel.clone();
         // Reactive style: re-runs whenever `active_server` changes.
         let row_style = move || StyleRules {
             width: Some(px(48.0)),
@@ -1454,6 +1459,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // Selecting a mock server exits live mode so the channel
                     // sidebar shows the mock channels, not the live ones.
                     live_server.set(None);
+                    live_channel.set(None);
                     active.set(s.id);
                     if let Some(srv) = SERVERS.iter().find(|x| x.id == s.id) {
                         // Default to the first *text* channel — voice channels
@@ -1520,6 +1526,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 let sid = s.id;
                 let active_live = active_live_server.clone();
                 let live_ch = live_channels.clone();
+                let live_ch_sel = active_live_channel.clone();
                 // Static base for the squircle; the reactive closure below only
                 // overrides the background so the tapped row lights up without
                 // a full rebuild.
@@ -1538,11 +1545,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     }
                     // Enter live mode: select this real server and pull its
                     // channels (async `#[server]` RPC, same pattern as the
-                    // `live_servers` fetch above). Channel rows are rendered
-                    // in the sidebar's live branch; they aren't clickable yet.
+                    // `live_servers` fetch above). Any previously selected live
+                    // channel is stale now (it belonged to a different server),
+                    // so reset it alongside `active_live_server`.
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
                             active_live.set(Some(sid));
+                            live_ch_sel.set(None);
                             runtime_core::driver::spawn_async(async move {
                                 if let Ok(channels) =
                                     crate::servers::list_channels(sid).await
@@ -1697,6 +1706,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // they're a local of this block. Splatting a captured outer
                     // `Vec<Element>` out of the inner `ui!` closure would be a
                     // move out of an `Fn` closure (`Element` is not `Clone`).
+                    let live_sel = active_live_channel.clone();
+                    let gw = gateway.clone();
                     let live_rows: Vec<Element> = live
                         .iter()
                         .map(|c| {
@@ -1704,12 +1715,77 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             // the same glyphs the mock rows use below.
                             let glyph = if c.kind == "text" { "#" } else { "🔊" };
                             let name = c.name.clone();
-                            ui! {
-                                view(style = live_row_style.clone()) {
-                                    text(style = live_glyph_style.clone()) { glyph.to_string() }
-                                    text(style = live_label_style.clone()) { name }
+                            let is_text = c.kind == "text";
+                            let cid = c.id;
+                            // Reactive, per-row — the mock path's rows work the
+                            // same way: background fills with the active colour
+                            // when selected, and the glyph/label go semi-bold
+                            // (label also brightens) — nothing changes when no
+                            // live channel is active, so the unselected rows
+                            // render exactly as before.
+                            let row_style = move || StyleRules {
+                                background: Some(col(if live_sel.get() == Some(cid) {
+                                    BG_ACTIVE
+                                } else {
+                                    "transparent"
+                                })),
+                                ..live_row_style()
+                            };
+                            let glyph_style = move || StyleRules {
+                                font_weight: Some(if live_sel.get() == Some(cid) {
+                                    FontWeight::SemiBold
+                                } else {
+                                    FontWeight::Normal
+                                }),
+                                ..live_glyph_style()
+                            };
+                            let label_style = move || StyleRules {
+                                font_weight: Some(if live_sel.get() == Some(cid) {
+                                    FontWeight::SemiBold
+                                } else {
+                                    FontWeight::Normal
+                                }),
+                                color: Some(col(if live_sel.get() == Some(cid) {
+                                    TEXT
+                                } else {
+                                    TEXT_CHANNEL
+                                })),
+                                ..live_label_style()
+                            };
+                            let row = if is_text {
+                                // Voice rows stay non-clickable for now — a later
+                                // task handles voice selection. Text rows select
+                                // the channel and request its history over the
+                                // gateway (the echo/History frames land in
+                                // `gateway.incoming()`). `.on_touch` chains on the
+                                // `view` node inside `ui!`, so each row kind gets
+                                // its own `ui!` block.
+                                ui! {
+                                    view(style = row_style) {
+                                        text(style = glyph_style) { glyph.to_string() }
+                                        text(style = label_style) { name }
+                                    }
+                                    .on_touch(move |ev| {
+                                        if ev.phase == TouchPhase::Ended {
+                                            live_sel.set(Some(cid));
+                                            gw.send(
+                                                discord_server::server_settings::WsClientMsg::History {
+                                                    channel_id: cid,
+                                                },
+                                            );
+                                        }
+                                        TouchResponse::CONSUMED
+                                    })
                                 }
-                            }
+                            } else {
+                                ui! {
+                                    view(style = row_style) {
+                                        text(style = glyph_style) { glyph.to_string() }
+                                        text(style = label_style) { name }
+                                    }
+                                }
+                            };
+                            row
                         })
                         .collect();
                     // Resolve the channels content as a local `Element` *outside*
