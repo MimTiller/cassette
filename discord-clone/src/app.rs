@@ -46,6 +46,7 @@ use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
 use crate::profile_settings::profile_settings;
 use crate::style_helpers::{col, pct, px};
+use crate::typing_indicator::TypingIndicator;
 
 // Robot test ids: stable, `'static` strings the automation robot
 // (`find_element`/`tap`) matches on to locate interactive elements. The
@@ -1828,6 +1829,46 @@ fn app_shell(authed: Signal<bool>) -> Element {
         },
     );
 
+    // Typing indicator row — sits directly above the composer. Mocked to fire
+    // only in #general (server 1, channel 101), where it reads "dyno is
+    // typing...". Other channels render an empty row with the exact same
+    // line-box height as the indicator (identical paddings + 12px font) so the
+    // composer's y-offset never jumps on channel switch. Keyed on
+    // (server, channel) exactly like the header / message-list switches.
+    let typing_row = switch(
+        move || (active_server.get(), active_channel.get()),
+        move |(server_id, channel_id): &(u32, u32)| {
+            if *server_id == 1 && *channel_id == 101 {
+                // `TypingIndicator`'s own root view already carries the row
+                // paddings (4/4/16/16) + a 12px line, so it is mounted bare —
+                // no wrapping view (that would double the padding). A `ui!`
+                // block with a single component child returns that child's
+                // `Element` directly.
+                ui! { TypingIndicator(name = "dyno".to_string()) }
+            } else {
+                // Empty spacer matching the indicator's exact line box: same
+                // paddings + a 12px (empty) text node, so the composer's
+                // y-offset never jumps when leaving #general.
+                ui! {
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Row),
+                        align_items: Some(AlignItems::Center),
+                        padding_top: Some(px(4.0)),
+                        padding_bottom: Some(px(4.0)),
+                        padding_left: Some(px(16.0)),
+                        padding_right: Some(px(16.0)),
+                        ..Default::default()
+                    }) {
+                        text(style = StyleRules {
+                            font_size: Some(px(12.0)),
+                            ..Default::default()
+                        }) { "".to_string() }
+                    }
+                }
+            }
+        },
+    );
+
     // --- composer --------------------------------------------------------
     let composer_style = StyleRules {
         padding_top: Some(px(12.0)),
@@ -2018,6 +2059,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             view(style = main_style) {
                 header
                 scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { sent_messages }
+                typing_row
                 view(style = composer_style) {
                     text_input(value = composer, on_change = on_change, placeholder = "Message", style = input_style, test_id = "composer").on_key_down(on_enter)
                     button(label = "Send".to_string(), on_click = on_click, style = send_style, test_id = "send")
