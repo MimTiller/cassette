@@ -43,6 +43,41 @@ use crate::data::{SERVERS, Category, Member, Status, USER};
 use crate::profile_settings::profile_settings;
 use crate::style_helpers::{col, pct, px};
 
+// Robot test ids: stable, `'static` strings the automation robot
+// (`find_element`/`tap`) matches on to locate interactive elements. The
+// per-server / per-channel / per-voice ids are derived from the mock ids in
+// `data.rs` — fixed at compile time — so each maps to a `&'static str` (the
+// `test_id` builder requires a static string, so a runtime `format!` would
+// not typecheck).
+fn server_test_id(id: u32) -> &'static str {
+    match id {
+        1 => "server-1",
+        2 => "server-2",
+        3 => "server-3",
+        _ => "server",
+    }
+}
+fn channel_test_id(id: u32) -> &'static str {
+    match id {
+        101 => "channel-101",
+        102 => "channel-102",
+        103 => "channel-103",
+        201 => "channel-201",
+        202 => "channel-202",
+        301 => "channel-301",
+        _ => "channel",
+    }
+}
+fn voice_test_id(id: u32) -> &'static str {
+    match id {
+        104 => "voice-104",
+        105 => "voice-105",
+        203 => "voice-203",
+        302 => "voice-302",
+        _ => "voice",
+    }
+}
+
 // Discord dark palette (Blurple-flavoured).
 const BG_RAIL: &str = "#1e1f22";
 const BG_SIDEBAR: &str = "#2b2d31";
@@ -357,7 +392,7 @@ fn voice_section(
         };
         let label = format!("🔊 {}", v.name);
         let row = ui! {
-            view(style = row_style) {
+            view(style = row_style, test_id = voice_test_id(v.id)) {
                 text(style = v_label_style) { label }
             }
             .on_touch(move |ev| {
@@ -813,7 +848,7 @@ fn user_panel(
                 ..Default::default()
             };
             let logout_btn = ui! {
-                view(style = logout_style) {
+                view(style = logout_style, test_id = "logout") {
                     text(style = logout_text_style) { "Log Out".to_string() }
                 }
                 .on_touch(move |ev| {
@@ -844,7 +879,7 @@ fn user_panel(
                     border_bottom_left_radius: Some(px(6.0)),
                     border_bottom_right_radius: Some(px(6.0)),
                     ..Default::default()
-                }) {
+                }, test_id = "profile") {
                     text(style = StyleRules {
                         color: Some(col(TEXT_MUTED)),
                         font_size: Some(px(11.0)),
@@ -1103,7 +1138,7 @@ fn login_screen(authed: Signal<bool>) -> Element {
             let guest_style_i = guest_style.clone();
             let guest_text_style_i = guest_text_style.clone();
             let guest_btn = ui! {
-                view(style = guest_style_i) {
+                view(style = guest_style_i, test_id = "login-guest") {
                     text(style = guest_text_style_i) { "Continue as guest".to_string() }
                 }
                 .on_touch(move |ev| {
@@ -1125,6 +1160,7 @@ fn login_screen(authed: Signal<bool>) -> Element {
                     text(style = label_style.clone()) { "Email".to_string() }
                     text_input(
                         value = email,
+                        test_id = "login-email",
                         on_change = on_email_change,
                         placeholder = "you@example.com",
                         style = field_style.clone(),
@@ -1132,6 +1168,7 @@ fn login_screen(authed: Signal<bool>) -> Element {
                     text(style = label_style.clone()) { "Password".to_string() }
                     text_input(
                         value = password,
+                        test_id = "login-password",
                         on_change = on_pw_change,
                         placeholder = "••••••••",
                         secure = true,
@@ -1144,6 +1181,7 @@ fn login_screen(authed: Signal<bool>) -> Element {
                     }
                     button(
                         label = "Sign In".to_string(),
+                        test_id = "login-submit",
                         on_click = on_submit_click,
                         style = submit_style.clone(),
                     )
@@ -1321,7 +1359,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             ..Default::default()
         };
         ui! {
-            view(style = row_style) {
+            view(style = row_style, test_id = server_test_id(s.id)) {
                 // The active-server pill: Discord's white vertical sliver on
                 // the far-left edge of the rail. The row is the positioning
                 // ancestor (default Static is not, so the pill would anchor
@@ -1602,7 +1640,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     };
                     let name = c.name.to_string();
                     rows.push(ui! {
-                        view(style = row_style) {
+                        view(style = row_style, test_id = channel_test_id(c.id)) {
                             text(style = hash_style) { "#".to_string() }
                             text(style = label_style) { name }
                             // The unread pill on the row's right edge, vertically
@@ -1940,8 +1978,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 header
                 scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { sent_messages }
                 view(style = composer_style) {
-                    text_input(value = composer, on_change = on_change, placeholder = "Message", style = input_style).on_key_down(on_enter)
-                    button(label = "Send".to_string(), on_click = on_click, style = send_style)
+                    text_input(value = composer, on_change = on_change, placeholder = "Message", style = input_style, test_id = "composer").on_key_down(on_enter)
+                    button(label = "Send".to_string(), on_click = on_click, style = send_style, test_id = "send")
                 }
             }
             members_switch
