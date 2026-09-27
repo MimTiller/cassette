@@ -41,11 +41,9 @@ use server::{server, ServerError};
 use crate::db::{Db, InviteRow};
 use crate::roles::{Action, Role};
 
-/// The acting user id from the `x-user-id` header (the same stand-in session
-/// mechanism [`crate::server_settings`] uses); `None` when absent.
-fn acting_user() -> Option<i64> {
-    server::use_request_header("x-user-id")?.parse().ok()
-}
+/// The acting user for the current request, resolved from a verified session
+/// token (see [`crate::session`]); `None` when unauthenticated.
+use crate::session::acting_user;
 
 /// The current wall-clock seconds since the Unix epoch.
 fn now_secs() -> i64 {

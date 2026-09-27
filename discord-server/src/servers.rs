@@ -43,9 +43,7 @@ pub struct ChannelSummary {
 }
 
 #[cfg(feature = "server")]
-fn acting_user() -> Option<i64> {
-    server::use_request_header("x-user-id")?.parse().ok()
-}
+use crate::session::acting_user;
 
 #[cfg(feature = "server")]
 fn db_from_state() -> Result<Db, ServerError> {

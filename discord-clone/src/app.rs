@@ -1043,10 +1043,11 @@ fn login_screen(authed: Signal<bool>) -> Element {
         ..Default::default()
     };
 
-    // The signed-in account's numeric id now lives in `crate::auth`
-    // (`CURRENT_USER_ID`) so the `server::configure` credential provider can
-    // read it to thread the `x-user-id` header — declared there, referenced
-    // here. `0` means "not logged in".
+    // The signed-in account's numeric id (`CURRENT_USER_ID`) and the signed
+    // session token (`CURRENT_TOKEN`) live in `crate::auth`. The
+    // `server::configure` credential provider reads `current_token()` to
+    // thread the `Authorization: Bearer` header; the id rides the realtime
+    // gateway's connect URL. `0`/empty mean "not logged in".
 
     // The shared login action: validate, then auth in. `authed` flipping is
     // what unmounts this screen and mounts the app tree (the `switch` key in
@@ -1061,15 +1062,15 @@ fn login_screen(authed: Signal<bool>) -> Element {
                 return;
             }
             // Real login: spawn the backend `#[server]` login call and resolve
-            // the session before flipping `authed`. On success the returned
-            // numeric id becomes the `x-user-id` the app threads on backend
-            // calls; on failure the server's message is shown inline.
+            // the session before flipping `authed`. On success `auth::login`
+            // records the numeric id and the signed session token
+            // process-wide; the client threads the token back as
+            // `Authorization: Bearer <token>` on backend calls. On failure the
+            // server's message is shown inline.
             error.set(String::new());
             runtime_core::driver::spawn_async(async move {
                 match crate::auth::login(&em, &pw).await {
-                    Ok(user_id) => {
-                        crate::auth::CURRENT_USER_ID
-                            .store(user_id, std::sync::atomic::Ordering::SeqCst);
+                    Ok(_) => {
                         authed.set(true);
                     }
                     Err(message) => {
@@ -1292,10 +1293,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
         }
     });
 
-    // Realtime gateway proof-of-life: the user id rides the connect URL as a
-    // ?args= query arg (integration-1b3b). Non-async hook; call it once here.
+    // Realtime gateway: the signed session token authenticates the connect
+    // (the backend verifies it). It rides the connect URL's `?args=` query —
+    // a browser websocket cannot set request headers, so the token can't go on
+    // an Authorization header here the way the REST calls do. Non-async hook;
+    // call it once here. An empty token (guest, before a successful login)
+    // simply gets no working socket, so the status label below shows
+    // Closed/Error.
     let gateway = discord_server::server_settings::message_gateway(
-        crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst),
+        crate::auth::current_token(),
     );
     // Compact single-line status label for the 72px rail: "● Open" etc.
     // (the wide `messaging: {:?}` form clipped/wrapped). The label is

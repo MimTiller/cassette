@@ -31,6 +31,12 @@ mod typeface;
 // native SQLite dep.
 #[cfg(feature = "server")]
 pub mod db;
+#[cfg(feature = "server")]
+pub mod realtime;
+#[cfg(feature = "server")]
+pub mod rate_limit;
+#[cfg(feature = "server")]
+pub mod session;
 pub mod roles;
 pub mod server_settings;
 #[cfg(feature = "server")]

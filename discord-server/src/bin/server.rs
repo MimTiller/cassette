@@ -46,6 +46,13 @@ async fn main() {
     let db = discord_server::db::Db::migrate(&db_path, &migrations)
         .unwrap_or_else(|e| panic!("failed to open/migrate database at {db_path:?}: {e}"));
 
+    // Session signing secret: DISCORD_SESSION_SECRET, else a 0600 file next to
+    // the database (so tokens survive a restart).
+    let mut secret_path = db_path.clone().into_os_string();
+    secret_path.push(".session-secret");
+    discord_server::session::init_persistent_secret(std::path::Path::new(&secret_path))
+        .unwrap_or_else(|e| panic!("failed to load/create the session secret at {secret_path:?}: {e}"));
+
     // Install the shared state the `#[server]` fns read via `use_state::<Db>()`.
     server::install_state(db);
 
