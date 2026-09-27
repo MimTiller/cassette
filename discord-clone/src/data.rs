@@ -63,6 +63,14 @@ impl Server {
             .flat_map(|c| c.text.iter().map(|t| t.unread))
             .sum()
     }
+
+    /// Total @mentions across this server's text channels.
+    pub fn total_mentions(&self) -> u32 {
+        self.categories
+            .iter()
+            .flat_map(|c| c.text.iter().map(|t| t.mentions))
+            .sum()
+    }
 }
 
 /// One sidebar section, Discord-style: "TEXT CHANNELS" / "VOICE CHANNELS".
@@ -82,6 +90,9 @@ pub struct TextChannel {
     /// the real value will come from the gateway; the app clears it locally
     /// when the user opens the channel (see `app.rs` `read_marks`).
     pub unread: u32,
+    /// Count of @mentions specifically — the number shown in the red badge.
+    /// `unread` (total unread) only brightens the channel name now.
+    pub mentions: u32,
 }
 
 /// A voice-channel row in the sidebar: name plus the connected member names
@@ -229,6 +240,7 @@ pub static SERVERS: &[Server] = &[
                         name: "general",
                         topic: "Lounge — talk about anything, Rust strongly encouraged",
                         unread: 3,
+                        mentions: 0,
                         messages: &[
                             Message {
                                 author: "miri",
@@ -255,6 +267,7 @@ pub static SERVERS: &[Server] = &[
                         name: "showcase",
                         topic: "Ship something and tell us about it",
                         unread: 0,
+                        mentions: 0,
                         messages: &[
                             Message {
                                 author: "dyno",
@@ -275,6 +288,7 @@ pub static SERVERS: &[Server] = &[
                         name: "random",
                         topic: "Everything else",
                         unread: 1,
+                        mentions: 1,
                         messages: &[Message {
                             author: "nara",
                             color: "#eb459e",
@@ -329,6 +343,7 @@ pub static SERVERS: &[Server] = &[
                         name: "work-in-progress",
                         topic: "Post renders, get feedback",
                         unread: 2,
+                        mentions: 0,
                         messages: &[
                             Message {
                                 author: "kai",
@@ -349,6 +364,7 @@ pub static SERVERS: &[Server] = &[
                         name: "assets",
                         topic: "Share textures, fonts, and sounds",
                         unread: 5,
+                        mentions: 0,
                         messages: &[Message {
                             author: "sol",
                             color: "#ed4245",
@@ -391,6 +407,7 @@ pub static SERVERS: &[Server] = &[
                     name: "trips",
                     topic: "Plan the next outing",
                     unread: 0,
+                    mentions: 0,
                     messages: &[
                         Message {
                             author: "rio",

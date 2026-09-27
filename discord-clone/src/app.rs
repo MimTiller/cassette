@@ -1945,7 +1945,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         } else {
                             FontWeight::Normal
                         }),
-                        color: Some(col(if active.get() == c.id {
+                        color: Some(col(if active.get() == c.id || c.unread > 0 {
                             TEXT
                         } else {
                             TEXT_CHANNEL
@@ -1960,7 +1960,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             // The unread pill on the row's right edge, vertically
                             // centered in the 34px row. Mock count per channel;
                             // the real value comes from the gateway later.
-                            if c.unread > 0 {
+                            if c.mentions > 0 {
                                 view(style = StyleRules {
                                     position: Some(Position::Absolute),
                                     top: Some(px(9.0)),
@@ -1983,7 +1983,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                         font_weight: Some(FontWeight::Bold),
                                         color: Some(col(TEXT)),
                                         ..Default::default()
-                                    }) { c.unread.to_string() }
+                                    }) { c.mentions.to_string() }
                                 }
                             }
                         }
