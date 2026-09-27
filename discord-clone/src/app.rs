@@ -41,6 +41,7 @@ use runtime_core::{
 use runtime_shared::time::local_offset_minutes;
 
 use crate::data::{SERVERS, Category, Member, Status, USER};
+use crate::member_count_display::member_count_display;
 use crate::profile_settings::profile_settings;
 use crate::style_helpers::{col, pct, px};
 
@@ -1769,11 +1770,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
             let channel = server.find_text_channel(*channel_id).unwrap();
             let title = channel.name.to_string();
             let topic = channel.topic.to_string();
+            // Roster plus the signed-in user, who counts as a member like
+            // anyone else (same idiom as the member panel header).
+            let total = (server.members.len() + 1) as i64;
             ui! {
                 view(style = header_style) {
                     text(style = hash_style) { "#".to_string() }
                     text(style = title_style) { title }
                     text(style = topic_style) { topic }
+                    member_count_display(12.into(), total.into())
                 }
             }
         },
