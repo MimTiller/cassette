@@ -28,6 +28,7 @@
 //! needs.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use runtime_core::{
@@ -1263,6 +1264,23 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // re-fire keeps the mounted arm), so re-setting `active_channel` to its
     // current value does NOT rebuild the message list — this counter does.
     let revision: Signal<u32> = signal(0);
+    // Channel-category collapse state: one signal per category id, all
+    // starting expanded (false). Held in an Rc<HashMap> so both the sidebar
+    // `switch` key and its render loop can reach it. The key reads every
+    // category's collapsed value (see below), so when the CategoryHeader
+    // toggles its signal the key changes and the (non-reactive, plain-Rust)
+    // row loop re-runs, re-gating each category's rows on its collapsed flag.
+    // The map lives in `app_shell` scope, so state survives `switch` rebuilds
+    // across server/channel/voice changes.
+    let collapsed: Rc<RefCell<HashMap<u32, Signal<bool>>>> = Rc::new(RefCell::new(HashMap::new()));
+    {
+        let s = active_server.get();
+        if let Some(server) = SERVERS.iter().find(|x| x.id == s) {
+            for cat in server.categories {
+                collapsed.borrow_mut().entry(cat.id).or_insert_with(|| signal(false));
+            }
+        }
+    }
     // Live (backend) servers the signed-in user belongs to, fetched once from
     // the `#[server]` RPC after `configure_server()` has pointed the stubs at
     // a base URL. Rendered as its own section below the mock rows; see the
