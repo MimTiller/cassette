@@ -1269,6 +1269,18 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // re-fire keeps the mounted arm), so re-setting `active_channel` to its
     // current value does NOT rebuild the message list — this counter does.
     let revision: Signal<u32> = signal(0);
+
+    // --- live/real message state -----------------------------------------
+    // Separate from the mock `sent`/`revision` above: when `active_live_channel`
+    // is `Some(id)` the message list reads from here instead of the mock path.
+    // channel_id -> Vec<(author_id, author_label, content, created_at_secs)>,
+    // oldest-first (the gateway's History replies arrive oldest-first, and new
+    // frames append in order). Mutating the Vec does NOT trigger reactivity, so
+    // `live_revision` is bumped on every frame the buffer absorbs and folded
+    // into the list `switch`'s key — exactly the mock `revision` idiom.
+    let live_messages: Rc<RefCell<HashMap<i64, Vec<(i64, String, String, i64)>>>> =
+        Rc::new(RefCell::new(HashMap::new()));
+    let live_revision: Signal<u32> = signal(0);
     // Channel-category collapse state: one signal per category id, all
     // starting expanded (false). Held in an Rc<HashMap> so both the sidebar
     // `switch` key and its render loop can reach it. The key reads every
@@ -1296,6 +1308,18 @@ fn app_shell(authed: Signal<bool>) -> Element {
             live_servers.set(servers);
         }
     });
+    // Live-mode selection, parallel to (and independent of) the mock
+    // `active_server`/`active_channel` signals. `active_live_server` is the id
+    // of a *real* backend server the user tapped (None = mock path is active);
+    // `live_channels` holds that server's channels, fetched on demand. Tapping
+    // a mock rail row sets `active_live_server` back to None, so the two modes
+    // never overlap and the mock path keeps its exact existing behaviour.
+    let active_live_server: Signal<Option<i64>> = signal(None);
+    let live_channels: Signal<Vec<crate::servers::ChannelSummary>> = signal(Vec::new());
+    // The live channel the user tapped inside the active live server. Reset to
+    // None whenever `active_live_server` changes (new live server selected, or
+    // mock mode re-entered) — a channel id from a different server is stale.
+    let active_live_channel: Signal<Option<i64>> = signal(None);
 
     // Realtime gateway: the signed session token authenticates the connect
     // (the backend verifies it). It rides the connect URL's `?args=` query —
@@ -1334,6 +1358,45 @@ fn app_shell(authed: Signal<bool>) -> Element {
         },
     );
 
+    // Reactive "watch every frame" effect: `switch` re-runs its arm whenever
+    // `gateway.incoming()`'s value changes, so the arm fires once per inbound
+    // frame. This one runs a SIDE EFFECT (absorb the message into `live_messages`
+    // and bump `live_revision`), not a render — so it returns an inert 0-height
+    // `view` (the no-op-render idiom; the element itself is never seen, mounted
+    // in the rail below). Only `Message` frames are buffered; `History` replies
+    // surface as a run of `Message { new: false }` frames, which land here too.
+    // `created_at` arrives as epoch MILLISECONDS from the server; the client's
+    // `format_when`/`now_secs` work in SECONDS, so divide by 1000 on ingest.
+    let live_buf = live_messages.clone();
+    let live_rev = live_revision.clone();
+    let gateway_incoming_effect = switch(
+        move || gateway.incoming().get(),
+        move |frame: &Option<discord_server::server_settings::WsServerMsg>| {
+            if let Some(discord_server::server_settings::WsServerMsg::Message {
+                channel_id,
+                author_id,
+                content,
+                created_at,
+                ..
+            }) = frame
+            {
+                let label = format!("user {}", author_id);
+                live_buf
+                    .borrow_mut()
+                    .entry(*channel_id)
+                    .or_default()
+                    .push((*author_id, label, content.clone(), *created_at / 1000));
+                live_rev.set(live_rev.get() + 1);
+            }
+            ui! {
+                view(style = StyleRules {
+                    height: Some(px(0.0)),
+                    ..Default::default()
+                }) {}
+            }
+        },
+    );
+
     // Profile Settings screen: a "Profile" entry in the user panel opens it as
     // a full-screen overlay (built once, shown/hidden by this signal — the same
     // toggle idiom as the DM rail). No re-mount, no rebuild of the underlying tree.
@@ -1355,6 +1418,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let active = active_server.clone();
         let channel = active_channel.clone();
         let voice = joined_voice.clone();
+        let live_server = active_live_server.clone();
+        let live_channel = active_live_channel.clone();
         // Reactive style: re-runs whenever `active_server` changes.
         let row_style = move || StyleRules {
             width: Some(px(48.0)),
@@ -1446,6 +1511,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
             }
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
+                    // Selecting a mock server exits live mode so the channel
+                    // sidebar shows the mock channels, not the live ones.
+                    live_server.set(None);
+                    live_channel.set(None);
                     active.set(s.id);
                     if let Some(srv) = SERVERS.iter().find(|x| x.id == s.id) {
                         // Default to the first *text* channel — voice channels
@@ -1463,11 +1532,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
     }).collect();
 
     // Live (backend) servers — a visually separate section below the mock
-    // rows. These rows are NOT clickable: the backend's `ServerSummary` only
-    // carries {id, name, icon_url} — no channels/categories — so there is no
-    // meaningful `active_server`/`active_channel` to set, and the existing
-    // `SERVERS.iter().find(...)` lookups would panic on a real id. A later
-    // task wires the touch handler once the backend exposes channel data.
+    // rows. Clicking a row enters live mode: it sets `active_live_server`
+    // (so the channel sidebar swaps to the live branch) and fetches that
+    // server's real channels into `live_channels`. The active row is
+    // highlighted reactively (its key is `live_servers`, and the render
+    // closure also reads `active_live_server` reactively). Tapping a mock
+    // rail row clears `active_live_server`, exiting live mode.
     let live_section = switch(
         move || live_servers.get(),
         move |servers: &Vec<crate::servers::ServerSummary>| {
@@ -1508,12 +1578,45 @@ fn app_shell(authed: Signal<bool>) -> Element {
             };
             let rows: Vec<Element> = servers.iter().map(|s| {
                 let initial = s.name.chars().next().unwrap_or('?').to_string();
+                let sid = s.id;
+                let active_live = active_live_server.clone();
+                let live_ch = live_channels.clone();
+                let live_ch_sel = active_live_channel.clone();
+                // Static base for the squircle; the reactive closure below only
+                // overrides the background so the tapped row lights up without
+                // a full rebuild.
+                let base = row_style.clone();
+                let reactive_style = move || StyleRules {
+                    background: Some(col(if active_live.get() == Some(sid) {
+                        TEXT
+                    } else {
+                        BG_SIDEBAR
+                    })),
+                    ..base.clone()
+                };
                 ui! {
-                    view(style = row_style.clone()) {
+                    view(style = reactive_style) {
                         text(style = initial_style.clone()) { initial }
                     }
-                    // No on_touch handler by design — see the comment above:
-                    // live servers have no channel data server-side yet.
+                    // Enter live mode: select this real server and pull its
+                    // channels (async `#[server]` RPC, same pattern as the
+                    // `live_servers` fetch above). Any previously selected live
+                    // channel is stale now (it belonged to a different server),
+                    // so reset it alongside `active_live_server`.
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            active_live.set(Some(sid));
+                            live_ch_sel.set(None);
+                            runtime_core::driver::spawn_async(async move {
+                                if let Ok(channels) =
+                                    crate::servers::list_channels(sid).await
+                                {
+                                    live_ch.set(channels);
+                                }
+                            });
+                        }
+                        TouchResponse::CONSUMED
+                    })
                 }
             }).collect();
             ui! {
@@ -1581,8 +1684,31 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // own this copy while the overlay (built later) keeps the original.
     let user_profile_mode = profile_mode.clone();
     let sidebar = switch(
-        move || (active_server.get(), active_channel.get(), joined_voice.get()),
-        move |(server_id, _channel_id, _voice): &(u32, u32, Option<(u32, u32)>)| {
+        move || {
+            // Fingerprint (id, name, kind) so the key is `PartialEq` even
+            // though `ChannelSummary` itself isn't; it changes when a live
+            // server's channels are fetched, forcing the live branch below to
+            // rebuild and show them.
+            let live_fp: Vec<(i64, String, String)> = live_channels
+                .get()
+                .iter()
+                .map(|c| (c.id, c.name.clone(), c.kind.clone()))
+                .collect();
+            (
+                active_server.get(),
+                active_channel.get(),
+                joined_voice.get(),
+                active_live_server.get(),
+                live_fp,
+            )
+        },
+        move |(server_id, _channel_id, _voice, _live_server, _live_fp): &(
+            u32,
+            u32,
+            Option<(u32, u32)>,
+            Option<i64>,
+            Vec<(i64, String, String)>,
+        )| {
             // `switch`'s render is `Fn` — clone the captured styles so the
             // closure borrows them rather than moving them out (whiteboard idiom).
             let sidebar_style = sidebar_style.clone();
@@ -1591,8 +1717,168 @@ fn app_shell(authed: Signal<bool>) -> Element {
             let chevron_style = chevron_style.clone();
             let cat_style = cat_style.clone();
             let channel = active_channel;
-            let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
-            let mut rows: Vec<Element> = Vec::new();
+
+            // Live (backend) mode: build the live channel rows up front
+            // (harmless when not in live mode — `live_channels` is empty).
+            let live = live_channels.get();
+                // Static row style mirroring the mock channel rows' geometry
+                // (34px pill, inset 8px) so live rows line up with the mock
+                // ones. `row_style` is a `Fn` closure, so it can be captured
+                // by the per-row `ui!` below without being moved.
+                let live_row_style = move || StyleRules {
+                    height: Some(px(34.0)),
+                    margin_left: Some(px(8.0)),
+                    margin_right: Some(px(8.0)),
+                    padding_left: Some(px(12.0)),
+                    padding_right: Some(px(8.0)),
+                    background: Some(col("transparent")),
+                    border_top_left_radius: Some(px(8.0)),
+                    border_top_right_radius: Some(px(8.0)),
+                    border_bottom_left_radius: Some(px(8.0)),
+                    border_bottom_right_radius: Some(px(8.0)),
+                    flex_direction: Some(FlexDirection::Row),
+                    align_items: Some(AlignItems::Center),
+                    ..Default::default()
+                };
+                let live_glyph_style = move || StyleRules {
+                    width: Some(px(20.0)),
+                    align_items: Some(AlignItems::Center),
+                    justify_content: Some(JustifyContent::Center),
+                    flex_shrink: Some(grow(0.0)),
+                    font_size: Some(px(15.0)),
+                    color: Some(col(TEXT_MUTED)),
+                    ..Default::default()
+                };
+                let live_label_style = move || StyleRules {
+                    flex_grow: Some(grow(1.0)),
+                    flex_shrink: Some(grow(0.0)),
+                    font_size: Some(px(15.0)),
+                    color: Some(col(TEXT_CHANNEL)),
+                    ..Default::default()
+                };
+                if _live_server.is_some() {
+                    // Build the live channel rows here, inside the live arm, so
+                    // they're a local of this block. Splatting a captured outer
+                    // `Vec<Element>` out of the inner `ui!` closure would be a
+                    // move out of an `Fn` closure (`Element` is not `Clone`).
+                    let live_sel = active_live_channel.clone();
+                    let gw = gateway.clone();
+                    let live_rows: Vec<Element> = live
+                        .iter()
+                        .map(|c| {
+                            // '#' for text channels, a speaker glyph for voice —
+                            // the same glyphs the mock rows use below.
+                            let glyph = if c.kind == "text" { "#" } else { "🔊" };
+                            let name = c.name.clone();
+                            let is_text = c.kind == "text";
+                            let cid = c.id;
+                            // Reactive, per-row — the mock path's rows work the
+                            // same way: background fills with the active colour
+                            // when selected, and the glyph/label go semi-bold
+                            // (label also brightens) — nothing changes when no
+                            // live channel is active, so the unselected rows
+                            // render exactly as before.
+                            let row_style = move || StyleRules {
+                                background: Some(col(if live_sel.get() == Some(cid) {
+                                    BG_ACTIVE
+                                } else {
+                                    "transparent"
+                                })),
+                                ..live_row_style()
+                            };
+                            let glyph_style = move || StyleRules {
+                                font_weight: Some(if live_sel.get() == Some(cid) {
+                                    FontWeight::SemiBold
+                                } else {
+                                    FontWeight::Normal
+                                }),
+                                ..live_glyph_style()
+                            };
+                            let label_style = move || StyleRules {
+                                font_weight: Some(if live_sel.get() == Some(cid) {
+                                    FontWeight::SemiBold
+                                } else {
+                                    FontWeight::Normal
+                                }),
+                                color: Some(col(if live_sel.get() == Some(cid) {
+                                    TEXT
+                                } else {
+                                    TEXT_CHANNEL
+                                })),
+                                ..live_label_style()
+                            };
+                            let row = if is_text {
+                                // Voice rows stay non-clickable for now — a later
+                                // task handles voice selection. Text rows select
+                                // the channel and request its history over the
+                                // gateway (the echo/History frames land in
+                                // `gateway.incoming()`). `.on_touch` chains on the
+                                // `view` node inside `ui!`, so each row kind gets
+                                // its own `ui!` block.
+                                ui! {
+                                    view(style = row_style) {
+                                        text(style = glyph_style) { glyph.to_string() }
+                                        text(style = label_style) { name }
+                                    }
+                                    .on_touch(move |ev| {
+                                        if ev.phase == TouchPhase::Ended {
+                                            live_sel.set(Some(cid));
+                                            gw.send(
+                                                discord_server::server_settings::WsClientMsg::History {
+                                                    channel_id: cid,
+                                                },
+                                            );
+                                        }
+                                        TouchResponse::CONSUMED
+                                    })
+                                }
+                            } else {
+                                ui! {
+                                    view(style = row_style) {
+                                        text(style = glyph_style) { glyph.to_string() }
+                                        text(style = label_style) { name }
+                                    }
+                                }
+                            };
+                            row
+                        })
+                        .collect();
+                    // Resolve the channels content as a local `Element` *outside*
+                    // the `ui!` below. An `if/else` written directly inside `ui!`
+                    // wraps its branches in a reactivity closure that captures
+                    // `live_rows`, and that closure is `Fn` (re-runs) so it can't
+                    // move the captured `Vec<Element>` into `view { live_rows }`
+                    // (`Element` is not `Clone`). The mock branch avoids this by
+                    // splatting `rows` directly, never in a conditional.
+                    let live_content: Element = if live_rows.is_empty() {
+                        ui! {
+                            text(style = cat_style.clone()) {
+                                "No channels yet".to_string()
+                            }
+                        }
+                    } else {
+                        ui! {
+                            view { live_rows }
+                        }
+                    };
+                    ui! {
+                        view(style = sidebar_style.clone()) {
+                            view(style = sidebar_header_style.clone()) {
+                                view(style = sidebar_title_style.clone()) {
+                                    text(style = cat_style.clone()) {
+                                        "SERVER".to_string()
+                                    }
+                                    text(style = chevron_style.clone()) {
+                                        "⌃".to_string()
+                                    }
+                                }
+                            }
+                            live_content
+                        }
+                    }
+                } else {
+                    let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
+                    let mut rows: Vec<Element> = Vec::new();
             // Category sections, in data order: each section is a small
             // uppercase header, its text-channel rows, then its voice rows.
             for cat in server.categories {
@@ -1742,6 +2028,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     user
                 }
             }
+            }
         },
     );
 
@@ -1762,13 +2049,36 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let title_style = StyleRules { font_size: Some(px(15.0)), font_weight: Some(FontWeight::SemiBold), color: Some(col(TEXT)), ..Default::default() };
     let topic_style = StyleRules { font_size: Some(px(13.0)), color: Some(col(TEXT_MUTED)), flex_grow: Some(grow(1.0)), ..Default::default() };
 
+    // Live-mode header: a live channel's name has no mock counterpart, so it's
+    // looked up from `live_channels` (fetched when the live server was
+    // selected) and the topic is the static "No topic set yet" (backend
+    // channels have no topic column). `live_channels` is a `Copy` `Signal`, so
+    // capturing it here is cheap; the arm re-runs whenever
+    // `active_live_channel` (in the key) changes. `None` falls through to the
+    // mock header below, byte-for-byte unchanged.
     let header = switch(
-        move || (active_server.get(), active_channel.get()),
-        move |(server_id, channel_id): &(u32, u32)| {
+        move || (active_server.get(), active_channel.get(), active_live_channel.get()),
+        move |(server_id, channel_id, live_cid): &(u32, u32, Option<i64>)| {
             let header_style = header_style.clone();
             let hash_style = hash_style.clone();
             let title_style = title_style.clone();
             let topic_style = topic_style.clone();
+            if let Some(live_id) = *live_cid {
+                let title = live_channels
+                    .get()
+                    .iter()
+                    .find(|c| c.id == live_id)
+                    .map(|c| c.name.clone())
+                    .unwrap_or_default();
+                let topic = "No topic set yet".to_string();
+                return ui! {
+                    view(style = header_style) {
+                        text(style = hash_style) { "#".to_string() }
+                        text(style = title_style) { title }
+                        text(style = topic_style) { topic }
+                    }
+                };
+            }
             let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
             let channel = server.find_text_channel(*channel_id).unwrap();
             let title = channel.name.to_string();
@@ -1803,9 +2113,57 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // because `switch` dedups on scrutinee VALUE — without it, a send (which
     // keeps the same channel) would not rebuild the list.
     let sent_read = sent.clone();
+    let live_read = live_messages.clone();
     let sent_messages = switch(
-        move || (active_server.get(), active_channel.get(), revision.get()),
-        move |(server_id, channel_id, _revision): &(u32, u32, u32)| {
+        move || (
+            active_server.get(),
+            active_channel.get(),
+            revision.get(),
+            active_live_channel.get(),
+            live_revision.get(),
+        ),
+        move |(server_id, channel_id, _revision, live_cid, _live_rev): &(u32, u32, u32, Option<i64>, u32)| {
+            // Live/real channel active: render the gateway-fed buffer instead of
+            // the mock path. `None` falls through to the mock render unchanged.
+            if let Some(live_id) = *live_cid {
+                let now = crate::data::now_secs();
+                let mine: Vec<(i64, String, String, i64)> = live_read
+                    .borrow()
+                    .get(&live_id)
+                    .cloned()
+                    .unwrap_or_default();
+                if mine.is_empty() {
+                    // No history and nothing received yet: a centered, muted
+                    // hint instead of a blank pane. The wrapper `flex_grow`s to
+                    // fill the (tall) scroll pane, then centers the single line.
+                    return ui! {
+                        view(style = StyleRules {
+                            flex_grow: Some(grow(1.0)),
+                            align_items: Some(AlignItems::Center),
+                            justify_content: Some(JustifyContent::Center),
+                            padding_top: Some(px(24.0)),
+                            ..Default::default()
+                        }) {
+                            text(style = StyleRules {
+                                font_size: Some(px(14.0)),
+                                color: Some(col(TEXT_MUTED)),
+                                ..Default::default()
+                            }) { "No messages yet -- say hi!".to_string() }
+                        }
+                    };
+                }
+                let mut rows: Vec<Element> = Vec::with_capacity(mine.len());
+                for (_aid, author, body, ts) in mine.iter() {
+                    let when = format_when(*ts, now);
+                    rows.push(message_row(author.as_str(), BUTTON, body.as_str(), when));
+                }
+                return ui! {
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Column),
+                        ..Default::default()
+                    }) { rows }
+                };
+            }
             let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
             let channel = server.find_text_channel(*channel_id).unwrap();
             let cid = *channel_id;
@@ -1920,9 +2278,25 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let send_composer = composer.clone();
     let sent_write = sent.clone();
     let revision_bump = revision.clone();
+    // Live-send handles: `gateway` is a `Copy` `UseSocket`, so clone it in so
+    // the (shared) `move` handler can send over the global socket. Only used
+    // when `active_live_channel` is `Some`; otherwise the mock path runs.
+    let live_chan = active_live_channel.clone();
+    let gateway_send = gateway;
     let do_send = move || {
         let body = send_composer.get();
         if body.trim().is_empty() {
+            return;
+        }
+        // Live/real mode: send over the gateway socket to the live channel.
+        // The server echoes it back as a `Message` frame, which the incoming
+        // effect buffers and bumps `live_revision`, rebuilding the list.
+        if let Some(live_cid) = live_chan.get() {
+            gateway_send.send(discord_server::server_settings::WsClientMsg::Send {
+                channel_id: live_cid,
+                content: body,
+            });
+            send_composer.set(String::new());
             return;
         }
         let cid = active_channel.get();
@@ -2054,7 +2428,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             overflow: Some(Overflow::Hidden),
             ..Default::default()
         }) {
-            view(style = rail_style) { server_rows live_section gateway_status }
+            view(style = rail_style) { server_rows live_section gateway_status gateway_incoming_effect }
             sidebar
             view(style = main_style) {
                 header
