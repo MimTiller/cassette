@@ -1265,6 +1265,18 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // re-fire keeps the mounted arm), so re-setting `active_channel` to its
     // current value does NOT rebuild the message list — this counter does.
     let revision: Signal<u32> = signal(0);
+
+    // --- live/real message state -----------------------------------------
+    // Separate from the mock `sent`/`revision` above: when `active_live_channel`
+    // is `Some(id)` the message list reads from here instead of the mock path.
+    // channel_id -> Vec<(author_id, author_label, content, created_at_secs)>,
+    // oldest-first (the gateway's History replies arrive oldest-first, and new
+    // frames append in order). Mutating the Vec does NOT trigger reactivity, so
+    // `live_revision` is bumped on every frame the buffer absorbs and folded
+    // into the list `switch`'s key — exactly the mock `revision` idiom.
+    let live_messages: Rc<RefCell<HashMap<i64, Vec<(i64, String, String, i64)>>>> =
+        Rc::new(RefCell::new(HashMap::new()));
+    let live_revision: Signal<u32> = signal(0);
     // Channel-category collapse state: one signal per category id, all
     // starting expanded (false). Held in an Rc<HashMap> so both the sidebar
     // `switch` key and its render loop can reach it. The key reads every
@@ -1338,6 +1350,45 @@ fn app_shell(authed: Signal<bool>) -> Element {
             };
             ui! {
                 text(style = status_style) { label.to_string() }
+            }
+        },
+    );
+
+    // Reactive "watch every frame" effect: `switch` re-runs its arm whenever
+    // `gateway.incoming()`'s value changes, so the arm fires once per inbound
+    // frame. This one runs a SIDE EFFECT (absorb the message into `live_messages`
+    // and bump `live_revision`), not a render — so it returns an inert 0-height
+    // `view` (the no-op-render idiom; the element itself is never seen, mounted
+    // in the rail below). Only `Message` frames are buffered; `History` replies
+    // surface as a run of `Message { new: false }` frames, which land here too.
+    // `created_at` arrives as epoch MILLISECONDS from the server; the client's
+    // `format_when`/`now_secs` work in SECONDS, so divide by 1000 on ingest.
+    let live_buf = live_messages.clone();
+    let live_rev = live_revision.clone();
+    let gateway_incoming_effect = switch(
+        move || gateway.incoming().get(),
+        move |frame: &Option<discord_server::server_settings::WsServerMsg>| {
+            if let Some(discord_server::server_settings::WsServerMsg::Message {
+                channel_id,
+                author_id,
+                content,
+                created_at,
+                ..
+            }) = frame
+            {
+                let label = format!("user {}", author_id);
+                live_buf
+                    .borrow_mut()
+                    .entry(*channel_id)
+                    .or_default()
+                    .push((*author_id, label, content.clone(), *created_at / 1000));
+                live_rev.set(live_rev.get() + 1);
+            }
+            ui! {
+                view(style = StyleRules {
+                    height: Some(px(0.0)),
+                    ..Default::default()
+                }) {}
             }
         },
     );
@@ -2021,9 +2072,37 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // because `switch` dedups on scrutinee VALUE — without it, a send (which
     // keeps the same channel) would not rebuild the list.
     let sent_read = sent.clone();
+    let live_read = live_messages.clone();
     let sent_messages = switch(
-        move || (active_server.get(), active_channel.get(), revision.get()),
-        move |(server_id, channel_id, _revision): &(u32, u32, u32)| {
+        move || (
+            active_server.get(),
+            active_channel.get(),
+            revision.get(),
+            active_live_channel.get(),
+            live_revision.get(),
+        ),
+        move |(server_id, channel_id, _revision, live_cid, _live_rev): &(u32, u32, u32, Option<i64>, u32)| {
+            // Live/real channel active: render the gateway-fed buffer instead of
+            // the mock path. `None` falls through to the mock render unchanged.
+            if let Some(live_id) = *live_cid {
+                let now = crate::data::now_secs();
+                let mine: Vec<(i64, String, String, i64)> = live_read
+                    .borrow()
+                    .get(&live_id)
+                    .cloned()
+                    .unwrap_or_default();
+                let mut rows: Vec<Element> = Vec::with_capacity(mine.len());
+                for (_aid, author, body, ts) in mine.iter() {
+                    let when = format_when(*ts, now);
+                    rows.push(message_row(author.as_str(), BUTTON, body.as_str(), when));
+                }
+                return ui! {
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Column),
+                        ..Default::default()
+                    }) { rows }
+                };
+            }
             let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
             let channel = server.find_text_channel(*channel_id).unwrap();
             let cid = *channel_id;
@@ -2098,9 +2177,25 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let send_composer = composer.clone();
     let sent_write = sent.clone();
     let revision_bump = revision.clone();
+    // Live-send handles: `gateway` is a `Copy` `UseSocket`, so clone it in so
+    // the (shared) `move` handler can send over the global socket. Only used
+    // when `active_live_channel` is `Some`; otherwise the mock path runs.
+    let live_chan = active_live_channel.clone();
+    let gateway_send = gateway;
     let do_send = move || {
         let body = send_composer.get();
         if body.trim().is_empty() {
+            return;
+        }
+        // Live/real mode: send over the gateway socket to the live channel.
+        // The server echoes it back as a `Message` frame, which the incoming
+        // effect buffers and bumps `live_revision`, rebuilding the list.
+        if let Some(live_cid) = live_chan.get() {
+            gateway_send.send(discord_server::server_settings::WsClientMsg::Send {
+                channel_id: live_cid,
+                content: body,
+            });
+            send_composer.set(String::new());
             return;
         }
         let cid = active_channel.get();
@@ -2232,7 +2327,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             overflow: Some(Overflow::Hidden),
             ..Default::default()
         }) {
-            view(style = rail_style) { server_rows live_section gateway_status }
+            view(style = rail_style) { server_rows live_section gateway_status gateway_incoming_effect }
             sidebar
             view(style = main_style) {
                 header
