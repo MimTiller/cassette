@@ -42,6 +42,7 @@ use runtime_shared::time::local_offset_minutes;
 
 use crate::data::{SERVERS, Category, Member, Status, USER};
 use crate::member_count_display::member_count_display;
+use crate::pin_count_badge::PinCountBadge;
 use crate::profile_settings::profile_settings;
 use crate::style_helpers::{col, pct, px};
 
@@ -1779,6 +1780,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     text(style = title_style) { title }
                     text(style = topic_style) { topic }
                     member_count_display(12.into(), total.into())
+                    PinCountBadge()
                 }
             }
         },
