@@ -1292,6 +1292,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
             live_servers.set(servers);
         }
     });
+    // Live-mode selection, parallel to (and independent of) the mock
+    // `active_server`/`active_channel` signals. `active_live_server` is the id
+    // of a *real* backend server the user tapped (None = mock path is active);
+    // `live_channels` holds that server's channels, fetched on demand. Tapping
+    // a mock rail row sets `active_live_server` back to None, so the two modes
+    // never overlap and the mock path keeps its exact existing behaviour.
+    let active_live_server: Signal<Option<i64>> = signal(None);
+    let live_channels: Signal<Vec<crate::servers::ChannelSummary>> = signal(Vec::new());
 
     // Realtime gateway: the signed session token authenticates the connect
     // (the backend verifies it). It rides the connect URL's `?args=` query —
@@ -1351,6 +1359,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let active = active_server.clone();
         let channel = active_channel.clone();
         let voice = joined_voice.clone();
+        let live_server = active_live_server.clone();
         // Reactive style: re-runs whenever `active_server` changes.
         let row_style = move || StyleRules {
             width: Some(px(48.0)),
@@ -1442,6 +1451,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
             }
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
+                    // Selecting a mock server exits live mode so the channel
+                    // sidebar shows the mock channels, not the live ones.
+                    live_server.set(None);
                     active.set(s.id);
                     if let Some(srv) = SERVERS.iter().find(|x| x.id == s.id) {
                         // Default to the first *text* channel — voice channels
@@ -1459,11 +1471,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
     }).collect();
 
     // Live (backend) servers — a visually separate section below the mock
-    // rows. These rows are NOT clickable: the backend's `ServerSummary` only
-    // carries {id, name, icon_url} — no channels/categories — so there is no
-    // meaningful `active_server`/`active_channel` to set, and the existing
-    // `SERVERS.iter().find(...)` lookups would panic on a real id. A later
-    // task wires the touch handler once the backend exposes channel data.
+    // rows. Clicking a row enters live mode: it sets `active_live_server`
+    // (so the channel sidebar swaps to the live branch) and fetches that
+    // server's real channels into `live_channels`. The active row is
+    // highlighted reactively (its key is `live_servers`, and the render
+    // closure also reads `active_live_server` reactively). Tapping a mock
+    // rail row clears `active_live_server`, exiting live mode.
     let live_section = switch(
         move || live_servers.get(),
         move |servers: &Vec<crate::servers::ServerSummary>| {
@@ -1504,12 +1517,42 @@ fn app_shell(authed: Signal<bool>) -> Element {
             };
             let rows: Vec<Element> = servers.iter().map(|s| {
                 let initial = s.name.chars().next().unwrap_or('?').to_string();
+                let sid = s.id;
+                let active_live = active_live_server.clone();
+                let live_ch = live_channels.clone();
+                // Static base for the squircle; the reactive closure below only
+                // overrides the background so the tapped row lights up without
+                // a full rebuild.
+                let base = row_style.clone();
+                let reactive_style = move || StyleRules {
+                    background: Some(col(if active_live.get() == Some(sid) {
+                        TEXT
+                    } else {
+                        BG_SIDEBAR
+                    })),
+                    ..base.clone()
+                };
                 ui! {
-                    view(style = row_style.clone()) {
+                    view(style = reactive_style) {
                         text(style = initial_style.clone()) { initial }
                     }
-                    // No on_touch handler by design — see the comment above:
-                    // live servers have no channel data server-side yet.
+                    // Enter live mode: select this real server and pull its
+                    // channels (async `#[server]` RPC, same pattern as the
+                    // `live_servers` fetch above). Channel rows are rendered
+                    // in the sidebar's live branch; they aren't clickable yet.
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            active_live.set(Some(sid));
+                            runtime_core::driver::spawn_async(async move {
+                                if let Ok(channels) =
+                                    crate::servers::list_channels(sid).await
+                                {
+                                    live_ch.set(channels);
+                                }
+                            });
+                        }
+                        TouchResponse::CONSUMED
+                    })
                 }
             }).collect();
             ui! {
@@ -1577,8 +1620,31 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // own this copy while the overlay (built later) keeps the original.
     let user_profile_mode = profile_mode.clone();
     let sidebar = switch(
-        move || (active_server.get(), active_channel.get(), joined_voice.get()),
-        move |(server_id, _channel_id, _voice): &(u32, u32, Option<(u32, u32)>)| {
+        move || {
+            // Fingerprint (id, name, kind) so the key is `PartialEq` even
+            // though `ChannelSummary` itself isn't; it changes when a live
+            // server's channels are fetched, forcing the live branch below to
+            // rebuild and show them.
+            let live_fp: Vec<(i64, String, String)> = live_channels
+                .get()
+                .iter()
+                .map(|c| (c.id, c.name.clone(), c.kind.clone()))
+                .collect();
+            (
+                active_server.get(),
+                active_channel.get(),
+                joined_voice.get(),
+                active_live_server.get(),
+                live_fp,
+            )
+        },
+        move |(server_id, _channel_id, _voice, _live_server, _live_fp): &(
+            u32,
+            u32,
+            Option<(u32, u32)>,
+            Option<i64>,
+            Vec<(i64, String, String)>,
+        )| {
             // `switch`'s render is `Fn` — clone the captured styles so the
             // closure borrows them rather than moving them out (whiteboard idiom).
             let sidebar_style = sidebar_style.clone();
@@ -1587,8 +1653,101 @@ fn app_shell(authed: Signal<bool>) -> Element {
             let chevron_style = chevron_style.clone();
             let cat_style = cat_style.clone();
             let channel = active_channel;
-            let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
-            let mut rows: Vec<Element> = Vec::new();
+
+            // Live (backend) mode: build the live channel rows up front
+            // (harmless when not in live mode — `live_channels` is empty).
+            let live = live_channels.get();
+                // Static row style mirroring the mock channel rows' geometry
+                // (34px pill, inset 8px) so live rows line up with the mock
+                // ones. `row_style` is a `Fn` closure, so it can be captured
+                // by the per-row `ui!` below without being moved.
+                let live_row_style = move || StyleRules {
+                    height: Some(px(34.0)),
+                    margin_left: Some(px(8.0)),
+                    margin_right: Some(px(8.0)),
+                    padding_left: Some(px(12.0)),
+                    padding_right: Some(px(8.0)),
+                    background: Some(col("transparent")),
+                    border_top_left_radius: Some(px(8.0)),
+                    border_top_right_radius: Some(px(8.0)),
+                    border_bottom_left_radius: Some(px(8.0)),
+                    border_bottom_right_radius: Some(px(8.0)),
+                    flex_direction: Some(FlexDirection::Row),
+                    align_items: Some(AlignItems::Center),
+                    ..Default::default()
+                };
+                let live_glyph_style = move || StyleRules {
+                    width: Some(px(20.0)),
+                    align_items: Some(AlignItems::Center),
+                    justify_content: Some(JustifyContent::Center),
+                    flex_shrink: Some(grow(0.0)),
+                    font_size: Some(px(15.0)),
+                    color: Some(col(TEXT_MUTED)),
+                    ..Default::default()
+                };
+                let live_label_style = move || StyleRules {
+                    flex_grow: Some(grow(1.0)),
+                    flex_shrink: Some(grow(0.0)),
+                    font_size: Some(px(15.0)),
+                    color: Some(col(TEXT_CHANNEL)),
+                    ..Default::default()
+                };
+                if _live_server.is_some() {
+                    // Build the live channel rows here, inside the live arm, so
+                    // they're a local of this block. Splatting a captured outer
+                    // `Vec<Element>` out of the inner `ui!` closure would be a
+                    // move out of an `Fn` closure (`Element` is not `Clone`).
+                    let live_rows: Vec<Element> = live
+                        .iter()
+                        .map(|c| {
+                            // '#' for text channels, a speaker glyph for voice —
+                            // the same glyphs the mock rows use below.
+                            let glyph = if c.kind == "text" { "#" } else { "🔊" };
+                            let name = c.name.clone();
+                            ui! {
+                                view(style = live_row_style.clone()) {
+                                    text(style = live_glyph_style.clone()) { glyph.to_string() }
+                                    text(style = live_label_style.clone()) { name }
+                                }
+                            }
+                        })
+                        .collect();
+                    // Resolve the channels content as a local `Element` *outside*
+                    // the `ui!` below. An `if/else` written directly inside `ui!`
+                    // wraps its branches in a reactivity closure that captures
+                    // `live_rows`, and that closure is `Fn` (re-runs) so it can't
+                    // move the captured `Vec<Element>` into `view { live_rows }`
+                    // (`Element` is not `Clone`). The mock branch avoids this by
+                    // splatting `rows` directly, never in a conditional.
+                    let live_content: Element = if live_rows.is_empty() {
+                        ui! {
+                            text(style = cat_style.clone()) {
+                                "No channels yet".to_string()
+                            }
+                        }
+                    } else {
+                        ui! {
+                            view { live_rows }
+                        }
+                    };
+                    ui! {
+                        view(style = sidebar_style.clone()) {
+                            view(style = sidebar_header_style.clone()) {
+                                view(style = sidebar_title_style.clone()) {
+                                    text(style = cat_style.clone()) {
+                                        "SERVER".to_string()
+                                    }
+                                    text(style = chevron_style.clone()) {
+                                        "⌃".to_string()
+                                    }
+                                }
+                            }
+                            live_content
+                        }
+                    }
+                } else {
+                    let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
+                    let mut rows: Vec<Element> = Vec::new();
             // Category sections, in data order: each section is a small
             // uppercase header, its text-channel rows, then its voice rows.
             for cat in server.categories {
@@ -1737,6 +1896,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     }
                     user
                 }
+            }
             }
         },
     );
