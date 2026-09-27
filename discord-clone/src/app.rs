@@ -2047,7 +2047,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     };
     let hash_style = StyleRules { font_size: Some(px(20.0)), color: Some(col(TEXT_MUTED)), ..Default::default() };
     let title_style = StyleRules { font_size: Some(px(15.0)), font_weight: Some(FontWeight::SemiBold), color: Some(col(TEXT)), ..Default::default() };
-    let topic_style = StyleRules { font_size: Some(px(13.0)), color: Some(col(TEXT_MUTED)), flex_grow: Some(grow(1.0)), ..Default::default() };
+    let topic_style = StyleRules { font_size: Some(px(13.0)), color: Some(col(TEXT_MUTED)), flex_grow: Some(grow(1.0)), flex_shrink: Some(grow(1.0)), min_width: Some(px(0.0)), overflow: Some(Overflow::Hidden), ..Default::default() };
 
     // Live-mode header: a live channel's name has no mock counterpart, so it's
     // looked up from `live_channels` (fetched when the live server was
