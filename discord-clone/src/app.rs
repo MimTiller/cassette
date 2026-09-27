@@ -1478,11 +1478,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     ..Default::default()
                 }) {}
                 text(style = label_style) { s.initial }
-                // The unread count: Discord's red badge overlapping the
-                // squircle's bottom-right corner. The row is the positioning
-                // ancestor (`position: Relative` above); the mock total is
-                // computed once at build — swap for a gateway-fed signal later.
-                if s.total_unread() > 0 {
+                // The badge: a red numbered pill for @mentions, a small
+                // plain white dot for unread (no mention), nothing for read.
+                // The row is the positioning ancestor (`position: Relative`
+                // above); the mock totals are computed once at build — swap
+                // for a gateway-fed signal later.
+                if s.total_mentions() > 0 {
                     view(style = move || StyleRules {
                         position: Some(Position::Absolute),
                         right: Some(px(-4.0)),
@@ -1505,8 +1506,24 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             font_weight: Some(FontWeight::Bold),
                             color: Some(col(TEXT)),
                             ..Default::default()
-                        }) { s.total_unread().to_string() }
+                        }) { s.total_mentions().to_string() }
                     }
+                } else if s.total_unread() > 0 {
+                    // Plain dot: unread but no mention — Discord shows a
+                    // small white indicator instead of the red badge.
+                    view(style = StyleRules {
+                        position: Some(Position::Absolute),
+                        right: Some(px(-4.0)),
+                        bottom: Some(px(-4.0)),
+                        width: Some(px(10.0)),
+                        height: Some(px(10.0)),
+                        background: Some(col(TEXT)),
+                        border_top_left_radius: Some(px(5.0)),
+                        border_top_right_radius: Some(px(5.0)),
+                        border_bottom_left_radius: Some(px(5.0)),
+                        border_bottom_right_radius: Some(px(5.0)),
+                        ..Default::default()
+                    }) {}
                 }
             }
             .on_touch(move |ev| {
