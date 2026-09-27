@@ -2045,13 +2045,36 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let title_style = StyleRules { font_size: Some(px(15.0)), font_weight: Some(FontWeight::SemiBold), color: Some(col(TEXT)), ..Default::default() };
     let topic_style = StyleRules { font_size: Some(px(13.0)), color: Some(col(TEXT_MUTED)), flex_grow: Some(grow(1.0)), ..Default::default() };
 
+    // Live-mode header: a live channel's name has no mock counterpart, so it's
+    // looked up from `live_channels` (fetched when the live server was
+    // selected) and the topic is the static "No topic set yet" (backend
+    // channels have no topic column). `live_channels` is a `Copy` `Signal`, so
+    // capturing it here is cheap; the arm re-runs whenever
+    // `active_live_channel` (in the key) changes. `None` falls through to the
+    // mock header below, byte-for-byte unchanged.
     let header = switch(
-        move || (active_server.get(), active_channel.get()),
-        move |(server_id, channel_id): &(u32, u32)| {
+        move || (active_server.get(), active_channel.get(), active_live_channel.get()),
+        move |(server_id, channel_id, live_cid): &(u32, u32, Option<i64>)| {
             let header_style = header_style.clone();
             let hash_style = hash_style.clone();
             let title_style = title_style.clone();
             let topic_style = topic_style.clone();
+            if let Some(live_id) = *live_cid {
+                let title = live_channels
+                    .get()
+                    .iter()
+                    .find(|c| c.id == live_id)
+                    .map(|c| c.name.clone())
+                    .unwrap_or_default();
+                let topic = "No topic set yet".to_string();
+                return ui! {
+                    view(style = header_style) {
+                        text(style = hash_style) { "#".to_string() }
+                        text(style = title_style) { title }
+                        text(style = topic_style) { topic }
+                    }
+                };
+            }
             let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
             let channel = server.find_text_channel(*channel_id).unwrap();
             let title = channel.name.to_string();
@@ -2091,6 +2114,26 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     .get(&live_id)
                     .cloned()
                     .unwrap_or_default();
+                if mine.is_empty() {
+                    // No history and nothing received yet: a centered, muted
+                    // hint instead of a blank pane. The wrapper `flex_grow`s to
+                    // fill the (tall) scroll pane, then centers the single line.
+                    return ui! {
+                        view(style = StyleRules {
+                            flex_grow: Some(grow(1.0)),
+                            align_items: Some(AlignItems::Center),
+                            justify_content: Some(JustifyContent::Center),
+                            padding_top: Some(px(24.0)),
+                            ..Default::default()
+                        }) {
+                            text(style = StyleRules {
+                                font_size: Some(px(14.0)),
+                                color: Some(col(TEXT_MUTED)),
+                                ..Default::default()
+                            }) { "No messages yet -- say hi!".to_string() }
+                        }
+                    };
+                }
                 let mut rows: Vec<Element> = Vec::with_capacity(mine.len());
                 for (_aid, author, body, ts) in mine.iter() {
                     let when = format_when(*ts, now);
