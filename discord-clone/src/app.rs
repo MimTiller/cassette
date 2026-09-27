@@ -42,6 +42,7 @@ use runtime_shared::time::local_offset_minutes;
 
 use crate::data::{SERVERS, Category, Member, Status, USER};
 use crate::member_count_display::member_count_display;
+use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
 use crate::profile_settings::profile_settings;
 use crate::style_helpers::{col, pct, px};
@@ -1781,6 +1782,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     text(style = topic_style) { topic }
                     member_count_display(12.into(), total.into())
                     PinCountBadge()
+                    // Compact message-search widget. It can render mock result
+                    // rows below its input, so wrap it in a fixed-width `view`
+                    // to keep the header row from stretching taller/wider.
+                    view(style = StyleRules {
+                        width: Some(px(180.0)),
+                        ..Default::default()
+                    }) {
+                        MessageSearchBar()
+                    }
                 }
             }
         },
