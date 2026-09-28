@@ -50,6 +50,7 @@ use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
 use crate::read_receipt_indicator::ReadReceiptIndicator;
 use crate::verified_badge::VerifiedBadge;
+use crate::mute_channel_toggle::MuteChannelToggle;
 use crate::connection_quality_indicator::ConnectionQualityIndicator;
 use crate::edited_label::edited_label;
 use crate::profile_settings::profile_settings;
