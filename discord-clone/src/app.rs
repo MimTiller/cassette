@@ -252,8 +252,6 @@ fn message_row(author: &str, color: &str, body: &str, when: String) -> Element {
             view(style = stack_style) {
                 view(style = meta_style) {
                     text(style = author_style) { author.to_string() }
-                    if author == "miri":
-                        VerifiedBadge()
                     text(style = when_style) { when }
                 }
                 text(style = body_style) { body.to_string() }
