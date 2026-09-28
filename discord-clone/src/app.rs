@@ -38,7 +38,7 @@ use runtime_core::{
     signal, switch, ui,
 };
 use runtime_core::icon;
-use icons_lucide::{CHEVRON_DOWN, COMPASS, HASH, PLUS, VOLUME_2};
+use icons_lucide::{CHEVRON_DOWN, COMPASS, HASH, PLUS, SMILE, VOLUME_2};
 
 use runtime_shared::time::local_offset_minutes;
 
@@ -2310,6 +2310,21 @@ fn app_shell(authed: Signal<bool>) -> Element {
         border_bottom_right_radius: Some(px(8.0)),
         ..Default::default()
     };
+    // Circular muted-grey icon buttons flanking the composer input —
+    // the '+' attachment affordance on the left, the emoji picker on
+    // the right (both no-ops for now).
+    let icon_button_style = StyleRules {
+        width: Some(px(28.0)),
+        height: Some(px(28.0)),
+        align_items: Some(AlignItems::Center),
+        justify_content: Some(JustifyContent::Center),
+        background: Some(col(COMPOSER)),
+        border_top_left_radius: Some(px(14.0)),
+        border_top_right_radius: Some(px(14.0)),
+        border_bottom_left_radius: Some(px(14.0)),
+        border_bottom_right_radius: Some(px(14.0)),
+        ..Default::default()
+    };
 
     let on_change = move |s: String| {
         composer.set(s);
@@ -2478,7 +2493,17 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { sent_messages }
                 typing_row
                 view(style = composer_style) {
+                    view(style = icon_button_style.clone()) {
+                        icon(PLUS).color(|| Color::from(TEXT_MUTED)).size(16.0)
+                    }
+                    .on_touch(|_ev| TouchResponse::CONSUMED)
+                    // TODO: attachment picker
                     text_input(value = composer, on_change = on_change, placeholder = "Message", style = input_style, test_id = "composer").on_key_down(on_enter)
+                    view(style = icon_button_style) {
+                        icon(SMILE).color(|| Color::from(TEXT_MUTED)).size(16.0)
+                    }
+                    .on_touch(|_ev| TouchResponse::CONSUMED)
+                    // TODO: emoji picker
                     button(label = "Send".to_string(), on_click = on_click, style = send_style, test_id = "send")
                 }
             }
