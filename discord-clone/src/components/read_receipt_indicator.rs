@@ -25,6 +25,7 @@
 
 use crate::style_helpers::{col, px};
 use runtime_core::{component, ui, AlignItems, Element, FlexDirection, StyleRules};
+use crate::read_receipt_indicator::ReadReceiptIndicator;
 
 // Discord dark palette (kept local so the component is self-contained).
 const GRAY: &str = "#80848e"; // muted check for "sent" / "delivered"

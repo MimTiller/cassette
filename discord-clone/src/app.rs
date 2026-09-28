@@ -258,6 +258,7 @@ fn message_row(author: &str, color: &str, body: &str, when: String) -> Element {
                     text(style = when_style) { when }
                 }
                 text(style = body_style) { body.to_string() }
+                ReadReceiptIndicator()
                 if body.contains("missing Clone") { edited_label() }
             }
         }
