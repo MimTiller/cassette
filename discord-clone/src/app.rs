@@ -41,6 +41,7 @@ use runtime_core::icon;
 use icons_lucide::{
     CHEVRON_DOWN, COMPASS, HASH, HEADPHONES, MIC, MIC_OFF, PLUS, SETTINGS, SMILE, VOLUME_2,
 };
+use crate::mute_channel_toggle::MuteChannelToggle;
 
 use runtime_shared::time::local_offset_minutes;
 
