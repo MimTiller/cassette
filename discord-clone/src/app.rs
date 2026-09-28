@@ -410,6 +410,7 @@ fn voice_section(
                     .color(|| Color::from(TEXT_MUTED))
                     .size(14.0)
                 text(style = v_label_style) { label }
+                ConnectionQualityIndicator()
             }
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
