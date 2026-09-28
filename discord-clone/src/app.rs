@@ -2102,6 +2102,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     text(style = hash_style) { "#".to_string() }
                     text(style = title_style) { title }
                     text(style = topic_style) { topic }
+                    // Spacer: eats the row's remaining width so the member
+                    // count, pin badge, and search bar sit at the far right.
+                    view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
                     member_count_display(12.into(), total.into())
                     PinCountBadge()
                     // Compact message-search widget. It can render mock result
