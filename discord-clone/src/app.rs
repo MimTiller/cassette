@@ -784,8 +784,8 @@ fn user_panel(
                 Some(_) => {
                     let leave_style = StyleRules {
                         height: Some(px(24.0)),
-                        padding_left: Some(px(8.0)),
-                        padding_right: Some(px(8.0)),
+                        padding_left: Some(px(6.0)),
+                        padding_right: Some(px(6.0)),
                         background: Some(col(BG_SIDEBAR)),
                         color: Some(col(TEXT)),
                         align_items: Some(AlignItems::Center),
@@ -845,12 +845,15 @@ fn user_panel(
             // unmounts this tree and re-mounts the login screen (the `switch`
             // key in `app()` re-evaluates on it). Same view+on_touch pill the
             // Leave button uses, so it fits the row's styling.
-            // Compact pill: 8px padding + 11px type so it fits the 240px
-            // sidebar row next to the avatar and the Profile pill.
+            // Compact pill: 6px padding + 11px type. This row now also holds
+            // the mic/deafen/settings icons, so the old 8px padding (which
+            // only had to fit avatar + name + 2 pills) no longer fits — the
+            // tight 6px is part of the width budget in
+            // `controls_row_fits_224px_sidebar`.
             let logout_style = StyleRules {
                 height: Some(px(24.0)),
-                padding_left: Some(px(8.0)),
-                padding_right: Some(px(8.0)),
+                padding_left: Some(px(6.0)),
+                padding_right: Some(px(6.0)),
                 background: Some(col(BG_SIDEBAR)),
                 color: Some(col(TEXT_MUTED)),
                 align_items: Some(AlignItems::Center),
@@ -888,12 +891,14 @@ fn user_panel(
             // that opens the full-screen `profile_settings` screen. `app_shell`
             // owns `profile_mode` and renders the overlay when it flips on.
             let profile_open = profile_mode.clone();
-            // Compact like Log Out, so both pills fit one 240px row.
+            // Compact like Log Out (6px padding): the three pills plus the
+            // three icon buttons must all fit the 224px control row — see
+            // `controls_row_fits_224px_sidebar`.
             let profile_btn = ui! {
                 view(style = StyleRules {
                     height: Some(px(24.0)),
-                    padding_left: Some(px(8.0)),
-                    padding_right: Some(px(8.0)),
+                    padding_left: Some(px(6.0)),
+                    padding_right: Some(px(6.0)),
                     background: Some(col(BG_SIDEBAR)),
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
@@ -925,9 +930,15 @@ fn user_panel(
             // owned here — pure local UI state, no backend call. The mic
             // swaps to a slashed glyph when muted; Lucide has no
             // headphones-off, so deafened colors the icon red instead.
+            // 18px (not 20) + a 6px row gap: the control row must fit all
+            // three icons AND the Profile / Log Out / Leave pills in the
+            // 224px the 240px sidebar leaves after the panel's 8px side
+            // padding — see `controls_row_fits_224px_sidebar` for the
+            // arithmetic. 20px icons + 8px gaps overflowed it and clipped
+            // Log Out (sidebar `Overflow::Hidden`), which was the regression.
             let icon_btn_style = StyleRules {
-                width: Some(px(20.0)),
-                height: Some(px(20.0)),
+                width: Some(px(18.0)),
+                height: Some(px(18.0)),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
                 flex_shrink: Some(grow(0.0)),
@@ -972,9 +983,19 @@ fn user_panel(
                 .on_touch(|_ev| TouchResponse::CONSUMED)
             };
             // Row 2: the icon buttons left, the pills (plus Leave, voice only)
-            // pushed to the right.
+            // pushed to the right. Its own gap (6px, not the identity row's
+            // 8px) is deliberate — the extra 2px per gap is part of what lets
+            // all three icons plus up to three pills fit the 224px; the
+            // identity row above keeps the roomier 8px.
+            let controls_row_style = StyleRules {
+                min_height: Some(px(24.0)),
+                gap: Some(px(6.0)),
+                flex_direction: Some(FlexDirection::Row),
+                align_items: Some(AlignItems::Center),
+                ..Default::default()
+            };
             let controls_row = ui! {
-                view(style = row_style.clone()) {
+                view(style = controls_row_style) {
                     mic_btn
                     deafen_btn
                     settings_btn
