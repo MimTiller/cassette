@@ -38,7 +38,7 @@ use runtime_core::{
     signal, switch, ui,
 };
 use runtime_core::icon;
-use icons_lucide::{CHEVRON_DOWN, HASH, VOLUME_2};
+use icons_lucide::{CHEVRON_DOWN, COMPASS, HASH, PLUS, VOLUME_2};
 
 use runtime_shared::time::local_offset_minutes;
 
@@ -1654,6 +1654,35 @@ fn app_shell(authed: Signal<bool>) -> Element {
         },
     );
 
+    // Bottom rail actions: Discord's Add-a-Server and Explore circles,
+    // rendered below the live-servers section. Both are no-op stubs for now.
+    let rail_actions = {
+        let circle_style = StyleRules {
+            width: Some(px(48.0)),
+            height: Some(px(48.0)),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(JustifyContent::Center),
+            background: Some(col(BG_SIDEBAR)),
+            border_top_left_radius: Some(px(24.0)),
+            border_top_right_radius: Some(px(24.0)),
+            border_bottom_left_radius: Some(px(24.0)),
+            border_bottom_right_radius: Some(px(24.0)),
+            ..Default::default()
+        };
+        ui! {
+            view(style = circle_style.clone()) {
+                icon(PLUS).color(|| Color::from("#23a55a")).size(20.0)
+            }
+            .on_touch(|_ev| TouchResponse::CONSUMED)
+            // TODO: create-server flow
+            view(style = circle_style) {
+                icon(COMPASS).color(|| Color::from(TEXT_MUTED)).size(20.0)
+            }
+            .on_touch(|_ev| TouchResponse::CONSUMED)
+            // TODO: explore flow
+        }
+    };
+
     // --- channel sidebar -------------------------------------------------
     let sidebar_style = StyleRules {
         width: Some(px(240.0)),
@@ -2442,7 +2471,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             overflow: Some(Overflow::Hidden),
             ..Default::default()
         }) {
-            view(style = rail_style) { server_rows live_section gateway_status gateway_incoming_effect }
+            view(style = rail_style) { server_rows live_section rail_actions gateway_status gateway_incoming_effect }
             sidebar
             view(style = main_style) {
                 header
