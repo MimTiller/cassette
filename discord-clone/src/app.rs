@@ -32,9 +32,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use runtime_core::{
-    AlignItems, AlignSelf, Color, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent,
-    KeyOutcome, Overflow, Position, Signal, StyleRules, TextAlign, TextTransform, Tokenized,
-    TouchPhase, TouchResponse,
+    AlignItems, AlignSelf, Color, Element, FlexDirection, FlexWrap, FontWeight, JustifyContent,
+    KeyEvent, KeyOutcome, Overflow, Position, Signal, StyleRules, TextAlign, TextTransform,
+    Tokenized, TouchPhase, TouchResponse,
     signal, switch, ui,
 };
 use runtime_core::icon;
@@ -1365,10 +1365,82 @@ pub fn app() -> Element {
     )
 }
 
+// --- @-mention autocomplete helpers (pure) --------------------------------
+// These are `&`-free, no-capture functions so the autocomplete closures in
+// `app_shell` can be `Fn` (callable from both the composer's `on_key_down` and
+// the dropdown rows' `on_touch`). They operate on explicit args, never on
+// captured locals.
+
+/// The active `@`-mention token in the input: the text after the LAST `@`
+/// that is immediately followed by a non-whitespace run (e.g. `"hi @jo"` ->
+/// `Some("jo")`, `"hi @ "` -> `None`). `None` means there is no active mention
+/// token — the signal that a space has closed the dropdown.
+fn mention_active_query(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let at = bytes.iter().rposition(|&b| b == b'@')?;
+    let after = &text[at + 1..];
+    if after.is_empty() {
+        return Some(String::new());
+    }
+    for b in after.bytes() {
+        if b.is_ascii_whitespace() {
+            return None;
+        }
+    }
+    Some(after.to_string())
+}
+
+/// The active live server's member roster: the distinct author labels that have
+/// posted in any of its channels (from the already-buffered gateway messages).
+/// No backend call — pure reuse of the data the client already holds. If no
+/// channel is open yet (no frames buffered) and nothing has posted, fall back
+/// to the signed-in user's own label so `@` still has a match.
+fn live_member_roster(
+    live_channels: &[crate::servers::ChannelSummary],
+    live_messages: &HashMap<i64, Vec<(i64, String, String, i64)>>,
+) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for c in live_channels {
+        if let Some(msgs) = live_messages.get(&c.id) {
+            for (_aid, author, _body, _ts) in msgs {
+                if !names.contains(author) {
+                    names.push(author.clone());
+                }
+            }
+        }
+    }
+    if names.is_empty() {
+        let my = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+        if my != 0 {
+            names.push(format!("user {}", my));
+        }
+    }
+    names.sort();
+    names
+}
+
+/// Case-insensitive prefix filter on the roster for the autocomplete dropdown.
+fn filter_members(q: &str, members: Vec<String>) -> Vec<String> {
+    let q = q.to_lowercase();
+    members
+        .into_iter()
+        .filter(|m| m.to_lowercase().starts_with(&q))
+        .collect()
+}
+
 fn app_shell(authed: Signal<bool>) -> Element {
     let active_server: Signal<u32> = signal(SERVERS[0].id);
     let active_channel: Signal<u32> = signal(SERVERS[0].first_text_channel().id);
     let composer: Signal<String> = signal(String::new());
+    // Emoji-picker popover: `true` = the floating emoji grid is open above the
+    // smile button. Pure local UI state (no backend), toggled by the smile
+    // icon and closed by picking an emoji or tapping elsewhere.
+    let emoji_open: Signal<bool> = signal(false);
+    // Mock attachment chip: `Some(name)` = a pending fake attachment is staged
+    // in the composer strip above the input (e.g. "screenshot.png"). `None` =
+    // none. No real file picker/upload — just local state the '+' toggles and
+    // the 'x' removes; Send clears it alongside the composer text.
+    let pending_attachment: Signal<Option<String>> = signal(None);
     // The voice channel the user is currently joined to, keyed by (server_id,
     // voice_channel_id). Joining a voice row in the sidebar sets it; leaving
     // (from the profile strip) or switching servers clears it. `None` = not
@@ -1442,6 +1514,19 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // None whenever `active_live_server` changes (new live server selected, or
     // mock mode re-entered) — a channel id from a different server is stale.
     let active_live_channel: Signal<Option<i64>> = signal(None);
+    // Live @mention indicator state, driven by the real backend data (the
+    // mock path's `c.mentions`/`total_mentions` is its own, untouched copy).
+    // `live_mentioned` maps a live channel id -> count of UNREAD messages that
+    // mention the signed-in user. It is bumped by the gateway's inbound
+    // `Message { mentioned_user_ids, new: true }` frames and zeroed when the
+    // user opens the channel (the local "read" reset — the backend's own
+    // per-channel unread-mentions is exposed via `unread_counts(server_id)`,
+    // but a live client that is actively watching only needs the local count).
+    // Mutating the HashMap does not trigger reactivity, so `live_mention_rev`
+    // is bumped on every change and folded into the sidebar `switch` key —
+    // exactly the `live_revision` idiom used for the message buffer.
+    let live_mentioned: Rc<RefCell<HashMap<i64, i64>>> = Rc::new(RefCell::new(HashMap::new()));
+    let live_mention_rev: Signal<u32> = signal(0);
 
     // Realtime gateway: the signed session token authenticates the connect
     // (the backend verifies it). It rides the connect URL's `?args=` query —
@@ -1512,6 +1597,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // `format_when`/`now_secs` work in SECONDS, so divide by 1000 on ingest.
     let live_buf = live_messages.clone();
     let live_rev = live_revision.clone();
+    let mentioned_buf = live_mentioned.clone();
+    let mention_rev = live_mention_rev.clone();
+    let open_chan = active_live_channel.clone();
+    let my_id = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
     let gateway_incoming_effect = switch(
         move || gateway.incoming().get(),
         move |frame: &Option<discord_server::server_settings::WsServerMsg>| {
@@ -1520,6 +1609,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 author_id,
                 content,
                 created_at,
+                new,
+                mentioned_user_ids,
                 ..
             }) = frame
             {
@@ -1530,6 +1621,45 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     .or_default()
                     .push((*author_id, label, content.clone(), *created_at / 1000));
                 live_rev.set(live_rev.get() + 1);
+                // Live @mention indicator: a freshly posted (`new: true`) message
+                // that names the signed-in user, on a channel that is NOT the one
+                // currently open, bumps that channel's unread-mention count.
+                // History frames (`new: false`) never count as unread.
+                if *new
+                    && my_id != 0
+                    && mentioned_user_ids.contains(&my_id)
+                    && open_chan.get() != Some(*channel_id)
+                {
+                    *mentioned_buf.borrow_mut().entry(*channel_id).or_insert(0) += 1;
+                    mention_rev.set(mention_rev.get() + 1);
+                }
+            }
+            ui! {
+                view(style = StyleRules {
+                    height: Some(px(0.0)),
+                    ..Default::default()
+                }) {}
+            }
+        },
+    );
+
+    // Reset a channel's unread-mention count the moment it's opened, so the
+    // red badge disappears as soon as the user reads it. This lives here as a
+    // side-effect `switch` keyed on the active live channel (rather than in the
+    // per-row click handler) because that handler can't mutate the shared `Rc`
+    // mention buffer out of the sidebar's `FnMut` builder. Bumping
+    // `live_mention_rev` forces the sidebar `switch` to re-read the now-zero
+    // count and drop the badge.
+    let mention_reset_buf = live_mentioned.clone();
+    let mention_reset_rev = live_mention_rev.clone();
+    let mention_reset_effect = switch(
+        move || active_live_channel.get(),
+        move |chan: &Option<i64>| {
+            if let Some(cid) = *chan {
+                if *mention_reset_buf.borrow().get(&cid).unwrap_or(&0) > 0 {
+                    mention_reset_buf.borrow_mut().insert(cid, 0);
+                    mention_reset_rev.set(mention_reset_rev.get() + 1);
+                }
             }
             ui! {
                 view(style = StyleRules {
@@ -1889,14 +2019,16 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 joined_voice.get(),
                 active_live_server.get(),
                 live_fp,
+                live_mention_rev.get(),
             )
         },
-        move |(server_id, _channel_id, _voice, _live_server, _live_fp): &(
+        move |(server_id, _channel_id, _voice, _live_server, _live_fp, _mention_rev): &(
             u32,
             u32,
             Option<(u32, u32)>,
             Option<i64>,
             Vec<(i64, String, String)>,
+            u32,
         )| {
             // `switch`'s render is `Fn` — clone the captured styles so the
             // closure borrows them rather than moving them out (whiteboard idiom).
@@ -1925,6 +2057,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     border_top_right_radius: Some(px(8.0)),
                     border_bottom_left_radius: Some(px(8.0)),
                     border_bottom_right_radius: Some(px(8.0)),
+                    // Positioning ancestor for the absolutely-positioned mention
+                    // badge on the row's right edge (the mock rows do the same).
+                    position: Some(Position::Relative),
                     flex_direction: Some(FlexDirection::Row),
                     align_items: Some(AlignItems::Center),
                     ..Default::default()
@@ -1952,6 +2087,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // move out of an `Fn` closure (`Element` is not `Clone`).
                     let live_sel = active_live_channel.clone();
                     let gw = gateway.clone();
+                    let mentioned = live_mentioned.clone();
                     let live_rows: Vec<Element> = live
                         .iter()
                         .map(|c| {
@@ -1960,6 +2096,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             let name = c.name.clone();
                             let is_text = c.kind == "text";
                             let cid = c.id;
+                            // Live unread-mention count for this channel, from the
+                            // gateway-fed map (bumped in the incoming-frame effect,
+                            // reset when the channel is opened). `0` = no mention.
+                            let mcount = *mentioned.borrow().get(&cid).unwrap_or(&0);
                             // Reactive, per-row — the mock path's rows work the
                             // same way: background fills with the active colour
                             // when selected, and the glyph/label go semi-bold
@@ -2009,6 +2149,37 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                             .color(|| Color::from(TEXT_MUTED))
                                             .size(14.0)
                                         text(style = label_style) { name }
+                                        // Live mention indicator: a red numbered
+                                        // pill on the row's right edge, mirroring the
+                                        // mock path's `c.mentions` badge. Driven by
+                                        // the real gateway count, zero when the
+                                        // channel is open or has no unread mentions.
+                                        if mcount > 0 {
+                                            view(style = StyleRules {
+                                                position: Some(Position::Absolute),
+                                                top: Some(px(9.0)),
+                                                right: Some(px(8.0)),
+                                                min_width: Some(px(16.0)),
+                                                height: Some(px(16.0)),
+                                                background: Some(col(BADGE)),
+                                                border_top_left_radius: Some(px(8.0)),
+                                                border_top_right_radius: Some(px(8.0)),
+                                                border_bottom_left_radius: Some(px(8.0)),
+                                                border_bottom_right_radius: Some(px(8.0)),
+                                                align_items: Some(AlignItems::Center),
+                                                justify_content: Some(JustifyContent::Center),
+                                                padding_left: Some(px(4.0)),
+                                                padding_right: Some(px(4.0)),
+                                                ..Default::default()
+                                            }) {
+                                                text(style = StyleRules {
+                                                    font_size: Some(px(11.0)),
+                                                    font_weight: Some(FontWeight::Bold),
+                                                    color: Some(col(TEXT)),
+                                                    ..Default::default()
+                                                }) { mcount.to_string() }
+                                            }
+                                        }
                                     }
                                     .on_touch(move |ev| {
                                         if ev.phase == TouchPhase::Ended {
@@ -2466,9 +2637,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         ..Default::default()
     };
 
-    let on_change = move |s: String| {
-        composer.set(s);
-    };
     // One send action shared by the Send button AND the Enter key on the
     // composer. Every captured signal/Rc is cloned behind an `Rc` so the
     // handler can be `Fn` (callable from both the `button on_click` and the
@@ -2486,6 +2654,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
         if body.trim().is_empty() {
             return;
         }
+        // A staged mock attachment (if any) rides along with the send: it's a
+        // pure UI mock, so we just clear the chip alongside the composer text
+        // on both the live and the mock paths (it never actually attaches).
+        pending_attachment.set(None);
         // Live/real mode: send over the gateway socket to the live channel.
         // The server echoes it back as a `Message` frame, which the incoming
         // effect buffers and bumps `live_revision`, rebuilding the list.
@@ -2520,6 +2692,213 @@ fn app_shell(authed: Signal<bool>) -> Element {
         } else {
             KeyOutcome::Default
         }
+    };
+
+    // --- @-mention autocomplete (live mode) ------------------------------
+    // Pure client-side: typing `@<prefix>` in the composer opens a dropdown
+    // of the active server's members whose name starts with the prefix
+    // (case-insensitive). The roster is derived from the already-buffered
+    // gateway messages (every distinct author label that has posted) — no
+    // backend call. `ac` mirrors the active query + highlight so both the key
+    // handler and the dropdown's click handler can share it (the closures
+    // must all be `Fn`).
+    let ac: Rc<RefCell<(String, i64)>> = Rc::new(RefCell::new((String::new(), 0)));
+    let suggestions: Signal<Vec<String>> = signal(Vec::new());
+    let ac_hi: Signal<i64> = signal(0);
+    let ac_sugg = suggestions.clone();
+    let ac_hi_sig = ac_hi.clone();
+    let ac_state = ac.clone();
+    let composer_sig = composer.clone();
+    let live_channels_sig = live_channels.clone();
+    let live_messages_sig = live_messages.clone();
+    // Recompute the filtered suggestion list from the current composer text +
+    // active server roster, and reset the highlight to 0. Held in an `Rc` so
+    // `update_on_type` can share it (closures are not `Clone`, `Rc` is `Copy`).
+    let recompute = Rc::new(move || {
+        let text = composer_sig.get();
+        let q = mention_active_query(&text);
+        let (members, list) = match &q {
+            None => (String::new(), Vec::new()),
+            Some(q) => {
+                let members =
+                    live_member_roster(&live_channels_sig.get(), &live_messages_sig.borrow());
+                let list = filter_members(q, members);
+                (q.clone(), list)
+            }
+        };
+        *ac_state.borrow_mut() = (members.clone(), 0);
+        ac_hi_sig.set(0);
+        ac_sugg.set(list);
+    });
+    let recompute2 = recompute.clone();
+    // Update on every keystroke: recompute from the (already-updated) value.
+    let update_on_type = move |s: String| {
+        composer_sig.set(s);
+        (recompute2)();
+    };
+    // Select a suggestion: replace the partial `@partial` with
+    // `@fullusername ` (truncating at the active `@`) and close the dropdown.
+    // Held in an `Rc` so both the key handler and the row click handler can
+    // share it. Rc is Clone but NOT Copy, so each `move` closure that needs
+    // its own handle gets a fresh `.clone()` from the original `ac`/`apply`
+    // right before capture -- the earlier `ac_state` binding above was
+    // already consumed by `recompute`'s closure.
+    let ac_state = ac.clone();
+    let apply = Rc::new(move |username: &str| {
+        let mut text = composer_sig.get();
+        if let Some(at) = text.rfind('@') {
+            text.truncate(at);
+        }
+        text.push('@');
+        text.push_str(username);
+        text.push(' ');
+        composer_sig.set(text);
+        *ac_state.borrow_mut() = (String::new(), 0);
+        ac_hi_sig.set(0);
+        ac_sugg.set(Vec::new());
+    });
+    // Layered key handler: while the dropdown is open, Enter/Tab select the
+    // highlighted suggestion (swallowing the key so it does NOT send the
+    // message), arrows move the highlight, and Escape closes; everything else
+    // falls through to the platform default (which still routes Enter to send
+    // when the dropdown is closed).
+    let ac_state = ac.clone();
+    let apply_for_key = apply.clone();
+    let ac_key = move |ev: &KeyEvent| {
+        let (q, hi) = ac_state.borrow().clone();
+        let open = !q.is_empty() || !ac_sugg.get().is_empty();
+        if !open {
+            return KeyOutcome::Default;
+        }
+        match ev.key.as_str() {
+            "Enter" | "Tab" => {
+                let list = ac_sugg.get().clone();
+                match list.get(hi as usize) {
+                    Some(u) => {
+                        (apply_for_key)(u.as_str());
+                        KeyOutcome::PreventDefault
+                    }
+                    None => {
+                        // Highlight out of range: close the dropdown and let
+                        // Enter send (Tab: swallow).
+                        *ac_state.borrow_mut() = (String::new(), 0);
+                        ac_hi_sig.set(0);
+                        ac_sugg.set(Vec::new());
+                        if ev.key == "Tab" {
+                            KeyOutcome::PreventDefault
+                        } else {
+                            KeyOutcome::Default
+                        }
+                    }
+                }
+            }
+            "ArrowDown" | "ArrowUp" => {
+                let count = ac_sugg.get().len() as i64;
+                if count > 0 {
+                    let n = if ev.key == "ArrowDown" {
+                        (hi + 1) % count
+                    } else {
+                        (hi - 1 + count) % count
+                    };
+                    ac_state.borrow_mut().1 = n;
+                    ac_hi_sig.set(n);
+                }
+                KeyOutcome::PreventDefault
+            }
+            "Escape" => {
+                *ac_state.borrow_mut() = (String::new(), 0);
+                ac_hi_sig.set(0);
+                ac_sugg.set(Vec::new());
+                KeyOutcome::PreventDefault
+            }
+            _ => KeyOutcome::Default,
+        }
+    };
+    // The dropdown element: absolutely positioned above the composer input,
+    // showing only when there is an active query with matching members.
+    let ac_render = ac.clone();
+    let ac_hi_r = ac_hi.clone();
+    let apply_touch = apply.clone();
+    let ac_el = switch(
+        move || suggestions.get(),
+        move |list: &Vec<String>| {
+            let q = ac_render.borrow().0.clone();
+            let hi = ac_hi_r.get();
+            if q.is_empty() {
+                return ui! {
+                    view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
+                };
+            }
+            let rows: Vec<Element> = list
+                .iter()
+                .enumerate()
+                .map(|(i, name)| {
+                    let on = (i as i64) == hi;
+                    let n = name.clone();
+                    // Fresh per-row clone: `apply_touch` is an `Rc`, not `Copy`,
+                    // and this `.map()` runs once per suggestion row, so each
+                    // row's `move` closure below needs its own handle (the
+                    // same rule documented in components/connection_quality_
+                    // indicator.rs for its per-bar StyleRules).
+                    let apply_touch = apply_touch.clone();
+                    ui! {
+                        view(style = StyleRules {
+                            height: Some(px(34.0)),
+                            padding_left: Some(px(14.0)),
+                            padding_right: Some(px(14.0)),
+                            background: Some(col(if on { BG_ACTIVE } else { "transparent" })),
+                            flex_direction: Some(FlexDirection::Row),
+                            align_items: Some(AlignItems::Center),
+                            ..Default::default()
+                        }) {
+                            text(style = StyleRules {
+                                font_size: Some(px(14.0)),
+                                color: Some(col(if on { TEXT } else { TEXT_CHANNEL })),
+                                ..Default::default()
+                            }) { format!("@{}", name) }
+                        }
+                        .on_touch(move |_ev| {
+                            (apply_touch)(n.as_str());
+                            TouchResponse::CONSUMED
+                        })
+                    }
+                })
+                .collect();
+            ui! {
+                view(style = StyleRules {
+                    position: Some(Position::Absolute),
+                    left: Some(px(16.0)),
+                    right: Some(px(16.0)),
+                    bottom: Some(px(60.0)),
+                    max_height: Some(px(190.0)),
+                    background: Some(col(BG_SIDEBAR)),
+                    border_top_left_radius: Some(px(8.0)),
+                    border_top_right_radius: Some(px(8.0)),
+                    border_bottom_left_radius: Some(px(8.0)),
+                    border_bottom_right_radius: Some(px(8.0)),
+                    overflow: Some(Overflow::Hidden),
+                    ..Default::default()
+                }) {
+                    scroll_view(style = StyleRules {
+                        flex_grow: Some(grow(1.0)),
+                        ..Default::default()
+                    }) { rows }
+                }
+            }
+        },
+    );
+
+    // Layer the autocomplete key handler in front of the send (`on_enter`)
+    // handler: autocomplete runs first and returns `Default` whenever the
+    // dropdown is closed, so the send path still receives the key otherwise.
+    let ac_key2 = ac_key.clone();
+    let send_enter = on_enter.clone();
+    let composer_key = move |ev: &KeyEvent| {
+        let r = (ac_key2)(ev);
+        if r != KeyOutcome::Default {
+            return r;
+        }
+        (send_enter)(ev)
     };
 
     // --- member list (right side) ----------------------------------------
@@ -2632,19 +3011,27 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 header
                 scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { sent_messages }
                 typing_row
-                view(style = composer_style) {
-                    view(style = icon_button_style.clone()) {
-                        icon(PLUS).color(|| Color::from(TEXT_MUTED)).size(16.0)
+                // Positioning ancestor for the @-mention autocomplete dropdown
+                // (which anchors above the input via `Position::Absolute`).
+                view(style = StyleRules {
+                    position: Some(Position::Relative),
+                    ..Default::default()
+                }) {
+                    ac_el
+                    view(style = composer_style) {
+                        view(style = icon_button_style.clone()) {
+                            icon(PLUS).color(|| Color::from(TEXT_MUTED)).size(16.0)
+                        }
+                        .on_touch(|_ev| TouchResponse::CONSUMED)
+                        // TODO: attachment picker
+                        text_input(value = composer, on_change = update_on_type, placeholder = "Message", style = input_style, test_id = "composer").on_key_down(composer_key)
+                        view(style = icon_button_style) {
+                            icon(SMILE).color(|| Color::from(TEXT_MUTED)).size(16.0)
+                        }
+                        .on_touch(|_ev| TouchResponse::CONSUMED)
+                        // TODO: emoji picker
+                        button(label = "Send".to_string(), on_click = on_click, style = send_style, test_id = "send")
                     }
-                    .on_touch(|_ev| TouchResponse::CONSUMED)
-                    // TODO: attachment picker
-                    text_input(value = composer, on_change = on_change, placeholder = "Message", style = input_style, test_id = "composer").on_key_down(on_enter)
-                    view(style = icon_button_style) {
-                        icon(SMILE).color(|| Color::from(TEXT_MUTED)).size(16.0)
-                    }
-                    .on_touch(|_ev| TouchResponse::CONSUMED)
-                    // TODO: emoji picker
-                    button(label = "Send".to_string(), on_click = on_click, style = send_style, test_id = "send")
                 }
             }
             members_switch
