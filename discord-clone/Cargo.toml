@@ -48,6 +48,9 @@ idealyst = { path = "/root/idealyst-native/crates/idealyst" }
 runtime-core = { path = "/root/idealyst-native/crates/runtime/core" }
 runtime-vocabulary = { path = "/root/idealyst-native/crates/runtime/vocabulary" }
 runtime-scene = { path = "/root/idealyst-native/crates/runtime/scene" }
+# The zero-cost Lucide icon pack — each `pub const IconData` referenced lands
+# in the binary (LTO drops the rest); used via `runtime_core::icon(…)`.
+icons-lucide = { path = "/root/idealyst-native/crates/ui/icons-lucide" }
 # Wall-clock readings for message timestamps (`runtime_shared::time::epoch_millis`
 # / `local_offset_minutes` — the web backend installs a `js Date`-backed source
 # during bootstrap). Not re-exported at the `runtime_core` root, so the crate

@@ -32,11 +32,13 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use runtime_core::{
-    AlignItems, AlignSelf, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent, KeyOutcome,
-    Overflow, Position, Signal, StyleRules, TextAlign, TextTransform, Tokenized, TouchPhase,
-    TouchResponse,
+    AlignItems, AlignSelf, Color, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent,
+    KeyOutcome, Overflow, Position, Signal, StyleRules, TextAlign, TextTransform, Tokenized,
+    TouchPhase, TouchResponse,
     signal, switch, ui,
 };
+use runtime_core::icon;
+use icons_lucide::CHEVRON_DOWN;
 
 use runtime_shared::time::local_offset_minutes;
 
@@ -2029,7 +2031,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
             ui! {
                 view(style = sidebar_style) {
                     view(style = sidebar_header_style) {
-                        text(style = chevron_style) { "▾".to_string() }
+                        icon(CHEVRON_DOWN)
+                            .color(|| Color::from(TEXT_MUTED))
+                            .size(11.0)
                         text(style = sidebar_title_style) { title }
                     }
                     view(style = StyleRules {
