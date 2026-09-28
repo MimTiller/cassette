@@ -5,6 +5,7 @@
 
 
 
+/// aider-runner smoke test
 pub struct Server {
     pub id: u32,
     pub name: &'static str,
