@@ -1,4 +1,10 @@
-//! aider-runner smoke test
+//! Mock Discord data — the seed for the server rail, channel sidebar, and
+//! message view. Everything is `&'static` so the reactive closures can hold
+//! cheap references. Swap this for a network fetch later; the `app()` tree
+//! only reads these, so the UI stays untouched.
+
+
+
 pub struct Server {
     pub id: u32,
     pub name: &'static str,
@@ -262,12 +268,20 @@ pub static SERVERS: &[Server] = &[
                         topic: "Ship something and tell us about it",
                         unread: 0,
                         mentions: 0,
-                        messages: &[Message {
-                            author: "dyno",
-                            color: "#57f287",
-                            body: "wrote a tiny WASM build tool over the weekend — 400 lines, zero deps",
-                            age_secs: 3600 * 7,
-                        }],
+                        messages: &[
+                            Message {
+                                author: "dyno",
+                                color: "#57f287",
+                                body: "wrote a tiny WASM build tool over the weekend — 400 lines, zero deps",
+                                age_secs: 3600 * 7,
+                            },
+                            Message {
+                                author: "nara",
+                                color: "#eb459e",
+                                body: "link? I need that energy",
+                                age_secs: 3600 * 7 + 20,
+                            },
+                        ],
                     },
                     TextChannel {
                         id: 103,
