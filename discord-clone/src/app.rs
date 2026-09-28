@@ -1431,10 +1431,23 @@ fn app_shell(authed: Signal<bool>) -> Element {
         move || format!("{:?}", gateway.status()),
         move |status: &String| {
             let (label, color) = match status.as_str() {
-                "Open" => ("● Open", "#23a55a"),
-                "Connecting" => ("● Connecting", "#f0b232"),
+                "Open" => ("Open", "#23a55a"),
+                "Connecting" => ("Connecting", "#f0b232"),
                 // Closed and Error share the red accent.
-                _ => ("● Closed", "#f23f43"),
+                _ => ("Closed", "#f23f43"),
+            };
+            // The status dot: a small filled `view` circle in the same 11px
+            // shape as the member-list presence dots (Lucide's `circle` is an
+            // outline, so a plain colored view reads better at this size).
+            let dot_style = StyleRules {
+                width: Some(px(11.0)),
+                height: Some(px(11.0)),
+                background: Some(col(color)),
+                border_top_left_radius: Some(px(6.0)),
+                border_top_right_radius: Some(px(6.0)),
+                border_bottom_left_radius: Some(px(6.0)),
+                border_bottom_right_radius: Some(px(6.0)),
+                ..Default::default()
             };
             let status_style = StyleRules {
                 font_size: Some(px(10.0)),
@@ -1443,7 +1456,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 ..Default::default()
             };
             ui! {
-                text(style = status_style) { label.to_string() }
+                view(style = StyleRules {
+                    flex_direction: Some(FlexDirection::Row),
+                    align_items: Some(AlignItems::Center),
+                    gap: Some(px(6.0)),
+                    ..Default::default()
+                }) {
+                    view(style = dot_style) {}
+                    text(style = status_style) { label.to_string() }
+                }
             }
         },
     );

@@ -34,8 +34,9 @@
 //!   `Vec<Element>` push loop.
 
 use crate::style_helpers::{col, px};
+use icons_lucide::SEARCH;
 use runtime_core::{
-    component, signal, ui, AlignItems, Element, FlexDirection, StyleRules,
+    component, icon, signal, ui, AlignItems, Color, Element, FlexDirection, StyleRules,
 };
 
 // Discord dark palette (kept local so the component is self-contained).
@@ -63,13 +64,17 @@ pub fn MessageSearchBar() -> Element {
     // The input sits OUTSIDE the reactive `when` below, so its style is a
     // plain local (created once). It carries no `border_*_width` (those fields
     // take `Tokenized<f32>`, not `px()`) — flat background + corner radius,
-    // the same look as the input in `nickname_edit_field`.
+    // the same look as the input in `nickname_edit_field`. The `text_input`
+    // primitive takes no children, so the leading `SEARCH` icon is a row
+    // sibling to its left (same "separate dot view + field" pattern as the
+    // rail's status dot), not a nested child. The row keeps the original
+    // 320px footprint; the input shrinks to leave room for the icon.
     let input_style = StyleRules {
         flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Center),
         height: Some(px(40.0)),
-        width: Some(px(320.0)),
-        padding_left: Some(px(12.0)),
+        width: Some(px(288.0)),
+        padding_left: Some(px(10.0)),
         padding_right: Some(px(12.0)),
         background: Some(col(COMPOSER)),
         color: Some(col(TEXT)),
@@ -80,7 +85,6 @@ pub fn MessageSearchBar() -> Element {
         border_bottom_right_radius: Some(px(6.0)),
         ..Default::default()
     };
-
     ui! {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Column),
@@ -99,12 +103,24 @@ pub fn MessageSearchBar() -> Element {
                 ..Default::default()
             }) { "Search messages".to_string() }
 
-            text_input(
-                value = query.clone(),
-                on_change = on_change,
-                placeholder = "Search",
-                style = input_style,
-            )
+            view(style = StyleRules {
+                flex_direction: Some(FlexDirection::Row),
+                align_items: Some(AlignItems::Center),
+                gap: Some(px(8.0)),
+                ..Default::default()
+            }) {
+                // Leading magnifying-glass icon: fixed size + muted color via
+                // the icon builder (same shape as the rail's `icon(...)`
+                // call sites), left of the input field.
+                icon(SEARCH).color(|| Color::from(MUTED)).size(16.0)
+
+                text_input(
+                    value = query.clone(),
+                    on_change = on_change,
+                    placeholder = "Search",
+                    style = input_style,
+                )
+            }
 
             // Reactive single-branch `if !query.get().is_empty() { … }`
             // desugars to a `when` (mounts the results list while the input is
