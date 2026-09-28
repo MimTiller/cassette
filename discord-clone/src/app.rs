@@ -49,6 +49,7 @@ use crate::member_count_display::member_count_display;
 use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
 use crate::verified_badge::VerifiedBadge;
+use crate::connection_quality_indicator::ConnectionQualityIndicator;
 use crate::edited_label::edited_label;
 use crate::profile_settings::profile_settings;
 use crate::style_helpers::{col, pct, px};
