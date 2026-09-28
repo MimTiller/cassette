@@ -20,7 +20,6 @@
 
 use crate::style_helpers::{col, px};
 use runtime_core::{component, signal, ui, Element, StyleRules};
-use discord_clone::components::VerifiedBadge;
 
 // Discord verified blue (the same blurple the verified check uses in the
 // real client) — deliberately distinct from the muted gray of the surrounding
