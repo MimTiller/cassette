@@ -38,7 +38,7 @@ use runtime_core::{
     signal, switch, ui,
 };
 use runtime_core::icon;
-use icons_lucide::CHEVRON_DOWN;
+use icons_lucide::{CHEVRON_DOWN, HASH, VOLUME_2};
 
 use runtime_shared::time::local_offset_minutes;
 
@@ -335,10 +335,8 @@ fn member_row(m: &Member) -> Element {
     }
 }
 
-/// A voice-channel row in the sidebar: "🔊 name" (a speaker glyph rendered as
-/// the Unicode speaker character — the `icon` primitive isn't available in
-/// the `ui!` macro here, so a text glyph keeps the row dependency-free), with
-/// the connected members listed beneath it in smaller, indented rows.
+/// A voice-channel row in the sidebar: a speaker icon (`VOLUME_2`) + name,
+/// with the connected members listed beneath it in smaller, indented rows.
 ///
 /// Interactive: clicking the row **joins** the channel (Discord's click-to-
 /// join). While joined, the user's row appears in the member list beneath
@@ -397,9 +395,12 @@ fn voice_section(
             })),
             ..Default::default()
         };
-        let label = format!("🔊 {}", v.name);
+        let label = v.name.clone();
         let row = ui! {
             view(style = row_style, test_id = voice_test_id(v.id)) {
+                icon(VOLUME_2)
+                    .color(|| Color::from(TEXT_MUTED))
+                    .size(14.0)
                 text(style = v_label_style) { label }
             }
             .on_touch(move |ev| {
@@ -1785,9 +1786,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     let live_rows: Vec<Element> = live
                         .iter()
                         .map(|c| {
-                            // '#' for text channels, a speaker glyph for voice —
-                            // the same glyphs the mock rows use below.
-                            let glyph = if c.kind == "text" { "#" } else { "🔊" };
+                            // '#' for text channels, a speaker icon for voice —
+                            // the same icons the mock rows use below.
                             let name = c.name.clone();
                             let is_text = c.kind == "text";
                             let cid = c.id;
@@ -1836,7 +1836,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                 // its own `ui!` block.
                                 ui! {
                                     view(style = row_style) {
-                                        text(style = glyph_style) { glyph.to_string() }
+                                        icon(HASH)
+                                            .color(|| Color::from(TEXT_MUTED))
+                                            .size(14.0)
                                         text(style = label_style) { name }
                                     }
                                     .on_touch(move |ev| {
@@ -1854,7 +1856,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             } else {
                                 ui! {
                                     view(style = row_style) {
-                                        text(style = glyph_style) { glyph.to_string() }
+                                        icon(VOLUME_2)
+                                            .color(|| Color::from(TEXT_MUTED))
+                                            .size(14.0)
                                         text(style = label_style) { name }
                                     }
                                 }
@@ -1939,22 +1943,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             ..Default::default()
                         }
                     };
-                    // Fixed-width '#' column so every channel name starts at the
-                    // same x, matching the voice rows' left edge below.
-                    let hash_style = move || StyleRules {
-                        width: Some(px(20.0)),
-                        align_items: Some(AlignItems::Center),
-                        justify_content: Some(JustifyContent::Center),
-                        flex_shrink: Some(grow(0.0)),
-                        font_size: Some(px(15.0)),
-                        font_weight: Some(if active.get() == c.id {
-                            FontWeight::SemiBold
-                        } else {
-                            FontWeight::Normal
-                        }),
-                        color: Some(col(TEXT_MUTED)),
-                        ..Default::default()
-                    };
                     let label_style = move || StyleRules {
                         flex_grow: Some(grow(1.0)),
                         flex_shrink: Some(grow(0.0)),
@@ -1974,7 +1962,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     let name = c.name.to_string();
                     rows.push(ui! {
                         view(style = row_style, test_id = channel_test_id(c.id)) {
-                            text(style = hash_style) { "#".to_string() }
+                            icon(HASH)
+                                .color(|| Color::from(TEXT_MUTED))
+                                .size(14.0)
                             text(style = label_style) { name }
                             // The unread pill on the row's right edge, vertically
                             // centered in the 34px row. Mock count per channel;
