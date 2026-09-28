@@ -439,6 +439,10 @@ impl Db {
 
     /// Insert a chat message and return its new row id. `created_at` is UTC
     /// epoch milliseconds, as the schema dictates; the caller supplies it.
+    ///
+    /// This inserts the message row only. Resolved `@mention` rows are written
+    /// separately via [`Self::insert_message_mentions`] (the caller resolves
+    /// the tokens against the member list — see `realtime::resolve_mentions`).
     pub fn insert_message(
         &self,
         channel_id: i64,
@@ -455,8 +459,30 @@ impl Db {
         Ok(c.last_insert_rowid())
     }
 
+    /// Record the resolved `@mention`s for `message_id` (one row per user id).
+    /// Empty `user_ids` is a no-op. See migration `0012_message_mentions.sql`.
+    pub fn insert_message_mentions(
+        &self,
+        message_id: i64,
+        user_ids: &[i64],
+    ) -> Result<(), rusqlite::Error> {
+        if user_ids.is_empty() {
+            return Ok(());
+        }
+        let c = self.lock()?;
+        for user_id in user_ids {
+            c.execute(
+                "INSERT OR IGNORE INTO message_mentions (message_id, user_id)
+                 VALUES (?1, ?2)",
+                rusqlite::params![message_id, user_id],
+            )?;
+        }
+        Ok(())
+    }
+
     /// The most recent `limit` messages in a channel, oldest-first (ready to
-    /// hand to a client as initial history).
+    /// hand to a client as initial history). Each message carries its resolved
+    /// `@mention` user ids (see `0012_message_mentions.sql`).
     pub fn recent_messages(&self, channel_id: i64, limit: i64) -> Vec<Message> {
         let Ok(c) = self.lock() else {
             return Vec::new();
@@ -476,6 +502,7 @@ impl Db {
                 content: r.get(3)?,
                 created_at: r.get(4)?,
                 edited_at: r.get(5)?,
+                mentioned_user_ids: Vec::new(),
             })
         }) {
             Ok(rows) => rows,
@@ -483,7 +510,30 @@ impl Db {
         };
         let mut out: Vec<Message> = rows.filter_map(Result::ok).collect();
         out.reverse();
+        for m in &mut out {
+            m.mentioned_user_ids = self.message_mentions(m.id);
+        }
         out
+    }
+
+    /// The resolved `@mention` user ids stored for `message_id`
+    /// (`message_mentions`, see `0012_message_mentions.sql`). Empty when the
+    /// message has none (or the id is unknown).
+    pub fn message_mentions(&self, message_id: i64) -> Vec<i64> {
+        let Ok(c) = self.lock() else {
+            return Vec::new();
+        };
+        let mut stmt = match c.prepare(
+            "SELECT user_id FROM message_mentions WHERE message_id = ?1 ORDER BY user_id",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = match stmt.query_map(rusqlite::params![message_id], |r| r.get::<_, i64>(0)) {
+            Ok(rows) => rows,
+            Err(_) => return Vec::new(),
+        };
+        rows.filter_map(Result::ok).collect()
     }
 
     // ── channel reads ──────────────────────────────────────────────────────
@@ -539,16 +589,30 @@ impl Db {
     /// messages are still included (so the client can distinguish "0 unread"
     /// from "no channel").
     ///
-    /// Returns `(channel_id, unread_count)` pairs, ordered by channel id for
-    /// determinism.
-    pub fn unread_counts_for_server(&self, user_id: i64, server_id: i64) -> Vec<(i64, i64)> {
+    /// `unread_mentions` is the subset of those unread messages that mention
+    /// `user_id` (a `message_mentions` row for the user on a message whose id is
+    /// greater than the channel's `last_read_message_id`). It is always
+    /// `<= unread`.
+    ///
+    /// Returns `(channel_id, unread_count, unread_mention_count)` triples,
+    /// ordered by channel id for determinism.
+    pub fn unread_counts_for_server(
+        &self,
+        user_id: i64,
+        server_id: i64,
+    ) -> Vec<(i64, i64, i64)> {
         let Ok(c) = self.lock() else {
             return Vec::new();
         };
         let sql = "SELECT ch.id AS channel_id,
                           (SELECT COUNT(*) FROM messages m
                             WHERE m.channel_id = ch.id
-                              AND m.id > COALESCE(cr.last_read_message_id, -1)) AS unread
+                              AND m.id > COALESCE(cr.last_read_message_id, -1)) AS unread,
+                          (SELECT COUNT(*) FROM messages m
+                            JOIN message_mentions mm ON mm.message_id = m.id
+                            WHERE m.channel_id = ch.id
+                              AND mm.user_id = ?1
+                              AND m.id > COALESCE(cr.last_read_message_id, -1)) AS mentions
                    FROM channels ch
                    JOIN server_memberships sm ON sm.server_id = ch.server_id AND sm.user_id = ?1
                    LEFT JOIN channel_reads cr ON cr.user_id = ?1 AND cr.channel_id = ch.id
@@ -559,7 +623,11 @@ impl Db {
             Err(_) => return Vec::new(),
         };
         let rows = match stmt.query_map(rusqlite::params![user_id, server_id], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, i64>(2)?,
+            ))
         }) {
             Ok(rows) => rows,
             Err(_) => return Vec::new(),
@@ -743,6 +811,7 @@ impl Db {
                 content: r.get(3)?,
                 created_at: r.get(4)?,
                 edited_at: r.get(5)?,
+                mentioned_user_ids: Vec::new(),
             })
         }) {
             Ok(rows) => rows,
@@ -1266,4 +1335,46 @@ pub struct Message {
     pub created_at: i64,
     /// UTC epoch milliseconds, or `None` until the first edit.
     pub edited_at: Option<i64>,
+    /// Resolved `@username` mentions: the user ids the message text mentions
+    /// (see migration `0012_message_mentions.sql`). Empty when the message
+    /// contains no `@` token that resolves to a member of the message's
+    /// server. Populated on every `messages` row read; DM history rows
+    /// (`dm_messages`) always come back empty.
+    #[serde(default)]
+    pub mentioned_user_ids: Vec<i64>,
+}
+
+/// The `@mention` token grammar, for messages: `@` followed by a run of ASCII
+/// letters, digits, or underscores — `@[A-Za-z0-9_]+`. A token is one
+/// contiguous run: `@alice_bob` is the single token `alice_bob` (not two
+/// mentions), and `@alice@bob` is the two tokens `alice` and `bob` (the
+/// character class excludes `@`). This helper is the single source of truth
+/// for the grammar; username resolution against the member list happens in
+/// `realtime::resolve_mentions` (case-insensitive, first match per token).
+pub fn mention_tokens(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut in_token = false;
+    for ch in text.chars() {
+        let is_word = ch.is_ascii_alphanumeric() || ch == '_';
+        if in_token {
+            if is_word {
+                current.push(ch);
+            } else {
+                out.push(std::mem::take(&mut current));
+                in_token = false;
+                // A non-word char immediately after the token still starts a
+                // new token when it is `@` (e.g. `@a@b`).
+                if ch == '@' {
+                    in_token = true;
+                }
+            }
+        } else if ch == '@' {
+            in_token = true;
+        }
+    }
+    if in_token {
+        out.push(current);
+    }
+    out
 }

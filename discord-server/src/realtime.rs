@@ -187,9 +187,44 @@ pub fn authorize_text_channel(
     Ok(server_id)
 }
 
+/// Resolve the `@username` tokens in `content` against the members of
+/// `server_id` and return the distinct user ids mentioned.
+///
+/// Token grammar is `crate::db::mention_tokens` (`@[A-Za-z0-9_]+`). Each token
+/// is matched **case-insensitively** against the members' usernames; on a
+/// collision (two members sharing a username) the first member in
+/// `server_members` order wins. Tokens with no matching member are dropped
+/// (they read as plain text, not a mention). The result is sorted and deduped
+/// so a token naming the same user twice appears once.
+pub fn resolve_mentions(db: &Db, server_id: i64, content: &str) -> Vec<i64> {
+    let tokens = crate::db::mention_tokens(content);
+    if tokens.is_empty() {
+        return Vec::new();
+    }
+    let members = db.server_members(server_id);
+    let mut out: Vec<i64> = Vec::new();
+    for token in &tokens {
+        for (user_id, username, _) in &members {
+            if username.eq_ignore_ascii_case(token) {
+                out.push(*user_id);
+                break; // first matching member wins; stop at the first hit
+            }
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
 /// Validate, persist and fan out one channel message. The audience is every
 /// member of the channel's server (including the sender's own sockets, which is
 /// how the sender receives its echo).
+///
+/// Before persisting, the message text is scanned for `@username` tokens and
+/// each is resolved against the server's members (see [`resolve_mentions`]).
+/// The resolved user ids are stored in `message_mentions` and carried on the
+/// broadcast frame as `mentioned_user_ids`, so every client can tell whether
+/// it was mentioned.
 pub fn post_channel_message(
     db: &Db,
     user_id: i64,
@@ -210,6 +245,10 @@ pub fn post_channel_message(
     let message_id = db
         .insert_message(channel_id, user_id, content, created_at)
         .map_err(|e| e.to_string())?;
+    let mentioned_user_ids = resolve_mentions(db, server_id, content);
+    if let Err(e) = db.insert_message_mentions(message_id, &mentioned_user_ids) {
+        return Err(format!("failed to store mentions: {e}"));
+    }
     hub().publish(
         &server_audience(db, server_id),
         &WsServerMsg::Message {
@@ -220,6 +259,7 @@ pub fn post_channel_message(
             created_at,
             edited_at: None,
             new: true,
+            mentioned_user_ids,
         },
     );
     Ok(())
@@ -324,7 +364,63 @@ mod tests {
         assert_eq!(db.recent_messages(1, 10).len(), 1, "only the valid post persisted");
     }
 
-    // ---- PASTE INSIDE `mod tests` in realtime.rs (before its final closing brace) ----
+    // ── @mention tokenization + resolution ────────────────────────────────
+
+    #[test]
+    fn mention_tokens_grammar() {
+        use crate::db::mention_tokens;
+        assert_eq!(mention_tokens("no mentions here"), Vec::<String>::new());
+        assert_eq!(mention_tokens("@alice"), vec!["alice"]);
+        assert_eq!(mention_tokens("hi @alice and @bob_2"), vec!["alice", "bob_2"]);
+        // `@` immediately after a token starts a new token.
+        assert_eq!(mention_tokens("@a@b"), vec!["a", "b"]);
+        // A single contiguous run: `@alice_bob` is ONE token, not two.
+        assert_eq!(mention_tokens("@alice_bob"), vec!["alice_bob"]);
+        // Punctuation / whitespace delimit tokens.
+        assert_eq!(mention_tokens("@alice."), vec!["alice"]);
+        assert_eq!(mention_tokens("(@alice)!"), vec!["alice"]);
+        // A bare `@` with no following word char yields no token.
+        assert_eq!(mention_tokens("email@ x"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn resolve_mentions_matches_members_case_insensitively() {
+        let (_d, db) = setup();
+        // Server 1 members: alice (1, owner), bob (2, member).
+        assert_eq!(resolve_mentions(&db, 1, "hey @alice"), vec![1]);
+        assert_eq!(resolve_mentions(&db, 1, "@BOB ping"), vec![2]);
+        assert_eq!(resolve_mentions(&db, 1, "@Alice @bob"), vec![1, 2]);
+        // Dedup: the same member named twice is listed once.
+        assert_eq!(resolve_mentions(&db, 1, "@alice @ALICE"), vec![1]);
+        // A token with no matching member is dropped (plain text).
+        assert_eq!(resolve_mentions(&db, 1, "email @gmail.com"), Vec::<i64>::new());
+        // Members of other servers do not resolve.
+        assert_eq!(resolve_mentions(&db, 1, "@carol"), Vec::<i64>::new());
+    }
+
+    #[test]
+    fn posting_stores_and_replays_resolved_mentions() {
+        let (_d, db) = setup();
+        // Reset the shared hub so the publish below is observable in a clean state.
+        let hub = crate::realtime::hub();
+        hub.reset();
+        let (_id, mut rx) = hub.register(1); // alice's (sender) socket
+
+        assert!(post_channel_message(&db, 1, 1, "@bob @alice and @nobody").is_ok());
+        // The echo frame carries the resolved mentions (bob=2, alice=1; nobody dropped).
+        let frame = rx.try_recv().expect("sender receives the echo");
+        match frame {
+            WsServerMsg::Message { mentioned_user_ids, .. } => {
+                assert_eq!(mentioned_user_ids, vec![1, 2]);
+            }
+            other => panic!("expected a Message frame, got {other:?}"),
+        }
+        // The same list is persisted and comes back in history.
+        let msgs = db.recent_messages(1, 10);
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].mentioned_user_ids, vec![1, 2]);
+    }
+
     use crate::server_settings::WsClientMsg;
     use futures_util::{SinkExt, StreamExt};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};

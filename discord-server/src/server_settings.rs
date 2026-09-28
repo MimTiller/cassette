@@ -76,6 +76,12 @@ pub enum WsClientMsg {
 pub enum WsServerMsg {
     /// A message, either a freshly posted one (`new: true`) or history
     /// (`new: false`).
+    ///
+    /// `mentioned_user_ids` is the resolved `@mention` list: the user ids the
+    /// message text mentions (one entry per mentioned member). A client
+    /// decides "am I mentioned?" by checking `mentioned_user_ids.contains(&my_id)`.
+    /// Empty for messages with no mentions, and always empty for DM history
+    /// (DMs carry no `@mention` resolution).
     Message {
         message_id: i64,
         channel_id: i64,
@@ -84,6 +90,8 @@ pub enum WsServerMsg {
         created_at: i64,
         edited_at: Option<i64>,
         new: bool,
+        #[serde(default)]
+        mentioned_user_ids: Vec<i64>,
     },
     /// The most recent `Message { new: false }` frames for `History`.
     History { channel_id: i64 },
@@ -198,6 +206,7 @@ pub async fn message_gateway(
                                 created_at: m.created_at,
                                 edited_at: m.edited_at,
                                 new: false,
+                                mentioned_user_ids: m.mentioned_user_ids,
                             })
                             .await;
                     }
@@ -647,9 +656,10 @@ impl ServerSettings {
         let counts = self.db.unread_counts_for_server(caller_id, server_id);
         Ok(counts
             .into_iter()
-            .map(|(channel_id, count)| UnreadCount {
+            .map(|(channel_id, count, unread_mentions)| UnreadCount {
                 channel_id,
                 count,
+                unread_mentions,
             })
             .collect())
     }
@@ -923,14 +933,24 @@ pub struct MemberResult {
     pub role: String,
 }
 
-/// One entry in a per-channel unread list: the count of messages the caller has
-/// not yet read in a single channel (every message whose id is greater than the
-/// caller's stored `channel_reads.last_read_message_id`). `count` is 0 when the
-/// channel is fully read or has no messages.
+/// One entry in a per-channel unread list for the caller: how many messages
+/// the caller has not yet read in a single channel (`count` — every message
+/// whose id is greater than the caller's stored
+/// `channel_reads.last_read_message_id`), and how many of those unread
+/// messages mention the caller by name (`unread_mentions` — a resolved
+/// `@mention` row in `message_mentions` on an unread message).
+///
+/// `unread_mentions` is always `<= count`. A channel is fully read when both
+/// are 0; `count > 0 && unread_mentions == 0` means "new messages, none of
+/// them mention me". Every channel the caller is a member of appears in the
+/// list, even when both counts are 0 (so the client can distinguish "0
+/// unread" from "no channel").
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct UnreadCount {
     pub channel_id: i64,
     pub count: i64,
+    #[serde(default)]
+    pub unread_mentions: i64,
 }
 
 // ── tests ────────────────────────────────────────────────────────────────────
@@ -1282,6 +1302,43 @@ mod tests {
         let svc = ServerSettings::new(db);
         let err = svc.unread_counts(999, 1).unwrap_err();
         assert!(err.contains("not a member"), "got: {err}");
+    }
+
+    #[test]
+    fn unread_counts_includes_unread_mentions() {
+        let (_dir, db) = setup_db_with_channels();
+        let svc = ServerSettings::new(db.clone());
+
+        // Three messages in channel 1 authored by user 1 (the owner); two of
+        // them @mention user 2 (alice). The mention rows land via the live
+        // gateway's resolver, exactly as the production path writes them.
+        crate::realtime::post_channel_message(&db, 1, 1, "hello @alice and @bob").unwrap();
+        crate::realtime::post_channel_message(&db, 1, 1, "no mention here").unwrap();
+        crate::realtime::post_channel_message(&db, 1, 1, "again @alice").unwrap();
+
+        // User 2 (alice) has read nothing. The channel has 3 unread messages,
+        // and 2 of them mention alice (the "hello" and "again" lines). The
+        // "bob" mention in the same first message must NOT be counted for
+        // alice, and the mention-free message contributes nothing.
+        let counts = svc.unread_counts(2, 1).unwrap();
+        let row = counts
+            .iter()
+            .find(|c| c.channel_id == 1)
+            .unwrap_or_else(|| panic!("channel 1 missing: {counts:?}"));
+        assert_eq!(row.count, 3, "all three messages are unread for alice");
+        assert_eq!(row.unread_mentions, 2, "alice is mentioned in two of them");
+
+        // After alice marks the channel read, both counts drop to zero.
+        svc.mark_read(2, 1, 3).unwrap();
+        let counts = svc.unread_counts(2, 1).unwrap();
+        let row = counts.iter().find(|c| c.channel_id == 1).unwrap();
+        assert_eq!(row.count, 0);
+        assert_eq!(row.unread_mentions, 0, "mention count follows the read pointer");
+
+        // bob (user 3) is mentioned exactly once (in the "hello" line).
+        let counts = svc.unread_counts(3, 1).unwrap();
+        let row = counts.iter().find(|c| c.channel_id == 1).unwrap();
+        assert_eq!(row.unread_mentions, 1, "bob is mentioned in exactly one message");
     }
 
     #[test]
