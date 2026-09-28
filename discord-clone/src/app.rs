@@ -49,6 +49,7 @@ use crate::member_count_display::member_count_display;
 use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
 use crate::verified_badge::VerifiedBadge;
+use crate::edited_label::edited_label;
 use crate::profile_settings::profile_settings;
 use crate::style_helpers::{col, pct, px};
 use crate::typing_indicator::TypingIndicator;
@@ -257,6 +258,7 @@ fn message_row(author: &str, color: &str, body: &str, when: String) -> Element {
                     text(style = when_style) { when }
                 }
                 text(style = body_style) { body.to_string() }
+                if body.contains("missing Clone") { edited_label() }
             }
         }
     }
