@@ -42,6 +42,7 @@ use icons_lucide::{
     CHEVRON_DOWN, COMPASS, HASH, HEADPHONES, MIC, MIC_OFF, PLUS, SETTINGS, SMILE, VOLUME_2,
 };
 use crate::mute_channel_toggle::MuteChannelToggle;
+use crate::idle_timer_badge::idle_timer_badge;
 
 use runtime_shared::time::local_offset_minutes;
 
@@ -51,7 +52,6 @@ use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
 use crate::read_receipt_indicator::ReadReceiptIndicator;
 use crate::verified_badge::VerifiedBadge;
-use crate::mute_channel_toggle::MuteChannelToggle;
 use crate::connection_quality_indicator::ConnectionQualityIndicator;
 use crate::edited_label::edited_label;
 use crate::profile_settings::profile_settings;
@@ -264,6 +264,7 @@ fn message_row(author: &str, color: &str, body: &str, when: String) -> Element {
                 text(style = body_style) { body.to_string() }
                 ReadReceiptIndicator()
                 edited_label()
+                idle_timer_badge()
             }
         }
     }
