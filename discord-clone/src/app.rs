@@ -38,7 +38,9 @@ use runtime_core::{
     signal, switch, ui,
 };
 use runtime_core::icon;
-use icons_lucide::{CHEVRON_DOWN, COMPASS, HASH, PLUS, SMILE, VOLUME_2};
+use icons_lucide::{
+    CHEVRON_DOWN, COMPASS, HASH, HEADPHONES, MIC, MIC_OFF, PLUS, SETTINGS, SMILE, VOLUME_2,
+};
 
 use runtime_shared::time::local_offset_minutes;
 
@@ -640,26 +642,42 @@ fn member_panel(server: &crate::data::Server, user: &Member) -> Element {
 /// The whole strip is wrapped in a `switch` keyed on `(status, voice_name?)`
 /// so any of those changes re-renders the strip (the key is value-deduped,
 /// like every other `switch` here).
+///
+/// The strip is two rows (the 240px sidebar can't fit the identity, the
+/// Profile/Log Out pills, and the voice-action icons on one line): row 1 is
+/// the avatar + name/status, row 2 is a control row — the mic-mute, deafen
+/// and settings-gear icon buttons (Discord's user-panel actions) on the left,
+/// the Leave button (voice only) and the Profile / Log Out pills on the right.
 fn user_panel(
     user_status: Signal<Status>,
     joined_voice: Signal<Option<(u32, u32)>>,
     authed: Signal<bool>,
     profile_mode: Signal<bool>,
+    muted: Signal<bool>,
+    deafened: Signal<bool>,
 ) -> Element {
     switch(
         move || (user_status.get(), voice_name_for(joined_voice.get())),
         move |(status, voice_name): &(Status, Option<String>)| {
             let user = USER;
             let voice_name = voice_name.clone();
-            let row_style = StyleRules {
+            // Two rows (see the fn doc): identity on top, the icon-button
+            // control row beneath.
+            let panel_style = StyleRules {
                 padding_top: Some(px(8.0)),
                 padding_bottom: Some(px(8.0)),
                 padding_left: Some(px(8.0)),
                 padding_right: Some(px(8.0)),
                 gap: Some(px(8.0)),
+                flex_direction: Some(FlexDirection::Column),
+                background: Some(col(USER_BAR)),
+                ..Default::default()
+            };
+            let row_style = StyleRules {
+                min_height: Some(px(32.0)),
+                gap: Some(px(8.0)),
                 flex_direction: Some(FlexDirection::Row),
                 align_items: Some(AlignItems::Center),
-                background: Some(col(USER_BAR)),
                 ..Default::default()
             };
             let avatar_style = StyleRules {
@@ -707,9 +725,9 @@ fn user_panel(
             let text_stack = StyleRules {
                 flex_direction: Some(FlexDirection::Column),
                 flex_grow: Some(grow(1.0)),
-                // Only this column absorbs row shrinkage (avatar and the two
-                // pills are fixed): the name must keep ~40px so "you" renders
-                // in full instead of clipping to "yo".
+                // Only this column absorbs row shrinkage (the avatar is
+                // fixed): the name must keep ~40px so "you" renders in full
+                // instead of clipping to "yo".
                 min_width: Some(px(40.0)),
                 overflow: Some(Overflow::Hidden),
                 ..Default::default()
@@ -902,18 +920,82 @@ fn user_panel(
                     TouchResponse::CONSUMED
                 })
             };
-            ui! {
-                view(style = row_style) {
-                    avatar
-                    view(style = text_stack) {
-                        text(style = name_style) { name }
-                        second_line
+            // Mic / deafen / settings icon buttons (Discord's user-panel
+            // voice actions). The signals are created in `app_shell` and
+            // owned here — pure local UI state, no backend call. The mic
+            // swaps to a slashed glyph when muted; Lucide has no
+            // headphones-off, so deafened colors the icon red instead.
+            let icon_btn_style = StyleRules {
+                width: Some(px(20.0)),
+                height: Some(px(20.0)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                flex_shrink: Some(grow(0.0)),
+                ..Default::default()
+            };
+            let mut muted_state = muted.clone();
+            let mic_btn = ui! {
+                view(style = icon_btn_style.clone(), test_id = "user-mic") {
+                    if muted_state.get() {
+                        icon(MIC_OFF).color(|| Color::from(TEXT_MUTED)).size(15.0)
+                    } else {
+                        icon(MIC).color(|| Color::from(TEXT_MUTED)).size(15.0)
                     }
+                }
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        muted_state.set(!muted_state.get());
+                    }
+                    TouchResponse::CONSUMED
+                })
+            };
+            let mut deafened_state = deafened.clone();
+            let deafen_btn = ui! {
+                view(style = icon_btn_style.clone(), test_id = "user-deafen") {
+                    if deafened_state.get() {
+                        icon(HEADPHONES).color(|| Color::from("#f23f43")).size(15.0)
+                    } else {
+                        icon(HEADPHONES).color(|| Color::from(TEXT_MUTED)).size(15.0)
+                    }
+                }
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        deafened_state.set(!deafened_state.get());
+                    }
+                    TouchResponse::CONSUMED
+                })
+            };
+            let settings_btn = ui! {
+                view(style = icon_btn_style, test_id = "user-settings") {
+                    icon(SETTINGS).color(|| Color::from(TEXT_MUTED)).size(15.0)
+                }
+                .on_touch(|_ev| TouchResponse::CONSUMED)
+            };
+            // Row 2: the icon buttons left, the pills (plus Leave, voice only)
+            // pushed to the right.
+            let controls_row = ui! {
+                view(style = row_style.clone()) {
+                    mic_btn
+                    deafen_btn
+                    settings_btn
+                    view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
                     if let Some(btn) = leave_btn {
                         btn
                     }
                     profile_btn
                     logout_btn
+                }
+            };
+            ui! {
+                view(style = panel_style) {
+                    view(style = row_style) {
+                        avatar
+                        view(style = text_stack) {
+                            text(style = name_style) { name }
+                            second_line
+                        }
+                    }
+                    controls_row
                 }
             }
         },
@@ -1265,6 +1347,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // constant) because the profile strip can change it; the member panel
     // renders the user under this status, so a change regroups them there too.
     let user_status: Signal<Status> = signal(Status::Online);
+    // Mic-mute / deafen toggles for the user panel's voice-action icon row.
+    // Pure local UI state, owned here and passed into `user_panel`; the mic
+    // swaps to a slashed glyph when muted, deafen colors the icon red.
+    let muted: Signal<bool> = signal(false);
+    let deafened: Signal<bool> = signal(false);
     // (channel_id, author, body, ts_secs) of every message the user has sent
     // this session, so each channel keeps its own additions. Read at rebuild.
     let sent: Rc<RefCell<Vec<(u32, &'static str, String, i64)>>> = Rc::new(RefCell::new(Vec::new()));
@@ -2046,7 +2133,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // The user profile is the bottom-left of the sidebar (Discord
             // convention). The member list is a separate right-side panel —
             // see `members_switch` further down — so it's not built here.
-            let user = user_panel(user_status, joined_voice, authed, user_profile_mode);
+            let user = user_panel(user_status, joined_voice, authed, user_profile_mode, muted, deafened);
             ui! {
                 view(style = sidebar_style) {
                     view(style = sidebar_header_style) {
