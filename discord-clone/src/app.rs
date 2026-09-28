@@ -48,6 +48,7 @@ use crate::data::{SERVERS, Category, Member, Status, USER};
 use crate::member_count_display::member_count_display;
 use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
+use crate::read_receipt_indicator::ReadReceiptIndicator;
 use crate::verified_badge::VerifiedBadge;
 use crate::connection_quality_indicator::ConnectionQualityIndicator;
 use crate::edited_label::edited_label;
@@ -260,7 +261,7 @@ fn message_row(author: &str, color: &str, body: &str, when: String) -> Element {
                 }
                 text(style = body_style) { body.to_string() }
                 ReadReceiptIndicator()
-                if body.contains("missing Clone") { edited_label() }
+                edited_label()
             }
         }
     }
