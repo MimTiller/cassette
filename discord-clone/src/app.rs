@@ -54,6 +54,7 @@ use crate::read_receipt_indicator::ReadReceiptIndicator;
 use crate::verified_badge::VerifiedBadge;
 use crate::connection_quality_indicator::ConnectionQualityIndicator;
 use crate::edited_label::edited_label;
+use crate::notification_settings::NotificationSettings;
 use crate::profile_settings::profile_settings;
 use crate::style_helpers::{col, pct, px};
 use crate::typing_indicator::TypingIndicator;
@@ -683,6 +684,7 @@ fn user_panel(
     joined_voice: Signal<Option<(u32, u32)>>,
     authed: Signal<bool>,
     profile_mode: Signal<bool>,
+    notif_mode: Signal<bool>,
     muted: Signal<bool>,
     deafened: Signal<bool>,
 ) -> Element {
@@ -1006,11 +1008,19 @@ fn user_panel(
                     TouchResponse::CONSUMED
                 })
             };
+            // Settings gear: opens the full-screen Notification Settings
+            // overlay (the same build-once/toggle idiom as the Profile pill).
+            let notif_open = notif_mode.clone();
             let settings_btn = ui! {
                 view(style = icon_btn_style, test_id = "user-settings") {
                     icon(SETTINGS).color(|| Color::from(TEXT_MUTED)).size(15.0)
                 }
-                .on_touch(|_ev| TouchResponse::CONSUMED)
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        notif_open.set(true);
+                    }
+                    TouchResponse::CONSUMED
+                })
             };
             // Row 2: the icon buttons left, the pills (plus Leave, voice only)
             // pushed to the right. Its own gap (6px, not the identity row's
@@ -1694,6 +1704,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // toggle idiom as the DM rail). No re-mount, no rebuild of the underlying tree.
     let profile_mode: Signal<bool> = signal(false);
 
+    // Notification Settings screen: the user panel's settings gear opens it as
+    // a full-screen overlay, the same build-once/toggle idiom as `profile_mode`.
+    let notif_mode: Signal<bool> = signal(false);
+
     // --- server rail -----------------------------------------------------
     let rail_style = StyleRules {
         width: Some(px(72.0)),
@@ -2021,6 +2035,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // Profile panel toggle, cloned so the `move` switch closure below can
     // own this copy while the overlay (built later) keeps the original.
     let user_profile_mode = profile_mode.clone();
+    // Notification panel toggle, cloned the same way.
+    let user_notif_mode = notif_mode.clone();
     let sidebar = switch(
         move || {
             // Fingerprint (id, name, kind) so the key is `PartialEq` even
@@ -2376,7 +2392,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // The user profile is the bottom-left of the sidebar (Discord
             // convention). The member list is a separate right-side panel —
             // see `members_switch` further down — so it's not built here.
-            let user = user_panel(user_status, joined_voice, authed, user_profile_mode, muted, deafened);
+            let user = user_panel(user_status, joined_voice, authed, user_profile_mode, user_notif_mode, muted, deafened);
             ui! {
                 view(style = sidebar_style) {
                     view(style = sidebar_header_style) {
@@ -3185,6 +3201,75 @@ fn app_shell(authed: Signal<bool>) -> Element {
         }
     };
 
+    // Notification Settings screen (built once, same shape as the Profile
+    // overlay above): collapses to zero size when `notif_mode` is off, fills
+    // the window when on, with a "Done" pill to close it.
+    let notif_el = NotificationSettings();
+    let notif_close = notif_mode.clone();
+    let notif_header = ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(JustifyContent::SpaceBetween),
+            padding_top: Some(px(16.0)),
+            padding_bottom: Some(px(16.0)),
+            padding_left: Some(px(16.0)),
+            padding_right: Some(px(16.0)),
+            ..Default::default()
+        }) {
+            text(style = StyleRules {
+                font_size: Some(px(18.0)),
+                font_weight: Some(FontWeight::Bold),
+                color: Some(col(TEXT)),
+                ..Default::default()
+            }) { "Notifications".to_string() }
+            view(style = StyleRules {
+                height: Some(px(26.0)),
+                padding_left: Some(px(12.0)),
+                padding_right: Some(px(12.0)),
+                background: Some(col(BG_SIDEBAR)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                border_top_left_radius: Some(px(6.0)),
+                border_top_right_radius: Some(px(6.0)),
+                border_bottom_left_radius: Some(px(6.0)),
+                border_bottom_right_radius: Some(px(6.0)),
+                ..Default::default()
+            }) {
+                text(style = StyleRules {
+                    color: Some(col(TEXT)),
+                    font_size: Some(px(12.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    ..Default::default()
+                }) { "Done".to_string() }
+            }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    notif_close.set(false);
+                }
+                TouchResponse::CONSUMED
+            })
+        }
+    };
+    let notif_open_chk = notif_mode.clone();
+    let notif_wrap = move || StyleRules {
+        position: Some(Position::Absolute),
+        left: Some(px(0.0)),
+        top: Some(px(0.0)),
+        width: Some(if notif_open_chk.get() { pct(100.0) } else { px(0.0) }),
+        height: Some(if notif_open_chk.get() { pct(100.0) } else { px(0.0) }),
+        background: Some(col(BG_MAIN)),
+        flex_direction: Some(FlexDirection::Column),
+        overflow: Some(Overflow::Hidden),
+        ..Default::default()
+    };
+    let notif_region = ui! {
+        view(style = notif_wrap) {
+            notif_header
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) { notif_el }
+        }
+    };
+
     ui! {
         view(style = StyleRules {
             width: Some(pct(100.0)),
@@ -3247,6 +3332,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             members_switch
             // Painted last so it sits on top of everything when open.
             profile_region
+            notif_region
         }
     }
 }
