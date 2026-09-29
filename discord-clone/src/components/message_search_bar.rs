@@ -36,7 +36,7 @@
 use crate::style_helpers::{col, px};
 use icons_lucide::SEARCH;
 use runtime_core::{
-    component, icon, signal, ui, AlignItems, Color, Element, FlexDirection, StyleRules,
+    component, icon, signal, ui, AlignItems, Color, Element, FlexDirection, StyleRules, Tokenized,
 };
 
 // Discord dark palette (kept local so the component is self-contained).
@@ -67,13 +67,16 @@ pub fn MessageSearchBar() -> Element {
     // the same look as the input in `nickname_edit_field`. The `text_input`
     // primitive takes no children, so the leading `SEARCH` icon is a row
     // sibling to its left (same "separate dot view + field" pattern as the
-    // rail's status dot), not a nested child. The row keeps the original
-    // 320px footprint; the input shrinks to leave room for the icon.
+    // rail's status dot), not a nested child. The input `flex_grow`s to fill
+    // the row (after the fixed 16px icon + 8px gap) instead of using a fixed
+    // width — so the bar fits whatever width its container gives it (it lives
+    // in the 240px member panel, which a fixed 288px width would have clipped
+    // under `overflow: Hidden`).
     let input_style = StyleRules {
         flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Center),
         height: Some(px(40.0)),
-        width: Some(px(288.0)),
+        flex_grow: Some(Tokenized::Literal(1.0)),
         padding_left: Some(px(10.0)),
         padding_right: Some(px(12.0)),
         background: Some(col(COMPOSER)),

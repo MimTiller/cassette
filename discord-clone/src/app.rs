@@ -590,6 +590,25 @@ fn member_panel(server: &crate::data::Server, user: &Member) -> Element {
         text_transform: Some(TextTransform::Uppercase),
         ..Default::default()
     };
+    // Message-search bar lives at the top of the right member panel (Discord's
+    // "far right" position) instead of in the channel header row. Wrap it in a
+    // 12px-padded `view` so it isn't flush against the panel's edges — the bar's
+    // own input is flex-sized to this width, so 240px − 24px padding (216px) fits
+    // comfortably (the bar's fixed 288px width used to overflow the header's
+    // 180px slot and would clip the 240px panel).
+    body.push(
+        ui! {
+            view(style = StyleRules {
+                padding_top: Some(px(12.0)),
+                padding_bottom: Some(px(12.0)),
+                padding_left: Some(px(12.0)),
+                padding_right: Some(px(12.0)),
+                ..Default::default()
+            }) {
+                MessageSearchBar()
+            }
+        },
+    );
     body.push(ui! { text(style = header_style) { header } });
 
     // Status groups in Discord order: Online, Idle, DND, Offline. The
@@ -2443,19 +2462,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     text(style = title_style) { title }
                     text(style = topic_style) { topic }
                     // Spacer: eats the row's remaining width so the member
-                    // count, pin badge, and search bar sit at the far right.
+                    // count and pin badge sit at the far right.
                     view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
                     member_count_display(12.into(), total.into())
                     PinCountBadge()
-                    // Compact message-search widget. It can render mock result
-                    // rows below its input, so wrap it in a fixed-width `view`
-                    // to keep the header row from stretching taller/wider.
-                    view(style = StyleRules {
-                        width: Some(px(180.0)),
-                        ..Default::default()
-                    }) {
-                        MessageSearchBar()
-                    }
                 }
             }
         },
