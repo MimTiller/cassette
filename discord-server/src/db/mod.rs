@@ -484,32 +484,35 @@ impl Db {
     /// hand to a client as initial history). Each message carries its resolved
     /// `@mention` user ids (see `0012_message_mentions.sql`).
     pub fn recent_messages(&self, channel_id: i64, limit: i64) -> Vec<Message> {
-        let Ok(c) = self.lock() else {
-            return Vec::new();
-        };
-        let mut stmt = match c.prepare(
-            "SELECT id, channel_id, author_id, content, created_at, edited_at
-             FROM messages WHERE channel_id = ?1 ORDER BY created_at DESC, id DESC LIMIT ?2",
-        ) {
-            Ok(s) => s,
-            Err(_) => return Vec::new(),
-        };
-        let rows = match stmt.query_map(rusqlite::params![channel_id, limit], |r| {
-            Ok(Message {
-                id: r.get(0)?,
-                channel_id: r.get(1)?,
-                author_id: r.get(2)?,
-                content: r.get(3)?,
-                created_at: r.get(4)?,
-                edited_at: r.get(5)?,
-                mentioned_user_ids: Vec::new(),
-            })
-        }) {
-            Ok(rows) => rows,
-            Err(_) => return Vec::new(),
-        };
-        let mut out: Vec<Message> = rows.filter_map(Result::ok).collect();
-        out.reverse();
+        let mut out: Vec<Message> = {
+            let Ok(c) = self.lock() else {
+                return Vec::new();
+            };
+            let mut stmt = match c.prepare(
+                "SELECT id, channel_id, author_id, content, created_at, edited_at
+                 FROM messages WHERE channel_id = ?1 ORDER BY created_at DESC, id DESC LIMIT ?2",
+            ) {
+                Ok(s) => s,
+                Err(_) => return Vec::new(),
+            };
+            let rows = match stmt.query_map(rusqlite::params![channel_id, limit], |r| {
+                Ok(Message {
+                    id: r.get(0)?,
+                    channel_id: r.get(1)?,
+                    author_id: r.get(2)?,
+                    content: r.get(3)?,
+                    created_at: r.get(4)?,
+                    edited_at: r.get(5)?,
+                    mentioned_user_ids: Vec::new(),
+                })
+            }) {
+                Ok(rows) => rows,
+                Err(_) => return Vec::new(),
+            };
+            let mut out: Vec<Message> = rows.filter_map(Result::ok).collect();
+            out.reverse();
+            out
+        }; // drop the connection lock before re-locking in message_mentions
         for m in &mut out {
             m.mentioned_user_ids = self.message_mentions(m.id);
         }
@@ -1361,7 +1364,12 @@ pub fn mention_tokens(text: &str) -> Vec<String> {
             if is_word {
                 current.push(ch);
             } else {
-                out.push(std::mem::take(&mut current));
+                // A bare `@` with no following word char (e.g. `email@ x`, or
+                // a trailing `@`) leaves `current` empty — skip it so no empty
+                // token is emitted.
+                if !current.is_empty() {
+                    out.push(std::mem::take(&mut current));
+                }
                 in_token = false;
                 // A non-word char immediately after the token still starts a
                 // new token when it is `@` (e.g. `@a@b`).
@@ -1373,7 +1381,7 @@ pub fn mention_tokens(text: &str) -> Vec<String> {
             in_token = true;
         }
     }
-    if in_token {
+    if in_token && !current.is_empty() {
         out.push(current);
     }
     out

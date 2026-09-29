@@ -400,6 +400,10 @@ mod tests {
 
     #[test]
     fn posting_stores_and_replays_resolved_mentions() {
+        // The hub below is the process-wide one; serialize with the other
+        // hub-using e2e tests so their `hub().reset()` can't wipe our socket
+        // mid-test (the e2e_lock, not the test ordering, prevents that).
+        let _guard = crate::e2e_lock::guard();
         let (_d, db) = setup();
         // Reset the shared hub so the publish below is observable in a clean state.
         let hub = crate::realtime::hub();
