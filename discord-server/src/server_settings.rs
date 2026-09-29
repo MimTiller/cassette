@@ -664,6 +664,27 @@ impl ServerSettings {
             .collect())
     }
 
+    /// All members of `server_id` with their role, ordered by role (owner
+    /// first) then user id. Any member of the server may read the list.
+    ///
+    /// # Errors
+    /// - `server not found` — the id doesn't exist.
+    /// - `permission denied: not a member of this server` — no membership.
+    pub fn list_members(&self, caller_id: i64, server_id: i64) -> Result<Vec<MemberInfo>, String> {
+        if self.db.server_by_id(server_id).is_none() {
+            return Err("server not found".into());
+        }
+        if self.db.membership_role(server_id, caller_id).is_none() {
+            return Err("permission denied: not a member of this server".into());
+        }
+        Ok(self
+            .db
+            .server_members(server_id)
+            .into_iter()
+            .map(|(user_id, username, role)| MemberInfo { user_id, username, role })
+            .collect())
+    }
+
     /// The current wall-clock milliseconds since the Unix epoch, for
     /// `read_at` timestamps (the `messages.created_at` convention).
     fn now_millis() -> i64 {
@@ -817,6 +838,17 @@ pub async fn unread_counts(input: UnreadCountsInput) -> Result<Vec<UnreadCount>,
         .map_err(ServerError::failed)
 }
 
+/// List the members of a server with their roles. Any member of the server
+/// may call; the list is ordered by role (owner first), then user id.
+#[server]
+pub async fn list_members(input: ListMembersInput) -> Result<Vec<MemberInfo>, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    ServerSettings::new(db)
+        .list_members(caller, input.server_id)
+        .map_err(ServerError::failed)
+}
+
 /// Pull the shared `Db` out of server state, installed at startup by the
 /// server bin via `server::install_state(db)`. `Db` is cheap to clone (it's
 /// just an `Arc<Mutex<Connection>>`), so each request gets its own handle.
@@ -904,6 +936,21 @@ pub struct MarkReadInput {
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]
 pub struct UnreadCountsInput {
     pub server_id: i64,
+}
+
+/// The server whose member list the caller wants.
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+pub struct ListMembersInput {
+    pub server_id: i64,
+}
+
+/// One member of a server: their id, display name, and stored role string
+/// (`'owner'` / `'admin'` / `'moderator'` / `'member'`).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct MemberInfo {
+    pub user_id: i64,
+    pub username: String,
+    pub role: String,
 }
 
 /// Confirmation that a channel was marked read: the channel and the message id
@@ -1157,6 +1204,56 @@ mod tests {
         let svc = ServerSettings::new(db);
         let err = svc.rename(1, 999, "X").unwrap_err();
         assert!(err.contains("not found"), "got: {err}");
+    }
+
+    // ── member list ──────────────────────────────────────────────────────────
+
+    /// A member can read the list; owner comes first, then admin/mod/member,
+    /// then user id within a role.
+    #[test]
+    fn member_list_ordered_by_role_then_user_id() {
+        let (_dir, db) = setup_db_with_channels();
+        let svc = ServerSettings::new(db.clone());
+        // Seed a moderator and another member with a higher user id than bob.
+        let c = db.lock().unwrap();
+        c.execute_batch(
+            "INSERT INTO users (id, username, email, created_at) VALUES (4, 'dave', 'dave@example.com', 1000);
+             UPDATE server_memberships SET role = 'moderator' WHERE server_id = 1 AND user_id = 3;
+             INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES (1, 4, 'member', 1000);",
+        )
+        .unwrap();
+        drop(c);
+
+        let members = svc.list_members(2, 1).unwrap();
+        let got: Vec<(i64, &str)> = members
+            .iter()
+            .map(|m| (m.user_id, m.role.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![(1, "owner"), (3, "moderator"), (2, "member"), (4, "member")],
+            "owner first, then moderator, then members by user id"
+        );
+        // The row for alice carries her username, not an empty placeholder.
+        let alice = members.iter().find(|m| m.user_id == 2).unwrap();
+        assert_eq!(alice.username, "alice");
+    }
+
+    #[test]
+    fn member_list_rejects_unknown_server() {
+        let (_dir, db) = setup_db();
+        let svc = ServerSettings::new(db);
+        let err = svc.list_members(1, 999).unwrap_err();
+        assert!(err.contains("not found"), "got: {err}");
+    }
+
+    #[test]
+    fn member_list_rejects_non_member() {
+        let (_dir, db) = setup_db();
+        let svc = ServerSettings::new(db);
+        // User 999 has no membership in server 1.
+        let err = svc.list_members(999, 1).unwrap_err();
+        assert!(err.contains("not a member"), "got: {err}");
     }
 
     // ── channel reads / unread counts ───────────────────────────────────────
