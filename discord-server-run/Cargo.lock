@@ -85,7 +85,7 @@ dependencies = [
 
 [[package]]
 name = "backend-web"
-version = "1.6.1"
+version = "1.7.2"
 dependencies = [
  "css",
  "inventory",
@@ -244,7 +244,7 @@ dependencies = [
 
 [[package]]
 name = "css"
-version = "1.5.4"
+version = "1.5.5"
 dependencies = [
  "runtime-shared",
 ]
@@ -742,7 +742,7 @@ dependencies = [
 
 [[package]]
 name = "idealyst"
-version = "1.5.2"
+version = "1.6.0"
 dependencies = [
  "backend-web",
  "console_error_panic_hook",
@@ -1307,7 +1307,7 @@ dependencies = [
 
 [[package]]
 name = "runtime-core"
-version = "1.5.2"
+version = "1.7.0"
 dependencies = [
  "runtime-macros",
  "runtime-shared",
@@ -1316,17 +1316,28 @@ dependencies = [
 
 [[package]]
 name = "runtime-macros"
-version = "1.6.0"
+version = "1.11.0"
 dependencies = [
  "proc-macro2",
  "quote",
+ "runtime-macros-parse",
  "sha2",
  "syn 2.0.119",
 ]
 
 [[package]]
+name = "runtime-macros-parse"
+version = "1.9.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "runtime-template",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "runtime-scene"
-version = "1.5.3"
+version = "1.7.0"
 dependencies = [
  "runtime-world",
  "rustc-hash",
@@ -1334,7 +1345,7 @@ dependencies = [
 
 [[package]]
 name = "runtime-shared"
-version = "1.7.1"
+version = "1.11.0"
 dependencies = [
  "bitflags",
  "log",
@@ -1347,17 +1358,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "runtime-template"
+version = "1.5.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "runtime-vocabulary"
-version = "1.7.1"
+version = "1.16.0"
 dependencies = [
  "runtime-scene",
  "runtime-shared",
+ "runtime-template",
  "runtime-world",
 ]
 
 [[package]]
 name = "runtime-world"
-version = "1.5.2"
+version = "1.7.1"
 dependencies = [
  "rustc-hash",
 ]
@@ -1547,7 +1566,7 @@ dependencies = [
 
 [[package]]
 name = "server"
-version = "1.5.3"
+version = "1.8.0"
 dependencies = [
  "axum",
  "futures-channel",
@@ -2120,7 +2139,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-split-macro"
-version = "1.5.2"
+version = "1.5.3"
 dependencies = [
  "base16",
  "digest",
