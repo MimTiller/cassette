@@ -38,14 +38,21 @@
 use serde::{Deserialize, Serialize};
 use server::{server, ServerError};
 
+// DB + roles are pure server-side: only the `#[server]` fn bodies and the
+// server-gated `InviteService` reference these names (the client RPC stubs do
+// not), so the imports are gated too — the same shape `server_settings.rs` /
+// `auth.rs` use. `acting_user` resolves the signed-in user from a verified
+// session token (a server-only concern; the client stub never executes it).
+#[cfg(feature = "server")]
 use crate::db::{Db, InviteRow};
+#[cfg(feature = "server")]
 use crate::roles::{Action, Role};
-
-/// The acting user for the current request, resolved from a verified session
-/// token (see [`crate::session`]); `None` when unauthenticated.
+#[cfg(feature = "server")]
 use crate::session::acting_user;
 
-/// The current wall-clock seconds since the Unix epoch.
+/// The current wall-clock seconds since the Unix epoch. Server-only — only the
+/// `InviteService` (a `#[cfg(feature = "server")]` type) reads it.
+#[cfg(feature = "server")]
 fn now_secs() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -60,11 +67,15 @@ fn now_secs() -> i64 {
 // bare token look like a reserved word. 22 symbols over 4 characters is
 // ~234k distinct codes — far more than any server needs, and short enough to
 // type. `rand` is a server-only dep (pulled in by the `server` feature), and
-// this whole module compiles only under that feature.
+// code generation is a server-only concern (only `InviteService` mints codes),
+// so this block is gated.
 
+#[cfg(feature = "server")]
 const CODE_ALPHABET: &[u8] = b"aeikmnoqrstuwyzbcdfgjlhpv";
+#[cfg(feature = "server")]
 const CODE_LEN: usize = 4;
 
+#[cfg(feature = "server")]
 fn gen_code() -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();
@@ -76,7 +87,9 @@ fn gen_code() -> String {
     s
 }
 
-/// How many times a freshly generated code may be redeemed.
+/// How many times a freshly generated code may be redeemed. Server-only — only
+/// the server-gated `InviteService` uses it.
+#[cfg(feature = "server")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UseLimit {
     /// Unlimited redemptions (the default).
@@ -85,6 +98,7 @@ pub enum UseLimit {
     Max(i64),
 }
 
+#[cfg(feature = "server")]
 impl UseLimit {
     fn to_max_uses(self) -> Option<i64> {
         match self {
@@ -135,6 +149,9 @@ pub struct Invite {
     pub uses: i64,
 }
 
+/// Converts a DB row to the wire [`Invite`]. Server-only — `InviteRow` is a
+/// server-only type.
+#[cfg(feature = "server")]
 impl From<InviteRow> for Invite {
     fn from(r: InviteRow) -> Self {
         Self {
@@ -167,7 +184,8 @@ pub struct RedeemResult {
 
 /// The invite service. Wraps a `Db` handle. Every method takes the acting
 /// user id explicitly so the authorization is testable without any request
-/// context.
+/// context. Server-only — `Db` is a server-only type.
+#[cfg(feature = "server")]
 pub struct InviteService {
     db: Db,
     /// Injectable "now" in UTC epoch seconds. Production passes
@@ -175,6 +193,7 @@ pub struct InviteService {
     clock: Box<dyn Fn() -> i64>,
 }
 
+#[cfg(feature = "server")]
 impl InviteService {
     /// A service that reads the real wall-clock.
     pub fn new(db: Db) -> Self {
@@ -359,6 +378,8 @@ pub async fn redeem_invite(input: RedeemInviteInput) -> Result<RedeemResult, Ser
 
 /// Pull the shared `Db` out of server state (installed at startup by the
 /// server bin via `server::install_state(db)`). `Db` is cheap to clone.
+/// Server-only — the client RPC stub never executes a body.
+#[cfg(feature = "server")]
 fn db_from_state() -> Result<Db, ServerError> {
     server::use_state::<Db>()
         .ok_or_else(|| ServerError::failed("database not installed"))

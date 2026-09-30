@@ -33,7 +33,7 @@
 
 use crate::style_helpers::{col, px};
 use runtime_core::{
-    component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, StyleRules, Tokenized,
+    component, ui, AlignItems, Element, FlexDirection, FontWeight, Signal, StyleRules, Tokenized,
     TouchPhase, TouchResponse,
 };
 
@@ -52,15 +52,13 @@ fn border_width(px: f32) -> Tokenized<f32> {
     Tokenized::Literal(px)
 }
 
-/// An invite-expiry picker radio group. `selected` is local reactive state
-/// (an index into `INVITE_EXPIRY_OPTIONS`), starting on the first option.
-/// Tapping a row sets `selected` to that row's index; the matching row then
-/// renders highlighted with a filled dot and the others dimmed with a hollow
-/// one. No props, no backend.
+/// An invite-expiry picker radio group. `value` is the selected index into
+/// `INVITE_EXPIRY_OPTIONS`, owned by the parent (which reads it when creating
+/// the invite) — the picker writes it on tap. Starting index is whatever the
+/// parent initializes the signal to (the demo inverts: 0 = first option).
+/// No props beyond the controlled `value`; no backend.
 #[component]
-pub fn InviteExpirySelector() -> Element {
-    let selected = signal(0usize);
-
+pub fn InviteExpirySelector(value: Signal<usize>) -> Element {
     ui! {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Column),
@@ -81,10 +79,10 @@ pub fn InviteExpirySelector() -> Element {
             }) { "INVITE EXPIRY".to_string() }
             for (i, name) in INVITE_EXPIRY_OPTIONS.iter().enumerate() {
                 // `i` is the loop index (compile-time repeat key); the closure
-                // only *reads* `i` and `selected` (both `Copy`), so it stays
+                // only *reads* `i` and `value` (both `Copy`), so it stays
                 // `Fn` and the built `StyleRules` is a fresh value each time.
                 view(style = move || {
-                    let sel = i == selected.get();
+                    let sel = i == value.get();
                     StyleRules {
                         height: Some(px(44.0)),
                         margin_left: Some(px(12.0)),
@@ -116,27 +114,27 @@ pub fn InviteExpirySelector() -> Element {
                         border_bottom_width: Some(border_width(2.0)),
                         border_left_width: Some(border_width(2.0)),
                         border_right_width: Some(border_width(2.0)),
-                        border_top_color: Some(col(if i == selected.get() {
+                        border_top_color: Some(col(if i == value.get() {
                             TEXT
                         } else {
                             TEXT_MUTED
                         })),
-                        border_bottom_color: Some(col(if i == selected.get() {
+                        border_bottom_color: Some(col(if i == value.get() {
                             TEXT
                         } else {
                             TEXT_MUTED
                         })),
-                        border_left_color: Some(col(if i == selected.get() {
+                        border_left_color: Some(col(if i == value.get() {
                             TEXT
                         } else {
                             TEXT_MUTED
                         })),
-                        border_right_color: Some(col(if i == selected.get() {
+                        border_right_color: Some(col(if i == value.get() {
                             TEXT
                         } else {
                             TEXT_MUTED
                         })),
-                        background: Some(col(if i == selected.get() {
+                        background: Some(col(if i == value.get() {
                             TEXT
                         } else {
                             "transparent"
@@ -145,12 +143,12 @@ pub fn InviteExpirySelector() -> Element {
                     }) {}
                     text(style = move || StyleRules {
                         font_size: Some(px(15.0)),
-                        font_weight: Some(if i == selected.get() {
+                        font_weight: Some(if i == value.get() {
                             FontWeight::SemiBold
                         } else {
                             FontWeight::Normal
                         }),
-                        color: Some(col(if i == selected.get() {
+                        color: Some(col(if i == value.get() {
                             TEXT
                         } else {
                             TEXT_MUTED
@@ -159,7 +157,7 @@ pub fn InviteExpirySelector() -> Element {
                     }) { name.to_string() }
                 }.on_touch(move |ev| {
                     if ev.phase == TouchPhase::Ended {
-                        selected.set(i);
+                        value.set(i);
                     }
                     TouchResponse::CONSUMED
                 })

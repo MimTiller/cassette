@@ -39,7 +39,13 @@ pub mod rate_limit;
 pub mod session;
 pub mod roles;
 pub mod server_settings;
-#[cfg(feature = "server")]
+// `invites` compiles in BOTH halves, like `auth` / `server_settings`: the
+// `#[server]` fns emit client RPC stubs by default (the wire types
+// `CreateInviteInput` / `Invite` + the stubs are the client surface
+// `discord-clone` calls), while the DB-backed `InviteService` + `db_from_state`
+// live behind `#[cfg(feature = "server")]` inside the module. Gating the whole
+// module here (as `db` / `session` are) would hide the stubs from the
+// default-features client build.
 pub mod invites;
 // `auth` is compiled in BOTH halves: the `#[server]` fns emit client RPC stubs
 // by default (the wire types `LoginInput` / `SignupInput` + the stubs are the
