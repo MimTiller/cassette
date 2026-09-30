@@ -9,6 +9,7 @@ mod style_helpers;
 mod app;
 mod auth;
 mod servers;
+mod moderation;
 #[allow(dead_code)]
 mod invite;
 mod typing_indicator;

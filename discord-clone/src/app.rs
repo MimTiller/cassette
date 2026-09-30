@@ -1448,6 +1448,368 @@ fn live_member_roster(
     names
 }
 
+/// The role a member advances to when their cycle-button is tapped, in the
+/// order member → moderator → admin → owner → member. `'owner'` is included in
+/// the cycle (so all four role strings are reachable) even though the backend
+/// rejects assigning it to anyone who isn't already the owner — the rejection
+/// is surfaced as an inline error rather than pre-validated (the backend is
+/// the single source of truth for who may hold which role).
+fn next_role(current: &str) -> &'static str {
+    match current {
+        "member" => "moderator",
+        "moderator" => "admin",
+        "admin" => "owner",
+        // owner and anything unknown cycle back to member.
+        _ => "member",
+    }
+}
+
+/// The live-server member panel: the real membership of the active backend
+/// server (fetched from the `#[server]` `list_members` endpoint, owner-first)
+/// rendered as a right-side column — the live counterpart of the mock
+/// `member_panel`. Each row shows the member's name, their role (a tappable
+/// cycle-button member→moderator→admin→owner→member), and a `Kick` button that
+/// opens an inline two-step confirm before calling the backend `remove_member`.
+/// After a successful kick or role change the roster is re-fetched, so the
+/// list refreshes (a kicked row disappears; a changed role re-renders).
+///
+/// The backend enforces every permission check (who may kick, who may change
+/// roles, that the owner can't be kicked or re-roled, that `owner` can't be
+/// assigned to someone else); this panel does **no** client-side permission
+/// pre-computation — on a rejection the backend's message is shown inline as a
+/// simple red line beneath the row, and on success the roster reloads.
+///
+/// Idioms, verified against this file: a plain `fn -> Element` (like
+/// `member_panel`); the row list is a local `Vec<Element>` built in a `for`
+/// loop (like the mock `member_panel`'s `body`) with a `.collect()` — the
+/// standard static-row idiom; the per-row controls are `view {…}.on_touch(move
+/// |ev| …)` chains (the live channel rows' idiom); `Signal` is `Copy`, so each
+/// `move` closure captures a copy and stays `Fn`; the inline kick-confirm and
+/// the per-row error line are reactive `if` branches inside `ui!` (lowered to
+/// the `when` primitive, `ban_list_row`'s idiom).
+fn live_member_panel(
+    server_id: i64,
+    members: Signal<Vec<crate::moderation::MemberInfo>>,
+    error: Signal<String>,
+    kick_confirm: Signal<Option<i64>>,
+) -> Element {
+    // Snapshot of the current roster. The panel is rebuilt (by the caller's
+    // `switch` keyed on this signal) whenever the roster changes — including
+    // the re-fetch the mutation callbacks below trigger on success — so a
+    // local snapshot is always current here.
+    let roster = members.get();
+    // The signed-in user's own numeric id — their own row is marked "(you)" and
+    // the rest is left to the backend's permission checks (no client-side
+    // pre-computation). `CURRENT_USER_ID` is `0` when signed out, which can't
+    // match a real member id, so `(you)` simply never appears.
+    let self_id: i64 = crate::auth::CURRENT_USER_ID
+        .load(std::sync::atomic::Ordering::SeqCst);
+
+    // Shared styles (built once per rebuild; `StyleRules` is not `Copy`, so the
+    // per-row styles are written INLINE inside the loop, the `member_role_list`
+    // idiom — nothing non-`Copy` is captured across the loop boundary).
+    let header_style = StyleRules {
+        padding_top: Some(px(14.0)),
+        padding_bottom: Some(px(6.0)),
+        padding_left: Some(px(12.0)),
+        padding_right: Some(px(12.0)),
+        font_size: Some(px(10.0)),
+        letter_spacing: Some(Tokenized::Literal(-0.5)),
+        font_weight: Some(FontWeight::SemiBold),
+        color: Some(col(TEXT_MUTED)),
+        text_transform: Some(TextTransform::Uppercase),
+        ..Default::default()
+    };
+    let name_style = StyleRules {
+        font_size: Some(px(14.0)),
+        font_weight: Some(FontWeight::SemiBold),
+        color: Some(col(TEXT)),
+        flex_grow: Some(grow(1.0)),
+        flex_shrink: Some(grow(0.0)),
+        overflow: Some(Overflow::Hidden),
+        ..Default::default()
+    };
+    let role_btn_style = StyleRules {
+        padding_top: Some(px(2.0)),
+        padding_bottom: Some(px(2.0)),
+        padding_left: Some(px(8.0)),
+        padding_right: Some(px(8.0)),
+        background: Some(col(COMPOSER)),
+        border_top_left_radius: Some(px(8.0)),
+        border_top_right_radius: Some(px(8.0)),
+        border_bottom_left_radius: Some(px(8.0)),
+        border_bottom_right_radius: Some(px(8.0)),
+        flex_shrink: Some(grow(0.0)),
+        ..Default::default()
+    };
+    let role_label_style = StyleRules {
+        font_size: Some(px(11.0)),
+        font_weight: Some(FontWeight::SemiBold),
+        color: Some(col(TEXT_CHANNEL)),
+        ..Default::default()
+    };
+    let kick_btn_style = StyleRules {
+        padding_top: Some(px(3.0)),
+        padding_bottom: Some(px(3.0)),
+        padding_left: Some(px(8.0)),
+        padding_right: Some(px(8.0)),
+        background: Some(col(BADGE)),
+        color: Some(col("#ffffff")),
+        border_top_left_radius: Some(px(8.0)),
+        border_top_right_radius: Some(px(8.0)),
+        border_bottom_left_radius: Some(px(8.0)),
+        border_bottom_right_radius: Some(px(8.0)),
+        flex_shrink: Some(grow(0.0)),
+        ..Default::default()
+    };
+    let kick_label_style = StyleRules {
+        font_size: Some(px(11.0)),
+        font_weight: Some(FontWeight::SemiBold),
+        color: Some(col("#ffffff")),
+        ..Default::default()
+    };
+    let confirm_bg_style = StyleRules {
+        background: Some(col(BG_ACTIVE)),
+        border_top_left_radius: Some(px(8.0)),
+        border_top_right_radius: Some(px(8.0)),
+        border_bottom_left_radius: Some(px(8.0)),
+        border_bottom_right_radius: Some(px(8.0)),
+        padding_top: Some(px(4.0)),
+        padding_bottom: Some(px(4.0)),
+        padding_left: Some(px(8.0)),
+        padding_right: Some(px(8.0)),
+        gap: Some(px(8.0)),
+        flex_direction: Some(FlexDirection::Row),
+        align_items: Some(AlignItems::Center),
+        ..Default::default()
+    };
+    let confirm_yes_style = StyleRules {
+        background: Some(col(BADGE)),
+        padding_top: Some(px(4.0)),
+        padding_bottom: Some(px(4.0)),
+        padding_left: Some(px(10.0)),
+        padding_right: Some(px(10.0)),
+        border_top_left_radius: Some(px(6.0)),
+        border_top_right_radius: Some(px(6.0)),
+        border_bottom_left_radius: Some(px(6.0)),
+        border_bottom_right_radius: Some(px(6.0)),
+        flex_shrink: Some(grow(0.0)),
+        ..Default::default()
+    };
+    let confirm_no_style = StyleRules {
+        background: Some(col(BG_HOVER)),
+        padding_top: Some(px(4.0)),
+        padding_bottom: Some(px(4.0)),
+        padding_left: Some(px(10.0)),
+        padding_right: Some(px(10.0)),
+        border_top_left_radius: Some(px(6.0)),
+        border_top_right_radius: Some(px(6.0)),
+        border_bottom_left_radius: Some(px(6.0)),
+        border_bottom_right_radius: Some(px(6.0)),
+        flex_shrink: Some(grow(0.0)),
+        ..Default::default()
+    };
+    let small_label_style = StyleRules {
+        font_size: Some(px(12.0)),
+        font_weight: Some(FontWeight::SemiBold),
+        color: Some(col("#ffffff")),
+        ..Default::default()
+    };
+    let error_style = StyleRules {
+        font_size: Some(px(11.0)),
+        color: Some(col(BADGE)),
+        ..Default::default()
+    };
+
+    // Build the rows as a local `Vec<Element>` (the mock `member_panel` shape).
+    // Each row is a `move` closure: `server_id` (i64) and `member_id` (i64) are
+    // `Copy`, and the three `Signal`s it captures are `Copy`, so every closure
+    // owns a fresh copy and stays `Fn` across rebuilds.
+    let mut rows: Vec<Element> = Vec::new();
+    for member in roster.iter() {
+        let member_id = member.user_id;
+        let is_self = member_id == self_id;
+        let role = member.role.clone();
+        let confirming = kick_confirm.clone();
+        let kick = kick_confirm.clone();
+        let error = error.clone();
+        // Fresh per-iteration clones of every style used below -- the whole
+        // `ui! { ... }` row block compiles to one closure per iteration, and
+        // a style declared once above this loop gets moved into that
+        // closure on iteration 1, leaving nothing for iteration 2+ (the
+        // same "StyleRules moved twice" class of bug documented elsewhere
+        // in nodes.yaml's b60 history; the fix there was the same: clone
+        // before the loop body captures it, not just at each use site).
+        let name_style = name_style.clone();
+        let role_btn_style = role_btn_style.clone();
+        let role_label_style = role_label_style.clone();
+        let confirm_bg_style = confirm_bg_style.clone();
+        let confirm_yes_style = confirm_yes_style.clone();
+        let confirm_no_style = confirm_no_style.clone();
+        let small_label_style = small_label_style.clone();
+        let kick_btn_style = kick_btn_style.clone();
+        let kick_label_style = kick_label_style.clone();
+        let error_style = error_style.clone();
+        // name_style is used in two mutually-exclusive branches below, but
+        // the ui! macro's own parser doesn't support a nested `let` inside a
+        // branch (tried it -- breaks its DSL parsing), so each branch gets
+        // its own pre-made clone here instead, outside the macro entirely.
+        let name_style_self_branch = name_style.clone();
+        let name_style_other_branch = name_style;
+
+        let row = ui! {
+            view(style = StyleRules {
+                padding_top: Some(px(6.0)),
+                padding_bottom: Some(px(6.0)),
+                padding_left: Some(px(12.0)),
+                padding_right: Some(px(12.0)),
+                flex_direction: Some(FlexDirection::Row),
+                align_items: Some(AlignItems::Center),
+                gap: Some(px(8.0)),
+                ..Default::default()
+            }) {
+                // Name (+ a "(you)" tag on the signed-in user's own row).
+                view(style = StyleRules {
+                    flex_shrink: Some(grow(1.0)),
+                    overflow: Some(Overflow::Hidden),
+                    ..Default::default()
+                }) {
+                    if is_self {
+                        text(style = name_style_self_branch) {
+                            format!("{} (you)", member.username)
+                        }
+                    } else {
+                        text(style = name_style_other_branch) { member.username.clone() }
+                    }
+                }
+
+                // Role cycle-button: shows the current role; a tap advances it
+                // (member→moderator→admin→owner→member) and calls
+                // `set_member_role`, refreshing the roster on success. The
+                // backend rejects invalid changes (e.g. assigning `owner`),
+                // which surface via the inline error line below.
+                if !is_self {
+                    view(style = role_btn_style.clone()) {
+                        text(style = role_label_style.clone()) {
+                            format!("{role} ▸")
+                        }
+                    }
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            let sid = server_id;
+                            let uid = member_id;
+                            let new_role = next_role(&role);
+                            let err = error;
+                            let kick = kick;
+                            let members = members;
+                            runtime_core::driver::spawn_async(async move {
+                                match crate::moderation::set_member_role(sid, uid, new_role).await {
+                                    Ok(()) => {
+                                        kick.set(None);
+                                        if let Ok(fresh) = crate::moderation::list_members(sid).await {
+                                            members.set(fresh);
+                                        }
+                                    }
+                                    Err(msg) => err.set(msg),
+                                }
+                            });
+                        }
+                        TouchResponse::CONSUMED
+                    })
+                }
+
+                // Kick: a two-step inline confirm. First tap shows Confirm/Cancel;
+                // a second tap ("Confirm") calls `remove_member` and refreshes;
+                // "Cancel" (or tapping the row again) dismisses. The confirm
+                // branch replaces the role+kick controls for this row only.
+                if confirming.get() == Some(member_id) {
+                    view(style = confirm_bg_style.clone()) {
+                        text(style = StyleRules {
+                            font_size: Some(px(12.0)),
+                            color: Some(col(TEXT)),
+                            flex_shrink: Some(grow(1.0)),
+                            ..Default::default()
+                        }) { "Kick?" }
+                        view(style = confirm_yes_style.clone()) {
+                            text(style = small_label_style.clone()) { "Yes" }
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                let sid = server_id;
+                                let uid = member_id;
+                                let err = error;
+                                let members = members;
+                                runtime_core::driver::spawn_async(async move {
+                                    match crate::moderation::kick_member(sid, uid).await {
+                                        Ok(()) => {
+                                            kick.set(None);
+                                            if let Ok(fresh) = crate::moderation::list_members(sid).await {
+                                                members.set(fresh);
+                                            }
+                                        }
+                                        Err(msg) => {
+                                            kick.set(None);
+                                            err.set(msg);
+                                        }
+                                    }
+                                });
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                        view(style = confirm_no_style.clone()) {
+                            text(style = small_label_style.clone()) { "No" }
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                kick.set(None);
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                    }
+                } else if !is_self {
+                    view(style = kick_btn_style.clone()) {
+                        text(style = kick_label_style.clone()) { "Kick" }
+                    }
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            kick.set(Some(member_id));
+                        }
+                        TouchResponse::CONSUMED
+                    })
+                }
+            }
+
+            // Inline backend error for this row (the most recent one). Shown
+            // only when a kick/role-change was rejected — the backend's own
+            // message, no client-side permission logic.
+            if !error.get().is_empty() {
+                text(style = error_style.clone()) { move || error.get().clone() }
+            }
+        };
+        rows.push(row);
+    }
+
+    ui! {
+        view(style = StyleRules {
+            width: Some(px(260.0)),
+            background: Some(col(BG_SIDEBAR)),
+            border_left_width: Some(border_width(1.0)),
+            border_left_color: Some(col(BORDER)),
+            flex_direction: Some(FlexDirection::Column),
+            overflow: Some(Overflow::Hidden),
+            ..Default::default()
+        }) {
+            text(style = header_style) {
+                format!("MEMBERS — {}", roster.len())
+            }
+            scroll_view(style = StyleRules {
+                flex_grow: Some(grow(1.0)),
+                ..Default::default()
+            }) { rows }
+        }
+    }
+}
+
 /// Case-insensitive prefix filter on the roster for the autocomplete dropdown.
 fn filter_members(q: &str, members: Vec<String>) -> Vec<String> {
     let q = q.to_lowercase();
@@ -1556,6 +1918,18 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // exactly the `live_revision` idiom used for the message buffer.
     let live_mentioned: Rc<RefCell<HashMap<i64, i64>>> = Rc::new(RefCell::new(HashMap::new()));
     let live_mention_rev: Signal<u32> = signal(0);
+
+    // Live member-roster state for the moderation panel (LIVE mode only). The
+    // roster is fetched via the new backend `list_members` endpoint when a live
+    // server is selected (see the rail on_touch below) and re-fetched after a
+    // successful kick/role-change. `live_kick_confirm` is the two-step inline
+    // confirm for a kick: None = no pending kick, Some(user_id) = "are you
+    // sure?" is shown for that member's row. `live_member_error` surfaces a
+    // backend authorization error (e.g. "you need moderator privileges") as
+    // inline text rather than a modal.
+    let live_members: Signal<Vec<crate::moderation::MemberInfo>> = signal(Vec::new());
+    let live_kick_confirm: Signal<Option<i64>> = signal(None);
+    let live_member_error: Signal<String> = signal(String::new());
 
     // Realtime gateway: the signed session token authenticates the connect
     // (the backend verifies it). It rides the connect URL's `?args=` query —
@@ -1905,6 +2279,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 let active_live = active_live_server.clone();
                 let live_ch = live_channels.clone();
                 let live_ch_sel = active_live_channel.clone();
+                let live_mbrs = live_members.clone();
+                let live_mbr_err = live_member_error.clone();
+                let live_kick = live_kick_confirm.clone();
                 // Static base for the squircle; the reactive closure below only
                 // overrides the background so the tapped row lights up without
                 // a full rebuild.
@@ -1930,11 +2307,24 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         if ev.phase == TouchPhase::Ended {
                             active_live.set(Some(sid));
                             live_ch_sel.set(None);
+                            // Clear any stale moderation state from a previous
+                            // live server (kick confirm + error text).
+                            live_kick.set(None);
+                            live_mbr_err.set(String::new());
+                            live_mbrs.set(Vec::new());
                             runtime_core::driver::spawn_async(async move {
+                                // Channels and the member roster are independent
+                                // `#[server]` RPCs; fetch both in one spawn so
+                                // the live view is populated together.
                                 if let Ok(channels) =
                                     crate::servers::list_channels(sid).await
                                 {
                                     live_ch.set(channels);
+                                }
+                                if let Ok(members) =
+                                    crate::moderation::list_members(sid).await
+                                {
+                                    live_mbrs.set(members);
                                 }
                             });
                         }
