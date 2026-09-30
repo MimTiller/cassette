@@ -67,6 +67,10 @@ pub enum WsClientMsg {
     History { channel_id: i64 },
     /// The client is typing in the channel.
     Typing { channel_id: i64 },
+    /// Edit the content of one of the client's own messages.
+    EditMessage { message_id: i64, content: String },
+    /// Delete one of the client's own messages.
+    DeleteMessage { message_id: i64 },
 }
 
 /// Outbound frames the server sends.
@@ -104,6 +108,12 @@ pub enum WsServerMsg {
     /// A channel member started typing. The client shows this transiently
     /// (a few seconds) and does not need an explicit stop event.
     Typing { channel_id: i64, user_id: i64 },
+    /// A channel message was edited. The client replaces the stored content
+    /// (and its timestamp) for `message_id` with the new values.
+    MessageEdited { message_id: i64, channel_id: i64, content: String, edited_at: i64 },
+    /// A channel message was deleted. The client drops its stored entry for
+    /// `message_id`.
+    MessageDeleted { message_id: i64, channel_id: i64 },
     /// A gateway error for a specific operation.
     Error { reason: String },
 }
@@ -230,6 +240,25 @@ pub async fn message_gateway(
                     &audience,
                     &WsServerMsg::Typing { channel_id, user_id },
                 );
+            }
+            WsClientMsg::EditMessage {
+                message_id,
+                content,
+            } => {
+                // Success fans out through the hub (echo to the editor
+                // included); only failures are answered on this socket.
+                if let Err(reason) =
+                    crate::realtime::edit_channel_message(&db, user_id, message_id, &content)
+                {
+                    let _ = ch.send(WsServerMsg::Error { reason }).await;
+                }
+            }
+            WsClientMsg::DeleteMessage { message_id } => {
+                if let Err(reason) =
+                    crate::realtime::delete_channel_message(&db, user_id, message_id)
+                {
+                    let _ = ch.send(WsServerMsg::Error { reason }).await;
+                }
             }
         }
     }
