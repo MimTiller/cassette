@@ -56,6 +56,7 @@ use crate::edited_label::edited_label;
 use crate::notification_settings::NotificationSettings;
 use crate::profile_settings::profile_settings;
 use crate::style_helpers::{col, pct, px};
+use crate::join_modal::JoinServerModal;
 use crate::typing_indicator::TypingIndicator;
 
 // Robot test ids: stable, `'static` strings the automation robot
@@ -2750,8 +2751,38 @@ fn app_shell(authed: Signal<bool>) -> Element {
         },
     );
 
+    // --- "Join a Server" (redeem an invite code) ---------------------------
+    // Entry point is the rail's green PLUS circle (Discord's Add-a-Server
+    // affordance). The modal's state lives here in `app_shell` scope so it
+    // survives rail rebuilds; `join_open` gates the overlay, `join_code` is the
+    // typed code, `join_result`/`join_error`/`join_busy` are the three state
+    // signals the modal switches on (the `invite_modal.rs` ownership idiom).
+    // On a successful redeem the backend membership is persisted, so we
+    // re-fetch `live_servers` (the same RPC the rail's live section already
+    // uses) to make the newly-joined server appear without a reload.
+    let join_open: Signal<bool> = signal(false);
+    let join_code: Signal<String> = signal(String::new());
+    let join_result: Signal<Option<discord_server::invites::RedeemResult>> = signal(None);
+    let join_error: Signal<String> = signal(String::new());
+    let join_busy: Signal<bool> = signal(false);
+    // The `#[component]` `name = expr` call form is only parsed inside `ui!`,
+    // so the modal is wrapped in a `view` (the wrapper is a positioned
+    // ancestor for the full-screen overlay, like the Profile/notif regions).
+    let join_el = ui! {
+        view {
+            JoinServerModal(
+                open = join_open,
+                code = join_code,
+                result = join_result,
+                error = join_error,
+                busy = join_busy,
+                servers = live_servers,
+            )
+        }
+    };
+
     // Bottom rail actions: Discord's Add-a-Server and Explore circles,
-    // rendered below the live-servers section. Both are no-op stubs for now.
+    // rendered below the live-servers section.
     let rail_actions = {
         let circle_style = StyleRules {
             width: Some(px(48.0)),
@@ -2765,12 +2796,25 @@ fn app_shell(authed: Signal<bool>) -> Element {
             border_bottom_right_radius: Some(px(24.0)),
             ..Default::default()
         };
+        let plus_open = join_open.clone();
+        let plus_code = join_code.clone();
+        let plus_result = join_result.clone();
+        let plus_error = join_error.clone();
+        let plus_busy = join_busy.clone();
         ui! {
-            view(style = circle_style.clone()) {
+            view(style = circle_style.clone(), test_id = "rail-join-server") {
                 icon(PLUS).color(|| Color::from("#23a55a")).size(20.0)
             }
-            .on_touch(|_ev| TouchResponse::CONSUMED)
-            // TODO: create-server flow
+            // Add-a-Server: open the join modal. Reset the per-open state so a
+            // re-open always starts fresh (the same reset the caller owns).
+            .on_touch(move |_ev| {
+                plus_code.set(String::new());
+                plus_result.set(None);
+                plus_error.set(String::new());
+                plus_busy.set(false);
+                plus_open.set(true);
+                TouchResponse::CONSUMED
+            })
             view(style = circle_style) {
                 icon(COMPASS).color(|| Color::from(TEXT_MUTED)).size(20.0)
             }
@@ -4232,6 +4276,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // Painted last so it sits on top of everything when open.
             profile_region
             notif_region
+            // "Join a Server" overlay: full-screen, painted last so it sits on
+            // top when open (collapses to zero size when closed).
+            join_el
         }
     }
 }

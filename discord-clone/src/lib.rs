@@ -150,6 +150,8 @@ mod channel_topic_banner;
 mod spoiler_tag;
 #[path = "components/invite_link_display.rs"]
 mod invite_link_display;
+#[path = "components/join_modal.rs"]
+mod join_modal;
 #[path = "components/voice_join_button.rs"]
 mod voice_join_button;
 #[path = "components/server_template_card.rs"]
