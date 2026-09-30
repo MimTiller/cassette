@@ -32,10 +32,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use runtime_core::{
-    AlignItems, AlignSelf, Color, Element, FlexDirection, FlexWrap, FontWeight, JustifyContent,
-    KeyEvent, KeyOutcome, Overflow, Position, Signal, StyleRules, TextAlign, TextTransform,
-    Tokenized, TouchPhase, TouchResponse,
-    signal, switch, ui,
+    after_ms_detached, AlignItems, AlignSelf, Color, Element, FlexDirection, FlexWrap,
+    FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow, Position, Signal, StyleRules,
+    TextAlign, TextTransform, Tokenized, TouchPhase, TouchResponse, signal, switch, ui,
 };
 use runtime_core::icon;
 use icons_lucide::{
@@ -1919,6 +1918,22 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let live_mentioned: Rc<RefCell<HashMap<i64, i64>>> = Rc::new(RefCell::new(HashMap::new()));
     let live_mention_rev: Signal<u32> = signal(0);
 
+    // Live typing-indicator state, keyed per live channel: the user most
+    // recently seen typing in that channel, as `(user_id, display_label, gen)`.
+    // `gen` is bumped on every inbound `Typing` frame for the channel; it is the
+    // guard that lets a 5-second auto-clear `after_ms_detached` task
+    // self-cancel — it fires only if the captured `gen` still matches the map's
+    // current entry for that channel, so a newer frame (which bumps `gen`)
+    // turns the older, still-pending clear into a no-op instead of wiping a
+    // fresh indicator. Only one user per channel is tracked — the latest typer
+    // — which matches a single "… is typing…" line (the server fans out every
+    // member's typing to the whole channel audience). Mutating the `Rc` does
+    // not trigger reactivity, so `live_typing_rev` is bumped on every change
+    // and folded into the typing row's `switch` key (the `live_revision` idiom).
+    let live_typing: Rc<RefCell<HashMap<i64, (i64, String, i64)>>> =
+        Rc::new(RefCell::new(HashMap::new()));
+    let live_typing_rev: Signal<u32> = signal(0);
+
     // Live member-roster state for the moderation panel (LIVE mode only). The
     // roster is fetched via the new backend `list_members` endpoint when a live
     // server is selected (see the rail on_touch below) and re-fetched after a
@@ -2004,6 +2019,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let mention_rev = live_mention_rev.clone();
     let open_chan = active_live_channel.clone();
     let my_id = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+    let typing_buf = live_typing.clone();
+    let typing_rev = live_typing_rev.clone();
     let gateway_incoming_effect = switch(
         move || gateway.incoming().get(),
         move |frame: &Option<discord_server::server_settings::WsServerMsg>| {
@@ -2036,6 +2053,51 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     *mentioned_buf.borrow_mut().entry(*channel_id).or_insert(0) += 1;
                     mention_rev.set(mention_rev.get() + 1);
                 }
+            }
+            // Typing frame from another member of the channel: record who is
+            // typing in `live_typing` and bump `live_typing_rev` so the
+            // typing_row `switch` re-renders. The auto-clear task self-cancels
+            // on a newer frame (generation guard) — a fresh frame restarts the
+            // 5-second window without clearing the still-visible indicator.
+            if let Some(discord_server::server_settings::WsServerMsg::Typing {
+                channel_id,
+                user_id,
+            }) = frame
+            {
+                // `frame` is a `&WsServerMsg` borrowed for this one call, so
+                // copy the fields out to owned `i64`s — the auto-clear closure
+                // below outlives `frame` and cannot borrow into it.
+                let channel_id = *channel_id;
+                let user_id = *user_id;
+                let label = format!("user {}", user_id);
+                let new_gen = {
+                    let mut map = typing_buf.borrow_mut();
+                    let entry = map
+                        .entry(channel_id)
+                        .or_insert((user_id, label.clone(), 0));
+                    entry.0 = user_id;
+                    entry.1 = label;
+                    entry.2 += 1;
+                    entry.2
+                };
+                typing_rev.set(typing_rev.get() + 1);
+                // Schedule a one-shot auto-clear. The closure captures CLONES
+                // of the shared handles (not the outer `Fn` closure's own
+                // `typing_buf`/`typing_rev`, which it must keep using on every
+                // frame). After 5 s it clears the entry only if no newer Typing
+                // frame has arrived (the stored `gen` still equals `new_gen`).
+                let clear_buf = typing_buf.clone();
+                let clear_rev = typing_rev.clone();
+                after_ms_detached(5_000, move || {
+                    let should_clear = {
+                        let map = clear_buf.borrow();
+                        map.get(&channel_id).map(|e| e.2 == new_gen).unwrap_or(false)
+                    };
+                    if should_clear {
+                        clear_buf.borrow_mut().remove(&channel_id);
+                        clear_rev.set(clear_rev.get() + 1);
+                    }
+                });
             }
             ui! {
                 view(style = StyleRules {
@@ -2957,16 +3019,56 @@ fn app_shell(authed: Signal<bool>) -> Element {
         },
     );
 
-    // Typing indicator row — sits directly above the composer. Mocked to fire
-    // only in #general (server 1, channel 101), where it reads "dyno is
-    // typing...". Other channels render an empty row with the exact same
-    // line-box height as the indicator (identical paddings + 12px font) so the
-    // composer's y-offset never jumps on channel switch. Keyed on
-    // (server, channel) exactly like the header / message-list switches.
+    // Typing indicator row — sits directly above the composer. In live mode
+    // (a real backend channel is open) it renders the latest typer in
+    // `live_typing`, keyed on `(active_live_channel, live_typing_rev)`. The
+    // mock fallback (server 1, channel 101 = #general, reads "dyno is
+    // typing...") is kept for the mock path. Both branches render a row with
+    // the same line-box height (4/4/16/16 paddings + 12px font) so the
+    // composer's y-offset never jumps on channel switch.
+    let typing_live_chan = active_live_channel.clone();
+    let typing_rev_for_key = live_typing_rev.clone();
+    let typing_map_for_key = live_typing.clone();
     let typing_row = switch(
-        move || (active_server.get(), active_channel.get()),
-        move |(server_id, channel_id): &(u32, u32)| {
-            if *server_id == 1 && *channel_id == 101 {
+        move || {
+            let live = typing_live_chan.get();
+            let (server, channel) = (active_server.get(), active_channel.get());
+            // The key includes the live revision so the row re-renders when a
+            // Typing frame arrives or the auto-clear fires. The mock key is
+            // `(server, channel)` (unchanged from the previous shape) — for
+            // live channels both are irrelevant (the arm below keys on the
+            // live channel + rev).
+            (server, channel, live, typing_rev_for_key.get())
+        },
+        move |(server_id, channel_id, live_chan, _rev): &(u32, u32, Option<i64>, u32)| {
+            // Live mode: show the typer from the gateway, or the empty
+            // spacer if nobody is typing right now.
+            if let Some(live_id) = *live_chan {
+                let label = {
+                    let map = typing_map_for_key.borrow();
+                    map.get(&live_id).map(|e| e.1.clone())
+                };
+                if let Some(label) = label {
+                    ui! { TypingIndicator(name = label.clone()) }
+                } else {
+                    ui! {
+                        view(style = StyleRules {
+                            flex_direction: Some(FlexDirection::Row),
+                            align_items: Some(AlignItems::Center),
+                            padding_top: Some(px(4.0)),
+                            padding_bottom: Some(px(4.0)),
+                            padding_left: Some(px(16.0)),
+                            padding_right: Some(px(16.0)),
+                            ..Default::default()
+                        }) {
+                            text(style = StyleRules {
+                                font_size: Some(px(12.0)),
+                                ..Default::default()
+                            }) { "".to_string() }
+                        }
+                    }
+                }
+            } else if *server_id == 1 && *channel_id == 101 {
                 // `TypingIndicator`'s own root view already carries the row
                 // paddings (4/4/16/16) + a 12px line, so it is mounted bare —
                 // no wrapping view (that would double the padding). A `ui!`
@@ -3153,8 +3255,46 @@ fn app_shell(authed: Signal<bool>) -> Element {
         ac_sugg.set(list);
     });
     let recompute2 = recompute.clone();
-    // Update on every keystroke: recompute from the (already-updated) value.
+    // Throttle for the outbound Typing frame: channel_id -> epoch-millis of the
+    // last Typing frame sent while typing in that channel. At most one per ~3 s
+    // per channel, so a fast typer doesn't flood the gateway. Plain
+    // `Rc<RefCell<HashMap>>` — no reactivity needed (it only gates the side
+    // effect below, never renders anything).
+    let typing_last_sent_h: Rc<RefCell<HashMap<i64, i64>>> =
+        Rc::new(RefCell::new(HashMap::new()));
+    let typing_chan_h = active_live_channel.clone();
+    let typing_gateway_h = gateway; // `UseSocket` is `Copy`
+    // Update on every keystroke: recompute from the (already-updated) value,
+    // and — in live mode with actual text — emit a throttled Typing frame so
+    // other members' clients see "… is typing…". The server fans that out to
+    // the channel audience (minus the sender), so this is the client half of
+    // the typing indicator; the inbound half is the `Typing` arm in the
+    // gateway effect above.
     let update_on_type = move |s: String| {
+        // Throttled outbound Typing frame: at most one per channel per ~3 s,
+        // and only while there is actual text. Evaluated BEFORE
+        // `composer_sig.set(s)` because `set` moves `s` — the check only borrows
+        // it via `trim()`. The server fans the frame out to the channel
+        // audience (minus the sender), so this is the client half; the inbound
+        // half is the `Typing` arm in the gateway effect above.
+        let open_live = typing_chan_h.get();
+        if !s.trim().is_empty() {
+            if let Some(cid) = open_live {
+                let now_ms = runtime_shared::time::epoch_millis();
+                let too_soon = typing_last_sent_h
+                    .borrow()
+                    .get(&cid)
+                    .map(|last| now_ms - *last < 3_000)
+                    .unwrap_or(false);
+                if !too_soon {
+                    typing_gateway_h
+                        .send(discord_server::server_settings::WsClientMsg::Typing {
+                            channel_id: cid,
+                        });
+                    typing_last_sent_h.borrow_mut().insert(cid, now_ms);
+                }
+            }
+        }
         composer_sig.set(s);
         (recompute2)();
     };
