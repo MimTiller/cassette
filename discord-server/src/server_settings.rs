@@ -65,6 +65,8 @@ pub enum WsClientMsg {
     Send { channel_id: i64, content: String },
     /// Request the recent message history for a channel.
     History { channel_id: i64 },
+    /// The client is typing in the channel.
+    Typing { channel_id: i64 },
 }
 
 /// Outbound frames the server sends.
@@ -99,6 +101,9 @@ pub enum WsServerMsg {
     DmMessage { message_id: i64, dm_id: i64, author_id: i64, author_username: String, content: String, created_at: i64 },
     /// A presence status change for a user: 'online' / 'away' / 'offline'.
     Presence { user_id: i64, status: String },
+    /// A channel member started typing. The client shows this transiently
+    /// (a few seconds) and does not need an explicit stop event.
+    Typing { channel_id: i64, user_id: i64 },
     /// A gateway error for a specific operation.
     Error { reason: String },
 }
@@ -129,7 +134,7 @@ pub async fn message_gateway(
     mut ch: server::Socket<WsClientMsg, WsServerMsg>,
     token: String,
 ) -> Result<(), ServerError> {
-    use crate::realtime::{announce_presence, history_for, hub, post_channel_message};
+    use crate::realtime::{announce_presence, history_for, hub, post_channel_message, server_audience_for_channel};
 
     let db = db_from_state()?;
     let user_id = crate::session::verify_token(&token)
@@ -219,6 +224,13 @@ pub async fn message_gateway(
                         .await;
                 }
             },
+            WsClientMsg::Typing { channel_id } => {
+                let audience = server_audience_for_channel(&db, channel_id, user_id);
+                hub.publish(
+                    &audience,
+                    &WsServerMsg::Typing { channel_id, user_id },
+                );
+            }
         }
     }
     // Disconnect: the socket has closed (client went away, transport died, or

@@ -145,6 +145,21 @@ pub fn server_audience(db: &Db, server_id: i64) -> Vec<i64> {
         .collect()
 }
 
+/// Everyone who can see channel `channel_id` (all members of the channel's
+/// server), excluding `exclude_user_id` (the sender — they don't need their
+/// own echo). Returns an empty audience when the channel doesn't exist or
+/// the server has no other members.
+pub fn server_audience_for_channel(db: &Db, channel_id: i64, exclude_user_id: i64) -> Vec<i64> {
+    let Some((_id, server_id, _name, _kind, _pos, _parent)) = db.channel_full(channel_id)
+    else {
+        return Vec::new();
+    };
+    server_audience(db, server_id)
+        .into_iter()
+        .filter(|&id| id != exclude_user_id)
+        .collect()
+}
+
 /// Everyone who should hear about `user_id`'s presence: the user themself and
 /// every member of every server they belong to.
 pub fn presence_audience(db: &Db, user_id: i64) -> Vec<i64> {
