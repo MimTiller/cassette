@@ -114,6 +114,14 @@ const BADGE: &str = "#f23f43";
 /// than the channel list above it.
 const USER_BAR: &str = "#232428";
 
+/// One buffered live (gateway-fed) message: the server's wire `message_id`,
+/// then `author_id` + `author_label`, `content`, `created_at_secs`, and
+/// `edited_at` (the `MessageEdited` timestamp in seconds, `None` until edited).
+/// The display fields mirror the old 4-tuple; `message_id` + `edited_at` are
+/// what the per-row edit/delete affordance and the "(edited)" marker need on
+/// top of them (the mock path carries no wire id, so it renders `None`).
+type LiveMsg = (i64, i64, String, String, i64, Option<i64>);
+
 fn grow(v: f32) -> Tokenized<f32> {
     Tokenized::Literal(v)
 }
@@ -187,8 +195,10 @@ fn format_when(unix_secs: i64, now_secs: i64) -> String {
 /// One message row: avatar chip, then author + "Today at …" line, then body.
 /// Takes `&str`s so it serves both the static seed data and runtime-authored
 /// messages (the strings are copied into the node, so the returned `Element`
-/// is self-contained).
-fn message_row(author: &str, color: &str, body: &str, when: String) -> Element {
+/// is self-contained). `edited` gates the "(edited)" marker: live rows pass
+/// the message's real `edited_at.is_some()`; the mock path passes `true` to
+/// preserve its previous (always-on placeholder) rendering.
+fn message_row(author: &str, color: &str, body: &str, when: String, edited: bool) -> Element {
     let row_style = StyleRules {
         padding_top: Some(px(8.0)),
         padding_bottom: Some(px(2.0)),
@@ -263,8 +273,232 @@ fn message_row(author: &str, color: &str, body: &str, when: String) -> Element {
                 }
                 text(style = body_style) { body.to_string() }
                 ReadReceiptIndicator()
-                edited_label()
+                if edited { edited_label() }
                 idle_timer_badge()
+            }
+        }
+    }
+}
+
+/// One LIVE (gateway-fed) message row: the `message_row` content, plus — for
+/// the signed-in user's own messages — a compact Edit / Delete affordance and
+/// the inline edit input. The mock path has no wire `message_id`, so it never
+/// reaches this function and renders identically to before.
+///
+/// `live_editing` / `live_delete_confirm` / `live_edit_text` are
+/// `app_shell`-scope signals that drive per-row edit/delete mode; `gateway` is
+/// a `Copy` `UseSocket` handle for sending `EditMessage` / `DeleteMessage`.
+/// The row rebuilds when its state changes because the message-list `switch`'s
+/// key folds these signals in (see `sent_messages`).
+fn live_edit_row(
+    message_id: i64,
+    author: &str,
+    color: &str,
+    body: &str,
+    when: String,
+    edited: bool,
+    is_mine: bool,
+    live_editing: Signal<Option<i64>>,
+    live_edit_text: Signal<String>,
+    live_delete_confirm: Signal<Option<i64>>,
+    gateway: server::UseSocket<
+        discord_server::server_settings::WsServerMsg,
+        discord_server::server_settings::WsClientMsg,
+    >,
+) -> Element {
+    // The base row is identical to the mock path except it carries the real
+    // `(edited)` marker (gated on the message's `edited_at` state).
+    let base = message_row(author, color, body, when, edited);
+    // Only one's own messages are editable/deletable — the backend enforces the
+    // same, but the affordance is hidden for other authors' rows.
+    if !is_mine {
+        return base;
+    }
+    let mid = message_id;
+    let editing_sig = live_editing;
+    let edit_text = live_edit_text;
+    let confirm_sig = live_delete_confirm;
+    // --- inline edit input (reuses the composer's `text_input` idiom) -------
+    // `text_input` takes a reactive `Signal<String>` for `value`, so the draft
+    // binds straight to `live_edit_text`. Confirmation is the explicit Save
+    // button (Enter isn't wired here to avoid surprising the composer's Enter
+    // handler); the input is seeded with the current content on Save-cancel
+    // paths by the list rebuild.
+    let edit_input = {
+        let input_style = StyleRules {
+            font_size: Some(px(15.0)),
+            color: Some(col(TEXT)),
+            background: Some(col(COMPOSER)),
+            padding_top: Some(px(6.0)),
+            padding_bottom: Some(px(6.0)),
+            padding_left: Some(px(10.0)),
+            padding_right: Some(px(10.0)),
+            border_top_left_radius: Some(px(8.0)),
+            border_top_right_radius: Some(px(8.0)),
+            border_bottom_left_radius: Some(px(8.0)),
+            border_bottom_right_radius: Some(px(8.0)),
+            flex_grow: Some(grow(1.0)),
+            ..Default::default()
+        };
+        ui! {
+            text_input(value = live_edit_text, placeholder = "Edit message", style = input_style, test_id = "edit-input")
+        }
+    };
+    // The current message content, captured at row-build time so the Edit
+    // button can seed the draft with what the row currently shows. Defined
+    // before `small_btn` so the closure can clone it (a per-call clone, not a
+    // move — `small_btn` is invoked once per button).
+    let edit_seed = body.to_string();
+    // --- per-row control buttons ------------------------------------------
+    // Compact text pills matching the moderation feature's inline control set
+    // (role / kick buttons). Each button carries a `MsgAction` the shared
+    // `on_touch` handler matches on — the action is owned per-button so the
+    // closure captures nothing borrowed (avoids the `&str`-lifetime trap of a
+    // label-matching closure).
+    #[derive(Clone, Copy, PartialEq)]
+    enum MsgAction {
+        Edit,
+        Delete,
+        Save,
+        Cancel,
+        Confirm,
+        No,
+    }
+    let small_btn = |action: MsgAction, label: &str, bg: &'static str, test_id: &'static str| -> Element {
+        let s = StyleRules {
+            padding_top: Some(px(4.0)),
+            padding_bottom: Some(px(4.0)),
+            padding_left: Some(px(10.0)),
+            padding_right: Some(px(10.0)),
+            background: Some(col(bg)),
+            border_top_left_radius: Some(px(8.0)),
+            border_top_right_radius: Some(px(8.0)),
+            border_bottom_left_radius: Some(px(8.0)),
+            border_bottom_right_radius: Some(px(8.0)),
+            flex_shrink: Some(grow(0.0)),
+            font_size: Some(px(12.0)),
+            font_weight: Some(FontWeight::SemiBold),
+            color: Some(col(TEXT)),
+            ..Default::default()
+        };
+        let label_style = StyleRules {
+            font_size: Some(px(12.0)),
+            font_weight: Some(FontWeight::SemiBold),
+            color: Some(col(TEXT)),
+            ..Default::default()
+        };
+        // Per-button copy of the seed: `touch` is `move`, so it owns the value
+        // it captures. Cloning here (inside `small_btn`) rather than letting
+        // `touch` move the single `edit_seed` keeps `edit_seed` borrowable
+        // across the multiple `small_btn` calls. Only the Edit button reads it;
+        // the clone is cheap (a short message body).
+        let seed = edit_seed.clone();
+        let touch = move |ev: &runtime_shared::TouchEvent| {
+            if ev.phase != TouchPhase::Ended {
+                return TouchResponse::CONSUMED;
+            }
+            match action {
+                MsgAction::Edit => {
+                    // Enter edit mode: seed the draft with the current content
+                    // and flag this message id. The list rebuild (keyed on
+                    // `live_editing`) then mounts the input for this row.
+                    editing_sig.set(Some(mid));
+                    edit_text.set(seed.clone());
+                }
+                MsgAction::Delete => confirm_sig.set(Some(mid)),
+                MsgAction::Save => {
+                    let content = edit_text.get();
+                    if !content.trim().is_empty() {
+                        gateway.send(
+                            discord_server::server_settings::WsClientMsg::EditMessage {
+                                message_id: mid,
+                                content,
+                            },
+                        );
+                    }
+                    editing_sig.set(None);
+                    edit_text.set(String::new());
+                }
+                MsgAction::Cancel => {
+                    editing_sig.set(None);
+                    edit_text.set(String::new());
+                }
+                MsgAction::Confirm => {
+                    gateway.send(discord_server::server_settings::WsClientMsg::DeleteMessage {
+                        message_id: mid,
+                    });
+                    confirm_sig.set(None);
+                }
+                MsgAction::No => confirm_sig.set(None),
+            }
+            TouchResponse::CONSUMED
+        };
+        ui! {
+            view(style = s) {
+                text(style = label_style) { label }
+            }
+            .on_touch(touch)
+            .test_id(test_id)
+        }
+    };
+    // The three states are mutually exclusive (edit mode and delete-confirm
+    // are gated by separate signals, and the UI never sets both for one row).
+    // Render the matching control set beneath the base row — in the idle
+    // case this IS the Edit/Delete affordance, in the other two it is the
+    // edit input or the delete-confirm UI. This one-slot replacement is the
+    // moderation-feature precedent (inline control set swapped in for that
+    // row only).
+    let edit_mode = editing_sig.get() == Some(mid);
+    let delete_mode = confirm_sig.get() == Some(mid);
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Column),
+            gap: Some(px(6.0)),
+            ..Default::default()
+        }) {
+            { base }
+            if edit_mode {
+                view(style = StyleRules {
+                    flex_direction: Some(FlexDirection::Column),
+                    gap: Some(px(4.0)),
+                    ..Default::default()
+                }) {
+                    { edit_input }
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Row),
+                        gap: Some(px(6.0)),
+                        ..Default::default()
+                    }) {
+                        { small_btn(MsgAction::Save, "Save", BUTTON, "save-edit") }
+                        { small_btn(MsgAction::Cancel, "Cancel", COMPOSER, "cancel-edit") }
+                        { small_btn(MsgAction::Delete, "Delete", BADGE, "row-delete") }
+                    }
+                }
+            } else if delete_mode {
+                view(style = StyleRules {
+                    flex_direction: Some(FlexDirection::Row),
+                    align_items: Some(AlignItems::Center),
+                    gap: Some(px(6.0)),
+                    ..Default::default()
+                }) {
+                    text(style = StyleRules {
+                        font_size: Some(px(12.0)),
+                        color: Some(col(TEXT_MUTED)),
+                        flex_grow: Some(grow(1.0)),
+                        ..Default::default()
+                    }) { "Delete this message?".to_string() }
+                    { small_btn(MsgAction::Confirm, "Confirm", BADGE, "confirm-delete") }
+                    { small_btn(MsgAction::No, "No", COMPOSER, "cancel-delete") }
+                }
+            } else {
+                view(style = StyleRules {
+                    flex_direction: Some(FlexDirection::Row),
+                    gap: Some(px(6.0)),
+                    ..Default::default()
+                }) {
+                    { small_btn(MsgAction::Edit, "Edit", COMPOSER, "row-edit") }
+                    { small_btn(MsgAction::Delete, "Delete", COMPOSER, "row-delete-idle") }
+                }
             }
         }
     }
@@ -1425,12 +1659,12 @@ fn mention_active_query(text: &str) -> Option<String> {
 /// to the signed-in user's own label so `@` still has a match.
 fn live_member_roster(
     live_channels: &[crate::servers::ChannelSummary],
-    live_messages: &HashMap<i64, Vec<(i64, String, String, i64)>>,
+    live_messages: &HashMap<i64, Vec<LiveMsg>>,
 ) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
     for c in live_channels {
         if let Some(msgs) = live_messages.get(&c.id) {
-            for (_aid, author, _body, _ts) in msgs {
+            for (_mid, _aid, author, _body, _ts, _edited) in msgs {
                 if !names.contains(author) {
                     names.push(author.clone());
                 }
@@ -1857,14 +2091,31 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // --- live/real message state -----------------------------------------
     // Separate from the mock `sent`/`revision` above: when `active_live_channel`
     // is `Some(id)` the message list reads from here instead of the mock path.
-    // channel_id -> Vec<(author_id, author_label, content, created_at_secs)>,
-    // oldest-first (the gateway's History replies arrive oldest-first, and new
-    // frames append in order). Mutating the Vec does NOT trigger reactivity, so
-    // `live_revision` is bumped on every frame the buffer absorbs and folded
-    // into the list `switch`'s key — exactly the mock `revision` idiom.
-    let live_messages: Rc<RefCell<HashMap<i64, Vec<(i64, String, String, i64)>>>> =
+    // channel_id -> Vec<LiveMsg>, oldest-first (the gateway's History replies
+    // arrive oldest-first, and new frames append in order). Mutating the Vec
+    // does NOT trigger reactivity, so `live_revision` is bumped on every frame
+    // the buffer absorbs and folded into the list `switch`'s key — exactly the
+    // mock `revision` idiom.
+    let live_messages: Rc<RefCell<HashMap<i64, Vec<LiveMsg>>>> =
         Rc::new(RefCell::new(HashMap::new()));
     let live_revision: Signal<u32> = signal(0);
+    // Per-message edit mode: the wire `message_id` whose row currently shows
+    // the inline edit input (None = none). One at a time — switching rows
+    // just overwrites it, and the list rebuild (keyed on `live_revision` and
+    // this signal's value) tears down the old input and mounts the new one.
+    // It must be a top-level `Signal` (not a `Rc<RefCell>`) because the
+    // `text_input value = …` prop needs a reactive `Signal<String>`.
+    let live_editing: Signal<Option<i64>> = signal(None);
+    // The draft text for the row being edited. A top-level `Signal` because the
+    // inline `text_input value = …` prop needs a reactive handle; it is seeded
+    // with the row's content the moment a row enters edit mode (below) and read
+    // back on confirm. Reset to `""` after a confirmed edit so the next edit
+    // starts from the row's (now-updated) content, not a stale draft.
+    let live_edit_text: Signal<String> = signal(String::new());
+    // Per-message delete confirm: the wire `message_id` whose row is showing
+    // "are you sure?" (None = none). One step, mirroring the composer's
+    // "simple confirm" ask — no two-step kick-style confirm.
+    let live_delete_confirm: Signal<Option<i64>> = signal(None);
     // Channel-category collapse state: one signal per category id, all
     // starting expanded (false). Held in an Rc<HashMap> so both the sidebar
     // `switch` key and its render loop can reach it. The key reads every
@@ -2025,21 +2276,36 @@ fn app_shell(authed: Signal<bool>) -> Element {
         move || gateway.incoming().get(),
         move |frame: &Option<discord_server::server_settings::WsServerMsg>| {
             if let Some(discord_server::server_settings::WsServerMsg::Message {
+                message_id,
                 channel_id,
                 author_id,
                 content,
                 created_at,
+                edited_at,
                 new,
                 mentioned_user_ids,
                 ..
             }) = frame
             {
                 let label = format!("user {}", author_id);
+                // Push the full 6-tuple: the wire `message_id` + the optional
+                // `edited_at` (epoch millis -> secs, like `created_at`) ride
+                // along so the row's edit affordance and "(edited)" marker can
+                // find the message later. History frames (`new: false`) may
+                // carry a non-None `edited_at` for messages already edited
+                // before this session, so store it as-is.
                 live_buf
                     .borrow_mut()
                     .entry(*channel_id)
                     .or_default()
-                    .push((*author_id, label, content.clone(), *created_at / 1000));
+                    .push((
+                        *message_id,
+                        *author_id,
+                        label,
+                        content.clone(),
+                        *created_at / 1000,
+                        edited_at.map(|ms| ms / 1000),
+                    ));
                 live_rev.set(live_rev.get() + 1);
                 // Live @mention indicator: a freshly posted (`new: true`) message
                 // that names the signed-in user, on a channel that is NOT the one
@@ -2052,6 +2318,81 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 {
                     *mentioned_buf.borrow_mut().entry(*channel_id).or_insert(0) += 1;
                     mention_rev.set(mention_rev.get() + 1);
+                }
+            }
+            // A channel message the signed-in user edited: replace the stored
+            // content + `edited_at` for `message_id` so the row shows the new
+            // text and its "(edited)" marker (the marker reads `edited_at` is
+            // `Some`). Mutating the buffer alone would not rebuild the list, so
+            // bump `live_revision` (the list `switch`'s key) to re-render.
+            if let Some(discord_server::server_settings::WsServerMsg::MessageEdited {
+                message_id,
+                channel_id,
+                content,
+                edited_at,
+            }) = frame
+            {
+                let channel_id = *channel_id;
+                let message_id = *message_id;
+                let edited_secs = *edited_at / 1000;
+                let changed = live_buf
+                    .borrow_mut()
+                    .get_mut(&channel_id)
+                    .map(|msgs| {
+                        msgs.iter_mut()
+                            .find(|m| m.0 == message_id)
+                            .map(|m| {
+                                m.3 = content.clone();
+                                m.5 = Some(edited_secs);
+                            })
+                            .is_some()
+                    })
+                    .unwrap_or(false);
+                // Also clear a pending edit-mode/confirm for this message so the
+                // row drops back to its normal (edited) rendering rather than
+                // staying in an input that no longer matches the server.
+                if changed {
+                    if live_editing.get() == Some(message_id) {
+                        live_editing.set(None);
+                        live_edit_text.set(String::new());
+                    }
+                    if live_delete_confirm.get() == Some(message_id) {
+                        live_delete_confirm.set(None);
+                    }
+                    live_rev.set(live_rev.get() + 1);
+                }
+            }
+            // A channel message was deleted: drop its stored entry so it
+            // disappears from the list. The `MessageDeleted` frame is the server's
+            // authoritative confirmation, so no client-side optimistic removal is
+            // needed — the row vanishes once this lands.
+            if let Some(discord_server::server_settings::WsServerMsg::MessageDeleted {
+                message_id,
+                channel_id,
+            }) = frame
+            {
+                let channel_id = *channel_id;
+                let message_id = *message_id;
+                let changed = live_buf
+                    .borrow_mut()
+                    .get_mut(&channel_id)
+                    .map(|msgs| {
+                        let before = msgs.len();
+                        msgs.retain(|m| m.0 != message_id);
+                        msgs.len() != before
+                    })
+                    .unwrap_or(false);
+                // Clear any pending edit/delete state for the now-gone message so
+                // a stale input/confirm can't outlive it.
+                if changed {
+                    if live_editing.get() == Some(message_id) {
+                        live_editing.set(None);
+                        live_edit_text.set(String::new());
+                    }
+                    if live_delete_confirm.get() == Some(message_id) {
+                        live_delete_confirm.set(None);
+                    }
+                    live_rev.set(live_rev.get() + 1);
                 }
             }
             // Typing frame from another member of the channel: record who is
@@ -2946,6 +3287,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // keeps the same channel) would not rebuild the list.
     let sent_read = sent.clone();
     let live_read = live_messages.clone();
+    // Handles for the per-row edit/delete mode (see `live_edit_row`). Cloned so
+    // the `sent_messages` closure moves its own copies (the closures below all
+    // `move`-capture their handles rather than sharing one non-`Copy` value).
+    let live_editing_k = live_editing.clone();
+    let live_delete_k = live_delete_confirm.clone();
     let sent_messages = switch(
         move || (
             active_server.get(),
@@ -2953,13 +3299,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
             revision.get(),
             active_live_channel.get(),
             live_revision.get(),
+            live_editing_k.get(),
+            live_delete_k.get(),
         ),
-        move |(server_id, channel_id, _revision, live_cid, _live_rev): &(u32, u32, u32, Option<i64>, u32)| {
+        move |(server_id, channel_id, _revision, live_cid, _live_rev, _editing, _confirm): &(u32, u32, u32, Option<i64>, u32, Option<i64>, Option<i64>)| {
             // Live/real channel active: render the gateway-fed buffer instead of
             // the mock path. `None` falls through to the mock render unchanged.
             if let Some(live_id) = *live_cid {
                 let now = crate::data::now_secs();
-                let mine: Vec<(i64, String, String, i64)> = live_read
+                let mine: Vec<LiveMsg> = live_read
                     .borrow()
                     .get(&live_id)
                     .cloned()
@@ -2984,10 +3332,29 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         }
                     };
                 }
+                let self_id = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+                let editing = live_editing;
+                let delete_c = live_delete_confirm;
+                let edit_text = live_edit_text;
+                let gw = gateway;
                 let mut rows: Vec<Element> = Vec::with_capacity(mine.len());
-                for (_aid, author, body, ts) in mine.iter() {
+                for m in mine.iter() {
+                    let (mid, aid, author, body, ts, edited_at) = m;
                     let when = format_when(*ts, now);
-                    rows.push(message_row(author.as_str(), BUTTON, body.as_str(), when));
+                    let is_mine = self_id != 0 && *aid == self_id;
+                    rows.push(live_edit_row(
+                        *mid,
+                        author.as_str(),
+                        BUTTON,
+                        body.as_str(),
+                        when,
+                        edited_at.is_some(),
+                        is_mine,
+                        editing,
+                        edit_text,
+                        delete_c,
+                        gw,
+                    ));
                 }
                 return ui! {
                     view(style = StyleRules {
@@ -3003,12 +3370,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
             let mut rows: Vec<Element> = Vec::with_capacity(channel.messages.len());
             for m in channel.messages.iter() {
                 let when = format_when(m.ts_secs(now), now);
-                rows.push(message_row(m.author, m.color, m.body, when));
+                // Mock seed rows carry no edit state; pass `true` to preserve
+                // their previous always-on "(edited)" placeholder rendering.
+                rows.push(message_row(m.author, m.color, m.body, when, true));
             }
             let mine: Vec<(u32, &'static str, String, i64)> = sent_read.borrow().clone();
             for (_mcid, author, body, ts) in mine.iter().filter(|(mcid, _, _, _)| *mcid == cid) {
                 let when = format_when(*ts, now);
-                rows.push(message_row(author, BUTTON, body.as_str(), when));
+                rows.push(message_row(author, BUTTON, body.as_str(), when, true));
             }
             ui! {
                 view(style = StyleRules {
