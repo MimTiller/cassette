@@ -27,7 +27,7 @@
 //! days-ago comparison plus a civil-time formatter is all a "Today at" label
 //! needs.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -46,7 +46,7 @@ use crate::idle_timer_badge::idle_timer_badge;
 
 use runtime_shared::time::local_offset_minutes;
 
-use crate::data::{SERVERS, Category, Member, Status, USER};
+use crate::data::{SERVERS, Category, Member, Server, Status, TextChannel, USER};
 use crate::member_count_display::member_count_display;
 use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
@@ -1074,6 +1074,68 @@ fn voice_name_for(joined: Option<(u32, u32)>) -> Option<String> {
     Some(server.find_voice_channel(voice_id)?.name.to_string())
 }
 
+/// Build a mock server created at runtime by the "Add a server" (+) flow.
+///
+/// The data model is `&'static`-based (every `Server`/`Category`/channel field
+/// is a static reference), so a server created while the app is running cannot
+/// live on the heap the usual way. The owned values are therefore **leaked** to
+/// a stable address and handed back as `&'static` references — the same trick
+/// the mock seed data in `data.rs` relies on. In a real build this would be a
+/// network call; the leak is a deliberate consequence of the static model and
+/// is harmless at this scale (the user can only create a handful of servers).
+///
+/// The new server gets a single default `general` text channel (empty) and the
+/// signed-in user as its only member, so the sidebar, header, and member panel
+/// all render without special-casing.
+fn create_server(
+    name: &str,
+    next_id: &Cell<u32>,
+    dynamic_servers: &Rc<RefCell<HashMap<u32, &'static Server>>>,
+) -> u32 {
+    let name = if name.is_empty() { "new-server" } else { name };
+    let initial: &str = if name.is_empty() {
+        "N"
+    } else {
+        // Leak the upper-cased first letter so it too is a `&'static str`.
+        let upper: String = name[..1].to_uppercase();
+        Box::leak(upper.into_boxed_str())
+    };
+    let name_static: &'static str = Box::leak(name.to_string().into_boxed_str());
+    let id = next_id.get();
+    next_id.set(id + 1);
+    let cat_id = id * 1000;
+    let chan_id = id * 1000 + 1;
+    let chan = Box::leak(Box::new(TextChannel {
+        id: chan_id,
+        name: "general",
+        topic: "",
+        messages: &[],
+        unread: 0,
+        mentions: 0,
+    }));
+    let category = Box::leak(Box::new(Category {
+        id: cat_id,
+        title: "TEXT CHANNELS",
+        text: std::slice::from_ref(chan),
+        voice: &[],
+    }));
+    let member = Box::leak(Box::new(Member {
+        name: USER.name,
+        color: USER.color,
+        status: Status::Online,
+    }));
+    let server = Box::leak(Box::new(Server {
+        id,
+        name: name_static,
+        initial,
+        accent: BUTTON,
+        categories: std::slice::from_ref(category),
+        members: std::slice::from_ref(member),
+    }));
+    dynamic_servers.borrow_mut().insert(id, server);
+    id
+}
+
 // --- mock login screen -------------------------------------------------------
 
 /// The mock login screen, shown while `authed` is false. No backend: any
@@ -2093,6 +2155,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
         overflow: Some(Overflow::Hidden),
         ..Default::default()
     };
+
+    // Reactive list of the mock servers shown in the rail. Seeded with the
+    // static `SERVERS` ids; the "Add a server" (+) flow appends new ids, and
+    // the rail `switch` below rebuilds on that signal so new rows appear.
+    let server_rail: Signal<Vec<u32>> = signal(SERVERS.iter().map(|s| s.id).collect());
 
     let server_rows: Vec<Element> = SERVERS.iter().map(|s| {
         let active = active_server.clone();
