@@ -5,6 +5,7 @@
 //! depends on `discord-server` with default features, so these
 //! compile to the codegen'd RPC stubs -- no manual HTTP here.
 
+pub use discord_server::server_settings::{MarkReadResult, UnreadCount};
 pub use discord_server::servers::{ChannelSummary, ServerSummary};
 
 /// Create a new server, owned by the caller.
@@ -93,6 +94,30 @@ pub async fn delete_channel(
         channel_id,
     };
     discord_server::server_settings::delete_channel(input)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// The per-channel unread counts for a server, keyed out as
+/// `Vec<UnreadCount>`. Every channel the caller is a member of appears,
+/// including fully-read ones (both counts `0`). See the backend's
+/// `UnreadCount` docs for the mention-vs-total semantics.
+pub async fn unread_counts(server_id: i64) -> Result<Vec<UnreadCount>, String> {
+    let input = discord_server::server_settings::UnreadCountsInput { server_id };
+    discord_server::server_settings::unread_counts(input)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Mark a channel read up to (at least) `message_id`. The backend advances
+/// the caller's stored read state monotonically, so sending an older id is a
+/// no-op, never a regression.
+pub async fn mark_read(channel_id: i64, message_id: i64) -> Result<MarkReadResult, String> {
+    let input = discord_server::server_settings::MarkReadInput {
+        channel_id,
+        message_id,
+    };
+    discord_server::server_settings::mark_read(input)
         .await
         .map_err(|e| e.to_string())
 }

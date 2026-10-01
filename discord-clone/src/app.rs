@@ -2369,6 +2369,22 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // exactly the `live_revision` idiom used for the message buffer.
     let live_mentioned: Rc<RefCell<HashMap<i64, i64>>> = Rc::new(RefCell::new(HashMap::new()));
     let live_mention_rev: Signal<u32> = signal(0);
+    // Live per-channel UNREAD COUNTS from the backend, fetched alongside the
+    // channel list whenever a live server is selected (`unread_counts` RPC).
+    // `count` = messages not yet read; `unread_mentions` = the subset that
+    // @mention the signed-in user (0..=count). This is the REAL data source
+    // for the live sidebar's badges — independent of `live_mentioned` above,
+    // which stays the gateway-incrementing local indicator for the currently
+    // open session. Mutating the HashMap does not trigger reactivity, so
+    // `live_unread_rev` is bumped on every change and folded into the
+    // sidebar `switch` key — exactly the `live_mention_rev` idiom.
+    let live_unread: Rc<RefCell<HashMap<i64, (i64, i64)>>> = Rc::new(RefCell::new(HashMap::new()));
+    let live_unread_rev: Signal<u32> = signal(0);
+    // A second `Rc` handle for the rail's live-section fetch closure: both
+    // that `move` closure and the sidebar `switch`'s `move` render closure
+    // need the map, and `Rc` is not `Copy`, so each captures its own clone
+    // (the clones share the same `RefCell` — that's the point).
+    let rail_unread: Rc<RefCell<HashMap<i64, (i64, i64)>>> = live_unread.clone();
 
     // Live typing-indicator state, keyed per live channel: the user most
     // recently seen typing in that channel, as `(user_id, display_label, gen)`.
@@ -2470,6 +2486,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let mentioned_buf = live_mentioned.clone();
     let mention_rev = live_mention_rev.clone();
     let open_chan = active_live_channel.clone();
+    let unread_live = live_unread.clone();
+    let unread_live_rev = live_unread_rev.clone();
     let my_id = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
     let typing_buf = live_typing.clone();
     let typing_rev = live_typing_rev.clone();
@@ -2519,6 +2537,25 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 {
                     *mentioned_buf.borrow_mut().entry(*channel_id).or_insert(0) += 1;
                     mention_rev.set(mention_rev.get() + 1);
+                }
+                // Real unread counts: a freshly posted (`new: true`) message on a
+                // channel that is NOT currently open adds one unread there (and
+                // one unread mention when it names the signed-in user — the
+                // `unread_mentions` invariant is `0..=count`, so both counters
+                // move together). History frames (`new: false`) are the
+                // initial-load backlog, already reflected by the `unread_counts`
+                // fetch — never double-counted here. Opening the channel resets
+                // the entry to `(0, 0)` (the effect below), so a frame landing
+                // after the reset just re-adds it.
+                if *new && open_chan.get() != Some(*channel_id) {
+                    let mut map = unread_live.borrow_mut();
+                    let entry = map.entry(*channel_id).or_insert((0, 0));
+                    entry.0 += 1;
+                    if my_id != 0 && mentioned_user_ids.contains(&my_id) {
+                        entry.1 += 1;
+                    }
+                    drop(map);
+                    unread_live_rev.set(unread_live_rev.get() + 1);
                 }
             }
             // A channel message the signed-in user edited: replace the stored
@@ -2659,6 +2696,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // count and drop the badge.
     let mention_reset_buf = live_mentioned.clone();
     let mention_reset_rev = live_mention_rev.clone();
+    let unread_reset_buf = live_unread.clone();
+    let unread_reset_rev = live_unread_rev.clone();
+    let msgs_for_mark_read = live_messages.clone();
     let mention_reset_effect = switch(
         move || active_live_channel.get(),
         move |chan: &Option<i64>| {
@@ -2666,6 +2706,31 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 if *mention_reset_buf.borrow().get(&cid).unwrap_or(&0) > 0 {
                     mention_reset_buf.borrow_mut().insert(cid, 0);
                     mention_reset_rev.set(mention_reset_rev.get() + 1);
+                }
+                // Real backend read-state: mark this channel read up to its
+                // most recent message (the newest buffered wire id, which is
+                // the latest loaded history entry or live frame so far — the
+                // `live_messages` buffer is oldest-first). The RPC is
+                // fire-and-forget (a rejection is a backend auth issue, not a
+                // UI state to surface here), and the local unread count is
+                // cleared OPTIMISTICALLY right away: opening a channel has
+                // read its buffered messages by definition, so the badge must
+                // drop immediately rather than waiting for the ack.
+                if *unread_reset_buf.borrow().get(&cid).unwrap_or(&(0, 0)) != (0, 0) {
+                    unread_reset_buf
+                        .borrow_mut()
+                        .insert(cid, (0, 0));
+                    unread_reset_rev.set(unread_reset_rev.get() + 1);
+                }
+                if let Some(last_id) = msgs_for_mark_read
+                    .borrow()
+                    .get(&cid)
+                    .and_then(|msgs| msgs.last())
+                    .map(|m| m.0)
+                {
+                    runtime_core::driver::spawn_async(async move {
+                        let _ = crate::servers::mark_read(cid, last_id).await;
+                    });
                 }
             }
             ui! {
@@ -2980,6 +3045,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 let active_live = active_live_server.clone();
                 let live_ch = live_channels.clone();
                 let live_ch_sel = active_live_channel.clone();
+                let unread_buf = rail_unread.clone();
+                let unread_rev = live_unread_rev.clone();
                 let live_mbrs = live_members.clone();
                 let live_mbr_err = live_member_error.clone();
                 let live_kick = live_kick_confirm.clone();
@@ -3013,10 +3080,18 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             live_kick.set(None);
                             live_mbr_err.set(String::new());
                             live_mbrs.set(Vec::new());
+                            // Clone the `Rc` before handing it to the `async move`
+                            // block: the block outlives the `on_touch` `Fn`
+                            // closure, so moving the captured `unread_buf`
+                            // straight into it would be a move out of the
+                            // closure (E0507). The clone shares the same
+                            // `RefCell`, so the fetch writes the shared map.
+                            let unread_buf = unread_buf.clone();
                             runtime_core::driver::spawn_async(async move {
-                                // Channels and the member roster are independent
-                                // `#[server]` RPCs; fetch both in one spawn so
-                                // the live view is populated together.
+                                // Channels, the member roster, and the
+                                // per-channel unread counts are independent
+                                // `#[server]` RPCs; fetch all three in one
+                                // spawn so the live view is populated together.
                                 if let Ok(channels) =
                                     crate::servers::list_channels(sid).await
                                 {
@@ -3026,6 +3101,21 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                     crate::moderation::list_members(sid).await
                                 {
                                     live_mbrs.set(members);
+                                }
+                                if let Ok(counts) =
+                                    crate::servers::unread_counts(sid).await
+                                {
+                                    // Clone the `Rc`: this `async move` block
+                                    // outlives the `on_touch` `Fn` closure that
+                                    // captured it, so a plain capture would be
+                                    // a move out of the closure (E0507).
+                                    let buf = unread_buf.clone();
+                                    let rev = unread_rev;
+                                    buf.borrow_mut()
+                                        .extend(counts.into_iter().map(|c| {
+                                            (c.channel_id, (c.count, c.unread_mentions))
+                                        }));
+                                    rev.set(rev.get() + 1);
                                 }
                             });
                         }
@@ -3331,14 +3421,16 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 active_live_server.get(),
                 live_fp,
                 live_mention_rev.get(),
+                live_unread_rev.get(),
             )
         },
-        move |(server_id, _channel_id, _voice, _live_server, _live_fp, _mention_rev): &(
+        move |(server_id, _channel_id, _voice, _live_server, _live_fp, _mention_rev, _unread_rev): &(
             u32,
             u32,
             Option<(u32, u32)>,
             Option<i64>,
             Vec<(i64, String, String)>,
+            u32,
             u32,
         )| {
             // `switch`'s render is `Fn` — clone the captured styles so the
@@ -3398,7 +3490,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // move out of an `Fn` closure (`Element` is not `Clone`).
                     let live_sel = active_live_channel.clone();
                     let gw = gateway.clone();
-                    let mentioned = live_mentioned.clone();
+                    let live_unread_map = live_unread.clone();
                     // Shared style for the live channel row action icon buttons
                     // (rename pencil / delete trash) and the new-channel "+"
                     // header action. Defined here, inside the live arm of the
@@ -3423,14 +3515,22 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // an `Rc<String>` (`Clone`), so neither handler moves a `String`
                     // out of this `Fn` closure (E0507) — the established idiom for
                     // non-`Copy` data in `'static` handlers here.
-                    let chan_actions = |cid: i64, nm: Rc<String>, mcount: i64| -> Element {
+                    let chan_actions = |cid: i64, nm: Rc<String>, u_count: i64, u_mentions: i64| -> Element {
                         // `nm` is an `Rc` (`Clone`, not `Copy`): each `move` tap
                         // handler captures its own clone, and reads the name via
                         // `(*nm)` without ever moving the `String` out of this
                         // `Fn` render closure (E0507).
                         let nm_rename = nm.clone();
                         let nm_delete = nm.clone();
-                        let badge = if mcount > 0 {
+                        // The unread badge, fed by the REAL per-channel
+                        // `unread_counts` data: a red count pill whenever
+                        // `u_count > 0` (the same pill shape the mock rows and
+                        // this row used for mentions). When the channel also
+                        // has an unread @mention, the pill shows the
+                        // mention count — the exact distinction the mock
+                        // sidebar makes for "has an unread @mention".
+                        let badge = if u_count > 0 {
+                            let shown = if u_mentions > 0 { u_mentions } else { u_count };
                             Some(ui! {
                                 view(style = StyleRules {
                                     min_width: Some(px(16.0)),
@@ -3452,7 +3552,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                         font_weight: Some(FontWeight::Bold),
                                         color: Some(col(TEXT)),
                                         ..Default::default()
-                                    }) { mcount.to_string() }
+                                    }) { shown.to_string() }
                                 }
                             })
                         } else {
@@ -3514,10 +3614,19 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             let name = c.name.clone();
                             let is_text = c.kind == "text";
                             let cid = c.id;
-                            // Live unread-mention count for this channel, from the
-                            // gateway-fed map (bumped in the incoming-frame effect,
-                            // reset when the channel is opened). `0` = no mention.
-                            let mcount = *mentioned.borrow().get(&cid).unwrap_or(&0);
+                            // The REAL per-channel unread state from the backend
+                            // `unread_counts` fetch (fetched when the live server
+                            // was selected, bumped per new inbound frame, zeroed
+                            // when the channel is opened). Drives the row's
+                            // badge: red count pill when `count > 0` with an
+                            // unread @mention, a plain dot when `count > 0`
+                            // without one, nothing when fully read — the exact
+                            // visual contract the mock rows use for
+                            // `c.mentions` / `c.unread`.
+                            let (u_count, u_mentions) = *live_unread_map
+                                .borrow()
+                                .get(&cid)
+                                .unwrap_or(&(0, 0));
                             // Reactive, per-row — the mock path's rows work the
                             // same way: background fills with the active colour
                             // when selected, and the glyph/label go semi-bold
@@ -3546,7 +3655,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                 } else {
                                     FontWeight::Normal
                                 }),
-                                color: Some(col(if live_sel.get() == Some(cid) {
+                                // A channel with real unread messages brightens
+                                // its name (the mock rows do the same for
+                                // `c.unread > 0`).
+                                color: Some(col(if live_sel.get() == Some(cid) || u_count > 0 {
                                     TEXT
                                 } else {
                                     TEXT_CHANNEL
@@ -3558,7 +3670,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             // `chan_actions` is `Copy` (all `Copy` captures), so
                             // calling it here does not move it out of the
                             // `switch` render closure.
-                            let actions = chan_actions(cid, Rc::new(name.clone()), mcount);
+                            let actions = chan_actions(cid, Rc::new(name.clone()), u_count, u_mentions);
                             let row = if is_text {
                                 // Voice rows stay non-clickable for now — a later
                                 // task handles voice selection. Text rows select
@@ -4770,7 +4882,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             overflow: Some(Overflow::Hidden),
             ..Default::default()
         }) {
-            view(style = rail_style) { server_rows create_server_section live_section rail_actions gateway_status gateway_incoming_effect }
+            view(style = rail_style) { server_rows create_server_section live_section rail_actions gateway_status gateway_incoming_effect mention_reset_effect }
             sidebar
             view(style = main_style) {
                 header
