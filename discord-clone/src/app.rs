@@ -2781,6 +2781,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let live_dm_messages: Rc<RefCell<Vec<(String, String, i64, Option<i64>)>>> =
         Rc::new(RefCell::new(Vec::new()));
     let live_dm_revision: Signal<u32> = signal(0);
+    // The "start a new DM" draft (a numeric user id), owned here so the typed
+    // value survives a list rebuild (when `start_dm` lands, `live_dms` is
+    // updated and the list `switch` re-creates its rows — an in-row signal
+    // would drop the draft at exactly that moment).
+    let live_dm_new_id: Signal<String> = signal(String::new());
 
     // --- server rail -----------------------------------------------------
     let rail_style = StyleRules {
@@ -5028,6 +5033,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
         live_dm_active,
         live_dm_messages,
         live_dm_revision,
+        live_dm_new_id,
+        gateway.incoming(),
     );
     let live_dm_close = live_dm_mode.clone();
     let live_dm_header = ui! {
