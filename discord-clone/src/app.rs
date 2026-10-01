@@ -39,7 +39,8 @@ use runtime_core::{
 };
 use runtime_core::icon;
 use icons_lucide::{
-    CHEVRON_DOWN, COMPASS, HASH, HEADPHONES, MIC, MIC_OFF, PLUS, SETTINGS, SMILE, VOLUME_2,
+    CHEVRON_DOWN, COMPASS, HASH, HEADPHONES, MIC, MIC_OFF, PLUS, SETTINGS, SMILE, SMILE_PLUS,
+    VOLUME_2,
 };
 use crate::mute_channel_toggle::MuteChannelToggle;
 use crate::idle_timer_badge::idle_timer_badge;
@@ -113,6 +114,15 @@ const BUTTON: &str = "#5865f2";
 const PILL: &str = "#f2f3f5";
 /// Discord's unread badge red (the pill on channels + the rail count).
 const BADGE: &str = "#f23f43";
+/// Reaction-pill palette — kept identical to `components/reaction_summary.rs`
+/// (the unwired single-example pill this feature generalizes) so the live
+/// pills reuse that exact visual language: a blurple border + tinted fill
+/// when the current user reacted, a muted-gray border on a neutral fill
+/// otherwise.
+const REACTED_BG: &str = "#363b63";
+const REACTED_BORDER: &str = "#5865f2";
+const PLAIN_BG: &str = "#313338";
+const PLAIN_BORDER: &str = "#4e5058";
 /// The user-profile section at the bottom of the sidebar sits a shade darker
 /// than the channel list above it.
 const USER_BAR: &str = "#232428";
@@ -272,6 +282,293 @@ fn message_row(author: &str, color: &str, body: &str, when: String) -> Element {
             }
         }
     }
+}
+
+// --- message reactions (mock, session-local) --------------------------------
+// Per-message reaction state for the MOCK message list. Keyed by
+// (channel_id, message_index) where the index is the message's position in that
+// channel's rendered list (seed messages first, then this session's sends) — a
+// stable identity across `revision` bumps, since the list order is
+// deterministic. Each value is a list of `(emoji, count, reacted_by_me)`
+// pills. Mutating the map does not fire reactivity, so the message-list
+// `switch` folds `reaction_rev` into its key (the `revision` idiom) and re-reads
+// the map on every rebuild. Purely session-local — nothing is persisted or
+// synced, and the separate live messaging path is untouched.
+type Reaction = (String, u32, bool);
+type ReactionMap = HashMap<(u32, usize), Vec<Reaction>>;
+
+/// The 12 common glyphs the add-reaction picker offers — the same set the
+/// composer's emoji popover uses (see `emoji_popover`).
+const REACT_EMOJIS: [&str; 12] = [
+    "😀", "😊", "😂", "😍", "😎", "🤔", "👍", "🎉", "🚀", "❤️", "🙌", "🍕",
+];
+
+/// The reaction strip under one message row: existing reaction pills on the
+/// left, a spacer, and an always-visible "add reaction" button (the Lucide
+/// SMILE_PLUS glyph) on the right. Tapping the add button opens the picker for
+/// this message; tapping a pill toggles the current user's reaction on it
+/// (increment + highlight, or decrement + un-highlight, dropping the pill at 0).
+/// Each clickable node is a `view(...)` builder with `.on_touch` chained on the
+/// builder inside `ui!` (the `ac_el` / composer-emoji-cell idiom) — `Element`
+/// itself has no `on_touch` method, so the handler must live on the builder,
+/// not on the returned `Element`.
+fn reaction_area(
+    cid: u32,
+    idx: usize,
+    reactions: Rc<RefCell<ReactionMap>>,
+    reaction_rev: Signal<u32>,
+    picker: Signal<Option<(u32, usize)>>,
+) -> Element {
+    let key = (cid, idx);
+    // Current pills for this message (a clone — the borrow is released before
+    // this call returns, so the list `switch` body can borrow again freely).
+    let list: Vec<Reaction> = reactions.borrow().get(&key).cloned().unwrap_or_default();
+
+    // One pill per current reaction, built as a `Vec<Element>` and splatted
+    // below. Styled like the unwired `components/reaction_summary.rs` pill:
+    // `reacted` selects a blurple border + tinted fill, otherwise a muted-gray
+    // border on a neutral fill. Each pill's `.on_touch` gets fresh `Rc`/`Copy`
+    // handles (`r`/`rev`) plus its own emoji clone (`em` for the label,
+    // `em_close` for the closure), so it never moves the outer closure's values.
+    let pills: Vec<Element> = list.iter().map(|(emoji, count, reacted)| {
+        let (bg, border) = if *reacted {
+            (REACTED_BG, REACTED_BORDER)
+        } else {
+            (PLAIN_BG, PLAIN_BORDER)
+        };
+        let em = emoji.to_string();
+        let em_close = em.clone();
+        let cnt = *count;
+        let r = reactions.clone();
+        let rev = reaction_rev;
+        ui! {
+            view(style = StyleRules {
+                flex_direction: Some(FlexDirection::Row),
+                align_items: Some(AlignItems::Center),
+                gap: Some(px(5.0)),
+                padding_left: Some(px(8.0)),
+                padding_right: Some(px(8.0)),
+                padding_top: Some(px(3.0)),
+                padding_bottom: Some(px(3.0)),
+                height: Some(px(22.0)),
+                background: Some(col(bg)),
+                border_top_left_radius: Some(px(11.0)),
+                border_top_right_radius: Some(px(11.0)),
+                border_bottom_left_radius: Some(px(11.0)),
+                border_bottom_right_radius: Some(px(11.0)),
+                // 1px border in the arm's color — `Tokenized<f32>` (not `px()`),
+                // per the `reaction_summary` / `connection_quality_indicator` idiom.
+                border_top_width: Some(Tokenized::Literal(1.0)),
+                border_right_width: Some(Tokenized::Literal(1.0)),
+                border_bottom_width: Some(Tokenized::Literal(1.0)),
+                border_left_width: Some(Tokenized::Literal(1.0)),
+                border_top_color: Some(col(border)),
+                border_right_color: Some(col(border)),
+                border_bottom_color: Some(col(border)),
+                border_left_color: Some(col(border)),
+                ..Default::default()
+            }) {
+                text(style = StyleRules {
+                    font_size: Some(px(14.0)),
+                    ..Default::default()
+                }) { em }
+                text(style = StyleRules {
+                    font_size: Some(px(12.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    color: Some(col(TEXT)),
+                    ..Default::default()
+                }) { cnt.to_string() }
+            }
+            .on_touch(move |_ev| {
+                // Toggle: not-yet-reacted -> count+1 and highlight;
+                // already-reacted -> count-1 and un-highlight, dropping the pill
+                // (and the empty map entry) once the count hits 0.
+                {
+                    let mut m = r.borrow_mut();
+                    let inner = m.entry(key).or_default();
+                    if let Some(pos) = inner.iter().position(|(e, _, _)| e == &em_close) {
+                        let (e, c, was_reacted) = inner[pos].clone();
+                        if was_reacted {
+                            if c <= 1 {
+                                inner.remove(pos);
+                            } else {
+                                inner[pos] = (e, c - 1, false);
+                            }
+                        } else {
+                            inner[pos] = (e, c + 1, true);
+                        }
+                    }
+                    if m.get(&key).map_or(false, |v| v.is_empty()) {
+                        m.remove(&key);
+                    }
+                }
+                rev.set(rev.get() + 1);
+                TouchResponse::CONSUMED
+            })
+        }
+    }).collect();
+
+    // The always-visible "add reaction" button: a small circular glyph target
+    // (a `view` + icon, the composer icon-button shape) whose `.on_touch` opens
+    // the picker for this message, keyed by `(cid, idx)`.
+    let add = picker;
+    let add_key = (cid, idx);
+    let add_button = ui! {
+        view(style = StyleRules {
+            position: Some(Position::Relative),
+            width: Some(px(26.0)),
+            height: Some(px(26.0)),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(JustifyContent::Center),
+            background: Some(col(COMPOSER)),
+            border_top_left_radius: Some(px(13.0)),
+            border_top_right_radius: Some(px(13.0)),
+            border_bottom_left_radius: Some(px(13.0)),
+            border_bottom_right_radius: Some(px(13.0)),
+            ..Default::default()
+        }) {
+            icon(SMILE_PLUS).color(|| Color::from(TEXT_MUTED)).size(15.0)
+        }
+        .on_touch(move |_ev| {
+            add.set(Some(add_key));
+            TouchResponse::CONSUMED
+        })
+    };
+
+    // The strip: pills left, spacer, add button right. `padding_left` of 66
+    // aligns it with the message body (row padding 16 + avatar 40 + gap 10) so
+    // the pills sit under the text, Discord-style.
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            gap: Some(px(4.0)),
+            padding_top: Some(px(2.0)),
+            padding_left: Some(px(66.0)),
+            padding_right: Some(px(16.0)),
+            ..Default::default()
+        }) {
+            pills
+            view(style = StyleRules {
+                flex_grow: Some(grow(1.0)),
+                ..Default::default()
+            }) {}
+            add_button
+        }
+    }
+}
+
+/// The add-reaction picker: a full-window overlay (opaque backdrop + centered
+/// emoji grid) shown while `picker` names a message. Tapping a glyph adds a
+/// reaction for that message and closes the picker; tapping the backdrop closes
+/// it without adding. Reuses the overlay idiom (a `Position::Absolute` child of
+/// the root `Relative` ancestor, painted last like `profile_region` /
+/// `notif_region`) and the composer's emoji grid.
+fn reaction_picker_overlay(
+    picker: Signal<Option<(u32, usize)>>,
+    reactions: Rc<RefCell<ReactionMap>>,
+    reaction_rev: Signal<u32>,
+) -> Element {
+    switch(
+        move || picker.get(),
+        move |p: &Option<(u32, usize)>| {
+            let Some((cid, idx)) = p else {
+                return ui! {
+                    view(style = StyleRules {
+                        width: Some(px(0.0)),
+                        height: Some(px(0.0)),
+                        ..Default::default()
+                    }) {}
+                };
+            };
+            let (cid, idx) = (*cid, *idx);
+            let cells: Vec<Element> = REACT_EMOJIS.iter().map(|g| {
+                let glyph = g.to_string();
+                let glyph_close = glyph.clone();
+                let r = reactions.clone();
+                let rev = reaction_rev;
+                let close = picker;
+                let key = (cid, idx);
+                ui! {
+                    view(style = StyleRules {
+                        width: Some(px(34.0)),
+                        height: Some(px(34.0)),
+                        align_items: Some(AlignItems::Center),
+                        justify_content: Some(JustifyContent::Center),
+                        border_top_left_radius: Some(px(6.0)),
+                        border_top_right_radius: Some(px(6.0)),
+                        border_bottom_left_radius: Some(px(6.0)),
+                        border_bottom_right_radius: Some(px(6.0)),
+                        ..Default::default()
+                    }) {
+                        text(style = StyleRules {
+                            font_size: Some(px(20.0)),
+                            ..Default::default()
+                        }) { glyph }
+                    }
+                    .on_touch(move |_ev| {
+                        // Add (or bump) this emoji's reaction for the message,
+                        // then close the picker.
+                        {
+                            let mut m = r.borrow_mut();
+                            let inner = m.entry(key).or_default();
+                            if let Some(pos) = inner.iter().position(|(e, _, _)| e == &glyph_close) {
+                                let (e, c, _) = inner[pos].clone();
+                                inner[pos] = (e, c + 1, true);
+                            } else {
+                                inner.push((glyph_close.clone(), 1, true));
+                            }
+                        }
+                        rev.set(rev.get() + 1);
+                        close.set(None);
+                        TouchResponse::CONSUMED
+                    })
+                }
+            }).collect();
+            // Opaque full-window backdrop (dismiss-on-outside-tap) with the
+            // wrapping emoji grid centered in a rounded elevated card.
+            let backdrop_close = picker;
+            ui! {
+                view(style = StyleRules {
+                    position: Some(Position::Absolute),
+                    left: Some(px(0.0)),
+                    top: Some(px(0.0)),
+                    width: Some(pct(100.0)),
+                    height: Some(pct(100.0)),
+                    background: Some(col(BG_RAIL)),
+                    align_items: Some(AlignItems::Center),
+                    justify_content: Some(JustifyContent::Center),
+                    ..Default::default()
+                }) {
+                    view(style = StyleRules {
+                        background: Some(col(BG_SIDEBAR)),
+                        padding_top: Some(px(12.0)),
+                        padding_bottom: Some(px(12.0)),
+                        padding_left: Some(px(12.0)),
+                        padding_right: Some(px(12.0)),
+                        border_top_left_radius: Some(px(10.0)),
+                        border_top_right_radius: Some(px(10.0)),
+                        border_bottom_left_radius: Some(px(10.0)),
+                        border_bottom_right_radius: Some(px(10.0)),
+                        ..Default::default()
+                    }) {
+                        view(style = StyleRules {
+                            flex_direction: Some(FlexDirection::Row),
+                            flex_wrap: Some(FlexWrap::Wrap),
+                            gap: Some(px(4.0)),
+                            width: Some(px(220.0)),
+                            ..Default::default()
+                        }) { cells }
+                    }
+                }
+                .on_touch(move |_ev| {
+                    // Tap on the backdrop (not a glyph) closes the picker.
+                    backdrop_close.set(None);
+                    TouchResponse::CONSUMED
+                })
+            }
+        },
+    )
 }
 
 /// One member row: avatar chip with the status dot overlaid on its
