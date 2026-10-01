@@ -38,8 +38,8 @@ use runtime_core::{
 };
 use runtime_core::icon;
 use icons_lucide::{
-    CHEVRON_DOWN, COMPASS, GLOBE, HASH, HEADPHONES, MAIL, MIC, MIC_OFF, PENCIL, PLUS, SETTINGS,
-    SMILE, TRASH_2, VOLUME_2,
+    CHEVRON_DOWN, COMPASS, GLOBE, HASH, HEADPHONES, MAIL, MESSAGE_CIRCLE, MIC, MIC_OFF, PENCIL,
+    PLUS, SETTINGS, SMILE, TRASH_2, VOLUME_2,
 };
 use crate::mute_channel_toggle::MuteChannelToggle;
 use crate::idle_timer_badge::idle_timer_badge;
@@ -2765,6 +2765,23 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let dm_sent: Rc<RefCell<Vec<(u32, &'static str, String, i64)>>> = Rc::new(RefCell::new(Vec::new()));
     let dm_revision: Signal<u32> = signal(0);
 
+    // --- live (backend) DM state -------------------------------------------
+    // Parallel to (and independent of) the mock `dm_*` state above, and to the
+    // `live_servers`/`live_channels` live-mode idiom. A separate, new entry
+    // point: `live_dm_mode` toggles its own full-screen overlay region, and
+    // the mock DM screen is left untouched.
+    // `live_dms` holds the fetched conversation list (populated on first open
+    // via `spawn_async` calling `list_dms`); `live_dm_active` the selected DM
+    // channel id (None = none); `live_dm_messages`/`live_dm_revision` the
+    // fetched history buffer + its rebuild counter (the `revision` bump is the
+    // rebuild trigger, the same idiom as `live_messages`/`live_revision`).
+    let live_dm_mode: Signal<bool> = signal(false);
+    let live_dms: Signal<Vec<crate::dms::Dm>> = signal(Vec::new());
+    let live_dm_active: Signal<Option<i64>> = signal(None);
+    let live_dm_messages: Rc<RefCell<Vec<(String, String, i64, Option<i64>)>>> =
+        Rc::new(RefCell::new(Vec::new()));
+    let live_dm_revision: Signal<u32> = signal(0);
+
     // --- server rail -----------------------------------------------------
     let rail_style = StyleRules {
         width: Some(px(72.0)),
@@ -3374,6 +3391,34 @@ fn app_shell(authed: Signal<bool>) -> Element {
             }
             .on_touch(move |_ev| {
                 dm_open.set(!dm_open.get());
+                TouchResponse::CONSUMED
+            })
+            // Direct Messages (LIVE / backend): a separate, independent entry
+            // point from the mock DM button above. Toggling it open fetches
+            // the signed-in user's real DMs via `list_dms` (the same
+            // `spawn_async` + `#[server]` RPC idiom as the `live_servers`
+            // fetch) the first time it's opened; subsequent opens re-fetch so
+            // the list stays current. Per-open state (`live_dm_active`,
+            // `live_dm_messages`, `live_dm_revision`) is owned in `app_shell`
+            // scope, so a re-open keeps the selected conversation and its
+            // fetched history (the same persistence as the mock DM screen).
+            view(style = circle_style.clone(), test_id = "rail-live-direct-messages") {
+                icon(MESSAGE_CIRCLE).color(|| Color::from(TEXT_MUTED)).size(20.0)
+            }
+            .on_touch(move |_ev| {
+                let now_open = !live_dm_mode.get();
+                live_dm_mode.set(now_open);
+                if now_open {
+                    // Re-fetch on every open so the list reflects the backend's
+                    // current state (mirrors how a live channel is re-fetched
+                    // when its server is re-selected).
+                    let list = live_dms.clone();
+                    runtime_core::driver::spawn_async(async move {
+                        if let Ok(dms) = crate::dms::list_dms().await {
+                            list.set(dms);
+                        }
+                    });
+                }
                 TouchResponse::CONSUMED
             })
         }
@@ -4972,6 +5017,84 @@ fn app_shell(authed: Signal<bool>) -> Element {
         }
     };
 
+    // Live (backend) Direct Messages screen: same full-screen, paint-last idiom
+    // as the mock `dm_region` above, but a separate, independent entry point.
+    // Its three data inputs (`live_dms` / `live_dm_active` / `live_dm_messages`
+    // + `live_dm_revision`) are owned in `app_shell` scope, so the open
+    // conversation and its fetched history survive a close/re-open. A "Done"
+    // pill in the header flips `live_dm_mode` back off to close it.
+    let live_dm_el = crate::live_dm_view::live_dm_screen(
+        live_dms,
+        live_dm_active,
+        live_dm_messages,
+        live_dm_revision,
+    );
+    let live_dm_close = live_dm_mode.clone();
+    let live_dm_header = ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(JustifyContent::SpaceBetween),
+            padding_top: Some(px(16.0)),
+            padding_bottom: Some(px(16.0)),
+            padding_left: Some(px(16.0)),
+            padding_right: Some(px(16.0)),
+            border_bottom_width: Some(border_width(1.0)),
+            border_bottom_color: Some(col(BORDER)),
+            background: Some(col(BG_MAIN)),
+            ..Default::default()
+        }) {
+            text(style = StyleRules {
+                font_size: Some(px(18.0)),
+                font_weight: Some(FontWeight::Bold),
+                color: Some(col(TEXT)),
+                ..Default::default()
+            }) { "Direct Messages (Live)".to_string() }
+            view(style = StyleRules {
+                height: Some(px(26.0)),
+                padding_left: Some(px(12.0)),
+                padding_right: Some(px(12.0)),
+                background: Some(col(BG_SIDEBAR)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                border_top_left_radius: Some(px(6.0)),
+                border_top_right_radius: Some(px(6.0)),
+                border_bottom_left_radius: Some(px(6.0)),
+                border_bottom_right_radius: Some(px(6.0)),
+                ..Default::default()
+            }) {
+                text(style = StyleRules {
+                    color: Some(col(TEXT)),
+                    font_size: Some(px(12.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    ..Default::default()
+                }) { "Done".to_string() }
+            }
+            .on_touch(move |_ev| {
+                live_dm_close.set(false);
+                TouchResponse::CONSUMED
+            })
+        }
+    };
+    let live_dm_open_chk = live_dm_mode.clone();
+    let live_dm_wrap = move || StyleRules {
+        position: Some(Position::Absolute),
+        left: Some(px(0.0)),
+        top: Some(px(0.0)),
+        width: Some(if live_dm_open_chk.get() { pct(100.0) } else { px(0.0) }),
+        height: Some(if live_dm_open_chk.get() { pct(100.0) } else { px(0.0) }),
+        background: Some(col(BG_MAIN)),
+        flex_direction: Some(FlexDirection::Column),
+        overflow: Some(Overflow::Hidden),
+        ..Default::default()
+    };
+    let live_dm_region = ui! {
+        view(style = live_dm_wrap) {
+            live_dm_header
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) { live_dm_el }
+        }
+    };
+
     ui! {
         view(style = StyleRules {
             width: Some(pct(100.0)),
@@ -5040,6 +5163,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // (join / create / discover), so a modal opened from elsewhere still
             // wins on top.
             dm_region
+            // Direct Messages (LIVE / backend): full-screen, same paint-last
+            // idiom as the mock `dm_region` above; an independent entry point
+            // so the mock DM screen is left untouched.
+            live_dm_region
             // "Join a Server" overlay: full-screen, painted last so it sits on
             // top when open (collapses to zero size when closed).
             join_el

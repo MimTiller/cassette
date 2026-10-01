@@ -56,7 +56,9 @@ pub mod invites;
 // server-only internals are gated (see `src/auth.rs`).
 pub mod auth;
 pub mod servers;
-#[cfg(feature = "server")]
+// Not feature-gated (like `servers` / `auth` above): the `#[server]` fns
+// compile to client RPC stubs by default; only the DB-touching internals are
+// gated `#[cfg(feature = "server")]` inside the module.
 pub mod dms;
 
 /// Shared e2e serialization guard. Every HTTP/WebSocket e2e test installs its
