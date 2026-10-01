@@ -57,6 +57,7 @@ use crate::notification_settings::NotificationSettings;
 use crate::profile_settings::profile_settings;
 use crate::style_helpers::{col, pct, px};
 use crate::join_modal::JoinServerModal;
+use crate::create_server_modal::create_server_modal;
 use crate::typing_indicator::TypingIndicator;
 
 // Robot test ids: stable, `'static` strings the automation robot
@@ -2699,6 +2700,98 @@ fn app_shell(authed: Signal<bool>) -> Element {
         }
     }).collect();
 
+    // --- "Create a Server" reactive plumbing -------------------------------
+    // `dynamic_servers` holds the servers the user creates this session
+    // (leaked `&'static` behind an id — the same heap-leak trick the static
+    // seed in `data.rs` uses). `next_id` mints fresh ids above the static max.
+    // `server_rail` (seeded with the static ids above) is the rail's re-render
+    // trigger: appending a new id makes the `switch` below rebuild and add the
+    // row. Both the `Cell` and the `HashMap` live behind an `Rc` so the
+    // `on_create` closure (a `Fn`) can mutate them through interior
+    // mutability.
+    let dynamic_servers: Rc<RefCell<HashMap<u32, &'static Server>>> =
+        Rc::new(RefCell::new(HashMap::new()));
+    let next_id: Rc<Cell<u32>> = Rc::new(Cell::new(
+        SERVERS.iter().map(|s| s.id).max().map(|m| m + 1).unwrap_or(1),
+    ));
+    let create_open: Signal<bool> = signal(false);
+    let create_name: Signal<String> = signal(String::new());
+
+    // Dynamically created servers — a separate section below the mock rows.
+    // Rebuilt whenever `server_rail` changes (a new id appended). Each row
+    // mirrors the mock row: squircle + initial + selection.
+    let dyn_servers = dynamic_servers.clone();
+    let create_server_section = switch(
+        move || server_rail.get(),
+        move |ids: &Vec<u32>| {
+            let rows: Vec<Element> = ids.iter().filter_map(|id| {
+                let s = *dyn_servers.borrow().get(id)?;
+                let active = active_server.clone();
+                let channel = active_channel.clone();
+                let voice = joined_voice.clone();
+                let live_server = active_live_server.clone();
+                let live_channel = active_live_channel.clone();
+                let row_style = move || StyleRules {
+                    width: Some(px(48.0)),
+                    height: Some(px(48.0)),
+                    // Positioning ancestor for the active-server pill.
+                    position: Some(Position::Relative),
+                    align_items: Some(AlignItems::Center),
+                    justify_content: Some(JustifyContent::Center),
+                    background: Some(col(if active.get() == s.id {
+                        TEXT
+                    } else {
+                        BG_SIDEBAR
+                    })),
+                    // Discord's squircle is a 16px radius on a 48px icon.
+                    border_top_left_radius: Some(px(16.0)),
+                    border_top_right_radius: Some(px(16.0)),
+                    border_bottom_left_radius: Some(px(16.0)),
+                    border_bottom_right_radius: Some(px(16.0)),
+                    ..Default::default()
+                };
+                let label_style = move || StyleRules {
+                    font_size: Some(px(18.0)),
+                    font_weight: Some(FontWeight::Bold),
+                    color: Some(col(if active.get() == s.id {
+                        BG_RAIL
+                    } else {
+                        TEXT_CHANNEL
+                    })),
+                    ..Default::default()
+                };
+                Some(ui! {
+                    view(style = row_style) {
+                        text(style = label_style) { s.initial }
+                    }
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            // Selecting a created server exits live mode (same
+                            // as a mock row) and defaults to its first text
+                            // channel.
+                            live_server.set(None);
+                            live_channel.set(None);
+                            active.set(s.id);
+                            channel.set(s.first_text_channel().id);
+                            voice.set(None);
+                        }
+                        TouchResponse::CONSUMED
+                    })
+                })
+            }).collect();
+            ui! {
+                view(style = StyleRules {
+                    flex_direction: Some(FlexDirection::Column),
+                    align_items: Some(AlignItems::Center),
+                    gap: Some(px(10.0)),
+                    ..Default::default()
+                }) {
+                    rows
+                }
+            }
+        },
+    );
+
     // Live (backend) servers — a visually separate section below the mock
     // rows. Clicking a row enters live mode: it sets `active_live_server`
     // (so the channel sidebar swaps to the live branch) and fetches that
@@ -2848,6 +2941,35 @@ fn app_shell(authed: Signal<bool>) -> Element {
         }
     };
 
+    // --- "Create a Server" modal ------------------------------------------
+    // Trigger is the rail's COMPASS circle (the green PLUS is taken by the
+    // Join flow). `on_create` mints a fresh server via `create_server`, appends
+    // its id to `server_rail` (the rail's re-render trigger — the
+    // `create_server_section` `switch` above rebuilds and shows the row), and
+    // closes the modal. Both the `Cell` and the `HashMap` are `Rc` so this
+    // `Fn` closure can mutate them; `Signal` is `Copy`, so the `set(false)`
+    // capture stays `Fn`.
+    let create_on_create: Rc<dyn Fn(String)> = Rc::new({
+        let next_id = next_id.clone();
+        let dynamic_servers = dynamic_servers.clone();
+        let server_rail = server_rail.clone();
+        let create_open = create_open;
+        move |name: String| {
+            let new_id = create_server(&name, &*next_id, &dynamic_servers);
+            let mut ids = server_rail.get();
+            ids.push(new_id);
+            server_rail.set(ids);
+            create_open.set(false);
+        }
+    });
+    let create_modal_el: Element =
+        create_server_modal(create_open, create_name, create_on_create);
+    let create_el = ui! {
+        view {
+            { create_modal_el }
+        }
+    };
+
     // Bottom rail actions: Discord's Add-a-Server and Explore circles,
     // rendered below the live-servers section.
     let rail_actions = {
@@ -2868,6 +2990,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let plus_result = join_result.clone();
         let plus_error = join_error.clone();
         let plus_busy = join_busy.clone();
+        let create_open = create_open.clone();
+        let create_name = create_name.clone();
         ui! {
             view(style = circle_style.clone(), test_id = "rail-join-server") {
                 icon(PLUS).color(|| Color::from("#23a55a")).size(20.0)
@@ -2882,11 +3006,16 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 plus_open.set(true);
                 TouchResponse::CONSUMED
             })
-            view(style = circle_style) {
+            view(style = circle_style, test_id = "rail-create-server") {
                 icon(COMPASS).color(|| Color::from(TEXT_MUTED)).size(20.0)
             }
-            .on_touch(|_ev| TouchResponse::CONSUMED)
-            // TODO: explore flow
+            // Create-a-Server: reset the name field and open the create modal
+            // (the same reset-on-open `create_server_modal`'s docs describe).
+            .on_touch(move |_ev| {
+                create_name.set(String::new());
+                create_open.set(true);
+                TouchResponse::CONSUMED
+            })
         }
     };
 
@@ -4292,7 +4421,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             overflow: Some(Overflow::Hidden),
             ..Default::default()
         }) {
-            view(style = rail_style) { server_rows live_section rail_actions gateway_status gateway_incoming_effect }
+            view(style = rail_style) { server_rows create_server_section live_section rail_actions gateway_status gateway_incoming_effect }
             sidebar
             view(style = main_style) {
                 header
@@ -4346,6 +4475,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // "Join a Server" overlay: full-screen, painted last so it sits on
             // top when open (collapses to zero size when closed).
             join_el
+            // "Create a Server" overlay: same full-screen, paint-last idiom.
+            create_el
         }
     }
 }

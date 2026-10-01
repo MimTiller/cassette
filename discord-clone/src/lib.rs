@@ -152,6 +152,8 @@ mod spoiler_tag;
 mod invite_link_display;
 #[path = "components/join_modal.rs"]
 mod join_modal;
+#[path = "components/create_server_modal.rs"]
+mod create_server_modal;
 #[path = "components/voice_join_button.rs"]
 mod voice_join_button;
 #[path = "components/server_template_card.rs"]
