@@ -52,6 +52,7 @@ use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
 use crate::read_receipt_indicator::ReadReceiptIndicator;
 use crate::verified_badge::VerifiedBadge;
+use crate::category_filter_chips::category_filter_chips;
 use crate::connection_quality_indicator::ConnectionQualityIndicator;
 use crate::edited_label::edited_label;
 use crate::notification_settings::NotificationSettings;
@@ -264,6 +265,7 @@ fn message_row(author: &str, color: &str, body: &str, when: String) -> Element {
                 }
                 text(style = body_style) { body.to_string() }
                 ReadReceiptIndicator()
+                category_filter_chips()
                 edited_label()
                 idle_timer_badge()
             }
