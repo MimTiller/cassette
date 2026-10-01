@@ -52,6 +52,7 @@ use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
 use crate::read_receipt_indicator::ReadReceiptIndicator;
 use crate::verified_badge::VerifiedBadge;
+use crate::delete_account_warning::DeleteAccountWarning;
 use crate::category_filter_chips::category_filter_chips;
 use crate::connection_quality_indicator::ConnectionQualityIndicator;
 use crate::edited_label::edited_label;
@@ -418,6 +419,7 @@ fn voice_section(
                     .size(14.0)
                 text(style = v_label_style) { label }
                 ConnectionQualityIndicator()
+                DeleteAccountWarning()
             }
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
