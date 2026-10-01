@@ -1,20 +1,14 @@
 //! `keyboard_shortcuts_overlay` -- a standalone "Keyboard Shortcuts" overlay
 //! for the Discord clone. A dimmed full-screen backdrop with a centered
 //! panel that lists a hardcoded set of fake keyboard shortcuts (a label and
-//! its key-combo text). The close button toggles a local `Signal<bool>` open
-//! flag, so tapping it hides the whole overlay. No backend call, no wiring
-//! into any other screen yet: declared in `lib.rs` so it compiles as part of
-//! the crate, but referenced by nothing.
-//!
-//! Idioms follow the crate's other overlays (for example
-//! `profile_settings`): a plain `Signal<bool>` for the open state, `StyleRules`
-//! built with the `style_helpers` `px` / `col` / `pct` constructors, an
-//! on_touch` handler that fires on `TouchPhase::Ended`, and a `ui!` body.
+//! its key-combo text). Open/close is driven by the caller: the user panel's
+//! '?' icon flips `app_shell`'s `shortcuts_mode` signal, whose wrapper view
+//! sizes this subtree to full screen when on and zero when off (the same
+//! build-once/toggle idiom as `profile_settings`). No backend call.
 
 use runtime_core::{
     AlignItems, Element, FlexDirection, FontWeight, JustifyContent, Overflow, Position, Signal,
-    StyleRules, TouchPhase, TouchResponse,
-    signal, ui,
+    StyleRules, TouchPhase, TouchResponse, ui,
 };
 
 use crate::style_helpers::{col, pct, px};
@@ -91,14 +85,14 @@ fn shortcut_row(s: &Shortcut) -> Element {
     }
 }
 
-/// The Keyboard Shortcuts overlay. On first mount it is open (`signal(true)`);
-/// the close button toggles the local open flag, which hides the entire
-/// backdrop+panel subtree. Nothing external drives it.
-pub fn keyboard_shortcuts_overlay() -> Element {
-    let open: Signal<bool> = signal(true);
-
+/// The Keyboard Shortcuts overlay. `open` is owned by the caller (`app_shell`'s
+/// `shortcuts_mode`): the user panel's '?' icon flips it on, and this panel's
+/// ✕ flips it back off (the profile overlay's "Done" pill is the same shape).
+/// The wrapper view in `app_shell` sizes this subtree to zero when `open` is
+/// off, so the backdrop never intercepts touches while hidden.
+pub fn keyboard_shortcuts_overlay(open: Signal<bool>) -> Element {
     // Backdrop: dims whatever is behind the panel. Tapping it does NOT close
-    // the overlay -- only the close button does (matches the request).
+    // the overlay -- only the ✕ does.
     let backdrop_style = StyleRules {
         position: Some(Position::Absolute),
         left: Some(pct(0.0)),

@@ -39,8 +39,8 @@ use runtime_core::{
 };
 use runtime_core::icon;
 use icons_lucide::{
-    CHEVRON_DOWN, COMPASS, HASH, HEADPHONES, MIC, MIC_OFF, PLUS, SETTINGS, SMILE, SMILE_PLUS,
-    VOLUME_2,
+    CHEVRON_DOWN, CIRCLE_HELP, COMPASS, HASH, HEADPHONES, MIC, MIC_OFF, PLUS, SETTINGS, SMILE,
+    SMILE_PLUS, VOLUME_2,
 };
 use crate::mute_channel_toggle::MuteChannelToggle;
 use crate::idle_timer_badge::idle_timer_badge;
@@ -58,6 +58,7 @@ use crate::category_filter_chips::category_filter_chips;
 use crate::connection_quality_indicator::ConnectionQualityIndicator;
 use crate::edited_label::edited_label;
 use crate::notification_settings::NotificationSettings;
+use crate::keyboard_shortcuts_overlay::keyboard_shortcuts_overlay;
 use crate::profile_settings::profile_settings;
 use crate::style_helpers::{col, pct, px};
 use crate::typing_indicator::TypingIndicator;
@@ -977,15 +978,17 @@ fn member_panel(server: &crate::data::Server, user: &Member) -> Element {
 ///
 /// The strip is two rows (the 240px sidebar can't fit the identity, the
 /// Profile/Log Out pills, and the voice-action icons on one line): row 1 is
-/// the avatar + name/status, row 2 is a control row — the mic-mute, deafen
-/// and settings-gear icon buttons (Discord's user-panel actions) on the left,
-/// the Leave button (voice only) and the Profile / Log Out pills on the right.
+/// the avatar + name/status, row 2 is a control row — the mic-mute, deafen,
+/// settings-gear, and keyboard-shortcuts ('?') icon buttons (Discord's
+/// user-panel actions) on the left, the Leave button (voice only) and the
+/// Profile / Log Out pills on the right.
 fn user_panel(
     user_status: Signal<Status>,
     joined_voice: Signal<Option<(u32, u32)>>,
     authed: Signal<bool>,
     profile_mode: Signal<bool>,
     notif_mode: Signal<bool>,
+    shortcuts_mode: Signal<bool>,
     muted: Signal<bool>,
     deafened: Signal<bool>,
 ) -> Element {
@@ -1313,12 +1316,26 @@ fn user_panel(
             // overlay (the same build-once/toggle idiom as the Profile pill).
             let notif_open = notif_mode.clone();
             let settings_btn = ui! {
-                view(style = icon_btn_style, test_id = "user-settings") {
+                view(style = icon_btn_style.clone(), test_id = "user-settings") {
                     icon(SETTINGS).color(|| Color::from(TEXT_MUTED)).size(15.0)
                 }
                 .on_touch(move |ev| {
                     if ev.phase == TouchPhase::Ended {
                         notif_open.set(true);
+                    }
+                    TouchResponse::CONSUMED
+                })
+            };
+            // Keyboard shortcuts: a '?' icon next to the gear opens the
+            // full-screen shortcuts overlay (same idiom as the gear).
+            let shortcuts_open = shortcuts_mode.clone();
+            let shortcuts_btn = ui! {
+                view(style = icon_btn_style, test_id = "user-shortcuts") {
+                    icon(CIRCLE_HELP).color(|| Color::from(TEXT_MUTED)).size(15.0)
+                }
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        shortcuts_open.set(true);
                     }
                     TouchResponse::CONSUMED
                 })
@@ -1340,6 +1357,7 @@ fn user_panel(
                     mic_btn
                     deafen_btn
                     settings_btn
+                    shortcuts_btn
                     view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
                     if let Some(btn) = leave_btn {
                         btn
@@ -2445,6 +2463,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // a full-screen overlay, the same build-once/toggle idiom as `profile_mode`.
     let notif_mode: Signal<bool> = signal(false);
 
+    // Keyboard Shortcuts overlay: the user panel's '?' icon opens it as a
+    // full-screen overlay, the same build-once/toggle idiom as `profile_mode`.
+    let shortcuts_mode: Signal<bool> = signal(false);
+
     // --- server rail -----------------------------------------------------
     let rail_style = StyleRules {
         width: Some(px(72.0)),
@@ -2795,6 +2817,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let user_profile_mode = profile_mode.clone();
     // Notification panel toggle, cloned the same way.
     let user_notif_mode = notif_mode.clone();
+    // Keyboard shortcuts toggle, cloned the same way.
+    let user_shortcuts_mode = shortcuts_mode.clone();
     let sidebar = switch(
         move || {
             // Fingerprint (id, name, kind) so the key is `PartialEq` even
@@ -3150,7 +3174,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // The user profile is the bottom-left of the sidebar (Discord
             // convention). The member list is a separate right-side panel —
             // see `members_switch` further down — so it's not built here.
-            let user = user_panel(user_status, joined_voice, authed, user_profile_mode, user_notif_mode, muted, deafened);
+            let user = user_panel(user_status, joined_voice, authed, user_profile_mode, user_notif_mode, user_shortcuts_mode, muted, deafened);
             ui! {
                 view(style = sidebar_style) {
                     view(style = sidebar_header_style) {
@@ -4028,6 +4052,77 @@ fn app_shell(authed: Signal<bool>) -> Element {
         }
     };
 
+    // Keyboard Shortcuts overlay (same shape as the two above): built once,
+    // collapsed to zero size while `shortcuts_mode` is off, fills the window
+    // when on. The panel's own ✕ flips `shortcuts_mode` back off (it receives
+    // a clone of the signal as its `open` flag); the user panel's '?' icon
+    // opens it.
+    let shortcuts_el = keyboard_shortcuts_overlay(shortcuts_mode.clone());
+    let shortcuts_close = shortcuts_mode.clone();
+    let shortcuts_header = ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(JustifyContent::SpaceBetween),
+            padding_top: Some(px(16.0)),
+            padding_bottom: Some(px(16.0)),
+            padding_left: Some(px(16.0)),
+            padding_right: Some(px(16.0)),
+            ..Default::default()
+        }) {
+            text(style = StyleRules {
+                font_size: Some(px(18.0)),
+                font_weight: Some(FontWeight::Bold),
+                color: Some(col(TEXT)),
+                ..Default::default()
+            }) { "Keyboard Shortcuts".to_string() }
+            view(style = StyleRules {
+                height: Some(px(26.0)),
+                padding_left: Some(px(12.0)),
+                padding_right: Some(px(12.0)),
+                background: Some(col(BG_SIDEBAR)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                border_top_left_radius: Some(px(6.0)),
+                border_top_right_radius: Some(px(6.0)),
+                border_bottom_left_radius: Some(px(6.0)),
+                border_bottom_right_radius: Some(px(6.0)),
+                ..Default::default()
+            }) {
+                text(style = StyleRules {
+                    color: Some(col(TEXT)),
+                    font_size: Some(px(12.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    ..Default::default()
+                }) { "Done".to_string() }
+            }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    shortcuts_close.set(false);
+                }
+                TouchResponse::CONSUMED
+            })
+        }
+    };
+    let shortcuts_open_chk = shortcuts_mode.clone();
+    let shortcuts_wrap = move || StyleRules {
+        position: Some(Position::Absolute),
+        left: Some(px(0.0)),
+        top: Some(px(0.0)),
+        width: Some(if shortcuts_open_chk.get() { pct(100.0) } else { px(0.0) }),
+        height: Some(if shortcuts_open_chk.get() { pct(100.0) } else { px(0.0) }),
+        background: Some(col(BG_MAIN)),
+        flex_direction: Some(FlexDirection::Column),
+        overflow: Some(Overflow::Hidden),
+        ..Default::default()
+    };
+    let shortcuts_region = ui! {
+        view(style = shortcuts_wrap) {
+            shortcuts_header
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) { shortcuts_el }
+        }
+    };
+
     ui! {
         view(style = StyleRules {
             width: Some(pct(100.0)),
@@ -4091,6 +4186,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // Painted last so it sits on top of everything when open.
             profile_region
             notif_region
+            shortcuts_region
         }
     }
 }
