@@ -1374,18 +1374,23 @@ fn create_server(
 
 // --- mock login screen -------------------------------------------------------
 
-/// The mock login screen, shown while `authed` is false. No backend: any
-/// non-empty email + password signs in (the password field is `secure`, so
-/// it masks input like a real login); empty fields show an inline error
-/// instead. "Continue as guest" skips the fields entirely — the mock has one
-/// identity ("you"), so guest == you. State is local to this function — it
-/// unmounts the moment `authed` flips, so no session survives a reload.
+/// The login screen, shown while `authed` is false. A username + password
+/// form with two modes toggled by `mode`: sign in (the default) and sign up.
+/// The password field is `secure` (masks input like a real login); empty
+/// fields show an inline error. On success — a real backend login or signup —
+/// `authed` flips and this screen unmounts. "Continue as guest" skips the
+/// fields entirely. State is local to this function — it unmounts the moment
+/// `authed` flips, so no session survives a reload.
 fn login_screen(authed: Signal<bool>) -> Element {
     // "you" is the only identity in this mock build; authing in just flips
     // the shared signal the app tree is keyed on.
-    let email: Signal<String> = signal(String::new());
+    // `mode` flips the form between sign-in (false, the default) and sign-up
+    // (true); both reuse the same username + password fields. `error` holds
+    // the inline message for a failed submit in either mode.
+    let username: Signal<String> = signal(String::new());
     let password: Signal<String> = signal(String::new());
     let error: Signal<String> = signal(String::new());
+    let mode: Signal<bool> = signal(false);
 
     // Card + text styles (static — built once, cloned into the render).
     let card_style = StyleRules {
@@ -1484,12 +1489,6 @@ fn login_screen(authed: Signal<bool>) -> Element {
         border_bottom_right_radius: Some(px(8.0)),
         ..Default::default()
     };
-    let footer_style = StyleRules {
-        margin_top: Some(px(16.0)),
-        font_size: Some(px(13.0)),
-        color: Some(col(TEXT_MUTED)),
-        ..Default::default()
-    };
 
     // The signed-in account's numeric id (`CURRENT_USER_ID`) and the signed
     // session token (`CURRENT_TOKEN`) live in `crate::auth`. The
@@ -1503,10 +1502,10 @@ fn login_screen(authed: Signal<bool>) -> Element {
     let do_login = {
         let authed = authed.clone();
         move || {
-            let em = email.get();
+            let em = username.get();
             let pw = password.get();
             if em.trim().is_empty() || pw.trim().is_empty() {
-                error.set("Email and password are required.".to_string());
+                error.set("Username and password are required.".to_string());
                 return;
             }
             // Real login: spawn the backend `#[server]` login call and resolve
@@ -1528,27 +1527,80 @@ fn login_screen(authed: Signal<bool>) -> Element {
             });
         }
     };
-    let on_submit_click = move || do_login();
+    // The shared sign-up action: same validation, but calls `auth::signup`,
+    // which creates the account and logs it straight in (so the session
+    // token is set too), then flips `authed`. A duplicate username surfaces
+    // inline the same way a failed login does.
+    let do_signup = {
+        let authed = authed.clone();
+        move || {
+            let em = username.get();
+            let pw = password.get();
+            if em.trim().is_empty() || pw.trim().is_empty() {
+                error.set("Username and password are required.".to_string());
+                return;
+            }
+            error.set(String::new());
+            runtime_core::driver::spawn_async(async move {
+                match crate::auth::signup(&em, &pw).await {
+                    Ok(_) => {
+                        authed.set(true);
+                    }
+                    Err(message) => {
+                        error.set(message);
+                    }
+                }
+            });
+        }
+    };
+    // Submit routes by the current `mode`: sign in or sign up. Both are `Copy`
+    // closures (capturing only `Copy` signals), so they're callable from a
+    // `Fn` button handler and the Enter-in-password handler alike.
+    let on_submit_click = {
+        let mode = mode.clone();
+        move || {
+            if mode.get() {
+                do_signup();
+            } else {
+                do_login();
+            }
+        }
+    };
     let on_pw_enter = move |ev: &KeyEvent| {
         if ev.key == "Enter" && !ev.shift && !ev.ctrl && !ev.alt && !ev.meta {
-            do_login();
+            on_submit_click();
             KeyOutcome::PreventDefault
         } else {
             KeyOutcome::Default
         }
     };
-    // "Continue as guest" — skips the fields entirely (the mock has no real
-    // accounts, so guest == you).
+    // "Continue as guest" — a mock path: skips the fields and the backend
+    // entirely and just flips `authed`. Real sign-in / sign-up go through the
+    // fields and `crate::auth`; guest remains a local no-account shortcut.
     let on_guest = move || authed.set(true);
 
     // The form. The inline error is reactive: a nested `switch` keyed on the
     // `error` signal rebuilds the form whenever a failed submit sets it (the
     // same `switch(key, render)` pattern the sidebar/message list use —
     // `ui!` doesn't re-read signal state on its own, only on rebuild).
-    let em_change = email.clone();
+    // `form` is keyed on `(error, mode)` so it also rebuilds when the mode
+    // toggles between sign-in and sign-up.
+    let username_change = username.clone();
     let pw_change = password.clone();
-    let on_email_change = move |s: String| em_change.set(s);
+    let on_username_change = move |s: String| username_change.set(s);
     let on_pw_change = move |s: String| pw_change.set(s);
+    // Mode toggle: flip `mode` to its opposite (sign-in <-> sign-up), so a
+    // single closure serves both reciprocal links. Captures only the `Copy`
+    // `mode` + `error` signals, so it's itself `Copy` and can be cloned into
+    // the (also `Copy`) switch render closure. Toggling clears any inline
+    // error so a failure in one mode doesn't bleed into the other.
+    let on_toggle_mode = {
+        let mode = mode.clone();
+        move || {
+            mode.set(!mode.get());
+            error.set(String::new());
+        }
+    };
     // The "Continue as guest" pill's parts. The pill `Element` is built *inside*
     // the render closure (Elements aren't `Copy` and the closure is `Fn`, so a
     // pre-built one would be moved on the first rebuild and gone the second).
@@ -1567,10 +1619,18 @@ fn login_screen(authed: Signal<bool>) -> Element {
         ..Default::default()
     };
     let form = switch(
-        move || error.get(),
-        move |err: &String| {
+        // Keyed on `(error, mode)` so the form rebuilds both when a failed
+        // submit sets `error` and when the mode toggles between sign-in and
+        // sign-up (the same `switch(key, render)` pattern the sidebar/message
+        // list use — `ui!` doesn't re-read signal state on its own, only on
+        // rebuild).
+        move || (error.get(), mode.get()),
+        move |state: &(String, bool)| {
+            let err = state.0.clone();
+            let is_signup = state.1;
             // The inline error, shown only while non-empty (a failed submit
             // sets it; a successful sign-in clears it and unmounts the screen).
+            // Reused verbatim for both sign-in and sign-up failures.
             let err_style = StyleRules {
                 margin_top: Some(px(12.0)),
                 font_size: Some(px(13.0)),
@@ -1578,12 +1638,28 @@ fn login_screen(authed: Signal<bool>) -> Element {
                 text_align: Some(TextAlign::Center),
                 ..Default::default()
             };
-            let err_text = err.clone();
-            let err_el = if err_text.is_empty() {
+            let err_el = if err.is_empty() {
                 None
             } else {
-                Some(ui! { text(style = err_style) { err_text } })
+                Some(ui! { text(style = err_style) { err } })
             };
+            // The mode-scoped heading + sub. The `StyleRules` are cloned into
+            // the render (whiteboard idiom); the copy changes with `mode`.
+            let heading = if is_signup {
+                "Create an account".to_string()
+            } else {
+                "Welcome back!".to_string()
+            };
+            let sub = if is_signup {
+                "Ready to jump in? Create your account in seconds."
+            } else {
+                "We're so excited to see you again!"
+            }
+            .to_string();
+            // The "Continue as guest" pill (mode-independent). Built *inside*
+            // the render closure (Elements aren't `Copy` and the closure is
+            // `Fn`, so a pre-built one would be moved on the first rebuild and
+            // gone the second).
             let guest = on_guest.clone();
             let guest_style_i = guest_style.clone();
             let guest_text_style_i = guest_text_style.clone();
@@ -1598,6 +1674,52 @@ fn login_screen(authed: Signal<bool>) -> Element {
                     TouchResponse::CONSUMED
                 })
             };
+            // The reciprocal mode-toggle link: "No account? Sign up" in
+            // sign-in mode, "Have an account? Sign in" in sign-up mode. Tapping
+            // it flips `mode` (and clears any inline error), so the `(error,
+            // mode)` key above rebuilds the form into the other mode.
+            let toggle_label = if is_signup {
+                "Have an account? Sign in".to_string()
+            } else {
+                "No account? Sign up".to_string()
+            };
+            let toggle_test_id = if is_signup {
+                "login-signin-toggle"
+            } else {
+                "login-signup-toggle"
+            };
+            let toggle = on_toggle_mode.clone();
+            let toggle_style = StyleRules {
+                margin_top: Some(px(16.0)),
+                font_size: Some(px(13.0)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                ..Default::default()
+            };
+            let toggle_text_style = StyleRules {
+                color: Some(col(BUTTON)),
+                font_size: Some(px(13.0)),
+                font_weight: Some(FontWeight::SemiBold),
+                ..Default::default()
+            };
+            let toggle_btn = ui! {
+                view(style = toggle_style, test_id = toggle_test_id) {
+                    text(style = toggle_text_style) { toggle_label }
+                }
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        toggle();
+                    }
+                    TouchResponse::CONSUMED
+                })
+            };
+            // The submit button label flips with the mode; the handler
+            // (`on_submit_click`) routes on `mode` internally.
+            let submit_label = if is_signup {
+                "Sign Up".to_string()
+            } else {
+                "Sign In".to_string()
+            };
             ui! {
                 // `ui!` moves each style into its render closure (the
                 // whiteboard idiom: clone outer styles per use inside a
@@ -1607,12 +1729,21 @@ fn login_screen(authed: Signal<bool>) -> Element {
                     flex_direction: Some(FlexDirection::Column),
                     ..Default::default()
                 }) {
-                    text(style = label_style.clone()) { "Email".to_string() }
+                    text(style = StyleRules {
+                        // Centred (the heading/sub live in the form's full-width
+                        // column now, so they need an explicit `text_align` to
+                        // keep the card's centred look — `sub_style` already
+                        // carries one, the heading didn't).
+                        text_align: Some(TextAlign::Center),
+                        ..heading_style.clone()
+                    }) { heading }
+                    text(style = sub_style.clone()) { sub }
+                    text(style = label_style.clone()) { "Username".to_string() }
                     text_input(
-                        value = email,
+                        value = username,
                         test_id = "login-email",
-                        on_change = on_email_change,
-                        placeholder = "you@example.com",
+                        on_change = on_username_change,
+                        placeholder = "username",
                         style = field_style.clone(),
                     )
                     text(style = label_style.clone()) { "Password".to_string() }
@@ -1630,12 +1761,12 @@ fn login_screen(authed: Signal<bool>) -> Element {
                         el
                     }
                     button(
-                        label = "Sign In".to_string(),
+                        label = submit_label,
                         test_id = "login-submit",
                         on_click = on_submit_click,
                         style = submit_style.clone(),
                     )
-                    text(style = footer_style.clone()) { "No account?".to_string() }
+                    toggle_btn
                     guest_btn
                 }
             }
@@ -1657,8 +1788,9 @@ fn login_screen(authed: Signal<bool>) -> Element {
                 view(style = logo_style) {
                     text(style = logo_text_style) { "D".to_string() }
                 }
-                text(style = heading_style) { "Welcome back!".to_string() }
-                text(style = sub_style) { "We're so excited to see you again!".to_string() }
+                // The mode-scoped heading + sub live inside the form now (so
+                // they flip with the sign-in/sign-up mode); only the logo stays
+                // static in the card here.
                 form
             }
         }

@@ -192,7 +192,7 @@ mod voice_participant_list;
 mod settings_tab_bar;
 
 pub use app::app;
-pub use auth::login;
+pub use auth::{login, signup};
 
 // SDK-handler registration seam, invoked by the CLI-generated wrappers (web
 // `start_in`/`hydrate_in`, macOS `run_with`, iOS `run_in_view`, terminal
