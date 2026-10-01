@@ -36,10 +36,63 @@ pub async fn join_server(server_id: i64) -> Result<(), String> {
 }
 
 /// List a server's channels, in position order.
-#[allow(dead_code)] // consumed by the UI in a follow-up task.
 pub async fn list_channels(server_id: i64) -> Result<Vec<ChannelSummary>, String> {
     let input = discord_server::servers::ListChannelsInput { server_id };
     discord_server::servers::list_channels(input)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Create a channel in a server. `kind` is `"text"` / `"voice"` /
+/// `"category"`; `parent_channel_id` is the category it nests under, or
+/// `None` for top-level. The caller must be the server's owner or admin; the
+/// backend's rejection (e.g. insufficient privileges, a duplicate name) comes
+/// back as the `Err` string.
+pub async fn create_channel(
+    server_id: i64,
+    name: &str,
+    kind: &str,
+    parent_channel_id: Option<i64>,
+) -> Result<discord_server::server_settings::ChannelResult, String> {
+    let input = discord_server::server_settings::CreateChannelInput {
+        server_id,
+        name: name.to_string(),
+        kind: kind.to_string(),
+        parent_channel_id,
+    };
+    discord_server::server_settings::create_channel(input)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Rename a channel. Owner, admin, or moderator may call; the backend's
+/// rejection comes back as the `Err` string.
+pub async fn rename_channel(
+    server_id: i64,
+    channel_id: i64,
+    new_name: &str,
+) -> Result<discord_server::server_settings::ChannelResult, String> {
+    let input = discord_server::server_settings::RenameChannelInput {
+        server_id,
+        channel_id,
+        new_name: new_name.to_string(),
+    };
+    discord_server::server_settings::rename_channel(input)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Delete a channel. Owner or admin may call; the backend's rejection comes
+/// back as the `Err` string.
+pub async fn delete_channel(
+    server_id: i64,
+    channel_id: i64,
+) -> Result<discord_server::server_settings::ChannelResult, String> {
+    let input = discord_server::server_settings::DeleteChannelInput {
+        server_id,
+        channel_id,
+    };
+    discord_server::server_settings::delete_channel(input)
         .await
         .map_err(|e| e.to_string())
 }

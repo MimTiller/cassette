@@ -38,7 +38,8 @@ use runtime_core::{
 };
 use runtime_core::icon;
 use icons_lucide::{
-    CHEVRON_DOWN, COMPASS, GLOBE, HASH, HEADPHONES, MIC, MIC_OFF, PLUS, SETTINGS, SMILE, VOLUME_2,
+    CHEVRON_DOWN, COMPASS, GLOBE, HASH, HEADPHONES, MIC, MIC_OFF, PENCIL, PLUS, SETTINGS, SMILE,
+    TRASH_2, VOLUME_2,
 };
 use crate::mute_channel_toggle::MuteChannelToggle;
 use crate::idle_timer_badge::idle_timer_badge;
@@ -58,6 +59,9 @@ use crate::profile_settings::profile_settings;
 use crate::style_helpers::{col, pct, px};
 use crate::join_modal::JoinServerModal;
 use crate::create_server_modal::create_server_modal;
+use crate::create_channel_modal::CreateChannelModal;
+use crate::rename_channel_modal::RenameChannelModal;
+use crate::delete_channel_modal::DeleteChannelModal;
 use crate::discover_servers_modal::discover_servers_modal;
 use crate::typing_indicator::TypingIndicator;
 
@@ -3130,6 +3134,75 @@ fn app_shell(authed: Signal<bool>) -> Element {
         }
     };
 
+    // --- Live channel management (create / rename / delete) -----------------
+    // Only active in live mode: the `server_id` for every call is read from
+    // `active_live_server` at submit time (the modals are built once and live
+    // across re-opens, so a `None` server is a no-op). The three modals reuse
+    // the build-once/toggle backdrop idiom of `join_modal.rs`; the live channel
+    // list they refresh is the same `live_channels` the live sidebar renders,
+    // so a successful op re-fetches `list_channels` and the sidebar's `switch`
+    // (keyed on the channel fingerprint) rebuilds with the new rows. There is
+    // no client-side permission logic — the backend decides and its message is
+    // surfaced inline by the modal on failure.
+    let cc_open: Signal<bool> = signal(false);
+    let cc_name: Signal<String> = signal(String::new());
+    let cc_kind: Signal<String> = signal("text".to_string());
+    let cc_busy: Signal<bool> = signal(false);
+    let cc_err: Signal<String> = signal(String::new());
+    let cc_el = ui! {
+        view {
+            CreateChannelModal(
+                open = cc_open,
+                server_id = active_live_server,
+                name = cc_name,
+                kind = cc_kind,
+                busy = cc_busy,
+                error = cc_err,
+                channels = live_channels,
+            )
+        }
+    };
+    let rc_open: Signal<bool> = signal(false);
+    let rc_cid: Signal<Option<i64>> = signal(None);
+    let rc_name: Signal<String> = signal(String::new());
+    let rc_busy: Signal<bool> = signal(false);
+    let rc_err: Signal<String> = signal(String::new());
+    let rc_el = ui! {
+        view {
+            RenameChannelModal(
+                open = rc_open,
+                server_id = active_live_server,
+                channel_id = rc_cid,
+                name = rc_name,
+                busy = rc_busy,
+                error = rc_err,
+                channels = live_channels,
+            )
+        }
+    };
+    let dc_open: Signal<bool> = signal(false);
+    let dc_cid: Signal<Option<i64>> = signal(None);
+    let dc_name: Signal<String> = signal(String::new());
+    let dc_busy: Signal<bool> = signal(false);
+    let dc_err: Signal<String> = signal(String::new());
+    let dc_el = ui! {
+        view {
+            DeleteChannelModal(
+                open = dc_open,
+                server_id = active_live_server,
+                channel_id = dc_cid,
+                channel_name = dc_name,
+                busy = dc_busy,
+                error = dc_err,
+                channels = live_channels,
+            )
+        }
+    };
+    // (Live channel action cluster + new-channel "+" builder live inside the
+    // live arm of the sidebar `switch` render closure — see there. They need
+    // the render closure's owned copies of the modal `Signal`s, which a
+    // function-scope non-`move` closure could not borrow across the `move`
+    // capture boundary.)
     // Bottom rail actions: Discord's Add-a-Server and Explore circles,
     // rendered below the live-servers section.
     let rail_actions = {
@@ -3326,6 +3399,113 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     let live_sel = active_live_channel.clone();
                     let gw = gateway.clone();
                     let mentioned = live_mentioned.clone();
+                    // Shared style for the live channel row action icon buttons
+                    // (rename pencil / delete trash) and the new-channel "+"
+                    // header action. Defined here, inside the live arm of the
+                    // `switch` render closure, because the per-button handlers
+                    // touch the modal `Signal`s (`rc_*` / `dc_*` / `cc_*`) that
+                    // this `move` render closure owns copies of — a
+                    // function-scope non-`move` closure could not borrow those
+                    // across the `move` capture boundary (E0373).
+                    let chan_btn_style = StyleRules {
+                        width: Some(px(22.0)),
+                        height: Some(px(22.0)),
+                        align_items: Some(AlignItems::Center),
+                        justify_content: Some(JustifyContent::Center),
+                        border_top_left_radius: Some(px(6.0)),
+                        border_top_right_radius: Some(px(6.0)),
+                        border_bottom_left_radius: Some(px(6.0)),
+                        border_bottom_right_radius: Some(px(6.0)),
+                        flex_shrink: Some(runtime_core::Tokenized::Literal(0.0)),
+                        ..Default::default()
+                    };
+                    // The per-row name is shared into both `move` tap handlers via
+                    // an `Rc<String>` (`Clone`), so neither handler moves a `String`
+                    // out of this `Fn` closure (E0507) — the established idiom for
+                    // non-`Copy` data in `'static` handlers here.
+                    let chan_actions = |cid: i64, nm: Rc<String>, mcount: i64| -> Element {
+                        // `nm` is an `Rc` (`Clone`, not `Copy`): each `move` tap
+                        // handler captures its own clone, and reads the name via
+                        // `(*nm)` without ever moving the `String` out of this
+                        // `Fn` render closure (E0507).
+                        let nm_rename = nm.clone();
+                        let nm_delete = nm.clone();
+                        let badge = if mcount > 0 {
+                            Some(ui! {
+                                view(style = StyleRules {
+                                    min_width: Some(px(16.0)),
+                                    height: Some(px(16.0)),
+                                    background: Some(col(BADGE)),
+                                    border_top_left_radius: Some(px(8.0)),
+                                    border_top_right_radius: Some(px(8.0)),
+                                    border_bottom_left_radius: Some(px(8.0)),
+                                    border_bottom_right_radius: Some(px(8.0)),
+                                    align_items: Some(AlignItems::Center),
+                                    justify_content: Some(JustifyContent::Center),
+                                    padding_left: Some(px(4.0)),
+                                    padding_right: Some(px(4.0)),
+                                    flex_shrink: Some(runtime_core::Tokenized::Literal(0.0)),
+                                    ..Default::default()
+                                }) {
+                                    text(style = StyleRules {
+                                        font_size: Some(px(11.0)),
+                                        font_weight: Some(FontWeight::Bold),
+                                        color: Some(col(TEXT)),
+                                        ..Default::default()
+                                    }) { mcount.to_string() }
+                                }
+                            })
+                        } else {
+                            None
+                        };
+                        let rename_btn = ui! {
+                            view(style = chan_btn_style.clone(), test_id = "live-channel-rename") {
+                                icon(PENCIL).color(|| Color::from(TEXT_MUTED)).size(14.0)
+                            }
+                            .on_touch(move |ev| {
+                                if ev.phase == TouchPhase::Ended {
+                                    rc_cid.set(Some(cid));
+                                    rc_name.set((*nm_rename).clone());
+                                    rc_busy.set(false);
+                                    rc_err.set(String::new());
+                                    rc_open.set(true);
+                                }
+                                TouchResponse::CONSUMED
+                            })
+                        };
+                        let delete_btn = ui! {
+                            view(style = chan_btn_style.clone(), test_id = "live-channel-delete") {
+                                icon(TRASH_2).color(|| Color::from(TEXT_MUTED)).size(14.0)
+                            }
+                            .on_touch(move |ev| {
+                                if ev.phase == TouchPhase::Ended {
+                                    dc_cid.set(Some(cid));
+                                    dc_name.set((*nm_delete).clone());
+                                    dc_busy.set(false);
+                                    dc_err.set(String::new());
+                                    dc_open.set(true);
+                                }
+                                TouchResponse::CONSUMED
+                            })
+                        };
+                        ui! {
+                            view(style = StyleRules {
+                                position: Some(Position::Absolute),
+                                top: Some(px(6.0)),
+                                right: Some(px(8.0)),
+                                flex_direction: Some(FlexDirection::Row),
+                                align_items: Some(AlignItems::Center),
+                                gap: Some(px(2.0)),
+                                ..Default::default()
+                            }) {
+                                if let Some(b) = badge {
+                                    { b }
+                                }
+                                { rename_btn }
+                                { delete_btn }
+                            }
+                        }
+                    };
                     let live_rows: Vec<Element> = live
                         .iter()
                         .map(|c| {
@@ -3373,51 +3553,27 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                 })),
                                 ..live_label_style()
                             };
+                            // The right-side action cluster for this row (mention
+                            // pill + rename/delete buttons), built once per row.
+                            // `chan_actions` is `Copy` (all `Copy` captures), so
+                            // calling it here does not move it out of the
+                            // `switch` render closure.
+                            let actions = chan_actions(cid, Rc::new(name.clone()), mcount);
                             let row = if is_text {
                                 // Voice rows stay non-clickable for now — a later
                                 // task handles voice selection. Text rows select
                                 // the channel and request its history over the
                                 // gateway (the echo/History frames land in
-                                // `gateway.incoming()`). `.on_touch` chains on the
-                                // `view` node inside `ui!`, so each row kind gets
-                                // its own `ui!` block.
+                                // `gateway.incoming()`). The right-side action
+                                // cluster (mention pill + rename/delete buttons)
+                                // is `chan_actions`, built per row above.
                                 ui! {
                                     view(style = row_style) {
                                         icon(HASH)
                                             .color(|| Color::from(TEXT_MUTED))
                                             .size(14.0)
                                         text(style = label_style) { name }
-                                        // Live mention indicator: a red numbered
-                                        // pill on the row's right edge, mirroring the
-                                        // mock path's `c.mentions` badge. Driven by
-                                        // the real gateway count, zero when the
-                                        // channel is open or has no unread mentions.
-                                        if mcount > 0 {
-                                            view(style = StyleRules {
-                                                position: Some(Position::Absolute),
-                                                top: Some(px(9.0)),
-                                                right: Some(px(8.0)),
-                                                min_width: Some(px(16.0)),
-                                                height: Some(px(16.0)),
-                                                background: Some(col(BADGE)),
-                                                border_top_left_radius: Some(px(8.0)),
-                                                border_top_right_radius: Some(px(8.0)),
-                                                border_bottom_left_radius: Some(px(8.0)),
-                                                border_bottom_right_radius: Some(px(8.0)),
-                                                align_items: Some(AlignItems::Center),
-                                                justify_content: Some(JustifyContent::Center),
-                                                padding_left: Some(px(4.0)),
-                                                padding_right: Some(px(4.0)),
-                                                ..Default::default()
-                                            }) {
-                                                text(style = StyleRules {
-                                                    font_size: Some(px(11.0)),
-                                                    font_weight: Some(FontWeight::Bold),
-                                                    color: Some(col(TEXT)),
-                                                    ..Default::default()
-                                                }) { mcount.to_string() }
-                                            }
-                                        }
+                                        { actions }
                                     }
                                     .on_touch(move |ev| {
                                         if ev.phase == TouchPhase::Ended {
@@ -3438,6 +3594,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                             .color(|| Color::from(TEXT_MUTED))
                                             .size(14.0)
                                         text(style = label_style) { name }
+                                        { actions }
                                     }
                                 }
                             };
@@ -3462,6 +3619,23 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             view { live_rows }
                         }
                     };
+                    // The "New Channel" "+" button on the live header's right
+                    // edge: opens the create-channel modal, resetting its
+                    // per-open state so a re-open starts fresh (the same
+                    // reset-on-open idiom the rail's Join flow uses).
+                    let add_btn = ui! {
+                        view(style = chan_btn_style.clone(), test_id = "live-channel-add") {
+                            icon(PLUS).color(|| Color::from(TEXT_MUTED)).size(14.0)
+                        }
+                        .on_touch(move |_ev| {
+                            cc_name.set(String::new());
+                            cc_kind.set("text".to_string());
+                            cc_busy.set(false);
+                            cc_err.set(String::new());
+                            cc_open.set(true);
+                            TouchResponse::CONSUMED
+                        })
+                    };
                     ui! {
                         view(style = sidebar_style.clone()) {
                             view(style = sidebar_header_style.clone()) {
@@ -3473,6 +3647,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                         "⌃".to_string()
                                     }
                                 }
+                                view(style = StyleRules {
+                                    flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
+                                    ..Default::default()
+                                }) {}
+                                { add_btn }
                             }
                             live_content
                         }
@@ -4649,6 +4828,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
             create_el
             // "Discover Servers" overlay: same full-screen, paint-last idiom.
             discover_el
+            // Live channel management overlays (create / rename / delete): same
+            // full-screen, paint-last idiom. Each collapses to zero size when
+            // closed; `server_id` is read from `active_live_server` at submit
+            // time, so they're inert outside live mode.
+            cc_el
+            rc_el
+            dc_el
         }
     }
 }

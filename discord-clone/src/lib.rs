@@ -154,6 +154,12 @@ mod invite_link_display;
 mod join_modal;
 #[path = "components/create_server_modal.rs"]
 mod create_server_modal;
+#[path = "components/create_channel_modal.rs"]
+mod create_channel_modal;
+#[path = "components/rename_channel_modal.rs"]
+mod rename_channel_modal;
+#[path = "components/delete_channel_modal.rs"]
+mod delete_channel_modal;
 #[path = "components/discover_servers_modal.rs"]
 mod discover_servers_modal;
 #[path = "components/voice_join_button.rs"]
