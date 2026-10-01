@@ -154,6 +154,8 @@ mod invite_link_display;
 mod join_modal;
 #[path = "components/create_server_modal.rs"]
 mod create_server_modal;
+#[path = "components/discover_servers_modal.rs"]
+mod discover_servers_modal;
 #[path = "components/voice_join_button.rs"]
 mod voice_join_button;
 #[path = "components/server_template_card.rs"]

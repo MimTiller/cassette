@@ -38,7 +38,7 @@ use runtime_core::{
 };
 use runtime_core::icon;
 use icons_lucide::{
-    CHEVRON_DOWN, COMPASS, HASH, HEADPHONES, MIC, MIC_OFF, PLUS, SETTINGS, SMILE, VOLUME_2,
+    CHEVRON_DOWN, COMPASS, GLOBE, HASH, HEADPHONES, MIC, MIC_OFF, PLUS, SETTINGS, SMILE, VOLUME_2,
 };
 use crate::mute_channel_toggle::MuteChannelToggle;
 use crate::idle_timer_badge::idle_timer_badge;
@@ -58,6 +58,7 @@ use crate::profile_settings::profile_settings;
 use crate::style_helpers::{col, pct, px};
 use crate::join_modal::JoinServerModal;
 use crate::create_server_modal::create_server_modal;
+use crate::discover_servers_modal::discover_servers_modal;
 use crate::typing_indicator::TypingIndicator;
 
 // Robot test ids: stable, `'static` strings the automation robot
@@ -2970,6 +2971,33 @@ fn app_shell(authed: Signal<bool>) -> Element {
         }
     };
 
+    // --- "Discover Servers" overlay ----------------------------------------
+    // Trigger is a third rail circle (GLOBE) below the PLUS and COMPASS
+    // circles — both existing icons are taken (Join / Create). `on_join`
+    // mints the suggested server the same way Create does: `create_server` +
+    // append to `server_rail` (the rail's re-render trigger), then close the
+    // overlay. The mock list itself is static; no join backend.
+    let discover_open: Signal<bool> = signal(false);
+    let discover_on_join: Rc<dyn Fn(String)> = Rc::new({
+        let next_id = next_id.clone();
+        let dynamic_servers = dynamic_servers.clone();
+        let server_rail = server_rail.clone();
+        let discover_open = discover_open;
+        move |name: String| {
+            let new_id = create_server(&name, &*next_id, &dynamic_servers);
+            let mut ids = server_rail.get();
+            ids.push(new_id);
+            server_rail.set(ids);
+            discover_open.set(false);
+        }
+    });
+    let discover_modal_el: Element = discover_servers_modal(discover_open, discover_on_join);
+    let discover_el = ui! {
+        view {
+            { discover_modal_el }
+        }
+    };
+
     // Bottom rail actions: Discord's Add-a-Server and Explore circles,
     // rendered below the live-servers section.
     let rail_actions = {
@@ -2992,6 +3020,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let plus_busy = join_busy.clone();
         let create_open = create_open.clone();
         let create_name = create_name.clone();
+        let discover_open = discover_open.clone();
         ui! {
             view(style = circle_style.clone(), test_id = "rail-join-server") {
                 icon(PLUS).color(|| Color::from("#23a55a")).size(20.0)
@@ -3006,7 +3035,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 plus_open.set(true);
                 TouchResponse::CONSUMED
             })
-            view(style = circle_style, test_id = "rail-create-server") {
+            view(style = circle_style.clone(), test_id = "rail-create-server") {
                 icon(COMPASS).color(|| Color::from(TEXT_MUTED)).size(20.0)
             }
             // Create-a-Server: reset the name field and open the create modal
@@ -3014,6 +3043,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
             .on_touch(move |_ev| {
                 create_name.set(String::new());
                 create_open.set(true);
+                TouchResponse::CONSUMED
+            })
+            // Discover-a-Server: open the discover overlay (no per-open state
+            // to reset — the suggested list is static).
+            view(style = circle_style, test_id = "rail-discover-servers") {
+                icon(GLOBE).color(|| Color::from(TEXT_MUTED)).size(20.0)
+            }
+            .on_touch(move |_ev| {
+                discover_open.set(true);
                 TouchResponse::CONSUMED
             })
         }
@@ -4477,6 +4515,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
             join_el
             // "Create a Server" overlay: same full-screen, paint-last idiom.
             create_el
+            // "Discover Servers" overlay: same full-screen, paint-last idiom.
+            discover_el
         }
     }
 }
