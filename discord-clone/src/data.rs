@@ -223,6 +223,175 @@ pub fn now_secs() -> i64 {
     runtime_shared::time::epoch_millis() / 1_000
 }
 
+// --- Direct messages (mock) --------------------------------------------------
+// A `Dm` is a one-to-one conversation between the signed-in user (`USER`) and a
+// single other participant. The list + conversation view (`crate::dm_view`)
+// reads only these; sent DMs are kept separately in an app-level session log.
+// Same shape as `Message` (age stored inline, resolved at render) but kept as a
+// distinct type so the DM model can evolve (read cursors, typing, …) without
+// touching channel `Message`s.
+
+pub struct DmMessage {
+    pub author: &'static str,
+    /// Hex for the author chip / name.
+    pub color: &'static str,
+    pub body: &'static str,
+    /// How old the message is, in **seconds** — resolved against the live wall
+    /// clock at render time (see `Message::age_secs`).
+    pub age_secs: i64,
+}
+
+/// Resolve a DM message's age to a real Unix-seconds instant, given "now".
+impl DmMessage {
+    pub fn ts_secs(&self, now_secs: i64) -> i64 {
+        now_secs - self.age_secs
+    }
+}
+
+/// One direct-message conversation. `user` is the other participant (the
+/// signed-in user is always the implicit other side); `messages` is in send
+/// order (oldest first).
+pub struct Dm {
+    pub id: u32,
+    /// The other participant in this conversation.
+    pub user: Member,
+    /// Messages so far, oldest first.
+    pub messages: &'static [DmMessage],
+}
+
+/// The age of this conversation's most recent message (for the list's "recent
+/// conversations" sort). A conversation with no messages reads as the most
+/// recent (0) so an empty thread sorts to the top.
+impl Dm {
+    pub fn last_age_secs(&self) -> i64 {
+        self.messages.last().map(|m| m.age_secs).unwrap_or(0)
+    }
+}
+
+/// Look up a DM conversation by id (None if unknown).
+pub fn find_dm(id: u32) -> Option<&'static Dm> {
+    DMS.iter().find(|d| d.id == id)
+}
+
+/// Mock DM seed. The ids are chosen so `dm_view::mock_unread`'s stub
+/// (unread on 1, 2, 4) lines up with real conversations.
+pub static DMS: &[Dm] = &[
+    Dm {
+        id: 1,
+        user: Member { name: "miri", color: "#5865f2", status: Status::Online },
+        messages: &[
+            DmMessage {
+                author: "miri",
+                color: "#5865f2",
+                body: "still hitting that borrow error from this morning?",
+                age_secs: 3600 * 3,
+            },
+            DmMessage {
+                author: "you",
+                color: "#5865f2",
+                body: "almost — the lifetime on the helper was the whole thing",
+                age_secs: 3600 * 3 - 60,
+            },
+            DmMessage {
+                author: "miri",
+                color: "#5865f2",
+                body: "the classic. send me the patch when it lands",
+                age_secs: 3600 * 3 - 90,
+            },
+        ],
+    },
+    Dm {
+        id: 2,
+        user: Member { name: "dyno", color: "#57f287", status: Status::Online },
+        messages: &[
+            DmMessage {
+                author: "dyno",
+                color: "#57f287",
+                body: "that wasm tool you linked — does it handle wasm-bindgen out of the box?",
+                age_secs: 3600 * 5,
+            },
+            DmMessage {
+                author: "you",
+                color: "#5865f2",
+                body: "yeah, it shells out to wasm-bindgen-cli under the hood",
+                age_secs: 3600 * 5 - 45,
+            },
+            DmMessage {
+                author: "dyno",
+                color: "#57f287",
+                body: "perfect, that's exactly what I needed",
+                age_secs: 3600 * 5 - 80,
+            },
+            DmMessage {
+                author: "you",
+                color: "#5865f2",
+                body: "let me know if it chokes on your setup",
+                age_secs: 3600 * 5 - 120,
+            },
+        ],
+    },
+    Dm {
+        id: 3,
+        user: Member { name: "rio", color: "#3ba55c", status: Status::Idle },
+        messages: &[
+            DmMessage {
+                author: "rio",
+                color: "#3ba55c",
+                body: "did you grab the extra pair of layers for the hike?",
+                age_secs: 3600 * 12,
+            },
+            DmMessage {
+                author: "you",
+                color: "#5865f2",
+                body: "got a rain shell + a base layer, should be plenty",
+                age_secs: 3600 * 12 - 30,
+            },
+        ],
+    },
+    Dm {
+        id: 4,
+        user: Member { name: "sol", color: "#ed4245", status: Status::Online },
+        messages: &[
+            DmMessage {
+                author: "sol",
+                color: "#ed4245",
+                body: "the new emblem palette — thoughts on a slightly warmer gold?",
+                age_secs: 3600 * 8,
+            },
+            DmMessage {
+                author: "you",
+                color: "#5865f2",
+                body: "warmer reads better against the dark bg, yes",
+                age_secs: 3600 * 8 - 60,
+            },
+            DmMessage {
+                author: "sol",
+                color: "#ed4245",
+                body: "awesome, updating the swatch now",
+                age_secs: 3600 * 8 - 90,
+            },
+        ],
+    },
+    Dm {
+        id: 5,
+        user: Member { name: "juno", color: "#fee75c", status: Status::Offline },
+        messages: &[
+            DmMessage {
+                author: "juno",
+                color: "#fee75c",
+                body: "was out all day, seeing a ton of messages — what did I miss?",
+                age_secs: 3600 * 18,
+            },
+            DmMessage {
+                author: "you",
+                color: "#5865f2",
+                body: "the showcase thread mostly, and the hike plan",
+                age_secs: 3600 * 18 - 40,
+            },
+        ],
+    },
+];
+
 pub static SERVERS: &[Server] = &[
     Server {
         id: 1,

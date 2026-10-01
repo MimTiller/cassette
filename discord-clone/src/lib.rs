@@ -16,6 +16,7 @@ mod typing_indicator;
 mod notification_settings;
 mod keyboard_shortcuts_overlay;
 mod profile_settings;
+mod dm_view;
 
 // Standalone component, not wired into any screen yet — same "declared so it
 // compiles, referenced by nothing" shape as `profile_settings`. Lives under

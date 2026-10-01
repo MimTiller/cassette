@@ -38,15 +38,15 @@ use runtime_core::{
 };
 use runtime_core::icon;
 use icons_lucide::{
-    CHEVRON_DOWN, COMPASS, GLOBE, HASH, HEADPHONES, MIC, MIC_OFF, PENCIL, PLUS, SETTINGS, SMILE,
-    TRASH_2, VOLUME_2,
+    CHEVRON_DOWN, COMPASS, GLOBE, HASH, HEADPHONES, MAIL, MIC, MIC_OFF, PENCIL, PLUS, SETTINGS,
+    SMILE, TRASH_2, VOLUME_2,
 };
 use crate::mute_channel_toggle::MuteChannelToggle;
 use crate::idle_timer_badge::idle_timer_badge;
 
 use runtime_shared::time::local_offset_minutes;
 
-use crate::data::{SERVERS, Category, Member, Server, Status, TextChannel, USER};
+use crate::data::{DMS, SERVERS, Category, Member, Server, Status, TextChannel, USER};
 use crate::member_count_display::member_count_display;
 use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
@@ -56,6 +56,7 @@ use crate::connection_quality_indicator::ConnectionQualityIndicator;
 use crate::edited_label::edited_label;
 use crate::notification_settings::NotificationSettings;
 use crate::profile_settings::profile_settings;
+use crate::dm_view::dm_screen;
 use crate::style_helpers::{col, pct, px};
 use crate::join_modal::JoinServerModal;
 use crate::create_server_modal::create_server_modal;
@@ -175,7 +176,7 @@ fn civil_ymd_from_day(day: i64) -> (i64, u32, u32) {
 
 /// Discord-style message time line: "Today at 10:14 AM", "Yesterday at …",
 /// or "9/12/2026" once it's older than a day.
-fn format_when(unix_secs: i64, now_secs: i64) -> String {
+pub(crate) fn format_when(unix_secs: i64, now_secs: i64) -> String {
     let (day, h, m) = local_day_clock(unix_secs);
     let (now_day, _, _) = local_day_clock(now_secs);
     let (suffix, h12) = {
@@ -205,7 +206,7 @@ fn format_when(unix_secs: i64, now_secs: i64) -> String {
 /// is self-contained). `edited` gates the "(edited)" marker: live rows pass
 /// the message's real `edited_at.is_some()`; the mock path passes `true` to
 /// preserve its previous (always-on placeholder) rendering.
-fn message_row(author: &str, color: &str, body: &str, when: String, edited: bool) -> Element {
+pub(crate) fn message_row(author: &str, color: &str, body: &str, when: String, edited: bool) -> Element {
     let row_style = StyleRules {
         padding_top: Some(px(8.0)),
         padding_bottom: Some(px(2.0)),
@@ -2751,6 +2752,19 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // a full-screen overlay, the same build-once/toggle idiom as `profile_mode`.
     let notif_mode: Signal<bool> = signal(false);
 
+    // Direct Messages (mock): a "DMs" rail circle toggles the full-screen
+    // `dm_view::dm_screen` overlay, the same build-once/toggle idiom as
+    // `profile_mode` / `notif_mode`. `dm_active` selects the open conversation
+    // (seeded to the most recent mock DM — `DMS` is ordered by recency, so the
+    // first entry), `dm_sent` is this session's sent-DM log, and `dm_revision`
+    // is the rebuild counter its message list's `switch` dedups on. These are
+    // created fresh here (not threaded from elsewhere) — the DM view is
+    // self-contained over `crate::data`.
+    let dm_mode: Signal<bool> = signal(false);
+    let dm_active: Signal<u32> = signal(DMS.first().map(|d| d.id).unwrap_or(0));
+    let dm_sent: Rc<RefCell<Vec<(u32, &'static str, String, i64)>>> = Rc::new(RefCell::new(Vec::new()));
+    let dm_revision: Signal<u32> = signal(0);
+
     // --- server rail -----------------------------------------------------
     let rail_style = StyleRules {
         width: Some(px(72.0)),
@@ -3316,6 +3330,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let create_open = create_open.clone();
         let create_name = create_name.clone();
         let discover_open = discover_open.clone();
+        let dm_open = dm_mode.clone();
         ui! {
             view(style = circle_style.clone(), test_id = "rail-join-server") {
                 icon(PLUS).color(|| Color::from("#23a55a")).size(20.0)
@@ -3342,11 +3357,23 @@ fn app_shell(authed: Signal<bool>) -> Element {
             })
             // Discover-a-Server: open the discover overlay (no per-open state
             // to reset — the suggested list is static).
-            view(style = circle_style, test_id = "rail-discover-servers") {
+            view(style = circle_style.clone(), test_id = "rail-discover-servers") {
                 icon(GLOBE).color(|| Color::from(TEXT_MUTED)).size(20.0)
             }
             .on_touch(move |_ev| {
                 discover_open.set(true);
+                TouchResponse::CONSUMED
+            })
+            // Direct Messages (mock): toggle the full-screen `dm_screen` overlay.
+            // No per-open state to reset — `dm_active` / `dm_sent` / `dm_revision`
+            // are owned in `app_shell` scope and persist across toggles, so a
+            // re-open keeps the previously-selected conversation and any DMs
+            // sent this session (the same persistence as the channel `sent` log).
+            view(style = circle_style.clone(), test_id = "rail-direct-messages") {
+                icon(MAIL).color(|| Color::from(TEXT_MUTED)).size(20.0)
+            }
+            .on_touch(move |_ev| {
+                dm_open.set(!dm_open.get());
                 TouchResponse::CONSUMED
             })
         }
@@ -4870,6 +4897,81 @@ fn app_shell(authed: Signal<bool>) -> Element {
         }
     };
 
+    // Direct Messages screen (mock): same full-screen, paint-last idiom as the
+    // Profile / Notification overlays above. `dm_screen` builds the list column
+    // + the active conversation; its three inputs are the `dm_*` signals owned
+    // in `app_shell` scope, so the open conversation and this session's sent
+    // DMs survive a close/re-open. A "Done" pill in the header flips
+    // `dm_mode` back off to close it.
+    let dm_el = dm_screen(dm_active, dm_sent, dm_revision);
+    let dm_close = dm_mode.clone();
+    let dm_header = ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(JustifyContent::SpaceBetween),
+            padding_top: Some(px(16.0)),
+            padding_bottom: Some(px(16.0)),
+            padding_left: Some(px(16.0)),
+            padding_right: Some(px(16.0)),
+            border_bottom_width: Some(border_width(1.0)),
+            border_bottom_color: Some(col(BORDER)),
+            background: Some(col(BG_MAIN)),
+            ..Default::default()
+        }) {
+            text(style = StyleRules {
+                font_size: Some(px(18.0)),
+                font_weight: Some(FontWeight::Bold),
+                color: Some(col(TEXT)),
+                ..Default::default()
+            }) { "Direct Messages".to_string() }
+            view(style = StyleRules {
+                height: Some(px(26.0)),
+                padding_left: Some(px(12.0)),
+                padding_right: Some(px(12.0)),
+                background: Some(col(BG_SIDEBAR)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                border_top_left_radius: Some(px(6.0)),
+                border_top_right_radius: Some(px(6.0)),
+                border_bottom_left_radius: Some(px(6.0)),
+                border_bottom_right_radius: Some(px(6.0)),
+                ..Default::default()
+            }) {
+                text(style = StyleRules {
+                    color: Some(col(TEXT)),
+                    font_size: Some(px(12.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    ..Default::default()
+                }) { "Done".to_string() }
+            }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    dm_close.set(false);
+                }
+                TouchResponse::CONSUMED
+            })
+        }
+    };
+    let dm_open_chk = dm_mode.clone();
+    let dm_wrap = move || StyleRules {
+        position: Some(Position::Absolute),
+        left: Some(px(0.0)),
+        top: Some(px(0.0)),
+        width: Some(if dm_open_chk.get() { pct(100.0) } else { px(0.0) }),
+        height: Some(if dm_open_chk.get() { pct(100.0) } else { px(0.0) }),
+        background: Some(col(BG_MAIN)),
+        flex_direction: Some(FlexDirection::Column),
+        overflow: Some(Overflow::Hidden),
+        ..Default::default()
+    };
+    let dm_region = ui! {
+        view(style = dm_wrap) {
+            dm_header
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) { dm_el }
+        }
+    };
+
     ui! {
         view(style = StyleRules {
             width: Some(pct(100.0)),
@@ -4933,6 +5035,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // Painted last so it sits on top of everything when open.
             profile_region
             notif_region
+            // Direct Messages (mock): full-screen, same paint-last idiom. Sits
+            // above the server/channel view but below the modal overlays
+            // (join / create / discover), so a modal opened from elsewhere still
+            // wins on top.
+            dm_region
             // "Join a Server" overlay: full-screen, painted last so it sits on
             // top when open (collapses to zero size when closed).
             join_el
