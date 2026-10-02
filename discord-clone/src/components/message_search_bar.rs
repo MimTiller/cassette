@@ -7,10 +7,11 @@
 //! render while the input is non-empty (a node-level reactive
 //! `if !query.get().is_empty() { … }`); clear the input and they unmount.
 //! There is no backend call and no real filtering: whatever is typed, the
-//! same two rows appear. No props, no wiring into any screen yet. Declared
-//! in `lib.rs` so it compiles as part of the crate, but referenced by nothing
-//! (the same shape `nickname_edit_field` / `ban_reason_input` /
-//! `icon_change_confirm` ship in).
+//! same two rows appear. It is wired into the **channel header row** (its
+//! correct home — message search is a channel-header feature, Discord's
+//! layout). It is NOT the member-list panel's header; the member panel's
+//! own header is the "MEMBER COUNT — N" line. Declared in `lib.rs` and
+//! rendered by `app.rs`'s channel header `switch`.
 //!
 //! Idioms, each verified against this crate:
 //! - the text input is the `text_input(value = …, on_change = …,
@@ -70,8 +71,8 @@ pub fn MessageSearchBar() -> Element {
     // rail's status dot), not a nested child. The input `flex_grow`s to fill
     // the row (after the fixed 16px icon + 8px gap) instead of using a fixed
     // width — so the bar fits whatever width its container gives it (it lives
-    // in the 240px member panel, which a fixed 288px width would have clipped
-    // under `overflow: Hidden`).
+    // in the channel header row, wrapped in a fixed-width `view`; a fixed
+    // 288px input would have clipped that slot).
     let input_style = StyleRules {
         flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Center),
