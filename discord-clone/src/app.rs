@@ -3870,6 +3870,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             server_stats_card(512.into(), 48.into(), 1204.into())
             ServerEventCard()
             server_discovery_card()
+            category_filter_chips()
         }
     };
 
@@ -5357,7 +5358,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let profile_region = ui! {
         view(style = profile_wrap) {
             profile_header
-            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) { profile_el }
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
+                profile_el
+                DeleteAccountWarning()
+            }
         }
     };
 
