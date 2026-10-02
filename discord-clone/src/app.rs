@@ -41,7 +41,6 @@ use icons_lucide::{
     CHEVRON_DOWN, CIRCLE_HELP, COMPASS, GAVEL, GLOBE, HASH, HEADPHONES, MAIL, MESSAGE_CIRCLE, MIC,
     MIC_OFF, PENCIL, PLUS, SETTINGS, SMILE, SMILE_PLUS, TRASH_2, VOLUME_2,
 };
-use crate::mute_channel_toggle::MuteChannelToggle;
 use crate::idle_timer_badge::idle_timer_badge;
 use crate::server_settings_panel::ServerSettingsPanel;
 
@@ -58,13 +57,10 @@ use crate::member_role_list::MemberRoleList;
 use crate::read_receipt_indicator::ReadReceiptIndicator;
 use crate::verified_badge::VerifiedBadge;
 use crate::delete_account_warning::DeleteAccountWarning;
-use crate::notification_permission_prompt::NotificationPermissionPrompt;
 
 use crate::server_boost_badge::ServerBoostBadge;
-use crate::audit_log_row::AuditLogRow;
 use crate::language_picker::LanguagePicker;
 use crate::user_bio_block::user_bio_block;
-use crate::transfer_ownership_confirm::TransferOwnershipConfirm;
 use crate::dm_request_card::DmRequestCard;
 use crate::blocked_user_row::BlockedUserRow;
 use crate::delete_message_confirm::DeleteMessageConfirm;
@@ -73,11 +69,9 @@ use crate::pin_confirm_toast::PinConfirmToast;
 use crate::mic_selector::MicSelector;
 use crate::link_embed_preview::LinkEmbedPreview;
 use crate::friend_request_card::FriendRequestCard;
-use crate::reply_preview_bar::ReplyPreviewBar;
 use crate::server_icon_fallback::ServerIconFallback;
 use crate::message_action_bar::MessageActionBar;
 
-use crate::channel_topic_banner::ChannelTopicBanner;
 use crate::dm_notification_badge::DmNotificationBadge;
 use crate::message_rating::MessageRating;
 use crate::welcome_banner::WelcomeBanner;
@@ -86,7 +80,6 @@ use crate::code_block::code_block;
 use crate::reaction_summary::ReactionSummary;
 use crate::activity_card::ActivityCard;
 use crate::screen_share_indicator::ScreenShareIndicator;
-use crate::slowmode_indicator::SlowmodeIndicator;
 use crate::two_factor_toggle::TwoFactorToggle;
 
 use crate::translate_toggle::TranslateToggle;
@@ -4444,15 +4437,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                 .color(|| Color::from(TEXT_MUTED))
                                 .size(14.0)
                             text(style = label_style) { name }
-                            MuteChannelToggle()
-                            SlowmodeIndicator()
-                            ChannelTopicBanner()
-                            NotificationPermissionPrompt()
-    TransferOwnershipConfirm()
-
-                            AuditLogRow()
-
-                            ReplyPreviewBar()
                             // The unread pill on the row's right edge, vertically
                             // centered in the 34px row. Mock count per channel;
                             // the real value comes from the gateway later.
