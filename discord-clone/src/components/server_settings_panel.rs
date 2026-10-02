@@ -1,23 +1,28 @@
 //! `server_settings_panel` — the LIVE server's own settings overlay: rename the
-//! server, set/clear its icon (a URL, empty clears), and transfer ownership
-//! to another member by numeric user id.
+//! server, set/clear its icon (a URL, empty clears), add (or re-role) a member
+//! by numeric user id, and transfer ownership to another member by numeric user
+//! id.
 //!
 //! A full-screen card over a dimmed backdrop (the build-once/toggle idiom of
 //! `delete_channel_modal.rs` / `create_channel_modal.rs`). The `open` /
 //! `busy` / `error` / `servers` / `server_id` / `name` / `icon` /
-//! `new_owner_id` signals are all owned by the caller (`app.rs`), which seeds
-//! `name`/`icon` from the active live server on open. `server_id` is read at
-//! submit time (`None` outside live mode = a no-op), so the panel is inert
-//! outside live mode — the same shape the channel-management modals use.
+//! `new_owner_id` / `add_member_user_id` / `add_member_role` signals are all
+//! owned by the caller (`app.rs`), which seeds `name`/`icon` from the active
+//! live server on open. `server_id` is read at submit time (`None` outside
+//! live mode = a no-op), so the panel is inert outside live mode — the same
+//! shape the channel-management modals use.
 //!
 //! Permission model: **no client-side permission logic beyond the
 //! owner-only gate on the transfer-ownership section**. The backend enforces
 //! every real permission check (owner to rename, owner/admin to change the
-//! icon, owner to transfer, and that the target is a member); on a rejection
+//! icon, moderator+ to add a member / admin+ to grant admin, owner to
+//! transfer, and that the target is a member); on a rejection
 //! the backend's own message is shown verbatim in the red `error` line. After
 //! any successful op the caller's `servers` list (and thus the rail's live
 //! section) is re-fetched via `crate::servers::list_servers`, so the renamed
-//! name / new icon appear without a reload.
+//! name / new icon appear without a reload; after a successful add the roster
+//! (`members`) is re-fetched via `crate::moderation::list_members`, so the new
+//! member's row appears.
 //!
 //! Idioms (verified against `delete_channel_modal.rs`): one `switch` keyed on
 //! `busy`; each section's button label flips to its busy verb; `Signal` is
@@ -42,14 +47,34 @@ const TEXT: &str = "#f2f3f5";
 const TEXT_MUTED: &str = "#949ba4";
 const ERROR: &str = "#f23f43";
 
+/// The role the add-member picker advances to when its chip is tapped, in the
+/// order member → moderator → admin → owner → member — the exact cycle the
+/// live member panel's `set_member_role` cycle-button uses (see `next_role` in
+/// `app.rs`). `'owner'` is included in the cycle so all four role strings are
+/// reachable; if it's picked for an add the backend rejects it (owner moves
+/// only via `transfer_ownership`) and its message surfaces inline, exactly the
+/// "backend is the single source of truth, surface the rejection verbatim"
+/// philosophy the rest of this panel follows.
+fn next_add_role(current: &str) -> &'static str {
+    match current {
+        "member" => "moderator",
+        "moderator" => "admin",
+        "admin" => "owner",
+        _ => "member",
+    }
+}
+
 /// The LIVE server-settings panel. `open` gates the overlay; `server_id` is
 /// the target (read at submit time, `None` = no-op); `name`/`icon`/
 /// `new_owner_id` are the three inputs (seeded by the caller on open);
 /// `busy` is true while an RPC is in flight; `error` holds the backend's
 /// rejection message; `servers` is the caller's live server list, re-fetched
 /// on any successful op so the rail's name/icon refresh; `members` is the
-/// active live server's roster, used only to gate the owner-only
-/// transfer-ownership section.
+/// active live server's roster, used to gate the owner-only
+/// transfer-ownership section and re-fetched after a successful add so the
+/// new member's row appears; `add_member_user_id` / `add_member_role` are the
+/// add-member section's inputs (a numeric id and a role that cycles
+/// member→moderator→admin→owner→member via the section's chip).
 #[component]
 #[allow(non_snake_case)]
 pub fn ServerSettingsPanel(
@@ -62,6 +87,8 @@ pub fn ServerSettingsPanel(
     error: Signal<String>,
     servers: Signal<Vec<crate::servers::ServerSummary>>,
     members: Signal<Vec<crate::moderation::MemberInfo>>,
+    add_member_user_id: Signal<String>,
+    add_member_role: Signal<String>,
 ) -> Element {
     let close = open;
     let sid = server_id;
@@ -72,6 +99,8 @@ pub fn ServerSettingsPanel(
     let e = error;
     let srv = servers;
     let mbrs = members;
+    let add_uid = add_member_user_id;
+    let add_role = add_member_role;
 
     // --- Shared styles (one static pass) ------------------------------------
     let card_style = StyleRules {
@@ -171,6 +200,43 @@ pub fn ServerSettingsPanel(
         border_bottom_left_radius: Some(px(8.0)),
         border_bottom_right_radius: Some(px(8.0)),
         flex_direction: Some(FlexDirection::Row),
+        ..Default::default()
+    };
+    // The add-member section's "Add member" button (green, like transfer) and
+    // the role cycle-chip (a compact tappable pill the live member panel's
+    // `set_member_role` cycle-button uses — tapping advances member→moderator→
+    // admin→member). Both reuse the palette above; no new color tokens.
+    let add_btn_style = StyleRules {
+        height: Some(px(34.0)),
+        background: Some(col(BTN_TRANSFER)),
+        align_items: Some(AlignItems::Center),
+        justify_content: Some(JustifyContent::Center),
+        border_top_left_radius: Some(px(8.0)),
+        border_top_right_radius: Some(px(8.0)),
+        border_bottom_left_radius: Some(px(8.0)),
+        border_bottom_right_radius: Some(px(8.0)),
+        flex_direction: Some(FlexDirection::Row),
+        ..Default::default()
+    };
+    let role_chip_style = StyleRules {
+        height: Some(px(34.0)),
+        background: Some(col(INPUT)),
+        padding_left: Some(px(10.0)),
+        padding_right: Some(px(10.0)),
+        align_items: Some(AlignItems::Center),
+        justify_content: Some(JustifyContent::Center),
+        border_top_left_radius: Some(px(8.0)),
+        border_top_right_radius: Some(px(8.0)),
+        border_bottom_left_radius: Some(px(8.0)),
+        border_bottom_right_radius: Some(px(8.0)),
+        flex_shrink: Some(runtime_core::Tokenized::Literal(0.0)),
+        flex_direction: Some(FlexDirection::Row),
+        ..Default::default()
+    };
+    let role_chip_label_style = StyleRules {
+        font_size: Some(px(13.0)),
+        font_weight: Some(FontWeight::SemiBold),
+        color: Some(col(TEXT)),
         ..Default::default()
     };
     let btn_label_style = StyleRules {
@@ -286,6 +352,48 @@ pub fn ServerSettingsPanel(
             }
         }
     };
+    // Add (or re-role) a member by numeric user id. Reuses the same cycle-
+    // button role picker as the live member panel's `set_member_role` (see
+    // `next_add_role`): tapping the role chip advances member→moderator→
+    // admin→owner→member. If `'owner'` is picked the backend rejects it (owner
+    // moves only via `transfer_server_ownership`) and its message surfaces
+    // inline — the panel does no client-side permission pre-computation.
+    // Parses the user id, clears the error, fires the `add_member` RPC, and on
+    // success re-fetches the roster so the new member's row appears (the exact
+    // `list_members` refresh the `do_transfer` handler uses).
+    let do_add_member = move || {
+        let Some(sid0) = sid.get() else {
+            return;
+        };
+        let raw = add_uid.get();
+        match raw.trim().parse::<i64>() {
+            Ok(user_id) => {
+                let role = add_role.get();
+                e.set(String::new());
+                b.set(true);
+                let b2 = b;
+                let e2 = e;
+                let mbrs2 = mbrs;
+                runtime_core::driver::spawn_async(async move {
+                    match crate::moderation::add_member(sid0, user_id, &role).await {
+                        Ok(()) => {
+                            // The roster changed (a new member row / a re-role),
+                            // so re-fetch it the same way `do_transfer` does —
+                            // the panel rebuilds off the `members` signal key.
+                            if let Ok(members) = crate::moderation::list_members(sid0).await {
+                                mbrs2.set(members);
+                            }
+                        }
+                        Err(msg) => e2.set(msg),
+                    }
+                    b2.set(false);
+                });
+            }
+            Err(_) => {
+                e.set("Enter the new member's numeric user id".to_string());
+            }
+        }
+    };
 
     // Owner-only gate on the transfer-ownership section: computed *inside* the
     // render closure (below) so it re-evaluates on every rebuild — in
@@ -316,6 +424,7 @@ pub fn ServerSettingsPanel(
             let rename_label = if *busy { "Renaming…" } else { "Save name" };
             let icon_label = if *busy { "Saving…" } else { "Save icon" };
             let transfer_label = if *busy { "Transferring…" } else { "Transfer" };
+            let add_label = if *busy { "Adding…" } else { "Add member" };
             let rename_btn = ui! {
                 view(style = save_btn_style.clone(), test_id = "server-rename-save") {
                     text(style = btn_label_style.clone()) { rename_label.to_string() }
@@ -353,6 +462,15 @@ pub fn ServerSettingsPanel(
                 flex_direction: Some(FlexDirection::Column),
                 ..Default::default()
             };
+            // The add-member action row lays its controls out horizontally
+            // (user-id input fills, then the role chip + Add button on a line),
+            // unlike the column `row_col` used by the other sections.
+            let row_row = move || StyleRules {
+                flex_direction: Some(FlexDirection::Row),
+                align_items: Some(AlignItems::Center),
+                gap: Some(px(8.0)),
+                ..Default::default()
+            };
             let name_row = ui! {
                 view(style = row_col()) {
                     text(style = label_style.clone()) { "Server name".to_string() }
@@ -377,6 +495,70 @@ pub fn ServerSettingsPanel(
                     }) { "Pass ownership to another member's numeric user id.".to_string() }
                     text_input(value = owner, placeholder = "New owner user id", style = input_style.clone())
                     transfer_btn
+                }
+            };
+            // Add (or re-role) a member: a numeric user-id input plus a role
+            // cycle-chip (tap to advance member→moderator→admin→owner→member —
+            // the `set_member_role` picker idiom) and the Add button. The chip
+            // text is reactive (reads the `add_role` signal, the error-line
+            // idiom) so a tap re-renders it to the next role; the user-id input
+            // binds two-way to `add_uid` (the `value = nm` idiom), read at
+            // submit time by `do_add_member`. `flex_grow: 1` lets the input
+            // fill the row while the chip + button stay fixed-width.
+            let add_uid_input = ui! {
+                text_input(value = add_uid, placeholder = "New member user id", style = StyleRules {
+                    height: Some(px(34.0)),
+                    background: Some(col(INPUT)),
+                    border_top_left_radius: Some(px(8.0)),
+                    border_top_right_radius: Some(px(8.0)),
+                    border_bottom_left_radius: Some(px(8.0)),
+                    border_bottom_right_radius: Some(px(8.0)),
+                    padding_left: Some(px(10.0)),
+                    padding_right: Some(px(10.0)),
+                    align_items: Some(AlignItems::Center),
+                    flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
+                    flex_shrink: Some(runtime_core::Tokenized::Literal(1.0)),
+                    ..Default::default()
+                })
+            };
+            let add_role_chip = ui! {
+                view(style = role_chip_style.clone(), test_id = "add-member-role") {
+                    text(style = role_chip_label_style.clone()) {
+                        move || add_role.get().clone()
+                    }
+                }
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        let next = next_add_role(&add_role.get());
+                        add_role.set(next.to_string());
+                    }
+                    TouchResponse::CONSUMED
+                })
+            };
+            let add_btn = ui! {
+                view(style = add_btn_style.clone(), test_id = "add-member-confirm") {
+                    text(style = btn_label_style.clone()) { add_label.to_string() }
+                }
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        do_add_member();
+                    }
+                    TouchResponse::CONSUMED
+                })
+            };
+            let add_row = ui! {
+                view(style = row_col()) {
+                    text(style = label_style.clone()) { "Add a member".to_string() }
+                    text(style = StyleRules {
+                        font_size: Some(px(11.0)),
+                        color: Some(col(TEXT_MUTED)),
+                        ..Default::default()
+                    }) { "Add (or re-role) a member by numeric user id; tap the chip to change their role.".to_string() }
+                    view(style = row_row()) {
+                        add_uid_input
+                        add_role_chip
+                        add_btn
+                    }
                 }
             };
             let header = ui! {
@@ -420,6 +602,7 @@ pub fn ServerSettingsPanel(
                     { header }
                     { name_row }
                     { icon_row }
+                    { add_row }
                     { transfer_el }
                     { err_el }
                 }

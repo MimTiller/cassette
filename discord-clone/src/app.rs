@@ -3766,13 +3766,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
             )
         }
     };
-    // --- Live Server Settings (rename / icon / transfer ownership) -----------
+    // --- Live Server Settings (rename / icon / add member / transfer) --------
     // LIVE mode only: the gear in the live sidebar's header opens this full-screen
     // overlay. `server_id` is `active_live_server` (read at submit time, `None`
     // outside live mode = a no-op, the same inert-outside-live idiom as the
     // channel-management modals above). `name`/`icon`/`new_owner_id` are the
-    // three inputs, seeded from the active live server on open; `busy`/`error`
-    // are the RPC state; `servers` is re-fetched by the panel on any successful
+    // inputs, seeded from the active live server on open; `add_member_user_id` /
+    // `add_member_role` seed the add-member section (numeric id + a role that
+    // starts as `'member'` and cycles via the panel's chip); `busy`/`error` are
+    // the RPC state; `servers` is re-fetched by the panel on any successful
     // op so the rail's live section shows the new name/icon. There is no
     // client-side permission logic beyond the panel's owner-only gate on the
     // transfer section — the backend decides and its message is surfaced verbatim.
@@ -3780,6 +3782,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let ss_name: Signal<String> = signal(String::new());
     let ss_icon: Signal<String> = signal(String::new());
     let ss_owner: Signal<String> = signal(String::new());
+    // Add-member section inputs: the numeric user id and the role to grant
+    // (starts at `'member'`; the panel's chip cycles it member→moderator→admin
+    // →owner→member). Seeded on open, below, like `ss_owner`.
+    let ss_add_user_id: Signal<String> = signal(String::new());
+    let ss_add_role: Signal<String> = signal("member".to_string());
     let ss_busy: Signal<bool> = signal(false);
     let ss_err: Signal<String> = signal(String::new());
     let ss_el = ui! {
@@ -3794,6 +3801,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 error = ss_err,
                 servers = live_servers,
                 members = live_members,
+                add_member_user_id = ss_add_user_id,
+                add_member_role = ss_add_role,
             )
         }
     };
@@ -4324,6 +4333,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                 }
                             }
                             ss_owner.set(String::new());
+                            // Reset the add-member inputs too, so a re-open
+                            // starts with an empty id and the default role.
+                            ss_add_user_id.set(String::new());
+                            ss_add_role.set("member".to_string());
                             ss_busy.set(false);
                             ss_err.set(String::new());
                             ss_open.set(true);
