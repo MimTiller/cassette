@@ -1,41 +1,41 @@
-//! `send_failed_indicator` — a self-contained "message failed to send"
-//! indicator for the Discord clone. It renders a small warning-triangle glyph
-//! beside a "Failed to send - Retry" label inside a compact pill. The pill
-//! carries a click handler that flips a local `retrying` boolean signal to
-//! `true` (hardcoded `false` at start); once `retrying` is set, the label is
-//! replaced by "Retrying..." (the original text unmounts, the retry text
-//! mounts).
+//! `send_failed_indicator` — a "message failed to send" inline alert for the
+//! Discord clone. It renders a small warning-triangle glyph beside a "Failed
+//! to send - Retry" label inside a compact banner pill.
 //!
-//! Everything is hardcoded local state — no backend call, no props, no wiring
-//! into any screen yet. Declared in `lib.rs` so it compiles as part of the
-//! crate, but referenced by nothing (the same shape
-//! `verified_badge` / `idle_timer_badge` / `jump_to_bottom_button` ship in).
+//! The whole alert is gated on a `failed: Signal<bool>` prop (NOT local
+//! state): while the signal is unset it renders NOTHING (a zero-size
+//! placeholder), so it only appears as chrome above the composer after a real
+//! send failure. The app owns the signal (`send_failed` in `app_shell`); the
+//! gateway `Error` frame the server replies on a failed send sets it (see the
+//! `gateway_incoming_effect` in `app.rs`). Clicking the pill (the "Retry"
+//! affordance) flips `failed` back to `false`, dismissing the banner so the
+//! user can resend.
 //!
-//! Idioms, each verified against this crate's `components/idle_timer_badge.rs`
-//! / `components/jump_to_bottom_button.rs` / `components/verified_badge.rs`:
-//! - styles are plain `StyleRules` via the `style_helpers` `px` / `col`
-//!   constructors (one static pass, no live style engine);
-//! - the "swap the label once retrying" part is a reactive
-//!   `if retrying.get() { … }` inside `ui!` with no `else`. An `if` whose
-//!   condition reads a signal (`.get()`) lowers to the `when` primitive
-//!   (mounts while true, unmounts on false) — the same reactive `if`
-//!   `verified_badge` uses for its checkmark. The static "Failed to send -
-//!   Retry" text is a plain sibling of that `when`, so the two labels are
-//!   mutually exclusive by construction: exactly one is mounted at a time.
+//! This is UI chrome, not message-list content: it sits directly above the
+//! composer row (see `app.rs`), never inline among the messages. The previous
+//! self-contained version (a local `retrying` boolean, "Retrying..." label,
+//! always-mounted pill) was spliced into the message row during the
+//! graveyard-component rewire, which rendered a "Failed to send - Retry"
+//! button in the stream as if it were a chat message. That was the UI-chrome
+//! bug; this rewrite takes the app's shared `failed` signal so it only shows
+//! on a genuine failure and lives above the composer.
+//!
+//! Idioms, each verified against this crate's `app.rs` / `components/…`:
+//! - the "show only while failed" part is a reactive `if failed.get() { … }
+//!   else { zero-height spacer }` inside `ui!`. An `if` whose condition reads
+//!   a signal lowers to the `when` primitive (mounts while true, unmounts on
+//!   false); the `else` is a 0-height `view` so it occupies no layout.
 //! - the click is the pill's `.on_touch(|ev| …)` chain with the
-//!   `TouchPhase::Ended` guard — the app's standard click pattern
-//!   (`jump_to_bottom_button` / `message_rating`); the whole pill is the
-//!   retry affordance, so one handler on the root covers it. The handler is a
-//!   `move` closure capturing a `Copy` of the `retrying` signal, so it stays
-//!   `Fn` (callable on every press) and merely drives the local signal — no
-//!   backend call.
+//!   `TouchPhase::Ended` guard — the app's standard click pattern; the handler
+//!   captures a `Copy` of the `failed` signal, so it stays `Fn` and merely
+//!   clears the shared state (no backend call — the user resends to retry).
 //! - `StyleRules` is not `Copy`, so the per-node styles are written INLINE in
 //!   `style = …` (created fresh per evaluation, never captured across the
-//!   `when` boundary) — the same shape `idle_timer_badge` uses for its badge.
+//!   `when` boundary).
 
 use crate::style_helpers::{col, px};
 use runtime_core::{
-    component, signal, ui, AlignItems, Element, FlexDirection, Position, StyleRules, TouchPhase,
+    component, ui, AlignItems, Element, FlexDirection, Position, StyleRules, TouchPhase,
     TouchResponse,
 };
 
@@ -43,72 +43,67 @@ use runtime_core::{
 const BG_PILL: &str = "#2b2d31"; // the pill surface (Discord sidebar gray)
 const WARN: &str = "#f0b232"; // the warning-triangle glyph (Discord warning amber)
 const TEXT: &str = "#f2f3f5"; // the "Failed to send - Retry" label (Discord near-white)
-const TEXT_MUTED: &str = "#949ba4"; // the "Retrying..." label (Discord muted text)
 
-/// The send-failure indicator. A small pill with a warning-triangle glyph and
-/// a "Failed to send - Retry" label; clicking the pill flips the local
-/// `retrying` signal to `true`, after which the label renders "Retrying..."
-/// instead (the original text unmounts).
+/// The send-failure banner. While `failed` is set it renders a pill with a
+/// warning-triangle glyph and a "Failed to send - Retry" label; clicking the
+/// pill clears `failed` (dismissing the banner). While `failed` is unset it
+/// renders nothing.
 #[component]
 #[allow(non_snake_case)]
-pub fn SendFailedIndicator() -> Element {
-    let retrying = signal(false);
-
+pub fn SendFailedIndicator(failed: runtime_core::Signal<bool>) -> Element {
     ui! {
-        view(style = StyleRules {
-            position: Some(Position::Relative),
-            flex_direction: Some(FlexDirection::Row),
-            align_items: Some(AlignItems::Center),
-            gap: Some(px(6.0)),
-            padding_left: Some(px(10.0)),
-            padding_right: Some(px(10.0)),
-            padding_top: Some(px(5.0)),
-            padding_bottom: Some(px(5.0)),
-            background: Some(col(BG_PILL)),
-            border_top_left_radius: Some(px(8.0)),
-            border_top_right_radius: Some(px(8.0)),
-            border_bottom_left_radius: Some(px(8.0)),
-            border_bottom_right_radius: Some(px(8.0)),
-            ..Default::default()
-        }) {
-            // The warning glyph — a static string literal, so it bakes to
-            // `TextSource::Static` (no reactive machinery).
-            text(style = StyleRules {
-                font_size: Some(px(14.0)),
-                color: Some(col(WARN)),
+        if failed.get() {
+            view(style = StyleRules {
+                position: Some(Position::Relative),
+                flex_direction: Some(FlexDirection::Row),
+                align_items: Some(AlignItems::Center),
+                gap: Some(px(6.0)),
+                padding_left: Some(px(10.0)),
+                padding_right: Some(px(10.0)),
+                padding_top: Some(px(5.0)),
+                padding_bottom: Some(px(5.0)),
+                background: Some(col(BG_PILL)),
+                border_top_left_radius: Some(px(8.0)),
+                border_top_right_radius: Some(px(8.0)),
+                border_bottom_left_radius: Some(px(8.0)),
+                border_bottom_right_radius: Some(px(8.0)),
+                margin_top: Some(px(6.0)),
+                margin_bottom: Some(px(6.0)),
+                margin_left: Some(px(16.0)),
+                margin_right: Some(px(16.0)),
                 ..Default::default()
-            }) { "⚠".to_string() }
-            // The static failure label. It is a plain sibling of the reactive
-            // `when` below, so it is always mounted while the pill is; the two
-            // labels are mutually exclusive by construction (see the `when`).
-            text(style = StyleRules {
-                font_size: Some(px(13.0)),
-                color: Some(col(TEXT)),
-                ..Default::default()
-            }) { "Failed to send - Retry".to_string() }
-            // Reactive branch: `if retrying.get() {…}` lowers to a `when` whose
-            // render is an `Fn` closure (mounts while true, unmounts on false).
-            // No `else` — while unset, only the "Failed to send - Retry" label
-            // shows. `StyleRules` is not `Copy`, so this style is written INLINE
-            // (created fresh per evaluation, never captured across the `when`
-            // boundary).
-            if retrying.get() {
+            }) {
+                // The warning glyph — a static string literal, so it bakes to
+                // `TextSource::Static` (no reactive machinery).
+                text(style = StyleRules {
+                    font_size: Some(px(14.0)),
+                    color: Some(col(WARN)),
+                    ..Default::default()
+                }) { "⚠".to_string() }
+                // The failure label — the "Retry" affordance (a tap dismisses
+                // the banner so the user can resend).
                 text(style = StyleRules {
                     font_size: Some(px(13.0)),
-                    color: Some(col(TEXT_MUTED)),
+                    color: Some(col(TEXT)),
                     ..Default::default()
-                }) { "Retrying...".to_string() }
+                }) { "Failed to send - Retry".to_string() }
             }
+            .on_touch(move |ev| {
+                // Dismiss: clear the shared `failed` signal on press. `failed`
+                // is `Copy`, so the `move` closure captures a copy of the same
+                // signal the reactive `if` reads and remains `Fn`. No backend
+                // call — resending clears/retries naturally.
+                if ev.phase == TouchPhase::Ended {
+                    let f = failed;
+                    f.set(false);
+                }
+                TouchResponse::CONSUMED
+            })
+        } else {
+            // Nothing to show: a 0-height placeholder occupies no layout, so
+            // the composer's y-offset never shifts when the banner appears or
+            // disappears.
+            view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
         }
-        .on_touch(move |ev| {
-            // The retry affordance: flip the local signal to `true` on press.
-            // `retrying` is `Copy`, so the `move` closure captures a copy of the
-            // same underlying signal (the one the reactive `if` above reads) and
-            // remains `Fn`. No backend call — this only drives the local state.
-            if ev.phase == TouchPhase::Ended {
-                retrying.set(true);
-            }
-            TouchResponse::CONSUMED
-        })
     }
 }

@@ -1,109 +1,87 @@
-//! `idle_timer_badge` — a self-contained "idle" indicator for the Discord
-//! clone. Bound to a local `idle` boolean signal (hardcoded `false` at start),
-//! it renders a small pill with a `button` that toggles the signal. While
-//! `idle` is set, a small moon glyph + the text "Idle for a while" appear
-//! beside the button; while it is unset, that badge portion renders nothing.
+//! `idle_timer_badge` — the "go idle / clear idle" control in the Discord
+//! clone. It is an 18px icon button (the same shape as the user panel's
+//! mic/deafen/settings/shortcuts icons) holding a Lucide `MOON` glyph.
 //!
-//! Everything is hardcoded local state — no backend call, no props, no wiring
-//! into any screen yet. Declared in `lib.rs` so it compiles as part of the
-//! crate, but referenced by nothing (the same shape `profile_settings` /
-//! `server_folder_group` ship in).
+//! It is wired to the app's live presence status (`status: Signal<Status>`),
+//! not to local state: the glyph is amber (`#f0b232`, Discord's idle dot
+//! color) while the user is `Status::Idle`, muted otherwise. Tapping it
+//! sets the status to `Status::Idle`; tapping it again while idle cycles
+//! the status on with `Status::next()` (Idle → DoNotDisturb → Online → …),
+//! which is the same one-click cycle the profile-strip avatar uses.
 //!
-//! Idioms, each verified against this crate's `app.rs` / `profile_settings.rs`
-//! / `components/server_folder_group.rs`:
-//! - styles are plain `StyleRules` via the `style_helpers` `px` / `col`
-//!   constructors (one static pass, no live style engine);
-//! - the toggle is the `button(label, on_click)` primitive; `on_click` is a
-//!   plain `move` closure prebuilt in a `let` and passed by variable name
-//!   (exactly the `Send` button in `app.rs`); `Signal` is `Copy`, so the
-//!   `move` closure captures a copy of the signal and stays `Fn` (callable on
-//!   every press);
-//! - the badge is a reactive `if idle.get() { … }` inside `ui!`. An `if`
-//!   whose condition reads a signal (`.get()`) lowers to the `when`
-//!   primitive (mounts while true, unmounts on false) — the same reactive
-//!   `if` `server_folder_group` uses for its expanded server list.
+//! This is the control's correct home — the user panel's status/voice icon
+//! row (see `app.rs` `user_panel`) — NOT the message list. The previous
+//! self-contained version (a local `idle` boolean + a "Toggle idle" pill) was
+//! spliced into the message row during the graveyard-component rewire, which
+//! rendered a "Toggle idle" button inline as if it were a chat message. That
+//! was a UI-chrome bug; this rewrite takes the shared status signal so the
+//! toggle actually flips the user's presence and it renders as a compact
+//! control in the row with the other status controls.
+//!
+//! Idioms, each verified against this crate's `app.rs` (the `user_panel`
+//! mic/deafen icon buttons) and `components/message_search_bar.rs`:
+//! - the glyph is the `icon(MOON).color(|| …).size(15.0)` form — exactly the
+//!   `icon(MIC)` / `icon(HEADPHONES)` shape in `user_panel`;
+//! - the active state is a reactive `if status.get() == Status::Idle {…}
+//!   else {…}` reading the signal `.get()` — an `if` whose condition reads a
+//!   signal lowers to the `when` primitive (re-renders on the status
+//!   change);
+//! - the click is the pill's `.on_touch(|ev| …)` chain with the
+//!   `TouchPhase::Ended` guard — the app's standard click pattern. The handler
+//!   captures a `Copy` of the `status` signal, so it stays `Fn` and merely
+//!   drives the shared state — no backend call.
 
-use crate::style_helpers::{col, px};
-use runtime_core::{component, signal, ui, AlignItems, Element, FlexDirection, StyleRules};
+use crate::data::Status;
+use crate::style_helpers::px;
+use icons_lucide::MOON;
+use runtime_core::{
+    component, icon, ui, AlignItems, Color, Element, JustifyContent, StyleRules,
+    Tokenized, TouchPhase, TouchResponse,
+};
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_RAIL: &str = "#1e1f22";
-const BG_PILL: &str = "#2b2d31";
-const TEXT_MUTED: &str = "#949ba4";
-const TEXT: &str = "#f2f3f5";
+const TEXT_MUTED: &str = "#949ba4"; // the inactive glyph (matches the row's icons)
+const IDLE: &str = "#f0b232"; // the active idle glyph (Discord's idle dot color)
 
-/// The idle badge. The pill always shows a `button` that toggles the local
-/// `idle` signal on press; while `idle` is set, a small moon glyph + the
-/// "Idle for a while" label render beside it, otherwise that portion is
-/// unmounted.
+/// The idle control: an 18px icon button holding a `MOON` glyph. Amber while
+/// the user is idle, muted otherwise; a tap goes idle (or cycles on, if
+/// already idle), driven through the app's shared `status` signal.
 #[component]
-pub fn idle_timer_badge() -> Element {
-    let idle = signal(false);
-
-    // Toggle: flip the `idle` signal on every press. `idle` is `Copy`, so the
-    // `move` closure captures a copy of the same underlying signal (the one
-    // the reactive `if` below also reads) and remains `Fn`.
-    let toggle = move || idle.set(!idle.get());
-
-    let root_style = StyleRules {
-        flex_direction: Some(FlexDirection::Row),
-        align_items: Some(AlignItems::Center),
-        padding_left: Some(px(10.0)),
-        padding_right: Some(px(10.0)),
-        padding_top: Some(px(6.0)),
-        padding_bottom: Some(px(6.0)),
-        gap: Some(px(8.0)),
-        background: Some(col(BG_RAIL)),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
-    };
-
-    let btn_style = StyleRules {
-        height: Some(px(24.0)),
-        padding_left: Some(px(10.0)),
-        padding_right: Some(px(10.0)),
-        background: Some(col(BG_PILL)),
-        border_top_left_radius: Some(px(6.0)),
-        border_top_right_radius: Some(px(6.0)),
-        border_bottom_left_radius: Some(px(6.0)),
-        border_bottom_right_radius: Some(px(6.0)),
-        align_items: Some(AlignItems::Center),
-        flex_direction: Some(FlexDirection::Row),
-        ..Default::default()
+pub fn idle_timer_badge(status: runtime_core::Signal<Status>) -> Element {
+    // The idle glyph swaps to amber while `status` is `Idle`; a tap sets it to
+    // `Idle`, or (already idle) advances it one step so a second tap clears
+    // idle — the same cycle the profile-strip avatar uses. `status` is `Copy`,
+    // so the `move` closure captures a copy of the same signal the reactive
+    // `if` reads and remains `Fn`.
+    let toggle = move || {
+        let s = status;
+        s.set(if s.get() == Status::Idle {
+            s.get().next()
+        } else {
+            Status::Idle
+        });
     };
 
     ui! {
-        view(style = root_style) {
-            button(label = "Toggle idle".to_string(), on_click = toggle, style = btn_style)
-            // Reactive branch: `if idle.get() {…}` lowers to a `when` whose
-            // render is an `Fn` closure. The `ui!` DSL takes no `let` inside a
-            // node body, and `StyleRules` is not `Copy`, so the badge styles
-            // are written INLINE in `style = …` (each is created fresh per
-            // evaluation, never captured across the `when` boundary) — the
-            // same shape `app.rs` uses for its inline server-pill style.
-            if idle.get() {
-                view(style = StyleRules {
-                    flex_direction: Some(FlexDirection::Row),
-                    align_items: Some(AlignItems::Center),
-                    gap: Some(px(4.0)),
-                    ..Default::default()
-                }) {
-                    // The small moon glyph — "small" per spec (14px, muted tone).
-                    text(style = StyleRules {
-                        font_size: Some(px(14.0)),
-                        color: Some(col(TEXT_MUTED)),
-                        ..Default::default()
-                    }) { "🌙".to_string() }
-                    text(style = StyleRules {
-                        font_size: Some(px(13.0)),
-                        color: Some(col(TEXT)),
-                        ..Default::default()
-                    }) { "Idle for a while".to_string() }
-                }
+        view(style = StyleRules {
+            width: Some(px(18.0)),
+            height: Some(px(18.0)),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(JustifyContent::Center),
+            flex_shrink: Some(Tokenized::Literal(0.0)),
+            ..Default::default()
+        }, test_id = "user-idle") {
+            if status.get() == Status::Idle {
+                icon(MOON).color(|| Color::from(IDLE)).size(15.0)
+            } else {
+                icon(MOON).color(|| Color::from(TEXT_MUTED)).size(15.0)
             }
         }
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                (toggle)();
+            }
+            TouchResponse::CONSUMED
+        })
     }
 }

@@ -176,6 +176,15 @@ impl Status {
     }
 }
 
+impl Default for Status {
+    /// A fresh user is Online: the default presence for a new `Signal<Status>`
+    /// (e.g. a component's default-valued status prop) and for any user before
+    /// they pick a different status.
+    fn default() -> Self {
+        Status::Online
+    }
+}
+
 pub struct Member {
     pub name: &'static str,
     /// Hex tint for the avatar chip.

@@ -346,9 +346,6 @@ pub(crate) fn message_row(author: &str, color: &str, body: &str, when: String, e
                 code_block()
                 MessageRating()
                 MessageActionBar()
-                idle_timer_badge()
-
-SendFailedIndicator()
 ReactionSummary()
 MessageTimestampTooltip()
 DeleteMessageConfirm()
@@ -965,7 +962,6 @@ FriendRequestCard()
             DmRequestCard()
             BlockedUserRow()
             MicSelector()
-            idle_timer_badge()
         }
     }
 }
@@ -1659,7 +1655,7 @@ fn user_panel(
             // full-screen shortcuts overlay (same idiom as the gear).
             let shortcuts_open = shortcuts_mode.clone();
             let shortcuts_btn = ui! {
-                view(style = icon_btn_style, test_id = "user-shortcuts") {
+                view(style = icon_btn_style.clone(), test_id = "user-shortcuts") {
                     icon(CIRCLE_HELP).color(|| Color::from(TEXT_MUTED)).size(15.0)
                 }
                 .on_touch(move |ev| {
@@ -1669,6 +1665,17 @@ fn user_panel(
                     TouchResponse::CONSUMED
                 })
             };
+            // Idle toggle: a `MOON` icon that flips the user's live presence
+            // status to `Status::Idle` (and cycles on to clear it when already
+            // idle). It is the status/voice control the profile strip's avatar
+            // click implements, exposed as a one-tap icon here with the mic and
+            // deafen. It reads/writes the SAME `user_status` signal the avatar
+            // uses, so toggling it regroups the user in the member list and
+            // updates the strip's status line. Driven through `idle_timer_badge`
+            // (the component's correct home is this control row, not the
+            // message list).
+            let idle_status = user_status.clone();
+            let idle_btn = idle_timer_badge(idle_status);
             // Row 2: the icon buttons left, the pills (plus Leave, voice only)
             // pushed to the right. Its own gap (6px, not the identity row's
             // 8px) is deliberate — the extra 2px per gap is part of what lets
@@ -1687,6 +1694,7 @@ fn user_panel(
                     deafen_btn
                     settings_btn
                     shortcuts_btn
+                    idle_btn
                     view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
                     if let Some(btn) = leave_btn {
                         btn
@@ -2684,6 +2692,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // constant) because the profile strip can change it; the member panel
     // renders the user under this status, so a change regroups them there too.
     let user_status: Signal<Status> = signal(Status::Online);
+    // A send failed: `true` = the most recent live send was rejected by the
+    // backend (the gateway replies with an `Error` frame, handled below in
+    // `gateway_incoming_effect`). The "Failed to send - Retry" banner above the
+    // composer reads this; clicking it clears the signal to dismiss the banner
+    // (the user resends to retry). Pure UI state — the gateway `send` itself is
+    // fire-and-forget, so this is the app's signal for a failed send.
+    let send_failed: Signal<bool> = signal(false);
     // Mic-mute / deafen toggles for the user panel's voice-action icon row.
     // Pure local UI state, owned here and passed into `user_panel`; the mic
     // swaps to a slashed glyph when muted, deafen colors the icon red.
@@ -2899,6 +2914,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let my_id = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
     let typing_buf = live_typing.clone();
     let typing_rev = live_typing_rev.clone();
+    // A send failure: an `Error` frame from the backend (the server answers a
+    // failed `Send` / `EditMessage` / `DeleteMessage` on this socket) sets
+    // `send_failed` so the "Failed to send - Retry" banner above the composer
+    // appears. A successful send is echoed as a `Message` frame instead, which
+    // is handled above — so only a genuine failure flips this.
+    let send_failed_sig = send_failed.clone();
     let gateway_incoming_effect = switch(
         move || gateway.incoming().get(),
         move |frame: &Option<discord_server::server_settings::WsServerMsg>| {
@@ -3085,6 +3106,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         clear_rev.set(clear_rev.get() + 1);
                     }
                 });
+            }
+            // A backend error (a rejected `Send` / `EditMessage` / `DeleteMessage`
+            // — see `message_gateway`, which answers failures on this socket):
+            // set `send_failed` so the "Failed to send - Retry" banner above the
+            // composer shows. A successful send is echoed as a `Message` frame
+            // (handled above), so only a real failure flips this.
+            if let Some(discord_server::server_settings::WsServerMsg::Error { .. }) = frame {
+                send_failed_sig.set(true);
             }
             ui! {
                 view(style = StyleRules {
@@ -5859,6 +5888,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     flex_direction: Some(FlexDirection::Column),
                     ..Default::default()
                 }) {
+                    // "Failed to send - Retry" banner: UI chrome directly above
+                    // the composer (NOT in the message list). Reads the
+                    // `send_failed` signal — set when the backend answers a
+                    // send with an `Error` frame — and clears it on tap (the
+                    // user resends to retry). While unset it renders nothing.
+                    SendFailedIndicator(failed = send_failed.clone())
                     attach_chip
                     emoji_popover
                     ac_el
