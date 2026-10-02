@@ -38,7 +38,7 @@ use runtime_core::{
 };
 use runtime_core::icon;
 use icons_lucide::{
-    CHEVRON_DOWN, CIRCLE_HELP, COMPASS, GLOBE, HASH, HEADPHONES, MAIL, MESSAGE_CIRCLE, MIC,
+    CHEVRON_DOWN, CIRCLE_HELP, COMPASS, GAVEL, GLOBE, HASH, HEADPHONES, MAIL, MESSAGE_CIRCLE, MIC,
     MIC_OFF, PENCIL, PLUS, SETTINGS, SMILE, SMILE_PLUS, TRASH_2, VOLUME_2,
 };
 use crate::mute_channel_toggle::MuteChannelToggle;
@@ -50,11 +50,61 @@ use crate::data::{DMS, SERVERS, Category, Member, Server, Status, TextChannel, U
 use crate::member_count_display::member_count_display;
 use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
+use crate::ban_list_row::BanListRow;
+use crate::timeout_duration_picker::TimeoutDurationPicker;
+use crate::permission_override_row::PermissionOverrideRow;
+use crate::member_role_list::MemberRoleList;
 use crate::read_receipt_indicator::ReadReceiptIndicator;
 use crate::verified_badge::VerifiedBadge;
 use crate::delete_account_warning::DeleteAccountWarning;
 use crate::category_filter_chips::category_filter_chips;
+use crate::notification_permission_prompt::NotificationPermissionPrompt;
+
+use crate::server_boost_badge::ServerBoostBadge;
+use crate::audit_log_row::AuditLogRow;
+use crate::language_picker::LanguagePicker;
+use crate::user_bio_block::user_bio_block;
+use crate::transfer_ownership_confirm::TransferOwnershipConfirm;
+use crate::dm_request_card::DmRequestCard;
+use crate::blocked_user_row::BlockedUserRow;
+use crate::delete_message_confirm::DeleteMessageConfirm;
+use crate::kick_confirm_dialog::KickConfirmDialog;
+use crate::pin_confirm_toast::PinConfirmToast;
+use crate::server_stats_card::server_stats_card;
+use crate::server_event_card::ServerEventCard;
+use crate::server_discovery_card::server_discovery_card;
+use crate::mic_selector::MicSelector;
+use crate::link_embed_preview::LinkEmbedPreview;
+use crate::friend_request_card::FriendRequestCard;
+use crate::reply_preview_bar::ReplyPreviewBar;
+use crate::server_icon_fallback::ServerIconFallback;
+use crate::message_action_bar::MessageActionBar;
+
+use crate::channel_topic_banner::ChannelTopicBanner;
+use crate::dm_notification_badge::DmNotificationBadge;
+use crate::message_rating::MessageRating;
+use crate::welcome_banner::WelcomeBanner;
+use crate::message_timestamp_tooltip::MessageTimestampTooltip;
+use crate::code_block::code_block;
+use crate::reaction_summary::ReactionSummary;
+use crate::activity_card::ActivityCard;
+use crate::screen_share_indicator::ScreenShareIndicator;
+use crate::slowmode_indicator::SlowmodeIndicator;
+use crate::two_factor_toggle::TwoFactorToggle;
+
+use crate::translate_toggle::TranslateToggle;
+use crate::send_failed_indicator::SendFailedIndicator;
+use crate::spoiler_tag::SpoilerTag;
+use crate::latency_badge::LatencyBadge;
+use crate::char_counter::CharCounter;
+use crate::jump_to_bottom_button::JumpToBottomButton;
+use crate::role_badge::RoleBadge;
+use crate::afk_timer_display::AfkTimerDisplay;
 use crate::connection_quality_indicator::ConnectionQualityIndicator;
+use crate::voice_join_button::VoiceJoinButton;
+use crate::voice_participant_list::VoiceParticipantList;
+use crate::volume_slider::VolumeSlider;
+use crate::soundboard_button::SoundboardButton;
 use crate::edited_label::edited_label;
 use crate::notification_settings::NotificationSettings;
 use crate::keyboard_shortcuts_overlay::keyboard_shortcuts_overlay;
@@ -68,6 +118,8 @@ use crate::rename_channel_modal::RenameChannelModal;
 use crate::delete_channel_modal::DeleteChannelModal;
 use crate::discover_servers_modal::discover_servers_modal;
 use crate::typing_indicator::TypingIndicator;
+use crate::nickname_edit_field::NicknameEditField;
+use crate::custom_status_input::CustomStatusInput;
 
 // Robot test ids: stable, `'static` strings the automation robot
 // (`find_element`/`tap`) matches on to locate interactive elements. The
@@ -294,7 +346,23 @@ pub(crate) fn message_row(author: &str, color: &str, body: &str, when: String, e
                 text(style = body_style) { body.to_string() }
                 ReadReceiptIndicator()
                 if edited { edited_label() }
+                SpoilerTag()
+                code_block()
+                MessageRating()
+                MessageActionBar()
                 idle_timer_badge()
+
+SendFailedIndicator()
+ReactionSummary()
+MessageTimestampTooltip()
+DeleteMessageConfirm()
+KickConfirmDialog()
+PinConfirmToast()
+LinkEmbedPreview()
+
+TranslateToggle()
+
+    CustomStatusInput()
             }
         }
     }
@@ -885,6 +953,23 @@ fn member_row(m: &Member) -> Element {
                 view(style = dot_style) {}
             }
             text(style = name_style) { m.name.to_string() }
+
+            RoleBadge()
+
+            NicknameEditField()
+            WelcomeBanner()
+                    ServerIconFallback()
+            AfkTimerDisplay()
+            ActivityCard()
+            DmNotificationBadge()
+ServerBoostBadge()
+LanguagePicker()
+user_bio_block()
+FriendRequestCard()
+            DmRequestCard()
+            BlockedUserRow()
+            MicSelector()
+            idle_timer_badge()
         }
     }
 }
@@ -957,7 +1042,8 @@ fn voice_section(
                     .size(14.0)
                 text(style = v_label_style) { label }
                 ConnectionQualityIndicator()
-                DeleteAccountWarning()
+                ScreenShareIndicator()
+                LatencyBadge()
             }
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
@@ -984,6 +1070,26 @@ fn voice_section(
             .on_hover(move |on| hovered.set(on))
         };
         out.push(row);
+        // Voice controls (join trigger + volume + soundboard) — a compact
+        // stack that appears only while the user is joined to this channel,
+        // sitting just beneath the row. All local/mock, no backend call.
+        if joined_voice.get() == Some((server_id, v.id)) {
+            out.push(ui! {
+                view(style = StyleRules {
+                    padding_top: Some(px(4.0)),
+                    padding_bottom: Some(px(4.0)),
+                    padding_left: Some(px(44.0)),
+                    padding_right: Some(px(8.0)),
+                    flex_direction: Some(FlexDirection::Column),
+                    gap: Some(px(8.0)),
+                    ..Default::default()
+                }) {
+                    VoiceJoinButton()
+                    VolumeSlider()
+                    SoundboardButton()
+                }
+            });
+        }
         // Connected members, Discord's voice layout (avatar + name, indented).
         for sp in v.speakers {
             let row_style = StyleRules {
@@ -1028,6 +1134,12 @@ fn voice_section(
                     text(style = name_style) { sp.name.to_string() }
                 }
             });
+        }
+        // The mock voice-participant list (three fake participants with mic
+        // states) sits alongside the connected-member sub-rows while the user
+        // is joined to this channel. Local/mock only — no backend call.
+        if joined_voice.get() == Some((server_id, v.id)) {
+            out.push(VoiceParticipantList());
         }
         // While joined, the user's own row appears beneath the seed members —
         // Discord shows you in the channel you're in. Built as a plain row
@@ -3109,6 +3221,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // would drop the draft at exactly that moment).
     let live_dm_new_id: Signal<String> = signal(String::new());
 
+    // Server Moderation panel: a gavel icon in the channel header opens it as
+    // a full-screen overlay (the same toggle idiom as `profile_mode` — built
+    // once, shown/hidden by this signal, a "Done" pill flips it back off).
+    // Mock-only: renders the four unwired moderation components with hardcoded
+    // rows; no backend call.
+    let moderation_mode: Signal<bool> = signal(false);
+
     // --- server rail -----------------------------------------------------
     let rail_style = StyleRules {
         width: Some(px(72.0)),
@@ -3748,6 +3867,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 }
                 TouchResponse::CONSUMED
             })
+            server_stats_card(512.into(), 48.into(), 1204.into())
+            ServerEventCard()
+            server_discovery_card()
         }
     };
 
@@ -4236,6 +4358,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                 .color(|| Color::from(TEXT_MUTED))
                                 .size(14.0)
                             text(style = label_style) { name }
+                            MuteChannelToggle()
+                            SlowmodeIndicator()
+                            ChannelTopicBanner()
+                            NotificationPermissionPrompt()
+    TransferOwnershipConfirm()
+
+                            AuditLogRow()
+
+                            ReplyPreviewBar()
                             // The unread pill on the row's right edge, vertically
                             // centered in the 34px row. Mock count per channel;
                             // the real value comes from the gateway later.
@@ -4329,6 +4460,21 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let hash_style = StyleRules { font_size: Some(px(20.0)), color: Some(col(TEXT_MUTED)), ..Default::default() };
     let title_style = StyleRules { font_size: Some(px(15.0)), font_weight: Some(FontWeight::SemiBold), color: Some(col(TEXT)), ..Default::default() };
     let topic_style = StyleRules { font_size: Some(px(13.0)), color: Some(col(TEXT_MUTED)), max_width: Some(px(220.0)), height: Some(px(18.0)), overflow: Some(Overflow::Hidden), ..Default::default() };
+    // Small muted-grey icon button (the gavel) that opens the Server
+    // Moderation panel. A `Copy` handle on `moderation_open` is captured by
+    // its `.on_touch` closure below.
+    let moderation_style = StyleRules {
+        width: Some(px(24.0)),
+        height: Some(px(24.0)),
+        align_items: Some(AlignItems::Center),
+        justify_content: Some(JustifyContent::Center),
+        background: Some(col(COMPOSER)),
+        border_top_left_radius: Some(px(12.0)),
+        border_top_right_radius: Some(px(12.0)),
+        border_bottom_left_radius: Some(px(12.0)),
+        border_bottom_right_radius: Some(px(12.0)),
+        ..Default::default()
+    };
 
     // Live-mode header: a live channel's name has no mock counterpart, so it's
     // looked up from `live_channels` (fetched when the live server was
@@ -4337,6 +4483,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // capturing it here is cheap; the arm re-runs whenever
     // `active_live_channel` (in the key) changes. `None` falls through to the
     // mock header below, byte-for-byte unchanged.
+    // `app_shell` owns `moderation_mode` and renders the overlay when it flips
+    // on; the gavel button in the header below sets this copy.
+    let moderation_open = moderation_mode.clone();
     let header = switch(
         move || (active_server.get(), active_channel.get(), active_live_channel.get()),
         move |(server_id, channel_id, live_cid): &(u32, u32, Option<i64>)| {
@@ -4344,6 +4493,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             let hash_style = hash_style.clone();
             let title_style = title_style.clone();
             let topic_style = topic_style.clone();
+            let moderation_style = moderation_style.clone();
             if let Some(live_id) = *live_cid {
                 let title = live_channels
                     .get()
@@ -4377,6 +4527,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
                     member_count_display(12.into(), total.into())
                     PinCountBadge()
+                    // Gavel: opens the Server Moderation panel (a full-screen
+                    // overlay, same idiom as the Profile Settings overlay).
+                    view(style = moderation_style, test_id = "server-moderation") {
+                        icon(GAVEL).color(|| Color::from(TEXT_MUTED)).size(15.0)
+                    }
+                    .on_touch(move |_ev| {
+                        moderation_open.set(true);
+                        TouchResponse::CONSUMED
+                    })
                 }
             }
         },
@@ -5497,6 +5656,101 @@ fn app_shell(authed: Signal<bool>) -> Element {
     };
 
 
+    // Server Moderation panel (mock): the same full-screen overlay idiom as the
+    // Profile Settings overlay above — built once, shown/hidden by
+    // `moderation_mode`, closed by the "Done" pill in its header. The content
+    // stacks the four moderation components, each with a section label; every
+    // row is hardcoded mock data, no backend call.
+    let moderation_close = moderation_mode.clone();
+    let section_label_style = StyleRules {
+        font_size: Some(px(12.0)),
+        font_weight: Some(FontWeight::SemiBold),
+        color: Some(col(TEXT_MUTED)),
+        margin_top: Some(px(16.0)),
+        margin_bottom: Some(px(6.0)),
+        ..Default::default()
+    };
+    let moderation_header = ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(JustifyContent::SpaceBetween),
+            padding_top: Some(px(16.0)),
+            padding_bottom: Some(px(16.0)),
+            padding_left: Some(px(16.0)),
+            padding_right: Some(px(16.0)),
+            ..Default::default()
+        }) {
+            text(style = StyleRules {
+                font_size: Some(px(18.0)),
+                font_weight: Some(FontWeight::Bold),
+                color: Some(col(TEXT)),
+                ..Default::default()
+            }) { "Server Moderation".to_string() }
+            view(style = StyleRules {
+                height: Some(px(26.0)),
+                padding_left: Some(px(12.0)),
+                padding_right: Some(px(12.0)),
+                background: Some(col(BG_SIDEBAR)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                border_top_left_radius: Some(px(6.0)),
+                border_top_right_radius: Some(px(6.0)),
+                border_bottom_left_radius: Some(px(6.0)),
+                border_bottom_right_radius: Some(px(6.0)),
+                ..Default::default()
+            }) {
+                text(style = StyleRules {
+                    color: Some(col(TEXT)),
+                    font_size: Some(px(12.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    ..Default::default()
+                }) { "Done".to_string() }
+            }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    moderation_close.set(false);
+                }
+                TouchResponse::CONSUMED
+            })
+        }
+    };
+    let moderation_open_chk = moderation_mode.clone();
+    let moderation_wrap = move || StyleRules {
+        position: Some(Position::Absolute),
+        left: Some(px(0.0)),
+        top: Some(px(0.0)),
+        width: Some(if moderation_open_chk.get() { pct(100.0) } else { px(0.0) }),
+        height: Some(if moderation_open_chk.get() { pct(100.0) } else { px(0.0) }),
+        background: Some(col(BG_MAIN)),
+        flex_direction: Some(FlexDirection::Column),
+        overflow: Some(Overflow::Hidden),
+        ..Default::default()
+    };
+    let moderation_el = ui! {
+        text(style = section_label_style.clone()) { "Banned members".to_string() }
+        BanListRow()
+        BanListRow()
+        text(style = section_label_style.clone()) { "Timeout duration".to_string() }
+        TimeoutDurationPicker()
+        text(style = section_label_style.clone()) { "Role permissions".to_string() }
+        PermissionOverrideRow()
+        PermissionOverrideRow()
+        text(style = section_label_style.clone()) { "Member roles".to_string() }
+        MemberRoleList()
+        MemberRoleList()
+    };
+    let moderation_region = ui! {
+        view(style = moderation_wrap) {
+            moderation_header
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
+                scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { moderation_el }
+            }
+        }
+    };
+
+
+
     ui! {
         view(style = StyleRules {
             width: Some(pct(100.0)),
@@ -5513,7 +5767,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
             sidebar
             view(style = main_style) {
                 header
-                scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { sent_messages }
+                scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {
+    JumpToBottomButton()
+    sent_messages
+}
                 typing_row
                 // Positioning ancestor for the @-mention dropdown and the
                 // emoji popover (both anchor above the input via
@@ -5543,6 +5800,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             TouchResponse::CONSUMED
                         })
                         text_input(value = composer, on_change = update_on_type, placeholder = "Message", style = input_style, test_id = "composer").on_key_down(composer_key)
+                        CharCounter()
+                        TwoFactorToggle()
                         view(style = icon_button_style) {
                             icon(SMILE).color(|| Color::from(TEXT_MUTED)).size(16.0)
                         }
@@ -5584,6 +5843,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             cc_el
             rc_el
             dc_el
+            moderation_region
         }
     }
 }
