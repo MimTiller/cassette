@@ -145,6 +145,21 @@ pub fn server_audience(db: &Db, server_id: i64) -> Vec<i64> {
         .collect()
 }
 
+/// Everyone who can see channel `channel_id` (all members of the channel's
+/// server), excluding `exclude_user_id` (the sender — they don't need their
+/// own echo). Returns an empty audience when the channel doesn't exist or
+/// the server has no other members.
+pub fn server_audience_for_channel(db: &Db, channel_id: i64, exclude_user_id: i64) -> Vec<i64> {
+    let Some((_id, server_id, _name, _kind, _pos, _parent)) = db.channel_full(channel_id)
+    else {
+        return Vec::new();
+    };
+    server_audience(db, server_id)
+        .into_iter()
+        .filter(|&id| id != exclude_user_id)
+        .collect()
+}
+
 /// Everyone who should hear about `user_id`'s presence: the user themself and
 /// every member of every server they belong to.
 pub fn presence_audience(db: &Db, user_id: i64) -> Vec<i64> {
@@ -261,6 +276,82 @@ pub fn post_channel_message(
             new: true,
             mentioned_user_ids,
         },
+    );
+    Ok(())
+}
+
+/// Validate, persist and fan out an edit of one of the caller's own messages.
+///
+/// Authorization: the message must exist AND its `author_id` must be `user_id`
+/// — anyone else (including another member of the same server, or an admin) is
+/// rejected with "you can only edit your own messages". The new content is
+/// size- and emptiness-checked like a post, then the row is updated in place
+/// (content + a fresh `edited_at`) and the `@mention` rows are recomputed so
+/// the stored mention list matches the new text.
+///
+/// The audience is the channel's server (including the editor's own echo), the
+/// same as a post, so every member sees the edit land.
+pub fn edit_channel_message(
+    db: &Db,
+    user_id: i64,
+    message_id: i64,
+    content: &str,
+) -> Result<(), String> {
+    if content.trim().is_empty() {
+        return Err("empty message".into());
+    }
+    if content.chars().count() > MAX_MESSAGE_CHARS {
+        return Err(format!("message too long (max {MAX_MESSAGE_CHARS} characters)"));
+    }
+    // The message must exist and belong to the caller; `channel_id` is recovered
+    // from the stored row for the broadcast audience.
+    let Some((author, channel_id)) = db.message_row(message_id) else {
+        return Err("message not found".into());
+    };
+    if author != user_id {
+        return Err("you can only edit your own messages".into());
+    }
+    let server_id = authorize_text_channel(db, user_id, channel_id).map_err(String::from)?;
+    let edited_at = now_millis();
+    db.update_message(message_id, content, edited_at)
+        .map_err(|e| format!("failed to update message: {e}"))?;
+    // Recompute mentions against the NEW content and replace the stored rows so
+    // the persisted mention list matches the text.
+    let mentioned_user_ids = resolve_mentions(db, server_id, content);
+    if let Err(e) = db.replace_message_mentions(message_id, &mentioned_user_ids) {
+        return Err(format!("failed to store mentions: {e}"));
+    }
+    hub().publish(
+        &server_audience(db, server_id),
+        &WsServerMsg::MessageEdited {
+            message_id,
+            channel_id,
+            content: content.to_string(),
+            edited_at,
+        },
+    );
+    Ok(())
+}
+
+/// Delete one of the caller's own messages and fan out the removal.
+///
+/// Authorization mirrors [`edit_channel_message`]: the message must exist and
+/// its `author_id` must be `user_id`. The row is removed (hard delete — the
+/// schema has no `deleted_at` on messages, same as `delete_channel`), and the
+/// channel's server audience is told to drop it.
+pub fn delete_channel_message(db: &Db, user_id: i64, message_id: i64) -> Result<(), String> {
+    let Some((author, channel_id)) = db.message_row(message_id) else {
+        return Err("message not found".into());
+    };
+    if author != user_id {
+        return Err("you can only delete your own messages".into());
+    }
+    let server_id = authorize_text_channel(db, user_id, channel_id).map_err(String::from)?;
+    db.delete_message(message_id)
+        .map_err(|e| format!("failed to delete message: {e}"))?;
+    hub().publish(
+        &server_audience(db, server_id),
+        &WsServerMsg::MessageDeleted { message_id, channel_id },
     );
     Ok(())
 }
@@ -423,6 +514,109 @@ mod tests {
         let msgs = db.recent_messages(1, 10);
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0].mentioned_user_ids, vec![1, 2]);
+    }
+
+    #[test]
+    fn editing_own_message_updates_row_mentions_and_bounces() {
+        let _guard = crate::e2e_lock::guard();
+        let (_d, db) = setup();
+        let hub = crate::realtime::hub();
+        hub.reset();
+        let (_id, mut rx) = hub.register(1); // alice — the author
+        let (_id2, mut rx2) = hub.register(2); // bob — co-member, not the author
+
+        // Alice posts a mention-free message to channel 1.
+        let mid = db.insert_message(1, 1, "original", 100).unwrap();
+
+        // A co-member who is not the author is refused; an unknown id is too;
+        // empty and oversized edits are refused like a post.
+        assert_eq!(
+            edit_channel_message(&db, 2, mid, "sneaky").unwrap_err(),
+            "you can only edit your own messages"
+        );
+        assert_eq!(edit_channel_message(&db, 1, 9999, "x").unwrap_err(), "message not found");
+        assert_eq!(edit_channel_message(&db, 1, mid, "  ").unwrap_err(), "empty message");
+        let long = "x".repeat(MAX_MESSAGE_CHARS + 1);
+        assert!(edit_channel_message(&db, 1, mid, &long).unwrap_err().contains("too long"));
+        // The refused edits left the row untouched.
+        assert_eq!(db.recent_messages(1, 10).iter().find(|m| m.id == mid).unwrap().content, "original");
+
+        // Alice edits to a mention: content + edited_at updated, mentions recomputed.
+        assert!(edit_channel_message(&db, 1, mid, "edited @bob").is_ok());
+        let m = db
+            .recent_messages(1, 10)
+            .into_iter()
+            .find(|m| m.id == mid)
+            .expect("edited row still present");
+        assert_eq!(m.content, "edited @bob");
+        assert!(m.edited_at.is_some(), "edited_at stamped on the first edit");
+        assert_eq!(m.mentioned_user_ids, vec![2], "mentions recomputed against the new text");
+
+        // The edit bounces to EVERY socket of the channel's server (alice+bob).
+        match rx.try_recv().expect("author receives the edit echo") {
+            WsServerMsg::MessageEdited {
+                message_id,
+                channel_id,
+                content,
+                edited_at,
+            } => {
+                assert_eq!((message_id, channel_id), (mid, 1));
+                assert_eq!(content, "edited @bob");
+                assert_eq!(edited_at, m.edited_at.unwrap());
+            }
+            other => panic!("expected MessageEdited, got {other:?}"),
+        }
+        assert!(
+            matches!(
+                rx2.try_recv().expect("co-member receives the edit echo"),
+                WsServerMsg::MessageEdited { message_id, .. } if message_id == mid
+            ),
+            "the edit fans out to the whole server, not just the sender"
+        );
+    }
+
+    #[test]
+    fn deleting_own_message_removes_row_and_bounces() {
+        let _guard = crate::e2e_lock::guard();
+        let (_d, db) = setup();
+        let hub = crate::realtime::hub();
+        hub.reset();
+        let (_id, mut rx) = hub.register(1); // alice — the author
+        let (_id2, mut rx2) = hub.register(2); // bob — co-member
+
+        let mid = db.insert_message(1, 1, "doomed", 100).unwrap();
+        db.insert_message(1, 1, "keeper", 101).unwrap(); // a sibling that survives
+
+        // A co-member who is not the author is refused; an unknown id is too.
+        assert_eq!(
+            delete_channel_message(&db, 2, mid).unwrap_err(),
+            "you can only delete your own messages"
+        );
+        assert_eq!(delete_channel_message(&db, 1, 9999).unwrap_err(), "message not found");
+        // The refused deletes left the row intact.
+        assert_eq!(db.recent_messages(1, 10).len(), 2);
+
+        assert!(delete_channel_message(&db, 1, mid).is_ok());
+        let msgs = db.recent_messages(1, 10);
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].content, "keeper", "only the non-deleted row remains");
+        assert!(msgs.iter().all(|m| m.id != mid), "the deleted row is absent");
+
+        // The removal bounces to every socket of the channel's server.
+        match rx.try_recv().expect("author receives the delete echo") {
+            WsServerMsg::MessageDeleted {
+                message_id,
+                channel_id,
+            } => assert_eq!((message_id, channel_id), (mid, 1)),
+            other => panic!("expected MessageDeleted, got {other:?}"),
+        }
+        assert!(
+            matches!(
+                rx2.try_recv().expect("co-member receives the delete echo"),
+                WsServerMsg::MessageDeleted { message_id, .. } if message_id == mid
+            ),
+            "the deletion fans out to the whole server, not just the sender"
+        );
     }
 
     use crate::server_settings::WsClientMsg;

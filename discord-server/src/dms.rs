@@ -40,14 +40,20 @@
 use serde::{Deserialize, Serialize};
 use server::{server, ServerError};
 
+// This file is NOT feature-gated so the `#[server]` fns compile to client RPC
+// stubs by default (the same shape as `servers.rs` / `auth.rs`); only the
+// DB-touching pieces are gated `#[cfg(feature = "server")]`.
+#[cfg(feature = "server")]
 use crate::db::Db;
 
 /// The acting user for the current request, resolved from a verified session
 /// token (see [`crate::session`]); `None` when unauthenticated.
+#[cfg(feature = "server")]
 use crate::session::acting_user;
 
 /// The current wall-clock milliseconds since the Unix epoch (the schema's
 /// timestamp unit; see migration `0007_dm_channels.sql`).
+#[cfg(feature = "server")]
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -122,10 +128,12 @@ pub struct SendDmMessageResult {
 
 /// The DM service. Wraps a `Db` handle. Every method takes the acting user id
 /// explicitly so the authorization is testable without any request context.
+#[cfg(feature = "server")]
 pub struct DmService {
     db: Db,
 }
 
+#[cfg(feature = "server")]
 impl DmService {
     /// A service backed by `db`.
     pub fn new(db: Db) -> Self {
@@ -372,6 +380,7 @@ pub async fn list_dm_messages(input: ListDmMessagesInput) -> Result<Vec<DmMessag
 
 /// Pull the shared `Db` out of server state (installed at startup by the
 /// server bin via `server::install_state(db)`). `Db` is cheap to clone.
+#[cfg(feature = "server")]
 fn db_from_state() -> Result<Db, ServerError> {
     server::use_state::<Db>()
         .ok_or_else(|| ServerError::failed("database not installed"))

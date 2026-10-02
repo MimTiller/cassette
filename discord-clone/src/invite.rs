@@ -38,6 +38,45 @@ pub fn parse_invite_code(input: &str) -> Option<String> {
     }
 }
 
+/// Create a real invite for `server_id` with the given `expires_at` (UTC epoch
+/// seconds, `None` = never expires) and `max_uses` (redemption cap, `None` =
+/// unlimited). Thin front-end for the backend's permission-checked
+/// `#[server]` `create_invite` fn (moderator-or-above may mint an invite), the
+/// same shape as `moderation.rs`: this crate depends on `discord-server` with
+/// default features, so this compiles to the codegen'd RPC stub. Every call
+/// authenticates as the signed-in user via the session token the `server` SDK
+/// attaches. The backend's rejection message comes back as the `Err` string.
+pub async fn create_invite(
+    server_id: i64,
+    expires_at: Option<i64>,
+    max_uses: Option<i64>,
+) -> Result<discord_server::invites::Invite, String> {
+    let input = discord_server::invites::CreateInviteInput {
+        server_id,
+        expires_at,
+        max_uses,
+    };
+    discord_server::invites::create_invite(input)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Join a server by redeeming an invite `code` (the code alone names the
+/// server, like a real Discord invite). Same thin-RPC-stub shape as
+/// `create_invite`: the backend rejects an unknown/expired/fully-spent code
+/// and its message comes back as the `Err` string. On success the acting user
+/// is a plain member of the named server.
+pub async fn redeem_invite(
+    code: &str,
+) -> Result<discord_server::invites::RedeemResult, String> {
+    let input = discord_server::invites::RedeemInviteInput {
+        code: code.to_string(),
+    };
+    discord_server::invites::redeem_invite(input)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

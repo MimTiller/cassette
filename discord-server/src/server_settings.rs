@@ -65,6 +65,12 @@ pub enum WsClientMsg {
     Send { channel_id: i64, content: String },
     /// Request the recent message history for a channel.
     History { channel_id: i64 },
+    /// The client is typing in the channel.
+    Typing { channel_id: i64 },
+    /// Edit the content of one of the client's own messages.
+    EditMessage { message_id: i64, content: String },
+    /// Delete one of the client's own messages.
+    DeleteMessage { message_id: i64 },
 }
 
 /// Outbound frames the server sends.
@@ -99,6 +105,15 @@ pub enum WsServerMsg {
     DmMessage { message_id: i64, dm_id: i64, author_id: i64, author_username: String, content: String, created_at: i64 },
     /// A presence status change for a user: 'online' / 'away' / 'offline'.
     Presence { user_id: i64, status: String },
+    /// A channel member started typing. The client shows this transiently
+    /// (a few seconds) and does not need an explicit stop event.
+    Typing { channel_id: i64, user_id: i64 },
+    /// A channel message was edited. The client replaces the stored content
+    /// (and its timestamp) for `message_id` with the new values.
+    MessageEdited { message_id: i64, channel_id: i64, content: String, edited_at: i64 },
+    /// A channel message was deleted. The client drops its stored entry for
+    /// `message_id`.
+    MessageDeleted { message_id: i64, channel_id: i64 },
     /// A gateway error for a specific operation.
     Error { reason: String },
 }
@@ -129,7 +144,7 @@ pub async fn message_gateway(
     mut ch: server::Socket<WsClientMsg, WsServerMsg>,
     token: String,
 ) -> Result<(), ServerError> {
-    use crate::realtime::{announce_presence, history_for, hub, post_channel_message};
+    use crate::realtime::{announce_presence, history_for, hub, post_channel_message, server_audience_for_channel};
 
     let db = db_from_state()?;
     let user_id = crate::session::verify_token(&token)
@@ -219,6 +234,32 @@ pub async fn message_gateway(
                         .await;
                 }
             },
+            WsClientMsg::Typing { channel_id } => {
+                let audience = server_audience_for_channel(&db, channel_id, user_id);
+                hub.publish(
+                    &audience,
+                    &WsServerMsg::Typing { channel_id, user_id },
+                );
+            }
+            WsClientMsg::EditMessage {
+                message_id,
+                content,
+            } => {
+                // Success fans out through the hub (echo to the editor
+                // included); only failures are answered on this socket.
+                if let Err(reason) =
+                    crate::realtime::edit_channel_message(&db, user_id, message_id, &content)
+                {
+                    let _ = ch.send(WsServerMsg::Error { reason }).await;
+                }
+            }
+            WsClientMsg::DeleteMessage { message_id } => {
+                if let Err(reason) =
+                    crate::realtime::delete_channel_message(&db, user_id, message_id)
+                {
+                    let _ = ch.send(WsServerMsg::Error { reason }).await;
+                }
+            }
         }
     }
     // Disconnect: the socket has closed (client went away, transport died, or

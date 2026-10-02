@@ -480,6 +480,74 @@ impl Db {
         Ok(())
     }
 
+    /// A message's `(author_id, channel_id)`, or `None` when the id is unknown.
+    /// Read via `0004_messages.sql` so the gateway can authorize an edit or
+    /// delete against the stored author and recover the channel for the
+    /// broadcast audience.
+    pub fn message_row(&self, message_id: i64) -> Option<(i64, i64)> {
+        let c = self.lock().ok()?;
+        c.query_row(
+            "SELECT author_id, channel_id FROM messages WHERE id = ?1",
+            rusqlite::params![message_id],
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+        )
+        .ok()
+    }
+
+    /// Update a message's content and stamp `edited_at` (UTC epoch ms, supplied
+    /// by the caller). Returns `Ok(())` when a row was updated, `Err` (with
+    /// `QueryReturnedNoRows`) when the id didn't exist — mirroring the other
+    /// update helpers' "0 rows = not found" convention.
+    pub fn update_message(
+        &self,
+        message_id: i64,
+        content: &str,
+        edited_at: i64,
+    ) -> Result<(), rusqlite::Error> {
+        let c = self.lock()?;
+        let updated = c.execute(
+            "UPDATE messages SET content = ?2, edited_at = ?3 WHERE id = ?1",
+            rusqlite::params![message_id, content, edited_at],
+        )?;
+        if updated == 0 {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
+        Ok(())
+    }
+
+    /// Replace the stored `@mention` rows for `message_id` with `user_ids`.
+    /// Used after an edit so the persisted mention list matches the new text
+    /// (the old rows are removed, the new ones inserted). See migration
+    /// `0012_message_mentions.sql`.
+    pub fn replace_message_mentions(
+        &self,
+        message_id: i64,
+        user_ids: &[i64],
+    ) -> Result<(), rusqlite::Error> {
+        let c = self.lock()?;
+        c.execute(
+            "DELETE FROM message_mentions WHERE message_id = ?1",
+            rusqlite::params![message_id],
+        )?;
+        for user_id in user_ids {
+            c.execute(
+                "INSERT OR IGNORE INTO message_mentions (message_id, user_id)
+                 VALUES (?1, ?2)",
+                rusqlite::params![message_id, user_id],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Delete a message row. `message_mentions` cascades on the message id
+    /// (`0012_message_mentions.sql`); a reply pointing at it is nulled by the
+    /// schema's `ON DELETE SET NULL`. Returns the number of rows deleted (0 if
+    /// the id didn't exist).
+    pub fn delete_message(&self, message_id: i64) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        Ok(c.execute("DELETE FROM messages WHERE id = ?1", rusqlite::params![message_id])?)
+    }
+
     /// The most recent `limit` messages in a channel, oldest-first (ready to
     /// hand to a client as initial history). Each message carries its resolved
     /// `@mention` user ids (see `0012_message_mentions.sql`).

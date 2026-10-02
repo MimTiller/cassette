@@ -48,6 +48,42 @@ pub async fn login(username: &str, password: &str) -> Result<i64, String> {
     }
 }
 
+/// Create a new account with a username + password and return the account's
+/// numeric id on success, or an error message on failure.
+///
+/// A thin wrapper over the backend `#[server]` fn
+/// [`discord_server::auth::signup`]: it packs the credentials into
+/// [`discord_server::auth::SignupInput`], awaits the RPC stub, and flattens
+/// the result. On success it immediately logs the new account in via
+/// [`login`] with the same credentials, so the user lands signed in without
+/// retyping their password (the numeric id is recorded in [`CURRENT_USER_ID`]
+/// and the signed session token in [`CURRENT_TOKEN`]); the id returned by the
+/// login is the value returned here. On a signup failure (e.g. "username
+/// already taken") or a transport `ServerError`, the message is flattened
+/// into `Err`.
+///
+/// # Errors
+/// Returns `Err(message)` for any failure — a duplicate username, or a
+/// transport/protocol-level `ServerError` (network, codec, version). The
+/// message is the `ServerError`'s `Display` form.
+#[allow(dead_code)] // consumed by the login UI's sign-up mode.
+pub async fn signup(username: &str, password: &str) -> Result<i64, String> {
+    let input = discord_server::auth::SignupInput {
+        username: username.to_string(),
+        password: password.to_string(),
+    };
+
+    match discord_server::auth::signup(input).await {
+        Ok(_result) => {
+            // Account created. Log the new account straight in with the same
+            // credentials so the caller lands signed in — this also records
+            // the signed session token in [`CURRENT_TOKEN`].
+            login(username, password).await
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 /// The signed-in account's numeric id, kept process-wide so it outlives the
 /// login screen (which unmounts the moment `authed` flips). `0` means "not
 /// logged in" — the sentinel the store starts at. It still rides the realtime

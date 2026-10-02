@@ -16,6 +16,9 @@ mod typing_indicator;
 mod notification_settings;
 mod keyboard_shortcuts_overlay;
 mod profile_settings;
+mod dm_view;
+mod dms;
+mod live_dm_view;
 
 // Standalone component, not wired into any screen yet — same "declared so it
 // compiles, referenced by nothing" shape as `profile_settings`. Lives under
@@ -150,6 +153,18 @@ mod channel_topic_banner;
 mod spoiler_tag;
 #[path = "components/invite_link_display.rs"]
 mod invite_link_display;
+#[path = "components/join_modal.rs"]
+mod join_modal;
+#[path = "components/create_server_modal.rs"]
+mod create_server_modal;
+#[path = "components/create_channel_modal.rs"]
+mod create_channel_modal;
+#[path = "components/rename_channel_modal.rs"]
+mod rename_channel_modal;
+#[path = "components/delete_channel_modal.rs"]
+mod delete_channel_modal;
+#[path = "components/discover_servers_modal.rs"]
+mod discover_servers_modal;
 #[path = "components/voice_join_button.rs"]
 mod voice_join_button;
 #[path = "components/server_template_card.rs"]
@@ -186,7 +201,7 @@ mod voice_participant_list;
 mod settings_tab_bar;
 
 pub use app::app;
-pub use auth::login;
+pub use auth::{login, signup};
 
 // SDK-handler registration seam, invoked by the CLI-generated wrappers (web
 // `start_in`/`hydrate_in`, macOS `run_with`, iOS `run_in_view`, terminal
