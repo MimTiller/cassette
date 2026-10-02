@@ -58,7 +58,6 @@ use crate::member_role_list::MemberRoleList;
 use crate::read_receipt_indicator::ReadReceiptIndicator;
 use crate::verified_badge::VerifiedBadge;
 use crate::delete_account_warning::DeleteAccountWarning;
-use crate::category_filter_chips::category_filter_chips;
 use crate::notification_permission_prompt::NotificationPermissionPrompt;
 
 use crate::server_boost_badge::ServerBoostBadge;
@@ -71,9 +70,6 @@ use crate::blocked_user_row::BlockedUserRow;
 use crate::delete_message_confirm::DeleteMessageConfirm;
 use crate::kick_confirm_dialog::KickConfirmDialog;
 use crate::pin_confirm_toast::PinConfirmToast;
-use crate::server_stats_card::server_stats_card;
-use crate::server_event_card::ServerEventCard;
-use crate::server_discovery_card::server_discovery_card;
 use crate::mic_selector::MicSelector;
 use crate::link_embed_preview::LinkEmbedPreview;
 use crate::friend_request_card::FriendRequestCard;
@@ -3468,15 +3464,27 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 background: Some(col(BORDER)),
                 ..Default::default()
             };
-            // Uppercase "LIVE" caption under the thin divider: 10px, muted,
-            // centered with a touch of letter spacing (the old "(live)" text
-            // looked unstyled and the lowercase parens wasted rail width).
+            // Small "LIVE" badge under the thin divider: 9px uppercase,
+            // semi-bold, muted text on a BG_SIDEBAR pill (radius 8). The bare
+            // unstyled text version read as a floating label with no chrome;
+            // the pill gives it badge styling and still marks the section's
+            // purpose — backend-connected servers, as opposed to the mock rows
+            // above the divider.
             let label_style = StyleRules {
-                font_size: Some(px(10.0)),
+                font_size: Some(px(9.0)),
+                font_weight: Some(FontWeight::SemiBold),
                 color: Some(col(TEXT_MUTED)),
                 letter_spacing: Some(Tokenized::Literal(0.5)),
-                text_align: Some(TextAlign::Center),
                 text_transform: Some(TextTransform::Uppercase),
+                background: Some(col(BG_SIDEBAR)),
+                padding_top: Some(px(3.0)),
+                padding_bottom: Some(px(3.0)),
+                padding_left: Some(px(7.0)),
+                padding_right: Some(px(7.0)),
+                border_top_left_radius: Some(px(8.0)),
+                border_top_right_radius: Some(px(8.0)),
+                border_bottom_left_radius: Some(px(8.0)),
+                border_bottom_right_radius: Some(px(8.0)),
                 ..Default::default()
             };
             let row_style = StyleRules {
@@ -3888,10 +3896,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 }
                 TouchResponse::CONSUMED
             })
-            server_stats_card(512.into(), 48.into(), 1204.into())
-            ServerEventCard()
-            server_discovery_card()
-            category_filter_chips()
         }
     };
 

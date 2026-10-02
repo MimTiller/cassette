@@ -25,6 +25,17 @@ use runtime_core::{
 };
 
 use crate::style_helpers::{col, pct, px};
+// Discovery-area components relocated here from the server rail (they render
+// full-width cards / chip rows that don't fit a 72px icon rail): the "server
+// stats" card (members / online / messages), the "server discovery" card
+// (name + Join button), the "server event" card (the "Interested" CTA), and
+// the category filter chips (Gaming / Music / Education — the list's filter
+// row). All are self-contained (local state, no props required), so they
+// render verbatim — see the note at each call site.
+use crate::category_filter_chips::category_filter_chips;
+use crate::server_discovery_card::server_discovery_card;
+use crate::server_event_card::ServerEventCard;
+use crate::server_stats_card::server_stats_card;
 
 // Discord dark palette (kept local so the component is self-contained).
 const CARD: &str = "#2b2d31";
@@ -146,7 +157,7 @@ pub fn discover_servers_modal(open: Signal<bool>, on_join: Rc<dyn Fn(String)>) -
     // Shared panel styles (one static pass).
     let panel_style = StyleRules {
         width: Some(px(420.0)),
-        height: Some(px(560.0)),
+        height: Some(px(840.0)),
         padding_top: Some(px(20.0)),
         padding_bottom: Some(px(20.0)),
         padding_left: Some(px(20.0)),
@@ -224,6 +235,46 @@ pub fn discover_servers_modal(open: Signal<bool>, on_join: Rc<dyn Fn(String)>) -
                     ..Default::default()
                 }) {}
                 { close_btn }
+            }
+            // Server-stats card (members / online / messages), server-discovery
+            // card (name + Join), and server-event card (the "Interested" CTA):
+            // relocated here from the server rail during design review. All
+            // three are full-width cards with no place in the 72px icon rail,
+            // and this discover overlay is the app's discovery area. All are
+            // self-contained (local hardcoded state, no props beyond the stats
+            // defaults), so they render verbatim; each full-width wrapper
+            // mirrors `list_style`'s width treatment.
+            view(style = StyleRules {
+                width: Some(pct(100.0)),
+                margin_top: Some(px(14.0)),
+                ..Default::default()
+            }) {
+                server_stats_card(512.into(), 48.into(), 1204.into())
+            }
+            view(style = StyleRules {
+                width: Some(pct(100.0)),
+                margin_top: Some(px(8.0)),
+                ..Default::default()
+            }) {
+                server_discovery_card()
+            }
+            view(style = StyleRules {
+                width: Some(pct(100.0)),
+                margin_top: Some(px(8.0)),
+                ..Default::default()
+            }) {
+                ServerEventCard()
+            }
+            // Category filter chips: the suggested list's filter row (Gaming /
+            // Music / Education). Also relocated here from the server rail —
+            // a chip row has no place in a 72px icon rail, and this is where
+            // category filtering belongs.
+            view(style = StyleRules {
+                width: Some(pct(100.0)),
+                margin_top: Some(px(10.0)),
+                ..Default::default()
+            }) {
+                category_filter_chips()
             }
             view(style = list_style) { { list } }
         }
