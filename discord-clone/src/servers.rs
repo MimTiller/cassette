@@ -121,3 +121,49 @@ pub async fn mark_read(channel_id: i64, message_id: i64) -> Result<MarkReadResul
         .await
         .map_err(|e| e.to_string())
 }
+
+/// Rename a server. Only the current owner may call (owner-only by policy);
+/// the backend's rejection (e.g. "not the server owner") comes back as the
+/// `Err` string. Returns the updated name + icon + owner so the caller can
+/// refresh its local model in one round trip.
+pub async fn rename_server(
+    server_id: i64,
+    new_name: &str,
+) -> Result<discord_server::server_settings::ServerSettingsResult, String> {
+    let input = discord_server::server_settings::RenameServerInput {
+        server_id,
+        new_name: new_name.to_string(),
+    };
+    discord_server::server_settings::rename_server(input)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Set (or clear) a server's icon. `icon` is a URL string, or `None` to clear
+/// it. Owner or admin may call; the backend's rejection comes back as the
+/// `Err` string. Returns the updated name + icon + owner.
+pub async fn set_server_icon(
+    server_id: i64,
+    icon: Option<String>,
+) -> Result<discord_server::server_settings::ServerSettingsResult, String> {
+    let input = discord_server::server_settings::SetServerIconInput { server_id, icon };
+    discord_server::server_settings::set_server_icon(input)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Transfer server ownership to another member. Only the current owner may
+/// call; the backend's rejection (e.g. target isn't a member) comes back as
+/// the `Err` string. Returns the updated owner id (among name + icon).
+pub async fn transfer_server_ownership(
+    server_id: i64,
+    new_owner_id: i64,
+) -> Result<discord_server::server_settings::ServerSettingsResult, String> {
+    let input = discord_server::server_settings::TransferOwnershipInput {
+        server_id,
+        new_owner_id,
+    };
+    discord_server::server_settings::transfer_server_ownership(input)
+        .await
+        .map_err(|e| e.to_string())
+}

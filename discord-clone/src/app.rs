@@ -43,6 +43,7 @@ use icons_lucide::{
 };
 use crate::mute_channel_toggle::MuteChannelToggle;
 use crate::idle_timer_badge::idle_timer_badge;
+use crate::server_settings_panel::ServerSettingsPanel;
 
 use runtime_shared::time::local_offset_minutes;
 
@@ -3765,6 +3766,37 @@ fn app_shell(authed: Signal<bool>) -> Element {
             )
         }
     };
+    // --- Live Server Settings (rename / icon / transfer ownership) -----------
+    // LIVE mode only: the gear in the live sidebar's header opens this full-screen
+    // overlay. `server_id` is `active_live_server` (read at submit time, `None`
+    // outside live mode = a no-op, the same inert-outside-live idiom as the
+    // channel-management modals above). `name`/`icon`/`new_owner_id` are the
+    // three inputs, seeded from the active live server on open; `busy`/`error`
+    // are the RPC state; `servers` is re-fetched by the panel on any successful
+    // op so the rail's live section shows the new name/icon. There is no
+    // client-side permission logic beyond the panel's owner-only gate on the
+    // transfer section — the backend decides and its message is surfaced verbatim.
+    let ss_open: Signal<bool> = signal(false);
+    let ss_name: Signal<String> = signal(String::new());
+    let ss_icon: Signal<String> = signal(String::new());
+    let ss_owner: Signal<String> = signal(String::new());
+    let ss_busy: Signal<bool> = signal(false);
+    let ss_err: Signal<String> = signal(String::new());
+    let ss_el = ui! {
+        view {
+            ServerSettingsPanel(
+                open = ss_open,
+                server_id = active_live_server,
+                name = ss_name,
+                icon = ss_icon,
+                new_owner_id = ss_owner,
+                busy = ss_busy,
+                error = ss_err,
+                servers = live_servers,
+                members = live_members,
+            )
+        }
+    };
     // (Live channel action cluster + new-channel "+" builder live inside the
     // live arm of the sidebar `switch` render closure — see there. They need
     // the render closure's owned copies of the modal `Signal`s, which a
@@ -4272,6 +4304,32 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             TouchResponse::CONSUMED
                         })
                     };
+                    // The "Server Settings" gear on the live header's right edge
+                    // (next to the "+" button): opens the LIVE server-settings
+                    // overlay (rename / icon / transfer ownership). On open it
+                    // seeds the name + icon inputs from the active live server
+                    // (looked up in `live_servers`) and resets the transfer /
+                    // error / busy state, so a re-open starts fresh — the same
+                    // reset-on-open idiom as the create-channel "+" above.
+                    let gear_btn = ui! {
+                        view(style = chan_btn_style.clone(), test_id = "live-server-settings") {
+                            icon(SETTINGS).color(|| Color::from(TEXT_MUTED)).size(14.0)
+                        }
+                        .on_touch(move |_ev| {
+                            if let Some(active_id) = active_live_server.get() {
+                                let cur = live_servers.get().into_iter().find(|s| s.id == active_id);
+                                if let Some(s) = cur {
+                                    ss_name.set(s.name.clone());
+                                    ss_icon.set(s.icon_url.clone().unwrap_or_default());
+                                }
+                            }
+                            ss_owner.set(String::new());
+                            ss_busy.set(false);
+                            ss_err.set(String::new());
+                            ss_open.set(true);
+                            TouchResponse::CONSUMED
+                        })
+                    };
                     ui! {
                         view(style = sidebar_style.clone()) {
                             view(style = sidebar_header_style.clone()) {
@@ -4287,6 +4345,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                     flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
                                     ..Default::default()
                                 }) {}
+                                { gear_btn }
                                 { add_btn }
                             }
                             live_content
@@ -5848,6 +5907,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             rc_el
             dc_el
             moderation_region
+            ss_el
         }
     }
 }

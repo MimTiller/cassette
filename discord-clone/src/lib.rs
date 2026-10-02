@@ -163,6 +163,8 @@ mod create_channel_modal;
 mod rename_channel_modal;
 #[path = "components/delete_channel_modal.rs"]
 mod delete_channel_modal;
+#[path = "components/server_settings_panel.rs"]
+mod server_settings_panel;
 #[path = "components/discover_servers_modal.rs"]
 mod discover_servers_modal;
 #[path = "components/voice_join_button.rs"]
