@@ -97,7 +97,6 @@ use crate::translate_toggle::TranslateToggle;
 use crate::send_failed_indicator::SendFailedIndicator;
 use crate::spoiler_tag::SpoilerTag;
 use crate::latency_badge::LatencyBadge;
-use crate::char_counter::CharCounter;
 use crate::jump_to_bottom_button::JumpToBottomButton;
 use crate::role_badge::RoleBadge;
 use crate::afk_timer_display::AfkTimerDisplay;
@@ -5433,6 +5432,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
             view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
                 profile_el
                 DeleteAccountWarning()
+                // Account-security setting, living with the other account
+                // settings in this overlay (it is NOT a composer element).
+                TwoFactorToggle()
             }
         }
     };
@@ -5876,8 +5878,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             TouchResponse::CONSUMED
                         })
                         text_input(value = composer, on_change = update_on_type, placeholder = "Message", style = input_style, test_id = "composer").on_key_down(composer_key)
-                        CharCounter()
-                        TwoFactorToggle()
                         view(style = icon_button_style) {
                             icon(SMILE).color(|| Color::from(TEXT_MUTED)).size(16.0)
                         }
