@@ -4,9 +4,10 @@
 //! signal (`"accepted"` / `"declined"`); once set, the two buttons are
 //! replaced by a text line showing the status.
 //!
-//! Everything is hardcoded local state — no backend call, no props, no wiring
-//! into any screen yet. Declared in `lib.rs` so it compiles as part of the
-//! crate, but referenced by nothing (the same shape
+//! Everything is hardcoded local state — no backend call, no props. Wired
+//! into the `member_profile_panel` overlay in `app.rs`, opened by tapping a
+//! member row. Declared in `lib.rs` so it compiles as part of the
+//! crate, referenced by `member_profile_panel` (the same shape
 //! `dm_request_card` / `icon_change_confirm` / `transfer_ownership_confirm`
 //! ship in).
 //!

@@ -4,9 +4,10 @@
 //! of up to the first two words. This is the glyph shown in place of a
 //! server's uploaded icon.
 //!
-//! Everything is hardcoded local data — no backend call, no props, no wiring
-//! into any screen yet. Declared in `lib.rs` so it compiles as part of the
-//! crate, but referenced by nothing (the same shape `server_discovery_card`
+//! Everything is hardcoded local data — no backend call, no props. Wired
+//! into the `member_profile_panel` overlay in `app.rs`, opened by tapping a
+//! member row. Declared in `lib.rs` so it compiles as part of the
+//! crate, referenced by `member_profile_panel` (the same shape `server_discovery_card`
 //! / `welcome_banner` / `verified_badge` ship in).
 //!
 //! Idioms, each verified against this crate's `server_discovery_card.rs` /

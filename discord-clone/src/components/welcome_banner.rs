@@ -4,9 +4,10 @@
 //! flips a local `dismissed` boolean signal. While `dismissed` is `true` the
 //! component renders nothing.
 //!
-//! Everything is hardcoded local state — no backend call, no props, no wiring
-//! into any screen yet. Declared in `lib.rs` so it compiles as part of the
-//! crate, but referenced by nothing (the same shape `rules_accept_checkbox` /
+//! Everything is hardcoded local state — no backend call, no props. Wired
+//! into the `member_profile_panel` overlay in `app.rs`, opened by tapping a
+//! member row. Declared in `lib.rs` so it compiles as part of the
+//! crate, referenced by `member_profile_panel` (the same shape `rules_accept_checkbox` /
 //! `jump_to_bottom_button` ship in).
 //!
 //! Idioms, each verified against this crate's `components/rules_accept_checkbox.rs`:

@@ -10,9 +10,10 @@
 //!   local feedback.
 //! - **Reset** — restores the input to its default value (`"Alex"`).
 //!
-//! Everything is hardcoded local state — no backend call, no props, no wiring
-//! into any screen yet. Declared in `lib.rs` so it compiles as part of the
-//! crate, but referenced by nothing (the same shape `soundboard_button` /
+//! Everything is hardcoded local state — no backend call, no props. Wired
+//! into the `member_profile_panel` overlay in `app.rs`, opened by tapping a
+//! member row. Declared in `lib.rs` so it compiles as part of the
+//! crate, referenced by `member_profile_panel` (the same shape `soundboard_button` /
 //! `ban_reason_input` / `icon_change_confirm` ship in).
 //!
 //! Idioms, each verified against this crate:

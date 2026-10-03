@@ -6,9 +6,10 @@
 //! `"{n}/190"` — `n` is the current character count of the bio, `190` is the
 //! display budget (visual only, not enforced).
 //!
-//! Everything is hardcoded local state — no backend call, no props, no wiring
-//! into any screen yet. Declared in `lib.rs` so it compiles as part of the
-//! crate, but referenced by nothing (the same shape `idle_timer_badge` /
+//! Everything is hardcoded local state — no backend call, no props. Wired
+//! into the `member_profile_panel` overlay in `app.rs`, opened by tapping a
+//! member row. Declared in `lib.rs` so it compiles as part of the
+//! crate, referenced by `member_profile_panel` (the same shape `idle_timer_badge` /
 //! `rules_accept_checkbox` / `profile_settings` ship in).
 //!
 //! Idioms, each verified against this crate's `dm_view.rs` / `app.rs` /

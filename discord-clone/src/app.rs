@@ -867,10 +867,12 @@ fn live_edit_row(
 }
 
 /// One member row: avatar chip with the status dot overlaid on its
-/// bottom-right corner, then the name. Offline rows render dimmed,
-/// Discord-style. Pure data in, self-contained `Element` out (like
-/// `message_row`) so `member_panel` can splice them into a column.
-fn member_row(m: &Member) -> Element {
+/// bottom-right corner, then the name, a role badge, and a DM unread
+/// badge. Compact and fixed-width — fits cleanly inside the 240px
+/// member panel column. Tapping the row opens the member profile
+/// overlay (`member_profile_panel`), which renders the profile-level
+/// components for the selected member.
+fn member_row(m: &Member, selected: Signal<Option<&'static str>>) -> Element {
     let dim = m.status == Status::Offline;
     let row_style = StyleRules {
         padding_top: Some(px(4.0)),
@@ -880,6 +882,8 @@ fn member_row(m: &Member) -> Element {
         gap: Some(px(10.0)),
         flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Center),
+        flex_shrink: Some(grow(0.0)),
+        overflow: Some(Overflow::Hidden),
         ..Default::default()
     };
     let avatar_style = StyleRules {
@@ -932,6 +936,8 @@ fn member_row(m: &Member) -> Element {
         ..Default::default()
     };
     let initial = m.name.chars().next().unwrap_or(' ').to_string();
+    let sel = selected.clone();
+    let name_key: &'static str = m.name;
     ui! {
         view(style = row_style) {
             view(style = avatar_style) {
@@ -939,24 +945,144 @@ fn member_row(m: &Member) -> Element {
                 view(style = dot_style) {}
             }
             text(style = name_style) { m.name.to_string() }
-
             RoleBadge()
-
-            NicknameEditField()
-            WelcomeBanner()
-                    ServerIconFallback()
-            AfkTimerDisplay()
-            ActivityCard()
             DmNotificationBadge()
-ServerBoostBadge()
-LanguagePicker()
-user_bio_block()
-FriendRequestCard()
-            DmRequestCard()
-            BlockedUserRow()
-            MicSelector()
         }
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                sel.set(Some(name_key));
+            }
+            TouchResponse::CONSUMED
+        })
     }
+}
+
+/// The member profile panel: a full-screen overlay showing the
+/// profile-level components for the currently-selected member.
+/// Uses `switch` keyed on the selected member name so the header
+/// updates when a different member is chosen. Tapping the "Close"
+/// button (or the backdrop) sets the signal back to `None`.
+fn member_profile_panel(selected: Signal<Option<&'static str>>) -> Element {
+    switch(
+        move || selected.get(),
+        move |sel: &Option<&'static str>| {
+            if sel.is_none() {
+                // Zero-size invisible wrapper (same collapse idiom as the
+                // Profile / Notification overlays when closed).
+                ui! {
+                    view(style = StyleRules {
+                        position: Some(Position::Absolute),
+                        left: Some(px(0.0)),
+                        top: Some(px(0.0)),
+                        width: Some(px(0.0)),
+                        height: Some(px(0.0)),
+                        overflow: Some(Overflow::Hidden),
+                        ..Default::default()
+                    }) {}
+                }
+            } else {
+                let name = sel.unwrap().to_string();
+                let close = selected.clone();
+                let header_close = selected.clone();
+                let header_style = StyleRules {
+                    flex_direction: Some(FlexDirection::Row),
+                    align_items: Some(AlignItems::Center),
+                    justify_content: Some(JustifyContent::SpaceBetween),
+                    padding_top: Some(px(16.0)),
+                    padding_bottom: Some(px(16.0)),
+                    padding_left: Some(px(16.0)),
+                    padding_right: Some(px(16.0)),
+                    flex_shrink: Some(grow(0.0)),
+                    ..Default::default()
+                };
+                let header = ui! {
+                    view(style = header_style) {
+                        text(style = StyleRules {
+                            font_size: Some(px(18.0)),
+                            font_weight: Some(FontWeight::Bold),
+                            color: Some(col(TEXT)),
+                            ..Default::default()
+                        }) { format!("Profile — {}", name) }
+                        view(style = StyleRules {
+                            height: Some(px(26.0)),
+                            padding_left: Some(px(12.0)),
+                            padding_right: Some(px(12.0)),
+                            background: Some(col(BG_SIDEBAR)),
+                            align_items: Some(AlignItems::Center),
+                            justify_content: Some(JustifyContent::Center),
+                            border_top_left_radius: Some(px(6.0)),
+                            border_top_right_radius: Some(px(6.0)),
+                            border_bottom_left_radius: Some(px(6.0)),
+                            border_bottom_right_radius: Some(px(6.0)),
+                            flex_shrink: Some(grow(0.0)),
+                            ..Default::default()
+                        }) {
+                            text(style = StyleRules {
+                                color: Some(col(TEXT)),
+                                font_size: Some(px(12.0)),
+                                font_weight: Some(FontWeight::SemiBold),
+                                ..Default::default()
+                            }) { "Close".to_string() }
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                header_close.set(None);
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                    }
+                };
+                let content = ui! {
+                    view(style = StyleRules {
+                        flex_grow: Some(grow(1.0)),
+                        flex_direction: Some(FlexDirection::Column),
+                        overflow: Some(Overflow::Hidden),
+                        padding_top: Some(px(8.0)),
+                        padding_bottom: Some(px(16.0)),
+                        padding_left: Some(px(16.0)),
+                        padding_right: Some(px(16.0)),
+                        gap: Some(px(12.0)),
+                        ..Default::default()
+                    }) {
+                        WelcomeBanner()
+                        AfkTimerDisplay()
+                        ActivityCard()
+                        ServerBoostBadge()
+                        LanguagePicker()
+                        user_bio_block()
+                        FriendRequestCard()
+                        DmRequestCard()
+                        BlockedUserRow()
+                        NicknameEditField()
+                        ServerIconFallback()
+                        MicSelector()
+                    }
+                };
+                ui! {
+                    view(style = StyleRules {
+                        position: Some(Position::Absolute),
+                        left: Some(px(0.0)),
+                        top: Some(px(0.0)),
+                        width: Some(pct(100.0)),
+                        height: Some(pct(100.0)),
+                        background: Some(col(BG_MAIN)),
+                        flex_direction: Some(FlexDirection::Column),
+                        overflow: Some(Overflow::Hidden),
+                        ..Default::default()
+                    }) {
+                        header
+                        content
+                    }
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            close.set(None);
+                        }
+                        TouchResponse::CONSUMED
+                    })
+                }
+            }
+        },
+    )
 }
 
 /// A voice-channel row in the sidebar: a speaker icon (`VOLUME_2`) + name,
@@ -1210,7 +1336,11 @@ fn voice_section(
 /// cycling the status in the profile strip regroups them here (the panel
 /// is rebuilt on `user_status` changes; see `members_switch`). Spliced in
 /// as the right-most column for whichever server is active.
-fn member_panel(server: &crate::data::Server, user: &Member) -> Element {
+fn member_panel(
+    server: &crate::data::Server,
+    user: &Member,
+    selected: Signal<Option<&'static str>>,
+) -> Element {
     let mut body: Vec<Element> = Vec::new();
     // Header: "MEMBER COUNT — N" where N is the roster plus the signed-in
     // user, who counts as a member like anyone else.
@@ -1254,10 +1384,10 @@ fn member_panel(server: &crate::data::Server, user: &Member) -> Element {
         };
         body.push(ui! { text(style = group_style) { group_label } });
         for m in group.iter() {
-            body.push(member_row(m));
+            body.push(member_row(m, selected.clone()));
         }
         if with_user {
-            body.push(member_row(user));
+            body.push(member_row(user, selected.clone()));
         }
     }
 
@@ -3176,6 +3306,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // a full-screen overlay (built once, shown/hidden by this signal — the same
     // toggle idiom as the DM rail). No re-mount, no rebuild of the underlying tree.
     let profile_mode: Signal<bool> = signal(false);
+
+    // Selected member: tapping a member row in the right-hand list sets this
+    // to that member's name and opens the full-screen `member_profile_panel`
+    // overlay (built once, shown/hidden by this signal — the same toggle
+    // idiom as `profile_mode`). `None` while no profile is open.
+    let selected_member: Signal<Option<&'static str>> = signal(None);
 
     // Notification Settings screen: the user panel's settings gear opens it as
     // a full-screen overlay, the same build-once/toggle idiom as `profile_mode`.
@@ -5363,7 +5499,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         move || (active_server.get(), user_status.get()),
         move |(server_id, user_status): &(u32, Status)| {
             let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
-            member_panel(server, &USER.as_member(*user_status))
+            member_panel(server, &USER.as_member(*user_status), selected_member.clone())
         },
     );
 
@@ -5840,6 +5976,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
         }
     };
 
+    // Member profile overlay: built once, shown/hidden by `selected_member`.
+    // Full-screen and painted last so it sits above the member list; collapses
+    // to zero size while no member is selected (the same toggle idiom as the
+    // other overlay regions above).
+    let member_profile_el = member_profile_panel(selected_member.clone());
 
 
     ui! {
@@ -5911,6 +6052,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 }
             }
             members_switch
+            // Member profile overlay: full-screen, painted after the member
+            // list so it covers the whole window when a row is tapped
+            // (collapses to zero size while no member is selected).
+            member_profile_el
             // Painted last so it sits on top of everything when open.
             profile_region
             notif_region
