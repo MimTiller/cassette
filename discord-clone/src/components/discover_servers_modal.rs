@@ -147,14 +147,23 @@ fn suggested_row(s: &SuggestedServer, on_join: Rc<dyn Fn(String)>) -> Element {
     }
 }
 
-/// The Discover Servers overlay. `open` is owned by the caller; `on_join`
-/// is called with a suggested server's name when its Join button is tapped.
-/// The caller is responsible for any join side effect and closing the
-/// overlay.
-pub fn discover_servers_modal(open: Signal<bool>, on_join: Rc<dyn Fn(String)>) -> Element {
+/// The Discover Servers *panel* (the card itself, not the backdrop): the
+/// "Discover Servers" heading + close button, the server-stats /
+/// server-discovery / server-event cards, the category chips, and the
+/// suggested-server Join list. `open` is the caller's signal; the close
+/// button sets it back to `false`. `on_join` is forwarded to each Join row.
+///
+/// This is a free function (not inlined into the `when` branch) on purpose:
+/// the reactive `if open.get() { … }` in `discover_servers_modal` lowers to a
+/// `when` whose render is an `Fn` closure re-invoked on each activation, and
+/// a branch rendering a non-`Copy` value must rebuild it per call. Building
+/// the panel here — with all its `StyleRules` literals re-created inside — is
+/// the shape the closure needs (see `jump_to_bottom_button.rs` for the same
+/// inline-style / reactive-if idiom).
+fn discover_panel(open: Signal<bool>, on_join: Rc<dyn Fn(String)>) -> Element {
     let close = open;
 
-    // Shared panel styles (one static pass).
+    // Shared panel styles (re-built per activation; `StyleRules` is not `Copy`).
     let panel_style = StyleRules {
         width: Some(px(420.0)),
         height: Some(px(840.0)),
@@ -200,7 +209,6 @@ pub fn discover_servers_modal(open: Signal<bool>, on_join: Rc<dyn Fn(String)>) -
     };
 
     // Header: "Discover Servers" heading + close button.
-    let close = close.clone();
     let close_btn = ui! {
         view(style = close_btn_style.clone(), test_id = "discover-close") {
             text { "✕".to_string() }
@@ -221,7 +229,7 @@ pub fn discover_servers_modal(open: Signal<bool>, on_join: Rc<dyn Fn(String)>) -
         }
     };
 
-    let panel = ui! {
+    ui! {
         view(style = panel_style) {
             view(style = StyleRules {
                 width: Some(pct(100.0)),
@@ -279,8 +287,26 @@ pub fn discover_servers_modal(open: Signal<bool>, on_join: Rc<dyn Fn(String)>) -
             view(style = list_style) { { list } }
         }
         .on_touch(move |_ev| TouchResponse::CONSUMED)
-    };
+    }
+}
 
+/// The Discover Servers overlay. `open` is owned by the caller (the rail's
+/// GLOBE circle toggles it); `on_join` is called with a suggested server's
+/// name when its Join button is tapped. The caller is responsible for any
+/// join side effect and closing the overlay.
+///
+/// The backdrop wrapper keeps the build-once / toggle idiom (`width` /
+/// `height` collapse to `0px` while `open` is false, fill the window while
+/// true). The panel itself is additionally **gated behind `open`** with a
+/// reactive `if open.get() { … }` (no `else`): when the overlay is closed the
+/// panel unmounts entirely instead of sitting in the DOM at a negative
+/// x-offset, clipped to nothing by the zero-size wrapper, paying layout cost
+/// for no visible pixels. The `when` renders under a `display:contents`
+/// anchor, so the panel stays a direct flex item of the (centering) wrapper
+/// when open, and the auto-added `empty_absolute_view` else-branch occupies
+/// no flex slot when closed.
+pub fn discover_servers_modal(open: Signal<bool>, on_join: Rc<dyn Fn(String)>) -> Element {
+    let close = open;
     // Full-screen backdrop (same idiom as create_server_modal.rs).
     let open_chk = open;
     let wrap_style = move || StyleRules {
@@ -297,7 +323,10 @@ pub fn discover_servers_modal(open: Signal<bool>, on_join: Rc<dyn Fn(String)>) -
     };
     ui! {
         view(style = wrap_style) {
-            { panel }
+            // Mount the panel only while the overlay is open. `Signal` is
+            // `Copy` (re-read per activation) and `on_join` is cloned so the
+            // `when` render closure stays `Fn`.
+            if open.get() { discover_panel(open, on_join.clone()) }
         }
         .on_touch(move |ev| {
             if ev.phase == TouchPhase::Ended {
