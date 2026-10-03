@@ -32,9 +32,10 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use runtime_core::{
-    after_ms_detached, AlignItems, AlignSelf, Color, Element, FlexDirection, FlexWrap,
-    FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow, Position, Signal, StyleRules,
-    TextAlign, TextTransform, Tokenized, TouchPhase, TouchResponse, signal, switch, ui,
+    after_ms_detached, AlignItems, AlignSelf, Color, Cursor, Element, FlexDirection, FlexWrap,
+    FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow, PanEvent, PanRecognizer,
+    Position, Signal, StyleRules, TextAlign, TextTransform, Tokenized, TouchEvent,
+    TouchPhase, TouchResponse, pan, signal, switch, ui,
 };
 use runtime_core::icon;
 use icons_lucide::{
@@ -1225,7 +1226,11 @@ fn voice_section(
 /// cycling the status in the profile strip regroups them here (the panel
 /// is rebuilt on `user_status` changes; see `members_switch`). Spliced in
 /// as the right-most column for whichever server is active.
-fn member_panel(server: &crate::data::Server, user: &Member) -> Element {
+fn member_panel(
+    server: &crate::data::Server,
+    user: &Member,
+    width: Signal<f32>,
+) -> Element {
     let mut body: Vec<Element> = Vec::new();
     // Header: "MEMBER COUNT — N" where N is the roster plus the signed-in
     // user, who counts as a member like anyone else.
@@ -1295,19 +1300,21 @@ fn member_panel(server: &crate::data::Server, user: &Member) -> Element {
         }
     }
 
-    // Section wrapper: fixed-width right-side panel (Discord's member list
-    // lives on the right). The left border separates it from the main view;
-    // the panel owns its own bg.
+    // Section wrapper: right-side member-list panel. Its width is driven by
+    // the `width` signal (a thin drag handle on its left edge resizes it);
+    // the left border separates it from the main view; the panel owns its own
+    // bg. A rules *closure* so the width re-resolves as the signal changes.
+    let panel_style = move || StyleRules {
+        width: Some(px(width.get())),
+        background: Some(col(BG_SIDEBAR)),
+        border_left_width: Some(border_width(1.0)),
+        border_left_color: Some(col(BORDER)),
+        flex_direction: Some(FlexDirection::Column),
+        overflow: Some(Overflow::Hidden),
+        ..Default::default()
+    };
     ui! {
-        view(style = StyleRules {
-            width: Some(px(240.0)),
-            background: Some(col(BG_SIDEBAR)),
-            border_left_width: Some(border_width(1.0)),
-            border_left_color: Some(col(BORDER)),
-            flex_direction: Some(FlexDirection::Column),
-            overflow: Some(Overflow::Hidden),
-            ..Default::default()
-        }) {
+        view(style = panel_style) {
             scroll_view(style = StyleRules {
                 flex_grow: Some(grow(1.0)),
                 ..Default::default()
@@ -2684,9 +2691,73 @@ fn filter_members(q: &str, members: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+/// A thin vertical drag handle that resizes a fixed-width column by feeding
+/// horizontal pans back into its `width` signal. It sits in the top-level
+/// row flush against the column's inner edge, between that column and the
+/// growing main view. `sign` is `+1` when dragging right should *grow* the
+/// column (the channel sidebar, whose handle rides its right edge) and `-1`
+/// for the member list (handle on its left edge, so dragging right shrinks
+/// it). `id` is the robot `test_id` anchor (kept distinct per instance so the
+/// two handles don't collide in the automation registry).
+///
+/// The pan callback is `Fn` (not `FnMut`), so the "width at drag start" is
+/// stashed in a `Cell` — that gives the callback interior mutability without
+/// requiring `FnMut`. `PanEvent::Moved.delta` is *cumulative* from `Began`
+/// (window space, not view-local), so it's applied directly as an offset from
+/// the stashed start rather than accumulated event-to-event (accumulating
+/// onto an already-moving value would oscillate — see the recognizer docs).
+fn resize_handle(width: Signal<f32>, sign: f32, id: &'static str) -> Element {
+    let hovered = signal(false);
+    let start = Cell::new(0.0f32);
+    // Transparent at rest (invisible, but still hit-testable — the default
+    // `PointerEvents::Auto` doesn't skip empty-area hit-testing), a subtle
+    // fill once hovered so the affordance is discoverable. `ColResize` gives
+    // the east-west resize cursor over the strip.
+    let handle_style = move || StyleRules {
+        width: Some(px(6.0)),
+        background: Some(col(if hovered.get() { BG_HOVER } else { "transparent" })),
+        cursor: Some(Cursor::ColResize),
+        // A fixed grab strip: never shrinks below 6px in the flex row, so it
+        // stays reliably draggable even when the window is narrow.
+        flex_shrink: Some(grow(0.0)),
+        flex_direction: Some(FlexDirection::Column),
+        ..Default::default()
+    };
+    ui! {
+        view(style = handle_style, test_id = id) {}
+            .on_touch({
+                let h = pan(
+                    PanRecognizer::default(),
+                    move |ev: &PanEvent| {
+                        match ev {
+                            PanEvent::Began { .. } => {
+                                start.set(width.get());
+                            }
+                            PanEvent::Moved { delta, .. } => {
+                                let next = (start.get() + sign * delta.x).clamp(180.0, 400.0);
+                                width.set(next);
+                            }
+                            // Width stays wherever it was left on release.
+                            PanEvent::Ended { .. } | PanEvent::Cancelled => {}
+                        }
+                    },
+                );
+                move |ev: &TouchEvent| h(ev)
+            })
+            .on_hover(move |on| hovered.set(on))
+    }
+}
+
 fn app_shell(authed: Signal<bool>) -> Element {
     let active_server: Signal<u32> = signal(SERVERS[0].id);
     let active_channel: Signal<u32> = signal(SERVERS[0].first_text_channel().id);
+    // Resizable column widths (CSS pixels), driven by the thin drag handles
+    // between the channel sidebar / main view and the main view / member list.
+    // Both start at the 240px the columns used to be hard-coded to; the handles
+    // clamp to 180..=400. `Signal` is `Copy`, so the drag closures and the
+    // reactive style closures below each capture their own handle.
+    let sidebar_width: Signal<f32> = signal(240.0);
+    let member_panel_width: Signal<f32> = signal(240.0);
     let composer: Signal<String> = signal(String::new());
     // Emoji-picker popover: `true` = the floating emoji grid is open above the
     // smile button. Pure local UI state (no backend), toggled by the smile
@@ -3875,8 +3946,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
     };
 
     // --- channel sidebar -------------------------------------------------
-    let sidebar_style = StyleRules {
-        width: Some(px(240.0)),
+    // Width is driven by the `sidebar_width` signal (a thin drag handle on the
+    // sidebar's right edge resizes it). A rules *closure* so the width
+    // re-resolves as the signal changes — the same reactive idiom the channel
+    // rows use. Captures only a `Copy` `Signal`, so the closure itself is
+    // `Clone`, which the `switch` render below relies on (`sidebar_style.clone()`).
+    let sidebar_style = move || StyleRules {
+        width: Some(px(sidebar_width.get())),
         background: Some(col(BG_SIDEBAR)),
         border_right_width: Some(border_width(1.0)),
         border_right_color: Some(col(BORDER)),
@@ -5279,7 +5355,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         move || (active_server.get(), user_status.get()),
         move |(server_id, user_status): &(u32, Status)| {
             let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
-            member_panel(server, &USER.as_member(*user_status))
+            member_panel(server, &USER.as_member(*user_status), member_panel_width)
         },
     );
 
@@ -5769,6 +5845,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
         }) {
             view(style = rail_style) { server_rows create_server_section live_section rail_actions gateway_status gateway_incoming_effect mention_reset_effect }
             sidebar
+            // Drag handle on the channel sidebar's right edge: dragging it
+            // left/right resizes `sidebar_width` (right = grow, so sign `+1`).
+            resize_handle(sidebar_width, 1.0, "resize-sidebar")
             view(style = main_style) {
                 header
                 scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {
@@ -5819,6 +5898,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     }
                 }
             }
+            // Drag handle on the member panel's left edge: dragging it left
+            // resizes `member_panel_width` (left = grow, so sign `-1`).
+            resize_handle(member_panel_width, -1.0, "resize-members")
             members_switch
             // Painted last so it sits on top of everything when open.
             profile_region
