@@ -54,7 +54,6 @@ use crate::ban_list_row::BanListRow;
 use crate::timeout_duration_picker::TimeoutDurationPicker;
 use crate::permission_override_row::PermissionOverrideRow;
 use crate::member_role_list::MemberRoleList;
-use crate::read_receipt_indicator::ReadReceiptIndicator;
 use crate::verified_badge::VerifiedBadge;
 use crate::delete_account_warning::DeleteAccountWarning;
 
@@ -63,28 +62,17 @@ use crate::language_picker::LanguagePicker;
 use crate::user_bio_block::user_bio_block;
 use crate::dm_request_card::DmRequestCard;
 use crate::blocked_user_row::BlockedUserRow;
-use crate::delete_message_confirm::DeleteMessageConfirm;
-use crate::kick_confirm_dialog::KickConfirmDialog;
-use crate::pin_confirm_toast::PinConfirmToast;
 use crate::mic_selector::MicSelector;
-use crate::link_embed_preview::LinkEmbedPreview;
 use crate::friend_request_card::FriendRequestCard;
 use crate::server_icon_fallback::ServerIconFallback;
-use crate::message_action_bar::MessageActionBar;
 
 use crate::dm_notification_badge::DmNotificationBadge;
-use crate::message_rating::MessageRating;
 use crate::welcome_banner::WelcomeBanner;
-use crate::message_timestamp_tooltip::MessageTimestampTooltip;
-use crate::code_block::code_block;
-use crate::reaction_summary::ReactionSummary;
 use crate::activity_card::ActivityCard;
 use crate::screen_share_indicator::ScreenShareIndicator;
 use crate::two_factor_toggle::TwoFactorToggle;
 
-use crate::translate_toggle::TranslateToggle;
 use crate::send_failed_indicator::SendFailedIndicator;
-use crate::spoiler_tag::SpoilerTag;
 use crate::latency_badge::LatencyBadge;
 use crate::jump_to_bottom_button::JumpToBottomButton;
 use crate::role_badge::RoleBadge;
@@ -108,7 +96,6 @@ use crate::delete_channel_modal::DeleteChannelModal;
 use crate::discover_servers_modal::discover_servers_modal;
 use crate::typing_indicator::TypingIndicator;
 use crate::nickname_edit_field::NicknameEditField;
-use crate::custom_status_input::CustomStatusInput;
 
 // Robot test ids: stable, `'static` strings the automation robot
 // (`find_element`/`tap`) matches on to locate interactive elements. The
@@ -333,22 +320,7 @@ pub(crate) fn message_row(author: &str, color: &str, body: &str, when: String, e
                     text(style = when_style) { when }
                 }
                 text(style = body_style) { body.to_string() }
-                ReadReceiptIndicator()
                 if edited { edited_label() }
-                SpoilerTag()
-                code_block()
-                MessageRating()
-                MessageActionBar()
-ReactionSummary()
-MessageTimestampTooltip()
-DeleteMessageConfirm()
-KickConfirmDialog()
-PinConfirmToast()
-LinkEmbedPreview()
-
-TranslateToggle()
-
-    CustomStatusInput()
             }
         }
     }
