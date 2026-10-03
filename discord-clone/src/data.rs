@@ -220,6 +220,220 @@ impl User {
     }
 }
 
+/// Per-member display data shown in the member profile panel and the member
+/// list's role badge. Keyed by the member's **name** (the profile panel and
+/// member rows address members by name), so the profile panel can look a
+/// member up from the selected-name signal. Every field is `&'static str`
+/// (or a plain integer) so values can be passed into reactive `#[prop]`s
+/// without allocation.
+///
+/// Each mock member carries distinct values here — different activity, role,
+/// boost tier, bio, and nickname — so no two profiles render byte-for-byte
+/// identical. (Previously every profile re-used one hardcoded literal.)
+pub struct MemberProfile {
+    /// The rich-presence status verb, e.g. "Playing", "Listening to".
+    pub activity_verb: &'static str,
+    /// The rich-presence detail, e.g. the game / app / track title.
+    pub activity_detail: &'static str,
+    /// The member's role name shown on the role badge.
+    pub role_name: &'static str,
+    /// The role badge fill (each role carries its own accent color).
+    pub role_color: &'static str,
+    /// The "about you" bio shown (and editable) in the profile panel.
+    pub bio: &'static str,
+    /// The server boost-level badge tier (0-3), rendered as "Level {n}".
+    pub boost_level: u32,
+    /// The member's display nickname (distinct from their account name).
+    pub nickname: &'static str,
+    /// The sender name on the member's friend-request card.
+    pub friend_sender: &'static str,
+}
+
+/// The fallback profile for a name with no explicit entry (e.g. the
+/// signed-in user "you") — the previous single shared literal, kept as the
+/// default so an unknown name still renders a coherent profile.
+pub const DEFAULT_MEMBER_PROFILE: MemberProfile = MemberProfile {
+    activity_verb: "Playing",
+    activity_detail: "Some Game Title",
+    role_name: "Member",
+    role_color: "#949ba4",
+    bio: "Tell us about yourself...",
+    boost_level: 2,
+    nickname: "you",
+    friend_sender: "Fen",
+};
+
+/// The per-member mock profile table — one row per mock member, keyed by name.
+static MEMBER_PROFILES: &[(&str, MemberProfile)] = &[
+    (
+        "miri",
+        MemberProfile {
+            activity_verb: "Playing",
+            activity_detail: "Hollow Knight",
+            role_name: "Moderator",
+            role_color: "#5865f2",
+            bio: "Borrow-checker whisperer. Ask me about lifetimes, I won't blink.",
+            boost_level: 2,
+            nickname: "miri",
+            friend_sender: "dyno",
+        },
+    ),
+    (
+        "dyno",
+        MemberProfile {
+            activity_verb: "Listening to",
+            activity_detail: "Lo-fi beats",
+            role_name: "Member",
+            role_color: "#949ba4",
+            bio: "Building tiny WASM tools for fun. Zero-deps or it didn't happen.",
+            boost_level: 1,
+            nickname: "dyno",
+            friend_sender: "sol",
+        },
+    ),
+    (
+        "nara",
+        MemberProfile {
+            activity_verb: "Playing",
+            activity_detail: "Stardew Valley",
+            role_name: "Member",
+            role_color: "#949ba4",
+            bio: "Semicolons are load-bearing (fight me). Weekend farmhand.",
+            boost_level: 0,
+            nickname: "nara",
+            friend_sender: "miri",
+        },
+    ),
+    (
+        "wren",
+        MemberProfile {
+            activity_verb: "Watching",
+            activity_detail: "RustConf talks",
+            role_name: "Admin",
+            role_color: "#23a559",
+            bio: "Do not disturb — I'm mid-session. Ping me after the conference ends.",
+            boost_level: 3,
+            nickname: "wren",
+            friend_sender: "juno",
+        },
+    ),
+    (
+        "juno",
+        MemberProfile {
+            activity_verb: "Playing",
+            activity_detail: "Celeste",
+            role_name: "Member",
+            role_color: "#949ba4",
+            bio: "Out most of the day, sorry for the late replies. Speedrunner-ish.",
+            boost_level: 1,
+            nickname: "juno",
+            friend_sender: "nara",
+        },
+    ),
+    (
+        "kai",
+        MemberProfile {
+            activity_verb: "Playing",
+            activity_detail: "Blender",
+            role_name: "Member",
+            role_color: "#949ba4",
+            bio: "Rendering things, mostly badly. Title screen lighting feels right though.",
+            boost_level: 1,
+            nickname: "kai",
+            friend_sender: "pix",
+        },
+    ),
+    (
+        "sol",
+        MemberProfile {
+            activity_verb: "Working on",
+            activity_detail: "A pixel font",
+            role_name: "Moderator",
+            role_color: "#5865f2",
+            bio: "Emblem colorist. Warmer golds, colder blues. Drop free packs in #assets.",
+            boost_level: 2,
+            nickname: "sol",
+            friend_sender: "kai",
+        },
+    ),
+    (
+        "pix",
+        MemberProfile {
+            activity_verb: "Playing",
+            activity_detail: "Aseprite",
+            role_name: "Member",
+            role_color: "#949ba4",
+            bio: "Pixel art, one sprite at a time. Ask me for the font pack link.",
+            boost_level: 0,
+            nickname: "pix",
+            friend_sender: "sol",
+        },
+    ),
+    (
+        "ash",
+        MemberProfile {
+            activity_verb: "Listening to",
+            activity_detail: "Synthwave",
+            role_name: "Member",
+            role_color: "#949ba4",
+            bio: "Gone a while, back soon. Leave a render in WIP and I'll critique it.",
+            boost_level: 1,
+            nickname: "ash",
+            friend_sender: "kai",
+        },
+    ),
+    (
+        "rio",
+        MemberProfile {
+            activity_verb: "Playing",
+            activity_detail: "Trail Maps",
+            role_name: "Moderator",
+            role_color: "#5865f2",
+            bio: "Organizing the next hike. Bring layers — the ridge is windy.",
+            boost_level: 2,
+            nickname: "rio",
+            friend_sender: "sam",
+        },
+    ),
+    (
+        "sam",
+        MemberProfile {
+            activity_verb: "Playing",
+            activity_detail: "Chess",
+            role_name: "Member",
+            role_color: "#949ba4",
+            bio: "Just here for the weekend trip. Meeting at the north lot, 7am?",
+            boost_level: 0,
+            nickname: "sam",
+            friend_sender: "rio",
+        },
+    ),
+    (
+        "lee",
+        MemberProfile {
+            activity_verb: "Working on",
+            activity_detail: "A trail log",
+            role_name: "Member",
+            role_color: "#949ba4",
+            bio: "Offline a lot, sorry! Will confirm the hike when I'm back.",
+            boost_level: 0,
+            nickname: "lee",
+            friend_sender: "sam",
+        },
+    ),
+];
+
+/// Look up a member's profile display data by name. Returns the matching row,
+/// or [`DEFAULT_MEMBER_PROFILE`] for an unknown name (e.g. the signed-in user
+/// "you", which is not in the mock table).
+pub fn member_profile(name: &str) -> &'static MemberProfile {
+    MEMBER_PROFILES
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, p)| p)
+        .unwrap_or(&DEFAULT_MEMBER_PROFILE)
+}
+
 /// Message ages are stored inline on each `Message` as `age_secs` (see the
 /// field doc on `Message::age_secs`) — resolved to real instants at render
 /// time. All sit within the last ~20h so they read "Today at …" in any

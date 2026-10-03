@@ -37,15 +37,17 @@ const TEXT: &str = "#f2f3f5"; // primary text
 const ACCEPT: &str = "#248046"; // accept button (Discord green)
 const DECLINE: &str = "#4e5058"; // decline button (Discord muted gray)
 
-/// The hardcoded sender name (no props for now, no member lookup).
-const SENDER_NAME: &str = "Fen";
-
-/// The friend request card. Renders the hardcoded sender name with an
+/// The friend request card. Renders the member's friend-request sender name
+/// (the `sender` prop, defaulting to the previous shared literal) with an
 /// `Accept` and a `Decline` button. Each button sets the local `status`
 /// signal; once set, the buttons are replaced by a text line showing the
 /// status (`"accepted"` / `"declined"`).
 #[component]
-pub fn FriendRequestCard() -> Element {
+#[allow(non_snake_case)]
+pub fn FriendRequestCard(#[prop(default = "Fen")] sender: String) -> Element {
+    // The sender name arrives as a prop (never `.set`), so read it once into
+    // an owned String and bake it as static text.
+    let sender_name = sender.get().to_string();
     // Local status state: `None` until a button is pressed. Both button
     // closures and the reactive `if let` below read/write the same signal.
     let status = signal(Option::<String>::None);
@@ -70,15 +72,15 @@ pub fn FriendRequestCard() -> Element {
             border_bottom_right_radius: Some(px(10.0)),
             ..Default::default()
         }) {
-            // The hardcoded sender name — primary text, semibold. Written
-            // INLINE because `StyleRules` is not `Copy` (a shared `let` would
-            // be moved on its first use).
+            // The sender name — primary text, semibold. Written INLINE because
+            // `StyleRules` is not `Copy` (a shared `let` would be moved on its
+            // first use).
             text(style = StyleRules {
                 font_size: Some(px(18.0)),
                 font_weight: Some(FontWeight::SemiBold),
                 color: Some(col(TEXT)),
                 ..Default::default()
-            }) { SENDER_NAME.to_string() }
+            }) { sender_name }
 
             // Reactive swap: `if let Some(s) = status.get() {…} else {…}`
             // lowers to a `when` (mounts the chosen branch, unmounts the

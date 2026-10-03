@@ -46,9 +46,6 @@ use runtime_core::{
     StyleRules,
 };
 
-// The default nickname the input starts with and that Reset restores to.
-const DEFAULT_NICKNAME: &str = "Alex";
-
 // How long the "Saved!" confirmation lingers before it disappears on its own.
 const SAVED_MS: i32 = 1500;
 
@@ -60,15 +57,19 @@ const BLURPLE: &str = "#5865f2"; // Save button (Discord accent)
 const MUTED: &str = "#4e5058"; // Reset button (subtle gray)
 const SAVED: &str = "#57f287"; // "Saved!" confirmation (Discord online green)
 
-/// A self-contained nickname editor. A `text_input` starts at `"Alex"` and is
-/// bound to local `nickname` state; **Save** flashes a local `saved` boolean
-/// (rendering a `"Saved!"` line for a moment via a one-shot timer) and
-/// **Reset** returns the input to `"Alex"`. No backend call, no props, no
-/// navigation wiring yet.
+/// A self-contained nickname editor. A `text_input` starts at the member's
+/// nickname (`default_nickname` prop) and is bound to local `nickname` state;
+/// **Save** flashes a local `saved` boolean (rendering a `"Saved!"` line for a
+/// moment via a one-shot timer) and **Reset** returns the input to the default
+/// nickname. No backend call, no navigation wiring yet.
 #[component]
 #[allow(non_snake_case)]
-pub fn NicknameEditField() -> Element {
-    let nickname = signal(DEFAULT_NICKNAME.to_string());
+pub fn NicknameEditField(#[prop(default = "Alex")] default_nickname: String) -> Element {
+    // The member's display nickname seeds the local input signal (and is what
+    // Reset restores to). `default_nickname` is a prop read once into an owned
+    // String at build; the signal is the live state after that.
+    let default_nickname = default_nickname.get();
+    let nickname = signal(default_nickname.to_string());
     let saved = signal(false);
 
     // Every native edit is pushed straight back into the same signal. `nickname`
@@ -83,9 +84,10 @@ pub fn NicknameEditField() -> Element {
         after_ms_detached(SAVED_MS, move || saved.set(false));
     };
 
-    // Reset: restore the input to its default value. `nickname` is `Copy`, so
-    // this closure captures a copy and stays `Fn`.
-    let on_reset = move || nickname.set(DEFAULT_NICKNAME.to_string());
+    // Reset: restore the input to the default nickname (the member's
+    // `default_nickname` prop). `nickname` is `Copy`, so this closure
+    // captures a copy and stays `Fn`.
+    let on_reset = move || nickname.set(default_nickname.to_string());
 
     // Static styles for the nodes OUTSIDE the reactive `when` — plain locals
     // (created once). The "Saved!" style is written inline below because it

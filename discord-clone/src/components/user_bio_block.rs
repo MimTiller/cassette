@@ -44,18 +44,19 @@ const TEXT: &str = "#f2f3f5"; // primary text
 const TEXT_MUTED: &str = "#949ba4"; // character count / hint text
 const BIO_BG: &str = "#1e1f22"; // text area surface (Discord input gray)
 
-// The bio's starting value. Max length is intentionally NOT enforced — the
-// "190" below is a display budget only (it renders, it does not clamp).
-const BIO_DEFAULT: &str = "Tell us about yourself...";
 // The display budget shown in the character count.
 const BIO_BUDGET: usize = 190;
 
 /// The bio editor. Renders a `text_area` bound to the local `bio` signal
-/// (starts at the default value) with a live `"{n}/190"` character count
-/// beneath it. No backend call, no props — local state only.
+/// (starts at the member's bio `bio` prop) with a live `"{n}/190"` character
+/// count beneath it. No backend call — local state only, the starting value
+/// arriving as a prop (default is the previous shared literal).
 #[component]
-pub fn user_bio_block() -> Element {
-    let bio = signal(BIO_DEFAULT.to_string());
+pub fn user_bio_block(#[prop(default = "Tell us about yourself...")] bio: String) -> Element {
+    // The member's bio seeds the local signal (never `.set` from a prop — the
+    // signal is the live editor state after that). `bio` is a prop read once
+    // into an owned String at build.
+    let bio = signal(bio.get().to_string());
 
     // Push every native edit back into the controlled `bio` signal. `bio` is
     // `Copy`, so the `move` closure captures a copy of the same underlying

@@ -46,7 +46,7 @@ use crate::server_settings_panel::ServerSettingsPanel;
 
 use runtime_shared::time::local_offset_minutes;
 
-use crate::data::{DMS, SERVERS, Category, Member, Server, Status, TextChannel, USER};
+use crate::data::{DMS, SERVERS, Category, Member, Server, Status, TextChannel, USER, member_profile};
 use crate::member_count_display::member_count_display;
 use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
@@ -908,6 +908,9 @@ fn member_row(m: &Member, selected: Signal<Option<&'static str>>) -> Element {
         ..Default::default()
     };
     let initial = m.name.chars().next().unwrap_or(' ').to_string();
+    // The row's role badge uses the member's own role (per-member profile),
+    // so rows in the member list no longer all show the same role.
+    let prof = member_profile(m.name);
     let sel = selected.clone();
     let name_key: &'static str = m.name;
     ui! {
@@ -917,7 +920,10 @@ fn member_row(m: &Member, selected: Signal<Option<&'static str>>) -> Element {
                 view(style = dot_style) {}
             }
             text(style = name_style) { m.name.to_string() }
-            RoleBadge()
+            RoleBadge(
+                role_name = prof.role_name.to_string(),
+                role_color = prof.role_color.to_string(),
+            )
             DmNotificationBadge()
         }
         .on_touch(move |ev| {
@@ -954,6 +960,10 @@ fn member_profile_panel(selected: Signal<Option<&'static str>>) -> Element {
                 }
             } else {
                 let name = sel.unwrap().to_string();
+                // Per-member display data (activity, role, bio, …) keyed by
+                // name — distinct per member so no two profiles render
+                // identically. Unknown names fall back to the default profile.
+                let prof = member_profile(&name);
                 let close = selected.clone();
                 let header_close = selected.clone();
                 let header_style = StyleRules {
@@ -1016,16 +1026,19 @@ fn member_profile_panel(selected: Signal<Option<&'static str>>) -> Element {
                         gap: Some(px(12.0)),
                         ..Default::default()
                     }) {
-                        WelcomeBanner()
+                        WelcomeBanner(name = name.clone())
                         AfkTimerDisplay()
-                        ActivityCard()
-                        ServerBoostBadge()
+                        ActivityCard(
+                            activity = prof.activity_verb.to_string(),
+                            detail = prof.activity_detail.to_string(),
+                        )
+                        ServerBoostBadge(boost_level = prof.boost_level as i32)
                         LanguagePicker()
-                        user_bio_block()
-                        FriendRequestCard()
+                        user_bio_block(prof.bio.to_string().into())
+                        FriendRequestCard(sender = prof.friend_sender.to_string())
                         DmRequestCard()
                         BlockedUserRow()
-                        NicknameEditField()
+                        NicknameEditField(default_nickname = prof.nickname.to_string())
                         ServerIconFallback()
                         MicSelector()
                     }

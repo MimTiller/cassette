@@ -32,18 +32,24 @@ use runtime_core::{
 };
 
 // Discord role-badge convention: each role carries its own accent color (the
-// blurple here is the same `#5865f2` the `verified_badge` check uses). Both
-// values are hardcoded local `const`s so the badge is self-contained.
-const ROLE_NAME: &str = "Moderator";
-const ROLE_COLOR: &str = "#5865f2";
+// blurple here is the same `#5865f2` the `verified_badge` check uses). The
+// role name and color arrive as props (with hardcoded defaults — the previous
+// single shared literals — so the component compiles standalone).
 const PILL_TEXT: &str = "#ffffff"; // white label, readable on the role fill
 
-/// The role badge. A small pill-shaped badge: the hardcoded role name rendered
-/// in white on the hardcoded role color. Purely local — renders the hardcoded
-/// values above, no backend fetch, no reactivity.
+/// The role badge. A small pill-shaped badge: the role name rendered in white
+/// on the role color. Both arrive as props (defaults are the previous
+/// hardcoded values). No backend fetch, no reactivity.
 #[component]
 #[allow(non_snake_case)]
-pub fn RoleBadge() -> Element {
+pub fn RoleBadge(
+    #[prop(default = "Moderator")] role_name: String,
+    #[prop(default = "#5865f2")] role_color: String,
+) -> Element {
+    // Props are never `.set`, so read them once — the name bakes to static
+    // text, and the color feeds the pill's inline background.
+    let label = role_name.get().to_string();
+    let fill = role_color.get();
     ui! {
         // The pill: a fixed-height, fully-rounded `view` (radius = half the
         // height) with a solid role-colored fill — the exact lozenge shape
@@ -55,23 +61,23 @@ pub fn RoleBadge() -> Element {
             height: Some(px(22.0)),
             padding_left: Some(px(10.0)),
             padding_right: Some(px(10.0)),
-            background: Some(col(ROLE_COLOR)),
+            background: Some(col(&fill)),
             border_top_left_radius: Some(px(11.0)),
             border_top_right_radius: Some(px(11.0)),
             border_bottom_left_radius: Some(px(11.0)),
             border_bottom_right_radius: Some(px(11.0)),
             ..Default::default()
         }) {
-            // The role-name label: a static `&str` const, so it bakes to
-            // `TextSource::Static` (no reactive machinery). White SemiBold on
-            // the role fill — the same label treatment `member_role_list` gives
+            // The role-name label: an owned String read from the `role_name`
+            // prop, so it bakes to `TextSource::Static`. White SemiBold on the
+            // role fill — the same label treatment `member_role_list` gives
             // each of its role pills.
             text(style = StyleRules {
                 font_size: Some(px(12.0)),
                 font_weight: Some(FontWeight::SemiBold),
                 color: Some(col(PILL_TEXT)),
                 ..Default::default()
-            }) { ROLE_NAME.to_string() }
+            }) { label }
         }
     }
 }

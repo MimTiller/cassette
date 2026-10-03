@@ -36,15 +36,17 @@ const TEXT: &str = "#f2f3f5"; // primary text
 const MUTED_BORDER: &str = "#4e5058"; // dismiss-button ring
 const TEXT_MUTED: &str = "#949ba4"; // dismiss "x" glyph
 
-// The hardcoded local username — no backend fetch.
-const USERNAME: &str = "Sam";
-
-/// The welcome banner. Greets `USERNAME` with a wave emoji and a dismiss "x";
-/// renders nothing once the local `dismissed` signal is set (starts `false`).
+/// The welcome banner. Greets the member's name (`name` prop) with a wave emoji
+/// and a dismiss "x"; renders nothing once the local `dismissed` signal is set
+/// (starts `false`).
 #[component]
 #[allow(non_snake_case)]
-pub fn WelcomeBanner() -> Element {
+pub fn WelcomeBanner(#[prop(default = "Sam")] name: String) -> Element {
     let dismissed = signal(false);
+    // The name is a prop (never `.set`), so read it once into an owned String
+    // and bake it into the greeting text — the same shape `channel_topic_banner`
+    // uses for its `topic` prop.
+    let greeting = format!("Welcome, {}! Say hello! 👋", name.get());
 
     ui! {
         // Reactive branch: `if !dismissed.get() {…}` lowers to a `when` that
@@ -69,13 +71,13 @@ pub fn WelcomeBanner() -> Element {
                 border_bottom_right_radius: Some(px(8.0)),
                 ..Default::default()
             }) {
-                // The greeting: hardcoded username + wave emoji.
+                // The greeting: member name + wave emoji (from the `name` prop).
                 text(style = StyleRules {
                     flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
                     font_size: Some(px(15.0)),
                     color: Some(col(TEXT)),
                     ..Default::default()
-                }) { format!("Welcome, {}! Say hello! 👋", USERNAME) }
+                }) { greeting.clone() }
 
                 // The dismiss "x": a 24x24 tap target. `.on_touch` sets
                 // `dismissed` on `TouchPhase::Ended` — the app's standard

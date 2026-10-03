@@ -29,16 +29,21 @@ const ICON: &str = "#5865f2";
 const TEXT: &str = "#f2f3f5";
 const TEXT_MUTED: &str = "#949ba4";
 
-/// The hardcoded status verb (no props for now).
-const ACTIVITY: &str = "Playing";
-/// The hardcoded game / app title.
-const DETAIL: &str = "Some Game Title";
-
 /// The activity card. A small colored square icon placeholder on the left,
 /// and a two-line stack on the right: the status verb (muted) above the title
-/// (primary). Purely local — renders the hardcoded strings above.
+/// (primary). Both arrive as props (with hardcoded defaults — the previous
+/// single shared literals — so the component compiles standalone).
 #[component]
-pub fn ActivityCard() -> Element {
+#[allow(non_snake_case)]
+pub fn ActivityCard(
+    #[prop(default = "Playing")] activity: String,
+    #[prop(default = "Some Game Title")] detail: String,
+) -> Element {
+    // Props are never `.set`, so read them once into owned Strings and bake
+    // them as static text — the same shape `channel_topic_banner` uses for its
+    // `topic` prop.
+    let verb = activity.get().to_string();
+    let title = detail.get().to_string();
     let root_style = StyleRules {
         flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Center),
@@ -85,7 +90,7 @@ pub fn ActivityCard() -> Element {
         view(style = root_style) {
             view(style = icon_style) {}
             view(style = stack_style) {
-                text(style = activity_style) { ACTIVITY.to_string() }
+                text(style = activity_style) { verb.clone() }
                 // The title: primary color, semibold. Written INLINE in
                 // `style = …` because `StyleRules` is not `Copy` (a shared
                 // `let` would be moved by the activity line above).
@@ -94,7 +99,7 @@ pub fn ActivityCard() -> Element {
                     font_weight: Some(FontWeight::SemiBold),
                     color: Some(col(TEXT)),
                     ..Default::default()
-                }) { DETAIL.to_string() }
+                }) { title }
             }
         }
     }
