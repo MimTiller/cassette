@@ -4677,9 +4677,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // `app_shell` owns `moderation_mode` and renders the overlay when it flips
     // on; the gavel button in the header below sets this copy.
     let moderation_open = moderation_mode.clone();
+    // `user_status` is in the key (not just read in the arm) so the online
+    // count in the member-count line rebuilds when the signed-in user toggles
+    // presence — without it, the header would show a stale count while the
+    // member panel's ONLINE group updates (value-dedup: rebuilds only on
+    // actual status change).
     let header = switch(
-        move || (active_server.get(), active_channel.get(), active_live_channel.get()),
-        move |(server_id, channel_id, live_cid): &(u32, u32, Option<i64>)| {
+        move || (active_server.get(), active_channel.get(), active_live_channel.get(), user_status.get()),
+        move |(server_id, channel_id, live_cid, _user_status): &(u32, u32, Option<i64>, Status)| {
             let header_style = header_style.clone();
             let hash_style = hash_style.clone();
             let title_style = title_style.clone();
@@ -4708,6 +4713,16 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // Roster plus the signed-in user, who counts as a member like
             // anyone else (same idiom as the member panel header).
             let total = (server.members.len() + 1) as i64;
+            // Online count must match the member panel's "ONLINE — N" group:
+            // roster members with `Status::Online`, plus the signed-in user if
+            // their live presence is also Online. Same source as
+            // `member_panel` (see the status-group loop there) so both views
+            // agree.
+            let online = server.members
+                .iter()
+                .filter(|m| m.status == Status::Online)
+                .count()
+                + usize::from(user_status.get() == Status::Online);
             ui! {
                 view(style = header_style) {
                     text(style = hash_style) { "#".to_string() }
@@ -4716,7 +4731,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // Spacer: eats the row's remaining width so the member
                     // count, pin badge, and search bar sit at the far right.
                     view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
-                    member_count_display(12.into(), total.into())
+                    member_count_display((online as i64).into(), total.into())
                     PinCountBadge()
                     // Message-search widget: the one place a "Search messages"
                     // field belongs — the channel header row (Discord's layout),
