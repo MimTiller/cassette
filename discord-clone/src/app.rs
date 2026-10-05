@@ -34,7 +34,8 @@ use std::rc::Rc;
 use runtime_core::{
     after_ms_detached, AlignItems, AlignSelf, Color, Element, FlexDirection, FlexWrap,
     FontFamily, FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow, Position, Signal,
-    StyleRules, TextAlign, TextTransform, Tokenized, TouchPhase, TouchResponse, signal, switch, ui,
+    StyleRules, TextAlign, TextTransform, Tokenized, TouchPhase, TouchResponse, memo, signal,
+    switch, ui,
 };
 use runtime_core::icon;
 use icons_lucide::{
@@ -418,11 +419,11 @@ fn reaction_area(
                     ..Default::default()
                 }) { cnt.to_string() }
             }
-            .on_touch(move |_ev| {
+            .on_touch(move |ev| {
                 // Toggle: not-yet-reacted -> count+1 and highlight;
                 // already-reacted -> count-1 and un-highlight, dropping the pill
                 // (and the empty map entry) once the count hits 0.
-                {
+                if ev.phase == TouchPhase::Ended {
                     let mut m = r.borrow_mut();
                     let inner = m.entry(key).or_default();
                     if let Some(pos) = inner.iter().position(|(e, _, _)| e == &em_close) {
@@ -440,8 +441,8 @@ fn reaction_area(
                     if m.get(&key).map_or(false, |v| v.is_empty()) {
                         m.remove(&key);
                     }
+                    rev.set(rev.get() + 1);
                 }
-                rev.set(rev.get() + 1);
                 TouchResponse::CONSUMED
             })
         }
@@ -468,8 +469,10 @@ fn reaction_area(
         }) {
             icon(SMILE_PLUS).color(|| Color::from(TEXT_MUTED)).size(15.0)
         }
-        .on_touch(move |_ev| {
-            add.set(Some(add_key));
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                add.set(Some(add_key));
+            }
             TouchResponse::CONSUMED
         })
     };
@@ -545,10 +548,10 @@ fn reaction_picker_overlay(
                             ..Default::default()
                         }) { glyph }
                     }
-                    .on_touch(move |_ev| {
+                    .on_touch(move |ev| {
                         // Add (or bump) this emoji's reaction for the message,
                         // then close the picker.
-                        {
+                        if ev.phase == TouchPhase::Ended {
                             let mut m = r.borrow_mut();
                             let inner = m.entry(key).or_default();
                             if let Some(pos) = inner.iter().position(|(e, _, _)| e == &glyph_close) {
@@ -557,9 +560,9 @@ fn reaction_picker_overlay(
                             } else {
                                 inner.push((glyph_close.clone(), 1, true));
                             }
+                            rev.set(rev.get() + 1);
+                            close.set(None);
                         }
-                        rev.set(rev.get() + 1);
-                        close.set(None);
                         TouchResponse::CONSUMED
                     })
                 }
@@ -600,9 +603,11 @@ fn reaction_picker_overlay(
                         }) { cells }
                     }
                 }
-                .on_touch(move |_ev| {
+                .on_touch(move |ev| {
                     // Tap on the backdrop (not a glyph) closes the picker.
-                    backdrop_close.set(None);
+                    if ev.phase == TouchPhase::Ended {
+                        backdrop_close.set(None);
+                    }
                     TouchResponse::CONSUMED
                 })
             }
@@ -4004,12 +4009,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
             }
             // Add-a-Server: open the join modal. Reset the per-open state so a
             // re-open always starts fresh (the same reset the caller owns).
-            .on_touch(move |_ev| {
-                plus_code.set(String::new());
-                plus_result.set(None);
-                plus_error.set(String::new());
-                plus_busy.set(false);
-                plus_open.set(true);
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    plus_code.set(String::new());
+                    plus_result.set(None);
+                    plus_error.set(String::new());
+                    plus_busy.set(false);
+                    plus_open.set(true);
+                }
                 TouchResponse::CONSUMED
             })
             view(style = circle_style.clone(), test_id = "rail-explore-servers") {
@@ -4018,9 +4025,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // Explore/Create-a-Server: reset the name field and open the create
             // modal (the same reset-on-open `create_server_modal`'s docs
             // describe). The compass is Discord's Explore affordance.
-            .on_touch(move |_ev| {
-                create_name.set(String::new());
-                create_open.set(true);
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    create_name.set(String::new());
+                    create_open.set(true);
+                }
                 TouchResponse::CONSUMED
             })
             // Discover-a-Server: open the discover overlay (no per-open state
@@ -4029,8 +4038,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
             view(style = circle_style.clone(), test_id = "rail-discover-servers") {
                 icon(GLOBE).color(|| Color::from(TEXT_MUTED)).size(20.0)
             }
-            .on_touch(move |_ev| {
-                discover_open.set(true);
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    discover_open.set(true);
+                }
                 TouchResponse::CONSUMED
             })
             // Direct Messages (LIVE / backend): a separate, independent entry
@@ -4047,19 +4058,21 @@ fn app_shell(authed: Signal<bool>) -> Element {
             view(style = circle_style.clone(), test_id = "rail-live-direct-messages") {
                 icon(MESSAGE_CIRCLE).color(|| Color::from(TEXT_MUTED)).size(20.0)
             }
-            .on_touch(move |_ev| {
-                let now_open = !live_dm_mode.get();
-                live_dm_mode.set(now_open);
-                if now_open {
-                    // Re-fetch on every open so the list reflects the backend's
-                    // current state (mirrors how a live channel is re-fetched
-                    // when its server is re-selected).
-                    let list = live_dms.clone();
-                    runtime_core::driver::spawn_async(async move {
-                        if let Ok(dms) = crate::dms::list_dms().await {
-                            list.set(dms);
-                        }
-                    });
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    let now_open = !live_dm_mode.get();
+                    live_dm_mode.set(now_open);
+                    if now_open {
+                        // Re-fetch on every open so the list reflects the backend's
+                        // current state (mirrors how a live channel is re-fetched
+                        // when its server is re-selected).
+                        let list = live_dms.clone();
+                        runtime_core::driver::spawn_async(async move {
+                            if let Ok(dms) = crate::dms::list_dms().await {
+                                list.set(dms);
+                            }
+                        });
+                    }
                 }
                 TouchResponse::CONSUMED
             })
@@ -4076,8 +4089,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // are owned in `app_shell` scope and persist across toggles, so a
             // re-open keeps the previously-selected conversation and any DMs
             // sent this session (the same persistence as the channel `sent` log).
-            .on_touch(move |_ev| {
-                dm_open.set(!dm_open.get());
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    dm_open.set(!dm_open.get());
+                }
                 TouchResponse::CONSUMED
             })
             view(style = circle_style.clone(), test_id = "rail-settings") {
@@ -4086,8 +4101,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // Settings: opens the full-screen Notification Settings overlay
             // (the same toggle idiom the user-panel's settings gear uses —
             // `notif_mode` is the same signal that one controls).
-            .on_touch(move |_ev| {
-                settings_open.set(true);
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    settings_open.set(true);
+                }
                 TouchResponse::CONSUMED
             })
         }
@@ -4504,12 +4521,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         view(style = chan_btn_style.clone(), test_id = "live-channel-add") {
                             icon(PLUS).color(|| Color::from(TEXT_MUTED)).size(14.0)
                         }
-                        .on_touch(move |_ev| {
-                            cc_name.set(String::new());
-                            cc_kind.set("text".to_string());
-                            cc_busy.set(false);
-                            cc_err.set(String::new());
-                            cc_open.set(true);
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                cc_name.set(String::new());
+                                cc_kind.set("text".to_string());
+                                cc_busy.set(false);
+                                cc_err.set(String::new());
+                                cc_open.set(true);
+                            }
                             TouchResponse::CONSUMED
                         })
                     };
@@ -4524,22 +4543,24 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         view(style = chan_btn_style.clone(), test_id = "live-server-settings") {
                             icon(SETTINGS).color(|| Color::from(TEXT_MUTED)).size(14.0)
                         }
-                        .on_touch(move |_ev| {
-                            if let Some(active_id) = active_live_server.get() {
-                                let cur = live_servers.get().into_iter().find(|s| s.id == active_id);
-                                if let Some(s) = cur {
-                                    ss_name.set(s.name.clone());
-                                    ss_icon.set(s.icon_url.clone().unwrap_or_default());
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                if let Some(active_id) = active_live_server.get() {
+                                    let cur = live_servers.get().into_iter().find(|s| s.id == active_id);
+                                    if let Some(s) = cur {
+                                        ss_name.set(s.name.clone());
+                                        ss_icon.set(s.icon_url.clone().unwrap_or_default());
+                                    }
                                 }
+                                ss_owner.set(String::new());
+                                // Reset the add-member inputs too, so a re-open
+                                // starts with an empty id and the default role.
+                                ss_add_user_id.set(String::new());
+                                ss_add_role.set("member".to_string());
+                                ss_busy.set(false);
+                                ss_err.set(String::new());
+                                ss_open.set(true);
                             }
-                            ss_owner.set(String::new());
-                            // Reset the add-member inputs too, so a re-open
-                            // starts with an empty id and the default role.
-                            ss_add_user_id.set(String::new());
-                            ss_add_role.set("member".to_string());
-                            ss_busy.set(false);
-                            ss_err.set(String::new());
-                            ss_open.set(true);
                             TouchResponse::CONSUMED
                         })
                     };
@@ -4796,8 +4817,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     view(style = moderation_style, test_id = "server-moderation") {
                         icon(GAVEL).color(|| Color::from(TEXT_MUTED)).size(15.0)
                     }
-                    .on_touch(move |_ev| {
-                        moderation_open.set(true);
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            moderation_open.set(true);
+                        }
                         TouchResponse::CONSUMED
                     })
                 }
@@ -5019,20 +5042,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         border_bottom_right_radius: Some(px(8.0)),
         ..Default::default()
     };
-    let send_style = StyleRules {
-        height: Some(px(40.0)),
-        padding_left: Some(px(18.0)),
-        padding_right: Some(px(18.0)),
-        background: Some(col(BUTTON)),
-        color: Some(col(TEXT)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
-    };
     // Circular muted-grey icon buttons flanking the composer input — the '+'
     // attachment affordance on the left (stages/unstages a mock attachment),
     // the smile emoji affordance on the right (toggles the emoji popover).
@@ -5049,10 +5058,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
         ..Default::default()
     };
 
-    // One send action shared by the Send button AND the Enter key on the
-    // composer. Every captured signal/Rc is cloned behind an `Rc` so the
-    // handler can be `Fn` (callable from both the `button on_click` and the
-    // `text_input on_key_down` closures).
+    // One send action, fired by the Enter key on the composer (Discord has no
+    // visible Send button — Enter is the only submit affordance). Every captured
+    // signal/Rc is cloned behind an `Rc` so the handler can be `Fn` (callable
+    // from the `text_input on_key_down` closure).
     let send_composer = composer.clone();
     let sent_write = sent.clone();
     let revision_bump = revision.clone();
@@ -5094,10 +5103,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         // dedups on value, so re-setting the same channel alone would not).
         revision_bump.set(revision_bump.get() + 1);
     };
-    // Button click → send.
     let on_send = Rc::new(do_send);
-    let send_btn = on_send.clone();
-    let on_click = move || (send_btn)();
     // Enter on the composer → send. Plain Enter only; Shift/Ctrl/Alt/Meta+
     // Enter fall through to the platform default. `PreventDefault` stops the
     // input's default Enter handling (no newline / no stray submit) now that
@@ -5111,6 +5117,38 @@ fn app_shell(authed: Signal<bool>) -> Element {
             KeyOutcome::Default
         }
     };
+
+    // --- Composer placeholder: "Message #<channel>" (Discord's real format,
+    // channel-suffixed)
+    // Derives the active channel's display name (same source of truth as the
+    // header: the live backend's channel list when on a live channel, else the
+    // mock server's text-channel table) and prefixes it with "Message #".
+    // A `memo` keeps it reactive: switching channels re-derives the string
+    // without the composer's `text_input` needing to rebuild its own node.
+    // The `placeholder_reactive` prop wants `Reactive<Option<String>>`, so the
+    // memo yields `Some("Message #<name>")` (a `None` placeholder would be
+    // pointless — there is always an active channel).
+    let ph_server = active_server.clone();
+    let ph_channel = active_channel.clone();
+    let ph_live = active_live_channel.clone();
+    let ph_channels = live_channels.clone();
+    let composer_placeholder = memo(move || {
+        let name = if let Some(live_id) = ph_live.get() {
+            ph_channels
+                .get()
+                .iter()
+                .find(|c| c.id == live_id)
+                .map(|c| c.name.to_string())
+                .unwrap_or_default()
+        } else {
+            let server = SERVERS.iter().find(|x| x.id == ph_server.get()).unwrap();
+            server
+                .find_text_channel(ph_channel.get())
+                .map(|c| c.name.to_string())
+                .unwrap_or_default()
+        };
+        Some(format!("Message #{name}"))
+    });
 
     // --- @-mention autocomplete (live mode) ------------------------------
     // Pure client-side: typing `@<prefix>` in the composer opens a dropdown
@@ -5313,8 +5351,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                 ..Default::default()
                             }) { format!("@{}", name) }
                         }
-                        .on_touch(move |_ev| {
-                            (apply_touch)(n.as_str());
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                (apply_touch)(n.as_str());
+                            }
                             TouchResponse::CONSUMED
                         })
                     }
@@ -5426,9 +5466,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                     ..Default::default()
                                 }) { "✕".to_string() }
                             }
-                            .on_touch(move |_ev| {
-                                let cc = chip_clear;
-                                cc.set(None);
+                            .on_touch(move |ev| {
+                                if ev.phase == TouchPhase::Ended {
+                                    let cc = chip_clear;
+                                    cc.set(None);
+                                }
                                 TouchResponse::CONSUMED
                             })
                         }
@@ -5478,11 +5520,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             ..Default::default()
                         }) { glyph }
                     }
-                    .on_touch(move |_ev| {
-                        let mut t = c.get();
-                        t.push_str(&glyph_close);
-                        c.set(t);
-                        eo.set(false);
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            let mut t = c.get();
+                            t.push_str(&glyph_close);
+                            c.set(t);
+                            eo.set(false);
+                        }
                         TouchResponse::CONSUMED
                     })
                 }
@@ -5900,8 +5944,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     ..Default::default()
                 }) { "Done".to_string() }
             }
-            .on_touch(move |_ev| {
-                live_dm_close.set(false);
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    live_dm_close.set(false);
+                }
                 TouchResponse::CONSUMED
             })
         }
@@ -6072,25 +6118,28 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         // `+` = stage/unstage the mock attachment. `Signal` is
                         // `Copy`, so each `move` closure captures its own handle;
                         // the chip above the composer mirrors this state.
-                        .on_touch(move |_ev| {
-                            pending_attachment.set(if pending_attachment.get().is_some() {
-                                None
-                            } else {
-                                Some("mock-attachment.png".to_string())
-                            });
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                pending_attachment.set(if pending_attachment.get().is_some() {
+                                    None
+                                } else {
+                                    Some("mock-attachment.png".to_string())
+                                });
+                            }
                             TouchResponse::CONSUMED
                         })
-                        text_input(value = composer, on_change = update_on_type, placeholder = "Message", style = input_style, test_id = "composer").on_key_down(composer_key)
+                        text_input(value = composer, on_change = update_on_type, placeholder_reactive = composer_placeholder.read_only(), style = input_style, test_id = "composer").on_key_down(composer_key)
                         view(style = icon_button_style) {
                             icon(SMILE).color(|| Color::from(TEXT_MUTED)).size(16.0)
                         }
                         // Smile = open/close the emoji popover (a `Copy` handle
                         // on `emoji_open`, mirroring the attachment button).
-                        .on_touch(move |_ev| {
-                            emoji_open.set(!emoji_open.get());
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                emoji_open.set(!emoji_open.get());
+                            }
                             TouchResponse::CONSUMED
                         })
-                        button(label = "Send".to_string(), on_click = on_click, style = send_style, test_id = "send")
                     }
                 }
             }
