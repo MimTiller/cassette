@@ -1327,6 +1327,7 @@ fn member_panel(
     user: &Member,
     selected: Signal<Option<&'static str>>,
     width: Signal<f32>,
+    sidebar: Signal<f32>,
 ) -> Element {
     let mut body: Vec<Element> = Vec::new();
     // Header: "MEMBER COUNT — N" where N is the roster plus the signed-in
@@ -1382,14 +1383,21 @@ fn member_panel(
     // the `width` signal (a thin drag handle on its left edge resizes it);
     // the left border separates it from the main view; the panel owns its own
     // bg. A rules *closure* so the width re-resolves as the signal changes.
-    let panel_style = move || StyleRules {
-        width: Some(px(width.get())),
-        background: Some(col(BG_SIDEBAR)),
-        border_left_width: Some(border_width(1.0)),
-        border_left_color: Some(col(BORDER)),
-        flex_direction: Some(FlexDirection::Column),
-        overflow: Some(Overflow::Hidden),
-        ..Default::default()
+    let panel_style = move || {
+        let (_s, m) = effective_panel_widths(sidebar, width);
+        StyleRules {
+            width: Some(px(m)),
+            // flex_shrink:0 so the flex row never shrinks the member panel below
+            // the viewport-responsive width computed above — when the viewport
+            // is wide enough this keeps the user's manual drag width exact.
+            flex_shrink: Some(grow(0.0)),
+            background: Some(col(BG_SIDEBAR)),
+            border_left_width: Some(border_width(1.0)),
+            border_left_color: Some(col(BORDER)),
+            flex_direction: Some(FlexDirection::Column),
+            overflow: Some(Overflow::Hidden),
+            ..Default::default()
+        }
     };
     ui! {
         view(style = panel_style) {
@@ -2882,10 +2890,24 @@ const SIDEBAR_MIN: f32 = 180.0;
 /// never fought. Reading `viewport_size()` inside the reactive style closures
 /// that call this is what makes the layout re-fire on every real resize (the
 /// framework's own signal — no hand-rolled resize detection).
-fn effective_panel_widths(sidebar: Signal<f32>, member: Signal<f32>) -> (f32, f32) {
-    let vw = viewport_size().get().width;
-    let s = sidebar.get().max(SIDEBAR_MIN);
-    let m = member.get().max(0.0);
+/// `(rendered sidebar width, rendered member width)` for the given viewport
+/// width and the user's manual widths. Keeps the main message column at a hard
+/// floor of `MAIN_MIN` and squeezes the two side panels to make room, in
+/// Discord's own order: the member list sheds its space first (all the way
+/// down to `0` = fully collapsed) before the channel sidebar is ever shrunk
+/// (toward the 180px handle floor). When the viewport is wide enough to hold
+/// both panels at their chosen sizes, both are returned exactly as the user set
+/// them — so widening the window back up past the squeeze automatically
+/// restores a manual drag choice for free. `sidebar`/`member` are the user's
+/// manual widths; they are only ever *read*, never written, so a drag choice is
+/// never fought.
+///
+/// Pure (no signal reads) so it can be unit-tested against exact pixel
+/// budgets; `vw` is the value `viewport_size()` reports. The caller (the
+/// reactive style closures) supplies that live value.
+fn effective_panel_widths_for(vw: f32, sidebar: f32, member: f32) -> (f32, f32) {
+    let s = sidebar.max(SIDEBAR_MIN);
+    let m = member.max(0.0);
     // Before the backend reports a real size (vw == 0) there is nothing to be
     // responsive about — keep the manual widths (the normal desktop sizes) so
     // the first paint is the same as the pre-resize behaviour, no collapse
@@ -2902,6 +2924,73 @@ fn effective_panel_widths(sidebar: Signal<f32>, member: Signal<f32>) -> (f32, f3
     let s_shed = (shed - m.min(shed)).min((s - SIDEBAR_MIN).max(0.0));
     let s_out = (s - s_shed).max(SIDEBAR_MIN);
     (s_out, m_out)
+}
+
+/// Thin signal-reading wrapper over [`effective_panel_widths_for`]: reads the
+/// live `viewport_size()` and the user's manual `sidebar_width` /
+/// `member_panel_width` signals, then folds the viewport into the rendered
+/// widths. Called *inside* the reactive style closures (see `sidebar_style`
+/// and `member_panel`'s `panel_style`), which is what subscribes the layout to
+/// the framework's `viewport_size()` signal — every real window resize re-runs
+/// the closure and re-resolves the width (no hand-rolled resize detection).
+fn effective_panel_widths(sidebar: Signal<f32>, member: Signal<f32>) -> (f32, f32) {
+    let vw = viewport_size().get().width;
+    effective_panel_widths_for(vw, sidebar.get(), member.get())
+}
+
+#[cfg(test)]
+mod responsive_width_tests {
+    use super::*;
+
+    /// Both panels at their manual 240px fit comfortably in a 1400px window
+    /// → returned unchanged (the restore case: widening back up past the
+    /// squeeze keeps the user's manual choice).
+    #[test]
+    fn wide_viewport_keeps_manual_widths() {
+        assert_eq!(effective_panel_widths_for(1400.0, 240.0, 240.0), (240.0, 240.0));
+        // A user who manually dragged the panels wider is also left alone.
+        assert_eq!(effective_panel_widths_for(1900.0, 380.0, 380.0), (380.0, 380.0));
+    }
+
+    /// At 1000px the 480px of panels + 72 rail + 12 handles + 520 main floor =
+    /// 1084 > 1000, so the excess (84) is shed from the member panel first:
+    /// member 240 -> 156, sidebar stays 240.
+    #[test]
+    fn mid_viewport_shrinks_member_first() {
+        let (s, m) = effective_panel_widths_for(1000.0, 240.0, 240.0);
+        assert_eq!(s, 240.0, "channel sidebar untouched while member can absorb");
+        assert_eq!(m, 156.0, "member panel sheds the 84px overflow first");
+    }
+
+    /// At 820px the budget for panels is 820 - 72 - 12 - 520 = 216. The 480px
+    /// of panels overflows by 264: the member panel collapses entirely
+    /// (240 -> 0) absorbing 240 of it, and the sidebar sheds the remaining 24,
+    /// down to 216 — never below its 180 floor. (At 860 the overflow is only
+    /// 224, so the member panel alone absorbs it down to 16 and the sidebar is
+    /// untouched — the collapse boundary is right around here.)
+    #[test]
+    fn narrow_viewport_collapses_member_then_shrinks_sidebar() {
+        let (s, m) = effective_panel_widths_for(820.0, 240.0, 240.0);
+        assert_eq!(m, 0.0, "member panel fully collapsed first");
+        assert_eq!(s, 216.0, "sidebar sheds only what the member couldn't absorb");
+    }
+
+    /// Below the point where even sidebar=180 fits, the sidebar pins at its
+    /// 180px drag-handle floor and the member panel stays fully collapsed —
+    /// it is never pushed below 0, and the sidebar never below 180.
+    #[test]
+    fn very_narrow_viewport_floors_sidebar_and_collapses_member() {
+        let (s, m) = effective_panel_widths_for(760.0, 240.0, 240.0);
+        assert_eq!(s, 180.0, "sidebar held at the 180px drag-handle floor");
+        assert_eq!(m, 0.0, "member panel collapsed to 0, not negative");
+    }
+
+    /// Before any backend reports a viewport size (width 0) the helper keeps
+    /// the manual widths — no first-paint collapse flash.
+    #[test]
+    fn zero_viewport_keeps_manual_widths() {
+        assert_eq!(effective_panel_widths_for(0.0, 240.0, 240.0), (240.0, 240.0));
+    }
 }
 
 fn app_shell(authed: Signal<bool>) -> Element {
@@ -4182,14 +4271,21 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // re-resolves as the signal changes — the same reactive idiom the channel
     // rows use. Captures only a `Copy` `Signal`, so the closure itself is
     // `Clone`, which the `switch` render below relies on (`sidebar_style.clone()`).
-    let sidebar_style = move || StyleRules {
-        width: Some(px(sidebar_width.get())),
-        background: Some(col(BG_SIDEBAR)),
-        border_right_width: Some(border_width(1.0)),
-        border_right_color: Some(col(BORDER)),
-        flex_direction: Some(FlexDirection::Column),
-        overflow: Some(Overflow::Hidden),
-        ..Default::default()
+    let sidebar_style = move || {
+        let (s, _m) = effective_panel_widths(sidebar_width, member_panel_width);
+        StyleRules {
+            width: Some(px(s)),
+            // flex_shrink:0 so the flex row never shrinks the sidebar below
+            // the viewport-responsive width computed above — the main column
+            // (flex_grow:1) absorbs any residual slack instead.
+            flex_shrink: Some(grow(0.0)),
+            background: Some(col(BG_SIDEBAR)),
+            border_right_width: Some(border_width(1.0)),
+            border_right_color: Some(col(BORDER)),
+            flex_direction: Some(FlexDirection::Column),
+            overflow: Some(Overflow::Hidden),
+            ..Default::default()
+        }
     };
     let sidebar_header_style = StyleRules {
         padding_top: Some(px(14.0)),
@@ -5660,7 +5756,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         move || (active_server.get(), user_status.get()),
         move |(server_id, user_status): &(u32, Status)| {
             let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
-            member_panel(server, &USER.as_member(*user_status), selected_member.clone(), member_panel_width)
+            member_panel(server, &USER.as_member(*user_status), selected_member.clone(), member_panel_width, sidebar_width)
         },
     );
 
