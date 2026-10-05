@@ -57,6 +57,10 @@ use crate::permission_override_row::PermissionOverrideRow;
 use crate::member_role_list::MemberRoleList;
 use crate::read_receipt_indicator::ReadReceiptIndicator;
 use crate::verified_badge::VerifiedBadge;
+use crate::icon_change_confirm::IconChangeConfirm;
+use crate::featured_server_banner::FeaturedServerBanner;
+use crate::ban_reason_input::BanReasonInput;
+use crate::attachment_preview_card::AttachmentPreviewCard;
 use crate::delete_account_warning::DeleteAccountWarning;
 use crate::category_filter_chips::category_filter_chips;
 use crate::notification_permission_prompt::NotificationPermissionPrompt;
@@ -3445,7 +3449,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // Server Moderation panel: a gavel icon in the channel header opens it as
     // a full-screen overlay (the same toggle idiom as `profile_mode` — built
     // once, shown/hidden by this signal, a "Done" pill flips it back off).
-    // Mock-only: renders the four unwired moderation components with hardcoded
+    // Mock-only: renders the eight unwired moderation components with hardcoded
     // rows; no backend call.
     let moderation_mode: Signal<bool> = signal(false);
 
@@ -4092,6 +4096,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
             ServerEventCard()
             server_discovery_card()
             category_filter_chips()
+            AttachmentPreviewCard()
+            FeaturedServerBanner()
         }
     };
 
@@ -5598,6 +5604,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 CharCounter()
                 TwoFactorToggle()
                 DeleteAccountWarning()
+                BanReasonInput()
+                IconChangeConfirm()
             }
         }
     };
@@ -5900,7 +5908,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // Server Moderation panel (mock): the same full-screen overlay idiom as the
     // Profile Settings overlay above — built once, shown/hidden by
     // `moderation_mode`, closed by the "Done" pill in its header. The content
-    // stacks the four moderation components, each with a section label; every
+    // stacks the eight moderation components, each with a section label; every
     // row is hardcoded mock data, no backend call.
     let moderation_close = moderation_mode.clone();
     let section_label_style = StyleRules {
@@ -5980,6 +5988,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
         text(style = section_label_style.clone()) { "Member roles".to_string() }
         MemberRoleList()
         MemberRoleList()
+        text(style = section_label_style.clone()) { "Blocked users".to_string() }
+        BlockedUserRow()
+        BlockedUserRow()
+        text(style = section_label_style.clone()) { "Kick a member".to_string() }
+        KickConfirmDialog()
+        text(style = section_label_style.clone()) { "Delete a message".to_string() }
+        DeleteMessageConfirm()
+        text(style = section_label_style.clone()) { "Transfer ownership".to_string() }
+        TransferOwnershipConfirm()
     };
     let moderation_region = ui! {
         view(style = moderation_wrap) {
