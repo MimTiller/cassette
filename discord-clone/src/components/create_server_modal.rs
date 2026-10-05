@@ -26,6 +26,8 @@ use runtime_core::{
 };
 
 use crate::style_helpers::{col, pct, px};
+use crate::server_icon_upload_placeholder::ServerIconUploadPlaceholder;
+use crate::server_region_selector::ServerRegionSelector;
 
 // Discord dark palette (kept local so the component is self-contained).
 const CARD: &str = "#2b2d31";
@@ -166,6 +168,21 @@ pub fn create_server_modal(
                 style = input_style.clone(),
                 test_id = "create-server-name-input",
             )
+            // Add-a-Server flow extras (mock/local, no backend): a server-icon
+            // upload placeholder and a region selector. Both are self-contained
+            // components; they sit between the name field and the action row
+            // the way Discord's create-server form stacks icon + region above
+            // the Create button.
+            view(style = StyleRules {
+                margin_top: Some(px(16.0)),
+                width: Some(pct(100.0)),
+                flex_direction: Some(FlexDirection::Column),
+                gap: Some(px(12.0)),
+                ..Default::default()
+            }) {
+                ServerIconUploadPlaceholder()
+                ServerRegionSelector()
+            }
             view(style = btn_row_style.clone()) {
                 { create_btn }
                 { cancel_btn }

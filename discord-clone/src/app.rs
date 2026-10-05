@@ -78,6 +78,13 @@ use crate::pin_confirm_toast::PinConfirmToast;
 use crate::server_stats_card::server_stats_card;
 use crate::server_event_card::ServerEventCard;
 use crate::server_discovery_card::server_discovery_card;
+use crate::server_folder_group::server_folder_group;
+use crate::server_template_card::server_template_card;
+use crate::template_gallery_grid::TemplateGalleryGrid;
+use crate::server_tag_chips::server_tag_chips;
+use crate::server_region_selector::ServerRegionSelector;
+use crate::server_icon_upload_placeholder::ServerIconUploadPlaceholder;
+use crate::category_header::CategoryHeader;
 use crate::mic_selector::MicSelector;
 use crate::link_embed_preview::LinkEmbedPreview;
 use crate::friend_request_card::FriendRequestCard;
@@ -4095,6 +4102,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
             server_stats_card(512.into(), 48.into(), 1204.into())
             ServerEventCard()
             server_discovery_card()
+            // Explore / discovery browsing content — the mock "find servers"
+            // surface that sits alongside the discovery card above (the same
+            // cluster `category_filter_chips` landed in). A folder of servers,
+            // a templated server card, a template gallery grid, and the tag
+            // chips that filter a discovery result set. All mock/local state.
+            server_folder_group()
+            server_template_card()
+            TemplateGalleryGrid()
+            server_tag_chips()
             category_filter_chips()
             AttachmentPreviewCard()
             FeaturedServerBanner()
@@ -4166,6 +4182,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let user_notif_mode = notif_mode.clone();
     // Keyboard shortcuts toggle, cloned the same way.
     let user_shortcuts_mode = shortcuts_mode.clone();
+    // The `collapsed` map is `Rc<RefCell<..>>` (not `Copy`, since `RefCell`
+    // isn't `Copy`). The key and render closures are both `move`, so each
+    // captures its own clone; the shared `RefCell` inside keeps them in sync.
+    let collapsed_key = collapsed.clone();
+    let collapsed_render = collapsed.clone();
     let sidebar = switch(
         move || {
             // Fingerprint (id, name, kind) so the key is `PartialEq` even
@@ -4177,6 +4198,19 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 .iter()
                 .map(|c| (c.id, c.name.clone(), c.kind.clone()))
                 .collect();
+            // Collapse fingerprint: (category id, collapsed) pairs, ordered by
+            // id so it's stable. Read from the shared `collapsed` map — when a
+            // CategoryHeader flips its signal, this changes and the row loop
+            // re-runs to re-gate each category's rows on the new flag.
+            let cat_collapsed: Vec<(u32, bool)> = {
+                let mut v: Vec<(u32, bool)> = collapsed_key
+                    .borrow()
+                    .iter()
+                    .map(|(id, sig)| (*id, sig.get()))
+                    .collect();
+                v.sort_by_key(|(id, _)| *id);
+                v
+            };
             (
                 active_server.get(),
                 active_channel.get(),
@@ -4185,9 +4219,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 live_fp,
                 live_mention_rev.get(),
                 live_unread_rev.get(),
+                // Per-category collapse flags, so the row loop re-runs (and
+                // re-gates each category's rows) when a CategoryHeader toggles.
+                cat_collapsed,
             )
         },
-        move |(server_id, _channel_id, _voice, _live_server, _live_fp, _mention_rev, _unread_rev): &(
+        move |(server_id, _channel_id, _voice, _live_server, _live_fp, _mention_rev, _unread_rev, _cat_collapsed): &(
             u32,
             u32,
             Option<(u32, u32)>,
@@ -4195,6 +4232,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             Vec<(i64, String, String)>,
             u32,
             u32,
+            Vec<(u32, bool)>,
         )| {
             // `switch`'s render is `Fn` — clone the captured styles so the
             // closure borrows them rather than moving them out (whiteboard idiom).
@@ -4538,8 +4576,24 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // uppercase header, its text-channel rows, then its voice rows.
             for cat in server.categories {
                 let cat_label = cat.title.to_string();
-                let cat_style = cat_style.clone();
-                rows.push(ui! { text(style = cat_style) { cat_label } });
+                // The category's per-category collapse signal (created up front
+                // in `app_shell` scope, see the `collapsed` map). The header
+                // toggles it; the row loop below re-runs when it flips (the
+                // switch key fingerprints it) and re-gates the rows.
+                let cat_collapsed_signal = collapsed_render
+                    .borrow()
+                    .get(&cat.id)
+                    .cloned()
+                    .unwrap_or_else(|| signal(false));
+                rows.push(ui! {
+                    CategoryHeader(
+                        title = cat_label,
+                        collapsed = cat_collapsed_signal,
+                    )
+                });
+                if cat_collapsed_signal.get() {
+                    continue; // rows for this category are collapsed
+                }
                 for c in cat.text {
                     let active = channel;
                     // Discord's channel rows are compact (~34px) with a
