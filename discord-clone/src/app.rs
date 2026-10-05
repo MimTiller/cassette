@@ -360,7 +360,6 @@ pub(crate) fn message_row(author: &str, color: &str, body: &str, when: String, e
                 PinConfirmToast()
                 LinkEmbedPreview()
                 TranslateToggle()
-                CustomStatusInput()
             }
         }
     }
@@ -954,7 +953,6 @@ fn member_row(m: &Member) -> Element {
 
             RoleBadge()
 
-            NicknameEditField()
             WelcomeBanner()
                     ServerIconFallback()
             AfkTimerDisplay()
@@ -5595,6 +5593,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
             profile_header
             view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
                 profile_el
+                NicknameEditField()
+                CustomStatusInput()
+                CharCounter()
+                TwoFactorToggle()
                 DeleteAccountWarning()
             }
         }
@@ -6042,8 +6044,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             TouchResponse::CONSUMED
                         })
                         text_input(value = composer, on_change = update_on_type, placeholder = "Message", style = input_style, test_id = "composer").on_key_down(composer_key)
-                        CharCounter()
-                        TwoFactorToggle()
                         view(style = icon_button_style) {
                             icon(SMILE).color(|| Color::from(TEXT_MUTED)).size(16.0)
                         }
