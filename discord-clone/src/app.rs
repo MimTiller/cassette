@@ -33,8 +33,8 @@ use std::rc::Rc;
 
 use runtime_core::{
     after_ms_detached, AlignItems, AlignSelf, Color, Element, FlexDirection, FlexWrap,
-    FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow, Position, Signal, StyleRules,
-    TextAlign, TextTransform, Tokenized, TouchPhase, TouchResponse, signal, switch, ui,
+    FontFamily, FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow, Position, Signal,
+    StyleRules, TextAlign, TextTransform, Tokenized, TouchPhase, TouchResponse, signal, switch, ui,
 };
 use runtime_core::icon;
 use icons_lucide::{
@@ -2333,6 +2333,17 @@ pub fn app() -> Element {
     // Runs once per process (the `app()` entry), so no "only once" guard is
     // needed.
     crate::auth::configure_server();
+    // Root-level document font: publish a system-sans stack so web text does
+    // NOT fall back to the browser's serif default (Times). Without this the
+    // whole app renders in serif — the single biggest "off" feel vs real
+    // Discord, which is 100% sans (gg sans / system sans fallback). This is
+    // the one global control: it cascades to every `text` node (heading,
+    // channel names, message bodies) instead of patching each `text()` style.
+    // Runs once per process, exactly like `configure_server` above.
+    runtime_core::set_default_text_font(Some(FontFamily::System(
+        "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif"
+            .to_string(),
+    )));
     // Mock auth gate: starts signed out (login screen). There's no backend, so
     // "auth" is just a `bool` signal — the login screen sets it true on Sign In
     // (or Continue as guest) and a Log Out in the user panel flips it back. A
