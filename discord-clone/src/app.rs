@@ -3309,6 +3309,19 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let dm_sent: Rc<RefCell<Vec<(u32, &'static str, String, i64)>>> = Rc::new(RefCell::new(Vec::new()));
     let dm_revision: Signal<u32> = signal(0);
 
+    // --- message reactions (mock, session-local) ---------------------------
+    // Per-message reaction state for the MOCK message list: `reactions` is the
+    // pill map (keyed by `(channel_id, list_index)` — see the `ReactionMap`
+    // doc for why the rendered-list position is a stable-enough key), `picker`
+    // names the message whose add-reaction overlay is open (`None` while
+    // closed), and `reaction_rev` is the rebuild counter the message-list
+    // `switch` folds into its key so a pill change re-renders the list. Owned
+    // here next to the other mock per-app signals; the live/gateway path is
+    // left untouched (this feature is mock/session-local only).
+    let reactions: Rc<RefCell<ReactionMap>> = Rc::new(RefCell::new(HashMap::new()));
+    let reaction_rev: Signal<u32> = signal(0);
+    let picker: Signal<Option<(u32, usize)>> = signal(None);
+
     // --- live (backend) DM state -------------------------------------------
     // Parallel to (and independent of) the mock `dm_*` state above, and to the
     // `live_servers`/`live_channels` live-mode idiom. A separate, new entry
@@ -4840,6 +4853,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // `move`-capture their handles rather than sharing one non-`Copy` value).
     let live_editing_k = live_editing.clone();
     let live_delete_k = live_delete_confirm.clone();
+    // The mock switch's `move` closure below consumes `reactions`; keep a clone
+    // alive for the paint-last `reaction_picker_overlay` call (a separate site).
+    let reactions_overlay = reactions.clone();
     let sent_messages = switch(
         move || (
             active_server.get(),
@@ -4849,8 +4865,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
             live_revision.get(),
             live_editing_k.get(),
             live_delete_k.get(),
+            reaction_rev.get(),
         ),
-        move |(server_id, channel_id, _revision, live_cid, _live_rev, _editing, _confirm): &(u32, u32, u32, Option<i64>, u32, Option<i64>, Option<i64>)| {
+        move |(server_id, channel_id, _revision, live_cid, _live_rev, _editing, _confirm, _react_rev): &(u32, u32, u32, Option<i64>, u32, Option<i64>, Option<i64>, u32)| {
             // Live/real channel active: render the gateway-fed buffer instead of
             // the mock path. `None` falls through to the mock render unchanged.
             if let Some(live_id) = *live_cid {
@@ -4916,16 +4933,32 @@ fn app_shell(authed: Signal<bool>) -> Element {
             let cid = *channel_id;
             let now = crate::data::now_secs();
             let mut rows: Vec<Element> = Vec::with_capacity(channel.messages.len());
-            for m in channel.messages.iter() {
+            for (i, m) in channel.messages.iter().enumerate() {
                 let when = format_when(m.ts_secs(now), now);
                 // Mock seed rows carry no edit state; pass `true` to preserve
                 // their previous always-on "(edited)" placeholder rendering.
                 rows.push(message_row(m.author, m.color, m.body, when, true));
+                // Reaction strip under each mock row, keyed by this row's
+                // rendered-list position (seed messages first, so index `i`).
+                rows.push(reaction_area(cid, i, reactions.clone(), reaction_rev, picker));
             }
             let mine: Vec<(u32, &'static str, String, i64)> = sent_read.borrow().clone();
-            for (_mcid, author, body, ts) in mine.iter().filter(|(mcid, _, _, _)| *mcid == cid) {
+            let mine: Vec<(u32, &'static str, String, i64)> = mine
+                .into_iter()
+                .filter(|(mcid, _, _, _)| *mcid == cid)
+                .collect();
+            for (i, (_mcid, author, body, ts)) in mine.iter().enumerate() {
                 let when = format_when(*ts, now);
                 rows.push(message_row(author, BUTTON, body.as_str(), when, true));
+                // Sent rows continue the list position after the seed rows, so
+                // their key is `seed_len + i` (see `ReactionMap` doc).
+                rows.push(reaction_area(
+                    cid,
+                    channel.messages.len() + i,
+                    reactions.clone(),
+                    reaction_rev,
+                    picker,
+                ));
             }
             ui! {
                 view(style = StyleRules {
@@ -6177,6 +6210,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
             dc_el
             moderation_region
             ss_el
+            // Reaction picker (mock, session-local): full-window emoji grid,
+            // painted last so it covers everything while open (collapses to
+            // zero size while `picker` is `None`).
+            reaction_picker_overlay(picker, reactions_overlay, reaction_rev)
         }
     }
 }
