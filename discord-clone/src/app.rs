@@ -4221,8 +4221,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         // has an unread @mention, the pill shows the
                         // mention count — the exact distinction the mock
                         // sidebar makes for "has an unread @mention".
-                        let badge = if u_count > 0 {
-                            let shown = if u_mentions > 0 { u_mentions } else { u_count };
+                        // Mirror the mock sidebar's badge treatment exactly
+                        // (see the mock `total_mentions`/`total_unread` branch
+                        // above): a red numbered pill for an unread @mention
+                        // (showing the mention count), a small plain white dot
+                        // for unread with no mention, and nothing for a read
+                        // channel. The live row's data is the real
+                        // `unread_counts` pair, not the mock `mentions` field.
+                        let badge = if u_mentions > 0 {
                             Some(ui! {
                                 view(style = StyleRules {
                                     min_width: Some(px(16.0)),
@@ -4244,8 +4250,24 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                         font_weight: Some(FontWeight::Bold),
                                         color: Some(col(TEXT)),
                                         ..Default::default()
-                                    }) { shown.to_string() }
+                                    }) { u_mentions.to_string() }
                                 }
+                            })
+                        } else if u_count > 0 {
+                            // Plain dot: unread but no mention — Discord shows a
+                            // small white indicator instead of the red badge.
+                            Some(ui! {
+                                view(style = StyleRules {
+                                    width: Some(px(10.0)),
+                                    height: Some(px(10.0)),
+                                    background: Some(col(TEXT)),
+                                    border_top_left_radius: Some(px(5.0)),
+                                    border_top_right_radius: Some(px(5.0)),
+                                    border_bottom_left_radius: Some(px(5.0)),
+                                    border_bottom_right_radius: Some(px(5.0)),
+                                    flex_shrink: Some(runtime_core::Tokenized::Literal(0.0)),
+                                    ..Default::default()
+                                }) {}
                             })
                         } else {
                             None
