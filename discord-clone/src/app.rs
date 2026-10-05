@@ -969,7 +969,6 @@ user_bio_block()
 FriendRequestCard()
             DmRequestCard()
             BlockedUserRow()
-            MicSelector()
             idle_timer_badge()
         }
     }
@@ -1088,6 +1087,7 @@ fn voice_section(
                     VoiceJoinButton()
                     VolumeSlider()
                     SoundboardButton()
+                    MicSelector()
                 }
             });
         }
