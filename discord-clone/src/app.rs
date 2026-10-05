@@ -32,9 +32,10 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use runtime_core::{
-    after_ms_detached, AlignItems, AlignSelf, Color, Element, FlexDirection, FlexWrap,
-    FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow, Position, Signal, StyleRules,
-    TextAlign, TextTransform, Tokenized, TouchPhase, TouchResponse, signal, switch, ui,
+    after_ms_detached, AlignItems, AlignSelf, Color, Cursor, Element, FlexDirection, FlexWrap,
+    FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow, PanEvent, PanRecognizer,
+    Position, Signal, StyleRules, TextAlign, TextTransform, Tokenized, TouchEvent,
+    TouchPhase, TouchResponse, pan, signal, switch, ui, viewport_size,
 };
 use runtime_core::icon;
 use icons_lucide::{
@@ -1325,6 +1326,7 @@ fn member_panel(
     server: &crate::data::Server,
     user: &Member,
     selected: Signal<Option<&'static str>>,
+    width: Signal<f32>,
 ) -> Element {
     let mut body: Vec<Element> = Vec::new();
     // Header: "MEMBER COUNT — N" where N is the roster plus the signed-in
@@ -1376,19 +1378,21 @@ fn member_panel(
         }
     }
 
-    // Section wrapper: fixed-width right-side panel (Discord's member list
-    // lives on the right). The left border separates it from the main view;
-    // the panel owns its own bg.
+    // Section wrapper: right-side member-list panel. Its width is driven by
+    // the `width` signal (a thin drag handle on its left edge resizes it);
+    // the left border separates it from the main view; the panel owns its own
+    // bg. A rules *closure* so the width re-resolves as the signal changes.
+    let panel_style = move || StyleRules {
+        width: Some(px(width.get())),
+        background: Some(col(BG_SIDEBAR)),
+        border_left_width: Some(border_width(1.0)),
+        border_left_color: Some(col(BORDER)),
+        flex_direction: Some(FlexDirection::Column),
+        overflow: Some(Overflow::Hidden),
+        ..Default::default()
+    };
     ui! {
-        view(style = StyleRules {
-            width: Some(px(240.0)),
-            background: Some(col(BG_SIDEBAR)),
-            border_left_width: Some(border_width(1.0)),
-            border_left_color: Some(col(BORDER)),
-            flex_direction: Some(FlexDirection::Column),
-            overflow: Some(Overflow::Hidden),
-            ..Default::default()
-        }) {
+        view(style = panel_style) {
             scroll_view(style = StyleRules {
                 flex_grow: Some(grow(1.0)),
                 ..Default::default()
@@ -2777,9 +2781,139 @@ fn filter_members(q: &str, members: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+/// A thin vertical drag handle that resizes a fixed-width column by feeding
+/// horizontal pans back into its `width` signal. It sits in the top-level
+/// row flush against the column's inner edge, between that column and the
+/// growing main view. `sign` is `+1` when dragging right should *grow* the
+/// column (the channel sidebar, whose handle rides its right edge) and `-1`
+/// for the member list (handle on its left edge, so dragging right shrinks
+/// it). `id` is the robot `test_id` anchor (kept distinct per instance so the
+/// two handles don't collide in the automation registry).
+///
+/// The pan callback is `Fn` (not `FnMut`), so the "width at drag start" is
+/// stashed in a `Cell` — that gives the callback interior mutability without
+/// requiring `FnMut`. `PanEvent::Moved.delta` is *cumulative* from `Began`
+/// (window space, not view-local), so it's applied directly as an offset from
+/// the stashed start rather than accumulated event-to-event (accumulating
+/// onto an already-moving value would oscillate — see the recognizer docs).
+fn resize_handle(width: Signal<f32>, sign: f32, id: &'static str) -> Element {
+    let hovered = signal(false);
+    let start = Cell::new(0.0f32);
+    // Transparent at rest (invisible, but still hit-testable — the default
+    // `PointerEvents::Auto` doesn't skip empty-area hit-testing), a subtle
+    // fill once hovered so the affordance is discoverable. `ColResize` gives
+    // the east-west resize cursor over the strip.
+    let handle_style = move || StyleRules {
+        width: Some(px(6.0)),
+        background: Some(col(if hovered.get() { BG_HOVER } else { "transparent" })),
+        cursor: Some(Cursor::ColResize),
+        // A fixed grab strip: never shrinks below 6px in the flex row, so it
+        // stays reliably draggable even when the window is narrow.
+        flex_shrink: Some(grow(0.0)),
+        flex_direction: Some(FlexDirection::Column),
+        ..Default::default()
+    };
+    ui! {
+        view(style = handle_style, test_id = id) {}
+            .on_touch({
+                let h = pan(
+                    PanRecognizer::default(),
+                    move |ev: &PanEvent| {
+                        match ev {
+                            PanEvent::Began { .. } => {
+                                start.set(width.get());
+                            }
+                            PanEvent::Moved { delta, .. } => {
+                                let next = (start.get() + sign * delta.x).clamp(180.0, 400.0);
+                                width.set(next);
+                            }
+                            // Width stays wherever it was left on release.
+                            PanEvent::Ended { .. } | PanEvent::Cancelled => {}
+                        }
+                    },
+                );
+                move |ev: &TouchEvent| h(ev)
+            })
+            .on_hover(move |on| hovered.set(on))
+    }
+}
+
+// --- responsive sidebar widths (window-resize driven) ----------------------
+// The two side columns keep the user's manual drag choice in `sidebar_width` /
+// `member_panel_width` (the previous task's drag handles write straight to
+// those signals). But when the *window* itself narrows — a live
+// `viewport_size()` change, not a drag — the fixed columns stop fitting and
+// the layout used to just clip. These helpers fold the viewport into the
+// *rendered* width without ever writing back to the user's signal, so
+// widening the window back up past the collapse threshold automatically
+// restores the manual width (we only read it here — we never overwrite it, so
+// a user's dragged choice is never fought).
+//
+// Calling these inside the reactive style closures (`sidebar_style`,
+// `member_panel`'s `panel_style`) is what subscribes the layout to the
+// viewport: each closure re-runs on a real resize and re-resolves its `width`.
+// Same idiom whiteboard's `chrome.rs` popover uses for a viewport-driven
+// height — no hand-rolled resize detection, just the framework's
+// `viewport_size()` signal.
+//
+// Thresholds (CSS px of total window width). The main message column is the
+// star and gets a hard floor of `MAIN_MIN`; the two panels surrender space
+// first, in Discord's own order — the member list collapses, then the channel
+// sidebar shrinks toward its 180px drag-handle minimum. `RAIL` is the fixed
+// server-rail width; `HANDLE` is each 6px drag handle.
+const RAIL: f32 = 72.0;
+const HANDLE: f32 = 6.0;
+/// The minimum width the main message column is guaranteed. The two side
+/// panels are what gets squeezed below this (the message column is the star).
+const MAIN_MIN: f32 = 520.0;
+/// The channel sidebar's hard floor — the same 180 the drag handle clamps to,
+/// so a narrow window never shrinks it past what a manual drag can reach.
+const SIDEBAR_MIN: f32 = 180.0;
+
+/// `(rendered sidebar width, rendered member width)` for the current viewport.
+/// Keeps the main message column at a hard floor of `MAIN_MIN` and squeezes
+/// the two side panels to make room, in Discord's own order: the member list
+/// sheds its space first (all the way down to `0` = fully collapsed) before the
+/// channel sidebar is ever shrunk (toward the 180px handle floor). When the
+/// viewport is wide enough to hold both panels at their chosen sizes, both are
+/// returned exactly as the user set them — so widening the window back up
+/// past the squeeze automatically restores a manual drag choice for free. The
+/// manual signals are only ever *read* here, never written, so a drag choice is
+/// never fought. Reading `viewport_size()` inside the reactive style closures
+/// that call this is what makes the layout re-fire on every real resize (the
+/// framework's own signal — no hand-rolled resize detection).
+fn effective_panel_widths(sidebar: Signal<f32>, member: Signal<f32>) -> (f32, f32) {
+    let vw = viewport_size().get().width;
+    let s = sidebar.get().max(SIDEBAR_MIN);
+    let m = member.get().max(0.0);
+    // Before the backend reports a real size (vw == 0) there is nothing to be
+    // responsive about — keep the manual widths (the normal desktop sizes) so
+    // the first paint is the same as the pre-resize behaviour, no collapse
+    // flash.
+    let budget = (vw - RAIL - HANDLE * 2.0 - MAIN_MIN).max(0.0);
+    if vw <= 0.0 || budget >= s + m {
+        return (s, m);
+    }
+    // Not enough room for both at their chosen sizes: shed the excess, member
+    // first. The member panel absorbs the overflow down to 0; only what it
+    // can't absorb then pulls the sidebar down, but never below its floor.
+    let shed = (s + m) - budget;
+    let m_out = m - m.min(shed);
+    let s_shed = (shed - m.min(shed)).min((s - SIDEBAR_MIN).max(0.0));
+    let s_out = (s - s_shed).max(SIDEBAR_MIN);
+    (s_out, m_out)
+}
+
 fn app_shell(authed: Signal<bool>) -> Element {
     let active_server: Signal<u32> = signal(SERVERS[0].id);
     let active_channel: Signal<u32> = signal(SERVERS[0].first_text_channel().id);
+    // Resizable column widths (CSS pixels), driven by the thin drag handles
+    // between the channel sidebar / main view and the main view / member list.
+    // Both start at the 240px the columns used to be hard-coded to; the handles
+    // clamp to 180..=400. `Signal` is `Copy`, so the drag closures and the
+    // reactive style closures below each capture their own handle.
+    let sidebar_width: Signal<f32> = signal(240.0);
+    let member_panel_width: Signal<f32> = signal(240.0);
     let composer: Signal<String> = signal(String::new());
     // Emoji-picker popover: `true` = the floating emoji grid is open above the
     // smile button. Pure local UI state (no backend), toggled by the smile
@@ -4043,8 +4177,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
     };
 
     // --- channel sidebar -------------------------------------------------
-    let sidebar_style = StyleRules {
-        width: Some(px(240.0)),
+    // Width is driven by the `sidebar_width` signal (a thin drag handle on the
+    // sidebar's right edge resizes it). A rules *closure* so the width
+    // re-resolves as the signal changes — the same reactive idiom the channel
+    // rows use. Captures only a `Copy` `Signal`, so the closure itself is
+    // `Clone`, which the `switch` render below relies on (`sidebar_style.clone()`).
+    let sidebar_style = move || StyleRules {
+        width: Some(px(sidebar_width.get())),
         background: Some(col(BG_SIDEBAR)),
         border_right_width: Some(border_width(1.0)),
         border_right_color: Some(col(BORDER)),
@@ -5521,7 +5660,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         move || (active_server.get(), user_status.get()),
         move |(server_id, user_status): &(u32, Status)| {
             let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
-            member_panel(server, &USER.as_member(*user_status), selected_member.clone())
+            member_panel(server, &USER.as_member(*user_status), selected_member.clone(), member_panel_width)
         },
     );
 
@@ -6019,6 +6158,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
         }) {
             view(style = rail_style) { server_rows create_server_section live_section rail_actions gateway_status gateway_incoming_effect mention_reset_effect }
             sidebar
+            // Drag handle on the channel sidebar's right edge: dragging it
+            // left/right resizes `sidebar_width` (right = grow, so sign `+1`).
+            resize_handle(sidebar_width, 1.0, "resize-sidebar")
             view(style = main_style) {
                 header
                 scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {
@@ -6073,6 +6215,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     }
                 }
             }
+            // Drag handle on the member panel's left edge: dragging it left
+            // resizes `member_panel_width` (left = grow, so sign `-1`).
+            resize_handle(member_panel_width, -1.0, "resize-members")
             members_switch
             // Member profile overlay: full-screen, painted after the member
             // list so it covers the whole window when a row is tapped
