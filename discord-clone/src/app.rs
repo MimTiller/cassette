@@ -47,7 +47,6 @@ use crate::server_settings_panel::ServerSettingsPanel;
 use runtime_shared::time::local_offset_minutes;
 
 use crate::data::{DMS, SERVERS, Category, Member, Server, Status, TextChannel, USER, member_profile};
-use crate::member_count_display::member_count_display;
 use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
 use crate::ban_list_row::BanListRow;
@@ -4685,14 +4684,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // `app_shell` owns `moderation_mode` and renders the overlay when it flips
     // on; the gavel button in the header below sets this copy.
     let moderation_open = moderation_mode.clone();
-    // `user_status` is in the key (not just read in the arm) so the online
-    // count in the member-count line rebuilds when the signed-in user toggles
-    // presence — without it, the header would show a stale count while the
-    // member panel's ONLINE group updates (value-dedup: rebuilds only on
-    // actual status change).
     let header = switch(
-        move || (active_server.get(), active_channel.get(), active_live_channel.get(), user_status.get()),
-        move |(server_id, channel_id, live_cid, _user_status): &(u32, u32, Option<i64>, Status)| {
+        move || (active_server.get(), active_channel.get(), active_live_channel.get()),
+        move |(server_id, channel_id, live_cid): &(u32, u32, Option<i64>)| {
             let header_style = header_style.clone();
             let hash_style = hash_style.clone();
             let title_style = title_style.clone();
@@ -4718,44 +4712,19 @@ fn app_shell(authed: Signal<bool>) -> Element {
             let channel = server.find_text_channel(*channel_id).unwrap();
             let title = channel.name.to_string();
             let topic = channel.topic.to_string();
-            // Roster plus the signed-in user, who counts as a member like
-            // anyone else (same idiom as the member panel header).
-            let total = (server.members.len() + 1) as i64;
-            // Online count must match the member panel's "ONLINE — N" group:
-            // roster members with `Status::Online`, plus the signed-in user if
-            // their live presence is also Online. Same source as
-            // `member_panel` (see the status-group loop there) so both views
-            // agree.
-            let online = server.members
-                .iter()
-                .filter(|m| m.status == Status::Online)
-                .count()
-                + usize::from(user_status.get() == Status::Online);
             ui! {
                 view(style = header_style) {
                     text(style = hash_style) { "#".to_string() }
                     text(style = title_style) { title }
                     text(style = topic_style) { topic }
-                    // Spacer: eats the row's remaining width so the member
-                    // count, pin badge, and search bar sit at the far right.
+                    // Spacer: eats the row's remaining width so the pin badge
+                    // and search field sit at the far right.
                     view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
-                    member_count_display((online as i64).into(), total.into())
                     PinCountBadge()
-                    // Message-search widget: the one place a "Search messages"
-                    // field belongs — the channel header row (Discord's layout),
-                    // NOT the member-list panel. It can render mock result rows
-                    // below its input, so wrap it in a fixed-width `view` to keep
-                    // the header row from stretching taller/wider. (This is its
-                    // original home; it was once moved to the top of the member
-                    // panel by mistake, which buried the "MEMBER COUNT — N"
-                    // header and made the search bar read as the member list's
-                    // title.)
-                    view(style = StyleRules {
-                        width: Some(px(180.0)),
-                        ..Default::default()
-                    }) {
-                        MessageSearchBar()
-                    }
+                    // Message-search field: a clean field on the right side of
+                    // the channel header row (Discord's layout) — no separate
+                    // label above it.
+                    MessageSearchBar()
                     // Gavel: opens the Server Moderation panel (a full-screen
                     // overlay, same idiom as the Profile Settings overlay).
                     view(style = moderation_style, test_id = "server-moderation") {
