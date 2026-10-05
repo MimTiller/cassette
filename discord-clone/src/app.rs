@@ -3364,11 +3364,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
             position: Some(Position::Relative),
             align_items: Some(AlignItems::Center),
             justify_content: Some(JustifyContent::Center),
-            background: Some(col(if active.get() == s.id {
-                TEXT
-            } else {
-                BG_SIDEBAR
-            })),
+            // The row keeps its squircle background on selection (Discord does
+            // not invert the icon to white); the active-server pill on the far
+            // left edge is the sole selection signal. Background is static
+            // `BG_SIDEBAR` — no reactive white-invert.
+            background: Some(col(BG_SIDEBAR)),
             // Discord's squircle is a 16px radius on a 48px icon, not a full
             // circle.
             border_top_left_radius: Some(px(16.0)),
@@ -3380,11 +3380,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let label_style = move || StyleRules {
             font_size: Some(px(18.0)),
             font_weight: Some(FontWeight::Bold),
-            color: Some(col(if active.get() == s.id {
-                BG_RAIL
-            } else {
-                TEXT_CHANNEL
-            })),
+            // The label keeps its own color on selection (no white-invert);
+            // the left-edge pill alone signals the active server.
+            color: Some(col(TEXT_CHANNEL)),
             ..Default::default()
         };
         ui! {
@@ -3522,11 +3520,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     position: Some(Position::Relative),
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
-                    background: Some(col(if active.get() == s.id {
-                        TEXT
-                    } else {
-                        BG_SIDEBAR
-                    })),
+                    // No white-invert on selection — the left-edge pill alone
+                    // signals the active created server (matches the mock rows).
+                    background: Some(col(BG_SIDEBAR)),
                     // Discord's squircle is a 16px radius on a 48px icon.
                     border_top_left_radius: Some(px(16.0)),
                     border_top_right_radius: Some(px(16.0)),
@@ -3537,15 +3533,32 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 let label_style = move || StyleRules {
                     font_size: Some(px(18.0)),
                     font_weight: Some(FontWeight::Bold),
-                    color: Some(col(if active.get() == s.id {
-                        BG_RAIL
-                    } else {
-                        TEXT_CHANNEL
-                    })),
+                    color: Some(col(TEXT_CHANNEL)),
                     ..Default::default()
                 };
                 Some(ui! {
                     view(style = row_style) {
+                        // The active-server pill on the far-left rail edge — the
+                        // sole selection signal (the row is `Position::Relative`,
+                        // 48px centered in the 72px rail, so left: -12 is flush).
+                        view(style = move || StyleRules {
+                            position: Some(Position::Absolute),
+                            left: Some(px(-12.0)),
+                            top: Some(px(14.0)),
+                            width: Some(px(4.0)),
+                            height: Some(px(20.0)),
+                            background: Some(col(PILL)),
+                            border_top_left_radius: Some(px(2.0)),
+                            border_top_right_radius: Some(px(2.0)),
+                            border_bottom_left_radius: Some(px(2.0)),
+                            border_bottom_right_radius: Some(px(2.0)),
+                            opacity: Some(Tokenized::Literal(if active.get() == s.id {
+                                1.0
+                            } else {
+                                0.0
+                            })),
+                            ..Default::default()
+                        }) {}
                         text(style = label_style) { s.initial }
                     }
                     .on_touch(move |ev| {
@@ -3618,6 +3631,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
             let row_style = StyleRules {
                 width: Some(px(48.0)),
                 height: Some(px(48.0)),
+                // Positioning ancestor for the active-server pill (the mock rows
+                // do the same).
+                position: Some(Position::Relative),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
                 background: Some(col(BG_SIDEBAR)),
@@ -3644,20 +3660,33 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 let live_mbrs = live_members.clone();
                 let live_mbr_err = live_member_error.clone();
                 let live_kick = live_kick_confirm.clone();
-                // Static base for the squircle; the reactive closure below only
-                // overrides the background so the tapped row lights up without
-                // a full rebuild.
+                // Static base for the squircle. No white-invert on selection —
+                // the left-edge pill alone signals the active live server
+                // (matches the mock / created rows).
                 let base = row_style.clone();
-                let reactive_style = move || StyleRules {
-                    background: Some(col(if active_live.get() == Some(sid) {
-                        TEXT
-                    } else {
-                        BG_SIDEBAR
-                    })),
-                    ..base.clone()
-                };
                 ui! {
-                    view(style = reactive_style) {
+                    view(style = base.clone()) {
+                        // The active-server pill on the far-left rail edge — the
+                        // sole selection signal (the row is `Position::Relative`,
+                        // 48px centered in the 72px rail, so left: -12 is flush).
+                        view(style = move || StyleRules {
+                            position: Some(Position::Absolute),
+                            left: Some(px(-12.0)),
+                            top: Some(px(14.0)),
+                            width: Some(px(4.0)),
+                            height: Some(px(20.0)),
+                            background: Some(col(PILL)),
+                            border_top_left_radius: Some(px(2.0)),
+                            border_top_right_radius: Some(px(2.0)),
+                            border_bottom_left_radius: Some(px(2.0)),
+                            border_bottom_right_radius: Some(px(2.0)),
+                            opacity: Some(Tokenized::Literal(if active_live.get() == Some(sid) {
+                                1.0
+                            } else {
+                                0.0
+                            })),
+                            ..Default::default()
+                        }) {}
                         text(style = initial_style.clone()) { initial }
                     }
                     // Enter live mode: select this real server and pull its
@@ -3927,8 +3956,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // the render closure's owned copies of the modal `Signal`s, which a
     // function-scope non-`move` closure could not borrow across the `move`
     // capture boundary.)
-    // Bottom rail actions: Discord's Add-a-Server and Explore circles,
-    // rendered below the live-servers section.
+    // Bottom rail actions, grouped Discord-style: the server cluster (Add-a-
+    // Server (+), Explore (compass), plus the clone's Discover (globe) and
+    // Live-DM (speech-bubble) affordances, which power real functionality and
+    // so are kept reachable above the divider) sits with the server list, and
+    // the Direct Messages + Settings circles sit BELOW it. Real Discord's
+    // bottom rail row is DM + Settings only — that is exactly what the bottom
+    // holds here now.
     let rail_actions = {
         let circle_style = StyleRules {
             width: Some(px(48.0)),
@@ -3942,6 +3976,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
             border_bottom_right_radius: Some(px(24.0)),
             ..Default::default()
         };
+        let divider_style = StyleRules {
+            width: Some(px(32.0)),
+            height: Some(px(1.0)),
+            background: Some(col(BORDER)),
+            ..Default::default()
+        };
         let plus_open = join_open.clone();
         let plus_code = join_code.clone();
         let plus_result = join_result.clone();
@@ -3951,7 +3991,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let create_name = create_name.clone();
         let discover_open = discover_open.clone();
         let dm_open = dm_mode.clone();
+        let settings_open = notif_mode.clone();
         ui! {
+            // --- Top cluster: server-related actions (above the divider) ----
+            // Add-a-Server (+) + Explore (compass) sit with the server list;
+            // the clone's Discover (globe) and Live-DM (speech-bubble)
+            // affordances live here too — they power real functionality, so
+            // they're kept reachable above the divider rather than in the
+            // bottom DM+Settings row (which must stay DM + Settings only).
             view(style = circle_style.clone(), test_id = "rail-join-server") {
                 icon(PLUS).color(|| Color::from("#23a55a")).size(20.0)
             }
@@ -3965,18 +4012,20 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 plus_open.set(true);
                 TouchResponse::CONSUMED
             })
-            view(style = circle_style.clone(), test_id = "rail-create-server") {
+            view(style = circle_style.clone(), test_id = "rail-explore-servers") {
                 icon(COMPASS).color(|| Color::from(TEXT_MUTED)).size(20.0)
             }
-            // Create-a-Server: reset the name field and open the create modal
-            // (the same reset-on-open `create_server_modal`'s docs describe).
+            // Explore/Create-a-Server: reset the name field and open the create
+            // modal (the same reset-on-open `create_server_modal`'s docs
+            // describe). The compass is Discord's Explore affordance.
             .on_touch(move |_ev| {
                 create_name.set(String::new());
                 create_open.set(true);
                 TouchResponse::CONSUMED
             })
             // Discover-a-Server: open the discover overlay (no per-open state
-            // to reset — the suggested list is static).
+            // to reset — the suggested list is static). Moved up from the old
+            // bottom slot so it stays reachable without cluttering the DM row.
             view(style = circle_style.clone(), test_id = "rail-discover-servers") {
                 icon(GLOBE).color(|| Color::from(TEXT_MUTED)).size(20.0)
             }
@@ -3984,20 +4033,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 discover_open.set(true);
                 TouchResponse::CONSUMED
             })
-            // Direct Messages (mock): toggle the full-screen `dm_screen` overlay.
-            // No per-open state to reset — `dm_active` / `dm_sent` / `dm_revision`
-            // are owned in `app_shell` scope and persist across toggles, so a
-            // re-open keeps the previously-selected conversation and any DMs
-            // sent this session (the same persistence as the channel `sent` log).
-            view(style = circle_style.clone(), test_id = "rail-direct-messages") {
-                icon(MAIL).color(|| Color::from(TEXT_MUTED)).size(20.0)
-            }
-            .on_touch(move |_ev| {
-                dm_open.set(!dm_open.get());
-                TouchResponse::CONSUMED
-            })
             // Direct Messages (LIVE / backend): a separate, independent entry
-            // point from the mock DM button above. Toggling it open fetches
+            // point from the mock DM button below. Toggling it open fetches
             // the signed-in user's real DMs via `list_dms` (the same
             // `spawn_async` + `#[server]` RPC idiom as the `live_servers`
             // fetch) the first time it's opened; subsequent opens re-fetch so
@@ -4005,6 +4042,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // `live_dm_messages`, `live_dm_revision`) is owned in `app_shell`
             // scope, so a re-open keeps the selected conversation and its
             // fetched history (the same persistence as the mock DM screen).
+            // Moved up from the old bottom slot (which must be DM + Settings
+            // only) so the live-DM feature stays reachable.
             view(style = circle_style.clone(), test_id = "rail-live-direct-messages") {
                 icon(MESSAGE_CIRCLE).color(|| Color::from(TEXT_MUTED)).size(20.0)
             }
@@ -4022,6 +4061,33 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         }
                     });
                 }
+                TouchResponse::CONSUMED
+            })
+            // The divider between the top (server-related) cluster and the
+            // bottom (DM + Settings) row — Discord's rail separator.
+            view(style = divider_style) {}
+            // --- Bottom row: Direct Messages (mock) + Settings -------------
+            // Real Discord's bottom rail row is DM + Settings only.
+            view(style = circle_style.clone(), test_id = "rail-direct-messages") {
+                icon(MAIL).color(|| Color::from(TEXT_MUTED)).size(20.0)
+            }
+            // Direct Messages (mock): toggle the full-screen `dm_screen` overlay.
+            // No per-open state to reset — `dm_active` / `dm_sent` / `dm_revision`
+            // are owned in `app_shell` scope and persist across toggles, so a
+            // re-open keeps the previously-selected conversation and any DMs
+            // sent this session (the same persistence as the channel `sent` log).
+            .on_touch(move |_ev| {
+                dm_open.set(!dm_open.get());
+                TouchResponse::CONSUMED
+            })
+            view(style = circle_style.clone(), test_id = "rail-settings") {
+                icon(SETTINGS).color(|| Color::from(TEXT_MUTED)).size(20.0)
+            }
+            // Settings: opens the full-screen Notification Settings overlay
+            // (the same toggle idiom the user-panel's settings gear uses —
+            // `notif_mode` is the same signal that one controls).
+            .on_touch(move |_ev| {
+                settings_open.set(true);
                 TouchResponse::CONSUMED
             })
         }
