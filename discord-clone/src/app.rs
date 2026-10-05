@@ -73,6 +73,10 @@ use crate::pin_confirm_toast::PinConfirmToast;
 use crate::server_stats_card::server_stats_card;
 use crate::server_event_card::ServerEventCard;
 use crate::server_discovery_card::server_discovery_card;
+use crate::server_folder_group::server_folder_group;
+use crate::server_template_card::server_template_card;
+use crate::template_gallery_grid::TemplateGalleryGrid;
+use crate::server_tag_chips::server_tag_chips;
 use crate::mic_selector::MicSelector;
 use crate::link_embed_preview::LinkEmbedPreview;
 use crate::friend_request_card::FriendRequestCard;
@@ -109,6 +113,9 @@ use crate::edited_label::edited_label;
 use crate::notification_settings::NotificationSettings;
 use crate::keyboard_shortcuts_overlay::keyboard_shortcuts_overlay;
 use crate::profile_settings::profile_settings;
+use crate::invite::{generate_invite_code, invite_link};
+use crate::invite_link_display::InviteLinkDisplay;
+use crate::invite_expiry_selector::InviteExpirySelector;
 use crate::dm_view::dm_screen;
 use crate::style_helpers::{col, pct, px};
 use crate::join_modal::JoinServerModal;
@@ -120,6 +127,15 @@ use crate::discover_servers_modal::discover_servers_modal;
 use crate::typing_indicator::TypingIndicator;
 use crate::nickname_edit_field::NicknameEditField;
 use crate::custom_status_input::CustomStatusInput;
+use crate::poll_widget::PollWidget;
+use crate::thread_list_row::ThreadListRow;
+use crate::spoiler_image_placeholder::SpoilerImagePlaceholder;
+use crate::forward_message_dialog::ForwardMessageDialog;
+use crate::slash_command_dropdown::SlashCommandDropdown;
+use crate::settings_tab_bar::SettingsTabBar;
+use crate::setup_checklist_item::SetupChecklistDemo;
+use crate::emoji_upload_slot::EmojiUploadSlot;
+use crate::rules_accept_checkbox::rules_accept_checkbox;
 
 // Robot test ids: stable, `'static` strings the automation robot
 // (`find_element`/`tap`) matches on to locate interactive elements. The
@@ -363,6 +379,8 @@ LinkEmbedPreview()
 TranslateToggle()
 
     CustomStatusInput()
+    PollWidget()
+    SpoilerImagePlaceholder()
             }
         }
     }
@@ -3870,6 +3888,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
             server_stats_card(512.into(), 48.into(), 1204.into())
             ServerEventCard()
             server_discovery_card()
+            server_folder_group()
+            server_template_card()
+            TemplateGalleryGrid()
+            server_tag_chips()
             category_filter_chips()
         }
     };
@@ -4415,6 +4437,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     user_status.clone(),
                 ));
             }
+            // Mock thread list appended below the channel rows — local-only
+            // showcase of the thread rows (no backend call).
+            rows.push(ThreadListRow());
+            rows.push(ThreadListRow());
             let title = server.name.to_string();
             // The user profile is the bottom-left of the sidebar (Discord
             // convention). The member list is a separate right-side panel —
@@ -5361,6 +5387,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
             view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
                 profile_el
                 DeleteAccountWarning()
+                SettingsTabBar()
+                SetupChecklistDemo()
+                EmojiUploadSlot()
+                rules_accept_checkbox()
             }
         }
     };
@@ -5731,6 +5761,26 @@ fn app_shell(authed: Signal<bool>) -> Element {
         overflow: Some(Overflow::Hidden),
         ..Default::default()
     };
+    // Invite People panel (mock): a deterministic invite code per active server
+    // (`generate_invite_code`) shown through `InviteLinkDisplay` alongside an
+    // `InviteExpirySelector`. The display component takes the bare code and
+    // derives `discord.gg/{code}` itself, so passing the full `invite_link()`
+    // would double the host — the link helper's output is shown only as the
+    // caption line below the card. No backend call.
+    let invite_code = generate_invite_code(active_server.get());
+    let invite_expires = signal(2);
+    let invite_full_link = invite_link(&invite_code);
+    let invite_el = ui! {
+        text(style = section_label_style.clone()) { "Invite people".to_string() }
+        InviteLinkDisplay(code = invite_code)
+        text(style = StyleRules {
+            font_size: Some(px(12.0)),
+            color: Some(col(TEXT_MUTED)),
+            margin_bottom: Some(px(8.0)),
+            ..Default::default()
+        }) { invite_full_link }
+        InviteExpirySelector(value = invite_expires)
+    };
     let moderation_el = ui! {
         text(style = section_label_style.clone()) { "Banned members".to_string() }
         BanListRow()
@@ -5743,6 +5793,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         text(style = section_label_style.clone()) { "Member roles".to_string() }
         MemberRoleList()
         MemberRoleList()
+        invite_el
     };
     let moderation_region = ui! {
         view(style = moderation_wrap) {
@@ -5788,6 +5839,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     attach_chip
                     emoji_popover
                     ac_el
+                    SlashCommandDropdown()
+                    ForwardMessageDialog()
                     view(style = composer_style) {
                         view(style = icon_button_style.clone()) {
                             icon(PLUS).color(|| Color::from(TEXT_MUTED)).size(16.0)
