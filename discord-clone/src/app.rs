@@ -1230,6 +1230,7 @@ fn member_panel(
     server: &crate::data::Server,
     user: &Member,
     width: Signal<f32>,
+    sidebar: Signal<f32>,
 ) -> Element {
     let mut body: Vec<Element> = Vec::new();
     // Header: "MEMBER COUNT — N" where N is the roster plus the signed-in
@@ -1304,14 +1305,17 @@ fn member_panel(
     // the `width` signal (a thin drag handle on its left edge resizes it);
     // the left border separates it from the main view; the panel owns its own
     // bg. A rules *closure* so the width re-resolves as the signal changes.
-    let panel_style = move || StyleRules {
-        width: Some(px(width.get())),
-        background: Some(col(BG_SIDEBAR)),
-        border_left_width: Some(border_width(1.0)),
-        border_left_color: Some(col(BORDER)),
-        flex_direction: Some(FlexDirection::Column),
-        overflow: Some(Overflow::Hidden),
-        ..Default::default()
+    let panel_style = move || {
+        let (_s, m) = effective_panel_widths(sidebar, width);
+        StyleRules {
+            width: Some(px(m)),
+            background: Some(col(BG_SIDEBAR)),
+            border_left_width: Some(border_width(1.0)),
+            border_left_color: Some(col(BORDER)),
+            flex_direction: Some(FlexDirection::Column),
+            overflow: Some(Overflow::Hidden),
+            ..Default::default()
+        }
     };
     ui! {
         view(style = panel_style) {
@@ -4017,14 +4021,17 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // re-resolves as the signal changes — the same reactive idiom the channel
     // rows use. Captures only a `Copy` `Signal`, so the closure itself is
     // `Clone`, which the `switch` render below relies on (`sidebar_style.clone()`).
-    let sidebar_style = move || StyleRules {
-        width: Some(px(sidebar_width.get())),
-        background: Some(col(BG_SIDEBAR)),
-        border_right_width: Some(border_width(1.0)),
-        border_right_color: Some(col(BORDER)),
-        flex_direction: Some(FlexDirection::Column),
-        overflow: Some(Overflow::Hidden),
-        ..Default::default()
+    let sidebar_style = move || {
+        let (s, _m) = effective_panel_widths(sidebar_width, member_panel_width);
+        StyleRules {
+            width: Some(px(s)),
+            background: Some(col(BG_SIDEBAR)),
+            border_right_width: Some(border_width(1.0)),
+            border_right_color: Some(col(BORDER)),
+            flex_direction: Some(FlexDirection::Column),
+            overflow: Some(Overflow::Hidden),
+            ..Default::default()
+        }
     };
     let sidebar_header_style = StyleRules {
         padding_top: Some(px(14.0)),
@@ -5421,7 +5428,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         move || (active_server.get(), user_status.get()),
         move |(server_id, user_status): &(u32, Status)| {
             let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
-            member_panel(server, &USER.as_member(*user_status), member_panel_width)
+            member_panel(server, &USER.as_member(*user_status), member_panel_width, sidebar_width)
         },
     );
 
