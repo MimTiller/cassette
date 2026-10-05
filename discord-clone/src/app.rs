@@ -352,18 +352,15 @@ pub(crate) fn message_row(author: &str, color: &str, body: &str, when: String, e
                 MessageRating()
                 MessageActionBar()
                 idle_timer_badge()
-
-SendFailedIndicator()
-ReactionSummary()
-MessageTimestampTooltip()
-DeleteMessageConfirm()
-KickConfirmDialog()
-PinConfirmToast()
-LinkEmbedPreview()
-
-TranslateToggle()
-
-    CustomStatusInput()
+                SendFailedIndicator()
+                ReactionSummary()
+                MessageTimestampTooltip()
+                DeleteMessageConfirm()
+                KickConfirmDialog()
+                PinConfirmToast()
+                LinkEmbedPreview()
+                TranslateToggle()
+                CustomStatusInput()
             }
         }
     }
