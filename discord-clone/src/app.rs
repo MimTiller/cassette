@@ -66,7 +66,6 @@ use crate::mic_selector::MicSelector;
 use crate::friend_request_card::FriendRequestCard;
 use crate::server_icon_fallback::ServerIconFallback;
 
-use crate::dm_notification_badge::DmNotificationBadge;
 use crate::welcome_banner::WelcomeBanner;
 use crate::activity_card::ActivityCard;
 use crate::screen_share_indicator::ScreenShareIndicator;
@@ -75,7 +74,6 @@ use crate::two_factor_toggle::TwoFactorToggle;
 use crate::send_failed_indicator::SendFailedIndicator;
 use crate::latency_badge::LatencyBadge;
 use crate::jump_to_bottom_button::JumpToBottomButton;
-use crate::role_badge::RoleBadge;
 use crate::afk_timer_display::AfkTimerDisplay;
 use crate::connection_quality_indicator::ConnectionQualityIndicator;
 use crate::voice_join_button::VoiceJoinButton;
@@ -839,8 +837,9 @@ fn live_edit_row(
 }
 
 /// One member row: avatar chip with the status dot overlaid on its
-/// bottom-right corner, then the name, a role badge, and a DM unread
-/// badge. Compact and fixed-width — fits cleanly inside the 240px
+/// bottom-right corner, then the name — tinted by the member's role color
+/// (Discord colors the username by role; there is no separate role badge in
+/// the member list). Compact and fixed-width — fits cleanly inside the 240px
 /// member panel column. Tapping the row opens the member profile
 /// overlay (`member_profile_panel`), which renders the profile-level
 /// components for the selected member.
@@ -901,16 +900,17 @@ fn member_row(m: &Member, selected: Signal<Option<&'static str>>) -> Element {
         border_bottom_right_radius: Some(px(6.0)),
         ..Default::default()
     };
+    // The member's own profile carries the role -> color mapping the row
+    // uses to tint the username by role (Discord colors the name rather than
+    // showing a separate badge). Offline members stay muted.
+    let prof = member_profile(m.name);
     let name_style = StyleRules {
         font_size: Some(px(15.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(if dim { TEXT_MUTED } else { TEXT })),
+        color: Some(col(if dim { TEXT_MUTED } else { prof.role_color })),
         ..Default::default()
     };
     let initial = m.name.chars().next().unwrap_or(' ').to_string();
-    // The row's role badge uses the member's own role (per-member profile),
-    // so rows in the member list no longer all show the same role.
-    let prof = member_profile(m.name);
     let sel = selected.clone();
     let name_key: &'static str = m.name;
     ui! {
@@ -920,11 +920,6 @@ fn member_row(m: &Member, selected: Signal<Option<&'static str>>) -> Element {
                 view(style = dot_style) {}
             }
             text(style = name_style) { m.name.to_string() }
-            RoleBadge(
-                role_name = prof.role_name.to_string(),
-                role_color = prof.role_color.to_string(),
-            )
-            DmNotificationBadge()
         }
         .on_touch(move |ev| {
             if ev.phase == TouchPhase::Ended {
@@ -1314,9 +1309,8 @@ fn voice_section(
     out
 }
 
-/// The member-list panel for the right side of the window: a
-/// "MEMBER COUNT — N" header (Discord's style), then members grouped by
-/// status (online → idle → DND → offline). `user` is the signed-in user
+/// The member-list panel for the right side of the window: members grouped
+/// by status (online → idle → DND → offline). `user` is the signed-in user
 /// rendered as a regular member entry under their *live* presence status —
 /// cycling the status in the profile strip regroups them here (the panel
 /// is rebuilt on `user_status` changes; see `members_switch`). Spliced in
@@ -1327,25 +1321,6 @@ fn member_panel(
     selected: Signal<Option<&'static str>>,
 ) -> Element {
     let mut body: Vec<Element> = Vec::new();
-    // Header: "MEMBER COUNT — N" where N is the roster plus the signed-in
-    // user, who counts as a member like anyone else.
-    let header = format!("MEMBER COUNT — {}", server.members.len() + 1);
-    // Font slightly smaller than the group headers + a touch of negative
-    // letter-spacing so "MEMBER COUNT — N" stays on one line within the panel
-    // width (no white-space/nowrap property exists, so size is the lever).
-    // Left padding matches the group headers below (ONLINE, IDLE, …).
-    let header_style = StyleRules {
-        padding_top: Some(px(14.0)),
-        padding_bottom: Some(px(6.0)),
-        padding_left: Some(px(12.0)),
-        font_size: Some(px(10.0)),
-        letter_spacing: Some(Tokenized::Literal(-0.5)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT_MUTED)),
-        text_transform: Some(TextTransform::Uppercase),
-        ..Default::default()
-    };
-    body.push(ui! { text(style = header_style) { header } });
 
     // Status groups in Discord order: Online, Idle, DND, Offline. The
     // signed-in user is appended to their live-status group (last, Discord's
