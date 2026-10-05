@@ -34,7 +34,7 @@ use runtime_core::{
 
 use crate::app::{format_when, message_row};
 use crate::data::{DMS, USER, find_dm, now_secs};
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{borderless_input, col, px};
 
 // --- palette -----------------------------------------------------------------
 // The same Discord dark palette as `app.rs`, kept local so the module is
@@ -451,7 +451,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
         border_top_right_radius: Some(px(8.0)),
         border_bottom_left_radius: Some(px(8.0)),
         border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        ..borderless_input()
     };
     let send_style = StyleRules {
         height: Some(px(40.0)),

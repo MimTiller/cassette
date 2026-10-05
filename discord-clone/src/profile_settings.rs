@@ -14,7 +14,7 @@ use runtime_core::{
     Tokenized,
     signal,
 };
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{borderless_input, col, px};
 
 // The same Discord dark palette as `app.rs`, kept local so the screen is
 // self-contained.
@@ -60,7 +60,7 @@ pub fn profile_settings() -> Element {
         border_top_right_radius: Some(px(8.0)),
         border_bottom_left_radius: Some(px(8.0)),
         border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        ..borderless_input()
     };
 
     let avatar_style = StyleRules {

@@ -40,7 +40,7 @@ use runtime_core::{
 use runtime_core::icon;
 use icons_lucide::{
     CHEVRON_DOWN, CIRCLE_HELP, COMPASS, GAVEL, GLOBE, HASH, HEADPHONES, MAIL, MESSAGE_CIRCLE, MIC,
-    MIC_OFF, PENCIL, PLUS, SETTINGS, SMILE, SMILE_PLUS, TRASH_2, VOLUME_2,
+    MIC_OFF, PENCIL, PLUS, SETTINGS, SMILE, SMILE_PLUS, TRASH_2, VOLUME_2, USERS,
 };
 use crate::idle_timer_badge::idle_timer_badge;
 use crate::server_settings_panel::ServerSettingsPanel;
@@ -85,7 +85,7 @@ use crate::notification_settings::NotificationSettings;
 use crate::keyboard_shortcuts_overlay::keyboard_shortcuts_overlay;
 use crate::profile_settings::profile_settings;
 use crate::dm_view::dm_screen;
-use crate::style_helpers::{col, pct, px};
+use crate::style_helpers::{borderless_input, col, pct, px};
 use crate::join_modal::JoinServerModal;
 use crate::create_server_modal::create_server_modal;
 use crate::create_channel_modal::CreateChannelModal;
@@ -94,6 +94,7 @@ use crate::delete_channel_modal::DeleteChannelModal;
 use crate::discover_servers_modal::discover_servers_modal;
 use crate::typing_indicator::TypingIndicator;
 use crate::nickname_edit_field::NicknameEditField;
+use crate::invite_modal::InviteModal;
 
 // Robot test ids: stable, `'static` strings the automation robot
 // (`find_element`/`tap`) matches on to locate interactive elements. The
@@ -674,7 +675,7 @@ fn live_edit_row(
             border_bottom_left_radius: Some(px(8.0)),
             border_bottom_right_radius: Some(px(8.0)),
             flex_grow: Some(grow(1.0)),
-            ..Default::default()
+            ..borderless_input()
         };
         ui! {
             text_input(value = live_edit_text, placeholder = "Edit message", style = input_style, test_id = "edit-input")
@@ -1978,7 +1979,7 @@ fn login_screen(authed: Signal<bool>) -> Element {
         border_top_right_radius: Some(px(8.0)),
         border_bottom_left_radius: Some(px(8.0)),
         border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        ..borderless_input()
     };
     let submit_style = StyleRules {
         align_self: Some(AlignSelf::Stretch),
@@ -3929,6 +3930,31 @@ fn app_shell(authed: Signal<bool>) -> Element {
             )
         }
     };
+    // --- "Invite People" (mint a server invite) ------------------------------
+    // LIVE mode only: the USERS icon in the live sidebar header opens this
+    // full-screen overlay. `server_id` is `active_live_server` (read at submit
+    // time, `None` outside live mode = a no-op, the same inert-outside-live
+    // idiom as the channel-management modals above). `expiry` is the selected
+    // option (0 = 30 min, 1 = 1 day, 2 = never), `created` / `created_err` are
+    // the RPC outcome; on a successful mint the modal switches to the
+    // copy-the-link view. All four state signals are owned here so the modal
+    // survives sidebar rebuilds, and reset on re-open (see the header trigger
+    // below).
+    let invite_mode: Signal<bool> = signal(false);
+    let invite_expiry: Signal<usize> = signal(0);
+    let invite_created: Signal<Option<discord_server::invites::Invite>> = signal(None);
+    let invite_err: Signal<String> = signal(String::new());
+    let invite_el = ui! {
+        view {
+            InviteModal(
+                open = invite_mode,
+                server_id = active_live_server,
+                expiry = invite_expiry,
+                created = invite_created,
+                created_err = invite_err,
+            )
+        }
+    };
     // --- Live Server Settings (rename / icon / add member / transfer) --------
     // LIVE mode only: the gear in the live sidebar's header opens this full-screen
     // overlay. `server_id` is `active_live_server` (read at submit time, `None`
@@ -4545,6 +4571,26 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             TouchResponse::CONSUMED
                         })
                     };
+                    // The "Invite People" (USERS) icon on the live header's
+                    // right edge (next to the gear / + buttons): opens the
+                    // LIVE invite overlay. On open it resets the expiry picker
+                    // to the default (30 min) and clears any previous mint /
+                    // error, so a re-open starts fresh — the same
+                    // reset-on-open idiom as the create-channel "+" above.
+                    let invite_btn = ui! {
+                        view(style = chan_btn_style.clone(), test_id = "live-invite") {
+                            icon(USERS).color(|| Color::from(TEXT_MUTED)).size(14.0)
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                invite_expiry.set(0);
+                                invite_created.set(None);
+                                invite_err.set(String::new());
+                                invite_mode.set(true);
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                    };
                     // The "Server Settings" gear on the live header's right edge
                     // (next to the "+" button): opens the LIVE server-settings
                     // overlay (rename / icon / transfer ownership). On open it
@@ -4592,6 +4638,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                     flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
                                     ..Default::default()
                                 }) {}
+                                { invite_btn }
                                 { gear_btn }
                                 { add_btn }
                             }
@@ -5073,7 +5120,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         border_top_right_radius: Some(px(8.0)),
         border_bottom_left_radius: Some(px(8.0)),
         border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        ..borderless_input()
     };
     // Circular muted-grey icon buttons flanking the composer input — the '+'
     // attachment affordance on the left (stages/unstages a mock attachment),
@@ -6210,6 +6257,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             dc_el
             moderation_region
             ss_el
+            invite_el
             // Reaction picker (mock, session-local): full-window emoji grid,
             // painted last so it covers everything while open (collapses to
             // zero size while `picker` is `None`).

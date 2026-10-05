@@ -36,7 +36,7 @@ use runtime_core::{
     JustifyContent, Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
-use crate::style_helpers::{col, pct, px};
+use crate::style_helpers::{borderless_input, col, pct, px};
 
 // Discord dark palette (kept local so the component is self-contained).
 const CARD: &str = "#2b2d31";
@@ -176,7 +176,7 @@ pub fn ServerSettingsPanel(
         padding_left: Some(px(10.0)),
         padding_right: Some(px(10.0)),
         align_items: Some(AlignItems::Center),
-        ..Default::default()
+        ..borderless_input()
     };
     let save_btn_style = StyleRules {
         height: Some(px(34.0)),

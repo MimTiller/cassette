@@ -23,7 +23,7 @@
 //! - the leading `SEARCH` icon is a row sibling to the left of the input,
 //!   not a nested child (the `text_input` primitive takes no children).
 
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{borderless_input, col, px};
 use icons_lucide::SEARCH;
 use runtime_core::{
     component, icon, signal, ui, AlignItems, Color, Element, FlexDirection, StyleRules, Tokenized,
@@ -63,7 +63,7 @@ pub fn MessageSearchBar() -> Element {
         border_top_right_radius: Some(px(4.0)),
         border_bottom_left_radius: Some(px(4.0)),
         border_bottom_right_radius: Some(px(4.0)),
-        ..Default::default()
+        ..borderless_input()
     };
 
     ui! {
