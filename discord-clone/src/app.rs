@@ -35,7 +35,7 @@ use runtime_core::{
     after_ms_detached, AlignItems, AlignSelf, Color, Cursor, Element, FlexDirection, FlexWrap,
     FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow, PanEvent, PanRecognizer,
     Position, Signal, StyleRules, TextAlign, TextTransform, Tokenized, TouchEvent,
-    TouchPhase, TouchResponse, pan, signal, switch, ui,
+    TouchPhase, TouchResponse, pan, signal, switch, ui, viewport_size,
 };
 use runtime_core::icon;
 use icons_lucide::{
@@ -2746,6 +2746,72 @@ fn resize_handle(width: Signal<f32>, sign: f32, id: &'static str) -> Element {
             })
             .on_hover(move |on| hovered.set(on))
     }
+}
+
+// --- responsive sidebar widths (window-resize driven) ----------------------
+// The two side columns keep the user's manual drag choice in `sidebar_width` /
+// `member_panel_width` (the previous task's drag handles write straight to
+// those signals). But when the *window* itself narrows — a live
+// `viewport_size()` change, not a drag — the fixed columns stop fitting and
+// the layout used to just clip. These helpers fold the viewport into the
+// *rendered* width without ever writing back to the user's signal, so
+// widening the window back up past the collapse threshold automatically
+// restores the manual width (we only read it here — we never overwrite it, so
+// a user's dragged choice is never fought).
+//
+// Calling these inside the reactive style closures (`sidebar_style`,
+// `member_panel`'s `panel_style`) is what subscribes the layout to the
+// viewport: each closure re-runs on a real resize and re-resolves its `width`.
+// Same idiom whiteboard's `chrome.rs` popover uses for a viewport-driven
+// height — no hand-rolled resize detection, just the framework's
+// `viewport_size()` signal.
+//
+// Thresholds (CSS px of total window width). The main message column is the
+// star and gets a hard floor of `MAIN_MIN`; the two panels surrender space
+// first, in Discord's own order — the member list collapses, then the channel
+// sidebar shrinks toward its 180px drag-handle minimum. `RAIL` is the fixed
+// server-rail width; `HANDLE` is each 6px drag handle.
+const RAIL: f32 = 72.0;
+const HANDLE: f32 = 6.0;
+/// The minimum width the main message column is guaranteed. The two side
+/// panels are what gets squeezed below this (the message column is the star).
+const MAIN_MIN: f32 = 520.0;
+/// The channel sidebar's hard floor — the same 180 the drag handle clamps to,
+/// so a narrow window never shrinks it past what a manual drag can reach.
+const SIDEBAR_MIN: f32 = 180.0;
+
+/// `(rendered sidebar width, rendered member width)` for the current viewport.
+/// Keeps the main message column at a hard floor of `MAIN_MIN` and squeezes
+/// the two side panels to make room, in Discord's own order: the member list
+/// sheds its space first (all the way down to `0` = fully collapsed) before the
+/// channel sidebar is ever shrunk (toward the 180px handle floor). When the
+/// viewport is wide enough to hold both panels at their chosen sizes, both are
+/// returned exactly as the user set them — so widening the window back up
+/// past the squeeze automatically restores a manual drag choice for free. The
+/// manual signals are only ever *read* here, never written, so a drag choice is
+/// never fought. Reading `viewport_size()` inside the reactive style closures
+/// that call this is what makes the layout re-fire on every real resize (the
+/// framework's own signal — no hand-rolled resize detection).
+fn effective_panel_widths(sidebar: Signal<f32>, member: Signal<f32>) -> (f32, f32) {
+    let vw = viewport_size().get().width;
+    let s = sidebar.get().max(SIDEBAR_MIN);
+    let m = member.get().max(0.0);
+    // Before the backend reports a real size (vw == 0) there is nothing to be
+    // responsive about — keep the manual widths (the normal desktop sizes) so
+    // the first paint is the same as the pre-resize behaviour, no collapse
+    // flash.
+    let budget = (vw - RAIL - HANDLE * 2.0 - MAIN_MIN).max(0.0);
+    if vw <= 0.0 || budget >= s + m {
+        return (s, m);
+    }
+    // Not enough room for both at their chosen sizes: shed the excess, member
+    // first. The member panel absorbs the overflow down to 0; only what it
+    // can't absorb then pulls the sidebar down, but never below its floor.
+    let shed = (s + m) - budget;
+    let m_out = m - m.min(shed);
+    let s_shed = (shed - m.min(shed)).min((s - SIDEBAR_MIN).max(0.0));
+    let s_out = (s - s_shed).max(SIDEBAR_MIN);
+    (s_out, m_out)
 }
 
 fn app_shell(authed: Signal<bool>) -> Element {
