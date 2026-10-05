@@ -56,6 +56,10 @@ use crate::timeout_duration_picker::TimeoutDurationPicker;
 use crate::permission_override_row::PermissionOverrideRow;
 use crate::member_role_list::MemberRoleList;
 use crate::verified_badge::VerifiedBadge;
+use crate::icon_change_confirm::IconChangeConfirm;
+use crate::featured_server_banner::FeaturedServerBanner;
+use crate::ban_reason_input::BanReasonInput;
+use crate::attachment_preview_card::AttachmentPreviewCard;
 use crate::delete_account_warning::DeleteAccountWarning;
 
 use crate::server_boost_badge::ServerBoostBadge;
@@ -97,6 +101,11 @@ use crate::delete_channel_modal::DeleteChannelModal;
 use crate::discover_servers_modal::discover_servers_modal;
 use crate::typing_indicator::TypingIndicator;
 use crate::nickname_edit_field::NicknameEditField;
+use crate::custom_status_input::CustomStatusInput;
+use crate::char_counter::CharCounter;
+use crate::kick_confirm_dialog::KickConfirmDialog;
+use crate::delete_message_confirm::DeleteMessageConfirm;
+use crate::transfer_ownership_confirm::TransferOwnershipConfirm;
 
 // Robot test ids: stable, `'static` strings the automation robot
 // (`find_element`/`tap`) matches on to locate interactive elements. The
@@ -1184,6 +1193,7 @@ fn voice_section(
                     VoiceJoinButton()
                     VolumeSlider()
                     SoundboardButton()
+                    MicSelector()
                 }
             });
         }
@@ -3567,7 +3577,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // Server Moderation panel: a gavel icon in the channel header opens it as
     // a full-screen overlay (the same toggle idiom as `profile_mode` — built
     // once, shown/hidden by this signal, a "Done" pill flips it back off).
-    // Mock-only: renders the four unwired moderation components with hardcoded
+    // Mock-only: renders the eight unwired moderation components with hardcoded
     // rows; no backend call.
     let moderation_mode: Signal<bool> = signal(false);
 
@@ -4262,6 +4272,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 }
                 TouchResponse::CONSUMED
             })
+            AttachmentPreviewCard()
+            FeaturedServerBanner()
         }
     };
 
@@ -5837,10 +5849,16 @@ fn app_shell(authed: Signal<bool>) -> Element {
             profile_header
             view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
                 profile_el
+                NicknameEditField()
+                CustomStatusInput()
+                CharCounter()
+                TwoFactorToggle()
                 DeleteAccountWarning()
                 // Account-security setting, living with the other account
                 // settings in this overlay (it is NOT a composer element).
                 TwoFactorToggle()
+                BanReasonInput()
+                IconChangeConfirm()
             }
         }
     };
@@ -6143,7 +6161,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // Server Moderation panel (mock): the same full-screen overlay idiom as the
     // Profile Settings overlay above — built once, shown/hidden by
     // `moderation_mode`, closed by the "Done" pill in its header. The content
-    // stacks the four moderation components, each with a section label; every
+    // stacks the eight moderation components, each with a section label; every
     // row is hardcoded mock data, no backend call.
     let moderation_close = moderation_mode.clone();
     let section_label_style = StyleRules {
@@ -6223,6 +6241,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
         text(style = section_label_style.clone()) { "Member roles".to_string() }
         MemberRoleList()
         MemberRoleList()
+        text(style = section_label_style.clone()) { "Blocked users".to_string() }
+        BlockedUserRow()
+        BlockedUserRow()
+        text(style = section_label_style.clone()) { "Kick a member".to_string() }
+        KickConfirmDialog()
+        text(style = section_label_style.clone()) { "Delete a message".to_string() }
+        DeleteMessageConfirm()
+        text(style = section_label_style.clone()) { "Transfer ownership".to_string() }
+        TransferOwnershipConfirm()
     };
     let moderation_region = ui! {
         view(style = moderation_wrap) {
