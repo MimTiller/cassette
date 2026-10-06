@@ -26,6 +26,8 @@ use runtime_core::{
 };
 
 use crate::style_helpers::{col, pct, px};
+use crate::server_icon_upload_placeholder::ServerIconUploadPlaceholder;
+use crate::server_region_selector::ServerRegionSelector;
 
 // Discord dark palette (kept local so the component is self-contained).
 const CARD: &str = "#2b2d31";
@@ -170,6 +172,8 @@ pub fn create_server_modal(
                 { create_btn }
                 { cancel_btn }
             }
+            ServerIconUploadPlaceholder()
+            ServerRegionSelector()
         }
         .on_touch(move |_ev| TouchResponse::CONSUMED)
     };
