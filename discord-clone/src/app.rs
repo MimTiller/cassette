@@ -1644,9 +1644,11 @@ fn voice_section(
                     .color(|| Color::from(TEXT_MUTED))
                     .size(14.0)
                 text(style = v_label_style) { label }
-                ConnectionQualityIndicator()
-                ScreenShareIndicator()
-                LatencyBadge()
+                if joined.get() == Some((server_id, v.id)) {
+                    ConnectionQualityIndicator()
+                    ScreenShareIndicator()
+                    LatencyBadge()
+                }
             }
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
@@ -4573,8 +4575,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let create_el = ui! {
         view {
             { create_modal_el }
-            ServerIconUploadPlaceholder()
-            ServerRegionSelector()
         }
     };
 
@@ -5577,11 +5577,16 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     user_status.clone(),
                 ));
             }
-            // Mock thread list appended below the channel rows — local-only
-            // showcase of the thread rows (no backend call).
-            rows.push(ThreadListRow());
-            rows.push(ThreadListRow());
             let title = server.name.to_string();
+            // Discord shows active threads as a persistent list near the bottom
+            // of the sidebar (above the user bar), not interleaved with the
+            // scrollable channel rows. Kept fixed (non-scrolling) so it stays
+            // put regardless of channel-list scroll position.
+            let thread_list_style = StyleRules {
+                flex_direction: Some(FlexDirection::Column),
+                padding_top: Some(px(4.0)),
+                ..Default::default()
+            };
             // The user profile is the bottom-left of the sidebar (Discord
             // convention). The member list is a separate right-side panel —
             // see `members_switch` further down — so it's not built here.
@@ -5607,14 +5612,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // Mock thread list near the channel sidebar: a short stack
                     // of `ThreadListRow`s above the user panel. Local mock
                     // data, no backend.
-                    view(style = StyleRules {
-                        flex_direction: Some(FlexDirection::Column),
-                        align_items: Some(AlignItems::Stretch),
-                        padding_top: Some(px(8.0)),
-                        padding_left: Some(px(8.0)),
-                        padding_right: Some(px(8.0)),
-                        ..Default::default()
-                    }) {
+                    view(style = thread_list_style) {
                         ThreadListRow()
                         ThreadListRow()
                     }
