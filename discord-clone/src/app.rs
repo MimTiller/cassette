@@ -72,6 +72,7 @@ use crate::screen_share_indicator::ScreenShareIndicator;
 use crate::two_factor_toggle::TwoFactorToggle;
 
 use crate::send_failed_indicator::SendFailedIndicator;
+use crate::slowmode_indicator::SlowmodeIndicator;
 use crate::latency_badge::LatencyBadge;
 use crate::jump_to_bottom_button::JumpToBottomButton;
 use crate::afk_timer_display::AfkTimerDisplay;
@@ -2083,6 +2084,9 @@ fn create_server(
         id: chan_id,
         name: "general",
         topic: "",
+        // A freshly created channel has no slowmode yet — `None` keeps the
+        // header's `SlowmodeIndicator` from showing on it.
+        slowmode_secs: None,
         messages: &[],
         unread: 0,
         mentions: 0,
@@ -5124,6 +5128,39 @@ fn app_shell(authed: Signal<bool>) -> Element {
         },
     );
 
+    // Slowmode indicator for the active channel: a channel-keyed `switch` that
+    // resolves the current channel's `slowmode_secs` (`Option<u32>`) and feeds
+    // it to `SlowmodeIndicator(secs)`. When the active channel has no slowmode
+    // (`None`) — or when on a live channel (backend channels have no slowmode
+    // column yet) — it passes `0`, and the component renders *nothing* (no
+    // pill, no empty node). Only the couple of mock channels with
+    // `slowmode_secs: Some(_)` show the pill. Gated per-channel rather than
+    // unconditional, so the "every channel shows a timer" anti-pattern (the one
+    // that spliced a bare `SlowmodeIndicator()` into the composer column) is
+    // gone. `active_server`/`active_channel` are `Copy` signals, so capturing
+    // them is cheap; the arm re-runs only on a real channel/server change.
+    let slowmode_el = switch(
+        move || (active_server.get(), active_channel.get(), active_live_channel.get()),
+        move |(server_id, channel_id, live_cid): &(u32, u32, Option<i64>)| {
+            // Live channels and channels without slowmode resolve to `0` ->
+            // the indicator renders nothing (the component's own static
+            // `if secs > 0` branch mounts no node for `0`).
+            let secs: u32 = if live_cid.is_some() {
+                0
+            } else {
+                SERVERS
+                    .iter()
+                    .find(|x| x.id == *server_id)
+                    .and_then(|s| s.find_text_channel(*channel_id))
+                    .and_then(|c| c.slowmode_secs)
+                    .unwrap_or(0)
+            };
+            ui! {
+                SlowmodeIndicator(secs = secs)
+            }
+        },
+    );
+
     // Message list — the channel's seed messages plus any sent here this session.
     // `sent_read` is a dedicated clone so this closure and `on_send` don't both
     // `move`-capture the same non-`Copy` `Rc`. The key includes `revision`
@@ -6464,6 +6501,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     attach_chip
                     emoji_popover
                     ac_el
+                    // Per-channel slowmode indicator (gated): the channel-keyed
+                    // `slowmode_el` above resolves the active channel's
+                    // `slowmode_secs` and renders the pill only for
+                    // slowmode-enabled channels — nothing for the rest. Same
+                    // home b60 dropped the bare, unconditional
+                    // `SlowmodeIndicator()` into; now it reads real state.
+                    slowmode_el
                     view(style = composer_style) {
                         view(style = icon_button_style.clone()) {
                             icon(PLUS).color(|| Color::from(TEXT_MUTED)).size(16.0)
