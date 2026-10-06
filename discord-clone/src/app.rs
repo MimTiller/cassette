@@ -110,6 +110,10 @@ use crate::discover_servers_modal::discover_servers_modal;
 use crate::typing_indicator::TypingIndicator;
 use crate::nickname_edit_field::NicknameEditField;
 use crate::custom_status_input::CustomStatusInput;
+use crate::notification_permission_prompt::NotificationPermissionPrompt;
+use crate::channel_topic_banner::ChannelTopicBanner;
+use crate::reply_preview_bar::ReplyPreviewBar;
+use crate::slowmode_indicator::SlowmodeIndicator;
 use crate::char_counter::CharCounter;
 use crate::kick_confirm_dialog::KickConfirmDialog;
 use crate::delete_message_confirm::DeleteMessageConfirm;
@@ -6342,8 +6346,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // left/right resizes `sidebar_width` (right = grow, so sign `+1`).
             resize_handle(sidebar_width, 1.0, "resize-sidebar")
             view(style = main_style) {
+                NotificationPermissionPrompt()
                 header
+                ChannelTopicBanner()
                 scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {
+    WelcomeBanner()
     JumpToBottomButton()
     sent_messages
 }
@@ -6366,6 +6373,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     attach_chip
                     emoji_popover
                     ac_el
+                    ReplyPreviewBar()
+                    SlowmodeIndicator()
                     view(style = composer_style) {
                         view(style = icon_button_style.clone()) {
                             icon(PLUS).color(|| Color::from(TEXT_MUTED)).size(16.0)
