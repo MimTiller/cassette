@@ -27,7 +27,7 @@
 //!   constructors, hoisted into `let` locals used exactly once each (no
 //!   reactive branch here, so no `move ||` style closures required).
 
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{borderless_input, col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
     StyleRules,
@@ -92,7 +92,7 @@ pub fn CustomStatusInput() -> Element {
                     border_top_right_radius: Some(px(8.0)),
                     border_bottom_left_radius: Some(px(8.0)),
                     border_bottom_right_radius: Some(px(8.0)),
-                    ..Default::default()
+                    ..borderless_input()
                 },
             )
             button(

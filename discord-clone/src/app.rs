@@ -33,14 +33,14 @@ use std::rc::Rc;
 
 use runtime_core::{
     after_ms_detached, AlignItems, AlignSelf, Color, Cursor, Element, FlexDirection, FlexWrap,
-    FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow, PanEvent, PanRecognizer,
+    FontFamily, FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow, PanEvent, PanRecognizer,
     Position, Signal, StyleRules, TextAlign, TextTransform, Tokenized, TouchEvent,
-    TouchPhase, TouchResponse, pan, signal, switch, ui, viewport_size,
+    TouchPhase, TouchResponse, memo, pan, signal, switch, ui, viewport_size,
 };
 use runtime_core::icon;
 use icons_lucide::{
     CHEVRON_DOWN, CIRCLE_HELP, COMPASS, GAVEL, GLOBE, HASH, HEADPHONES, MAIL, MESSAGE_CIRCLE, MIC,
-    MIC_OFF, PENCIL, PLUS, SETTINGS, SMILE, SMILE_PLUS, TRASH_2, VOLUME_2,
+    MIC_OFF, PENCIL, PLUS, SETTINGS, SMILE, SMILE_PLUS, TRASH_2, VOLUME_2, USERS,
 };
 use crate::idle_timer_badge::idle_timer_badge;
 use crate::server_settings_panel::ServerSettingsPanel;
@@ -48,7 +48,6 @@ use crate::server_settings_panel::ServerSettingsPanel;
 use runtime_shared::time::local_offset_minutes;
 
 use crate::data::{DMS, SERVERS, Category, Member, Server, Status, TextChannel, USER, member_profile};
-use crate::member_count_display::member_count_display;
 use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
 use crate::ban_list_row::BanListRow;
@@ -67,7 +66,6 @@ use crate::language_picker::LanguagePicker;
 use crate::user_bio_block::user_bio_block;
 use crate::dm_request_card::DmRequestCard;
 use crate::blocked_user_row::BlockedUserRow;
-use crate::pin_confirm_toast::PinConfirmToast;
 use crate::server_folder_group::server_folder_group;
 use crate::server_template_card::server_template_card;
 use crate::template_gallery_grid::TemplateGalleryGrid;
@@ -79,7 +77,6 @@ use crate::mic_selector::MicSelector;
 use crate::friend_request_card::FriendRequestCard;
 use crate::server_icon_fallback::ServerIconFallback;
 
-use crate::dm_notification_badge::DmNotificationBadge;
 use crate::welcome_banner::WelcomeBanner;
 use crate::activity_card::ActivityCard;
 use crate::screen_share_indicator::ScreenShareIndicator;
@@ -88,7 +85,6 @@ use crate::two_factor_toggle::TwoFactorToggle;
 use crate::send_failed_indicator::SendFailedIndicator;
 use crate::latency_badge::LatencyBadge;
 use crate::jump_to_bottom_button::JumpToBottomButton;
-use crate::role_badge::RoleBadge;
 use crate::afk_timer_display::AfkTimerDisplay;
 use crate::connection_quality_indicator::ConnectionQualityIndicator;
 use crate::voice_join_button::VoiceJoinButton;
@@ -100,7 +96,7 @@ use crate::notification_settings::NotificationSettings;
 use crate::keyboard_shortcuts_overlay::keyboard_shortcuts_overlay;
 use crate::profile_settings::profile_settings;
 use crate::dm_view::dm_screen;
-use crate::style_helpers::{col, pct, px};
+use crate::style_helpers::{borderless_input, col, pct, px};
 use crate::join_modal::JoinServerModal;
 use crate::create_server_modal::create_server_modal;
 use crate::create_channel_modal::CreateChannelModal;
@@ -123,12 +119,12 @@ use crate::nickname_edit_field::NicknameEditField;
 use crate::custom_status_input::CustomStatusInput;
 use crate::notification_permission_prompt::NotificationPermissionPrompt;
 use crate::channel_topic_banner::ChannelTopicBanner;
-use crate::reply_preview_bar::ReplyPreviewBar;
 use crate::slowmode_indicator::SlowmodeIndicator;
 use crate::char_counter::CharCounter;
 use crate::kick_confirm_dialog::KickConfirmDialog;
 use crate::delete_message_confirm::DeleteMessageConfirm;
 use crate::transfer_ownership_confirm::TransferOwnershipConfirm;
+use crate::invite_modal::InviteModal;
 
 // Robot test ids: stable, `'static` strings the automation robot
 // (`find_element`/`tap`) matches on to locate interactive elements. The
@@ -271,6 +267,35 @@ pub(crate) fn format_when(unix_secs: i64, now_secs: i64) -> String {
     }
 }
 
+/// Full absolute date/time for a message's instant — the hover tooltip's
+/// "Saturday, September 12, 2026 at 3:42 PM" form (the counterpart to
+/// `format_when`'s short relative label). Pure integer math over the same
+/// `local_day_clock` / `civil_ymd_from_day` helpers; the weekday is derived
+/// from the day number (1970-01-01 was a Thursday).
+pub(crate) fn format_full_when(unix_secs: i64) -> String {
+    let (day, h, m) = local_day_clock(unix_secs);
+    let (y, mo, d) = civil_ymd_from_day(day);
+    // 1970-01-01 (day 0) was a Thursday, so `day.rem_euclid(7)` indexes a
+    // Thursday-first weekday table.
+    let weekday = [
+        "Thursday", "Friday", "Saturday", "Sunday", "Monday", "Tuesday", "Wednesday",
+    ][day.rem_euclid(7) as usize];
+    let month = [
+        "January", "February", "March", "April", "May", "June", "July", "August",
+        "September", "October", "November", "December",
+    ][(mo - 1) as usize];
+    let h12 = {
+        let h12 = h % 12;
+        if h12 == 0 {
+            12
+        } else {
+            h12
+        }
+    };
+    let suffix = if h < 12 { "AM" } else { "PM" };
+    format!("{weekday}, {month} {d}, {y} at {h12}:{m:02} {suffix}")
+}
+
 // --- small reusable rows -----------------------------------------------------
 
 /// One message row: avatar chip, then author + "Today at …" line, then body.
@@ -279,7 +304,14 @@ pub(crate) fn format_when(unix_secs: i64, now_secs: i64) -> String {
 /// is self-contained). `edited` gates the "(edited)" marker: live rows pass
 /// the message's real `edited_at.is_some()`; the mock path passes `true` to
 /// preserve its previous (always-on placeholder) rendering.
-pub(crate) fn message_row(author: &str, color: &str, body: &str, when: String, edited: bool) -> Element {
+pub(crate) fn message_row(
+    author: &str,
+    color: &str,
+    body: &str,
+    when: String,
+    full: String,
+    edited: bool,
+) -> Element {
     let row_style = StyleRules {
         padding_top: Some(px(8.0)),
         padding_bottom: Some(px(2.0)),
@@ -329,11 +361,6 @@ pub(crate) fn message_row(author: &str, color: &str, body: &str, when: String, e
         color: Some(col(TEXT)),
         ..Default::default()
     };
-    let when_style = StyleRules {
-        font_size: Some(px(11.0)),
-        color: Some(col(TEXT_MUTED)),
-        ..Default::default()
-    };
     let body_style = StyleRules {
         font_size: Some(px(15.0)),
         color: Some(col(TEXT)),
@@ -350,13 +377,211 @@ pub(crate) fn message_row(author: &str, color: &str, body: &str, when: String, e
                 view(style = meta_style) {
                     text(style = author_style) { author.to_string() }
                     if author == "miri" { VerifiedBadge() }
-                    text(style = when_style) { when }
+                    // The relative "when" label is a real hover target now:
+                    // `message_timestamp_tooltip` shows the short label at rest
+                    // and the full absolute date/time (`full`) while hovered.
+                    crate::message_timestamp_tooltip::message_timestamp_tooltip(when, full)
                 }
                 text(style = body_style) { body.to_string() }
                 if edited { edited_label() }
             }
         }
     }
+}
+
+// --- per-row hover action bar + overflow menu (channel message list) --------
+// These wrap `message_row` for the CHANNEL message list only (the mock rows
+// that also carry a `reaction_area` + the shared reaction `picker`). The wrapper
+// adds a `Position::Relative` box around the base row, drives a per-row `hovered`
+// signal from the box's `on_hover` (the voice-channel-row idiom), and floats the
+// `MessageActionBar` over the row's top-right. DM rows and the live/edit rows
+// call `message_row` directly and never reach this, so they keep rendering
+// exactly as before (no per-row controls added to a loop that shouldn't have them).
+
+/// One entry of the "more" overflow menu (a tap row). The two real Discord
+/// entries: "Copy text" (a harmless no-op that just closes the menu) and
+/// "Pin message" (shows the `PinConfirmToast`). Kept deliberately minimal.
+enum MoreMenuAction {
+    Pin,
+    Copy,
+}
+
+/// The small overflow menu that the action bar's "more" button opens. Rendered
+/// only while `open` is true (the `switch` primitive, same show/hide idiom as
+/// `MessageActionBar`); it drops just below the bar. `on_pin` shows the pin
+/// toast; both entries close the menu on tap.
+fn message_overflow_menu(open: Signal<bool>, on_pin: Rc<dyn Fn()>) -> Element {
+    switch(
+        move || open.get(),
+        move |show: &bool| {
+            if !show {
+                return ui! {
+                    view(style = StyleRules {
+                        width: Some(px(0.0)),
+                        height: Some(px(0.0)),
+                        ..Default::default()
+                    }) {}
+                };
+            }
+            let pin = on_pin.clone();
+            let menu_row = |label: &'static str, action: MoreMenuAction, pin: Rc<dyn Fn()>| -> Element {
+                let row_style = StyleRules {
+                    padding_top: Some(px(8.0)),
+                    padding_bottom: Some(px(8.0)),
+                    padding_left: Some(px(12.0)),
+                    padding_right: Some(px(12.0)),
+                    flex_direction: Some(FlexDirection::Row),
+                    align_items: Some(AlignItems::Center),
+                    ..Default::default()
+                };
+                let label_style = StyleRules {
+                    font_size: Some(px(14.0)),
+                    color: Some(col(TEXT)),
+                    ..Default::default()
+                };
+                let open_c = open;
+                // Each action owns its own handles so the `move` handler can own
+                // them (branch-local `pin` clone + a `Copy` `open` handle).
+                let touch = move |ev: &runtime_shared::TouchEvent| {
+                    if ev.phase == TouchPhase::Ended {
+                        match action {
+                            MoreMenuAction::Pin => pin(),
+                            MoreMenuAction::Copy => {}
+                        }
+                        open_c.set(false);
+                    }
+                    TouchResponse::CONSUMED
+                };
+                ui! {
+                    view(style = row_style) {
+                        text(style = label_style) { label.to_string() }
+                    }
+                    .on_touch(touch)
+                }
+            };
+            ui! {
+                view(style = StyleRules {
+                    position: Some(Position::Absolute),
+                    top: Some(px(40.0)),
+                    right: Some(px(12.0)),
+                    width: Some(px(190.0)),
+                    flex_direction: Some(FlexDirection::Column),
+                    background: Some(col("#111214")),
+                    border_top_left_radius: Some(px(8.0)),
+                    border_top_right_radius: Some(px(8.0)),
+                    border_bottom_left_radius: Some(px(8.0)),
+                    border_bottom_right_radius: Some(px(8.0)),
+                    border_top_width: Some(border_width(1.0)),
+                    border_right_width: Some(border_width(1.0)),
+                    border_bottom_width: Some(border_width(1.0)),
+                    border_left_width: Some(border_width(1.0)),
+                    border_top_color: Some(col(BORDER)),
+                    border_right_color: Some(col(BORDER)),
+                    border_bottom_color: Some(col(BORDER)),
+                    border_left_color: Some(col(BORDER)),
+                    ..Default::default()
+                }) {
+                    { menu_row("Copy text", MoreMenuAction::Copy, pin.clone()) }
+                    { menu_row("Pin message", MoreMenuAction::Pin, pin) }
+                }
+            }
+        },
+    )
+}
+
+/// A channel message row with the hover `MessageActionBar` + overflow menu.
+/// Wraps `message_row` (the base content) in a `Position::Relative` box and
+/// floats the action bar over the row's top-right while hovered. React points
+/// the SHARED reaction `picker` at this row (the same picker `reaction_area`'s
+/// add button opens — no second reaction UI); Reply populates the composer's
+/// `reply_ctx` (read by `ReplyPreviewBar`); More opens `message_overflow_menu`
+/// whose "Pin message" shows `PinConfirmToast`.
+fn message_row_with_actions(
+    author: &str,
+    color: &str,
+    body: &str,
+    when: String,
+    full: String,
+    edited: bool,
+    cid: u32,
+    idx: usize,
+    picker: Signal<Option<(u32, usize)>>,
+    reply_ctx: Signal<Option<(String, String)>>,
+    pin_visible: Signal<bool>,
+) -> Element {
+    let hovered = signal(false);
+    let menu_open = signal(false);
+    let base = message_row(author, color, body, when, full, edited);
+
+    // Reply context: author name + a short snippet of the body. `Signal` is
+    // `Copy`, so each `move` handler captures its own copy; the `String`s are
+    // cloned per press so the handlers stay `Fn`.
+    let author_owned = author.to_string();
+    let snippet: String = {
+        let s: String = body.chars().take(48).collect();
+        if body.chars().count() > 48 {
+            format!("{s}…")
+        } else {
+            s
+        }
+    };
+    let reply_c = reply_ctx;
+    let author_r = author_owned.clone();
+    let snippet_r = snippet.clone();
+    let on_reply = Rc::new(move || {
+        reply_c.set(Some((author_r.clone(), snippet_r.clone())));
+    });
+
+    // React: point the shared picker at this row's (channel, index) key — the
+    // exact entry point `reaction_area`'s add button uses. No second UI.
+    let picker_c = picker;
+    let key = (cid, idx);
+    let on_react = Rc::new(move || {
+        picker_c.set(Some(key));
+    });
+
+    // More: toggle the overflow menu.
+    let menu_c = menu_open;
+    let on_more = Rc::new(move || {
+        menu_c.set(!menu_c.get());
+    });
+
+    // "Pin message" (from the overflow menu): flash the toast, then auto-dismiss
+    // after a beat. The toast's own "x" is the manual dismiss.
+    let pin_c = pin_visible;
+    let on_pin = Rc::new(move || {
+        pin_c.set(true);
+        let pin_d = pin_c;
+        after_ms_detached(2_500, move || pin_d.set(false));
+    });
+
+    let bar = crate::message_action_bar::message_action_bar(hovered, on_react, on_reply, on_more);
+    let menu = message_overflow_menu(menu_open, on_pin);
+
+    ui! {
+        view(style = StyleRules {
+            position: Some(Position::Relative),
+            ..Default::default()
+        }) {
+            { base }
+            { bar }
+            { menu }
+        }
+        .on_hover(move |on| hovered.set(on))
+    }
+}
+
+/// The composer's "Replying to …" strip: wraps `reply_preview_bar` and backs
+/// its "×" cancel with a callback that clears the shared `reply_ctx` signal
+/// (the same signal each message's Reply action sets). `reply_ctx` is `Copy`,
+/// so the `on_cancel` closure captures its own handle; the bar itself reads a
+/// separate copy (both are the same underlying signal).
+fn reply_preview(reply_ctx: Signal<Option<(String, String)>>) -> Element {
+    let clear = reply_ctx;
+    let on_cancel = Rc::new(move || {
+        clear.set(None);
+    });
+    crate::reply_preview_bar::reply_preview_bar(reply_ctx, on_cancel)
 }
 
 // --- message reactions (mock, session-local) --------------------------------
@@ -454,11 +679,11 @@ fn reaction_area(
                     ..Default::default()
                 }) { cnt.to_string() }
             }
-            .on_touch(move |_ev| {
+            .on_touch(move |ev| {
                 // Toggle: not-yet-reacted -> count+1 and highlight;
                 // already-reacted -> count-1 and un-highlight, dropping the pill
                 // (and the empty map entry) once the count hits 0.
-                {
+                if ev.phase == TouchPhase::Ended {
                     let mut m = r.borrow_mut();
                     let inner = m.entry(key).or_default();
                     if let Some(pos) = inner.iter().position(|(e, _, _)| e == &em_close) {
@@ -476,8 +701,8 @@ fn reaction_area(
                     if m.get(&key).map_or(false, |v| v.is_empty()) {
                         m.remove(&key);
                     }
+                    rev.set(rev.get() + 1);
                 }
-                rev.set(rev.get() + 1);
                 TouchResponse::CONSUMED
             })
         }
@@ -504,8 +729,10 @@ fn reaction_area(
         }) {
             icon(SMILE_PLUS).color(|| Color::from(TEXT_MUTED)).size(15.0)
         }
-        .on_touch(move |_ev| {
-            add.set(Some(add_key));
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                add.set(Some(add_key));
+            }
             TouchResponse::CONSUMED
         })
     };
@@ -581,10 +808,10 @@ fn reaction_picker_overlay(
                             ..Default::default()
                         }) { glyph }
                     }
-                    .on_touch(move |_ev| {
+                    .on_touch(move |ev| {
                         // Add (or bump) this emoji's reaction for the message,
                         // then close the picker.
-                        {
+                        if ev.phase == TouchPhase::Ended {
                             let mut m = r.borrow_mut();
                             let inner = m.entry(key).or_default();
                             if let Some(pos) = inner.iter().position(|(e, _, _)| e == &glyph_close) {
@@ -593,9 +820,9 @@ fn reaction_picker_overlay(
                             } else {
                                 inner.push((glyph_close.clone(), 1, true));
                             }
+                            rev.set(rev.get() + 1);
+                            close.set(None);
                         }
-                        rev.set(rev.get() + 1);
-                        close.set(None);
                         TouchResponse::CONSUMED
                     })
                 }
@@ -636,9 +863,11 @@ fn reaction_picker_overlay(
                         }) { cells }
                     }
                 }
-                .on_touch(move |_ev| {
+                .on_touch(move |ev| {
                     // Tap on the backdrop (not a glyph) closes the picker.
-                    backdrop_close.set(None);
+                    if ev.phase == TouchPhase::Ended {
+                        backdrop_close.set(None);
+                    }
                     TouchResponse::CONSUMED
                 })
             }
@@ -663,6 +892,7 @@ fn live_edit_row(
     color: &str,
     body: &str,
     when: String,
+    full: String,
     edited: bool,
     is_mine: bool,
     live_editing: Signal<Option<i64>>,
@@ -675,7 +905,7 @@ fn live_edit_row(
 ) -> Element {
     // The base row is identical to the mock path except it carries the real
     // `(edited)` marker (gated on the message's `edited_at` state).
-    let base = message_row(author, color, body, when, edited);
+    let base = message_row(author, color, body, when, full, edited);
     // Only one's own messages are editable/deletable — the backend enforces the
     // same, but the affordance is hidden for other authors' rows.
     if !is_mine {
@@ -705,7 +935,7 @@ fn live_edit_row(
             border_bottom_left_radius: Some(px(8.0)),
             border_bottom_right_radius: Some(px(8.0)),
             flex_grow: Some(grow(1.0)),
-            ..Default::default()
+            ..borderless_input()
         };
         ui! {
             text_input(value = live_edit_text, placeholder = "Edit message", style = input_style, test_id = "edit-input")
@@ -872,8 +1102,9 @@ fn live_edit_row(
 }
 
 /// One member row: avatar chip with the status dot overlaid on its
-/// bottom-right corner, then the name, a role badge, and a DM unread
-/// badge. Compact and fixed-width — fits cleanly inside the 240px
+/// bottom-right corner, then the name — tinted by the member's role color
+/// (Discord colors the username by role; there is no separate role badge in
+/// the member list). Compact and fixed-width — fits cleanly inside the 240px
 /// member panel column. Tapping the row opens the member profile
 /// overlay (`member_profile_panel`), which renders the profile-level
 /// components for the selected member.
@@ -934,16 +1165,17 @@ fn member_row(m: &Member, selected: Signal<Option<&'static str>>) -> Element {
         border_bottom_right_radius: Some(px(6.0)),
         ..Default::default()
     };
+    // The member's own profile carries the role -> color mapping the row
+    // uses to tint the username by role (Discord colors the name rather than
+    // showing a separate badge). Offline members stay muted.
+    let prof = member_profile(m.name);
     let name_style = StyleRules {
         font_size: Some(px(15.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(if dim { TEXT_MUTED } else { TEXT })),
+        color: Some(col(if dim { TEXT_MUTED } else { prof.role_color })),
         ..Default::default()
     };
     let initial = m.name.chars().next().unwrap_or(' ').to_string();
-    // The row's role badge uses the member's own role (per-member profile),
-    // so rows in the member list no longer all show the same role.
-    let prof = member_profile(m.name);
     let sel = selected.clone();
     let name_key: &'static str = m.name;
     ui! {
@@ -953,11 +1185,6 @@ fn member_row(m: &Member, selected: Signal<Option<&'static str>>) -> Element {
                 view(style = dot_style) {}
             }
             text(style = name_style) { m.name.to_string() }
-            RoleBadge(
-                role_name = prof.role_name.to_string(),
-                role_color = prof.role_color.to_string(),
-            )
-            DmNotificationBadge()
         }
         .on_touch(move |ev| {
             if ev.phase == TouchPhase::Ended {
@@ -1348,9 +1575,8 @@ fn voice_section(
     out
 }
 
-/// The member-list panel for the right side of the window: a
-/// "MEMBER COUNT — N" header (Discord's style), then members grouped by
-/// status (online → idle → DND → offline). `user` is the signed-in user
+/// The member-list panel for the right side of the window: members grouped
+/// by status (online → idle → DND → offline). `user` is the signed-in user
 /// rendered as a regular member entry under their *live* presence status —
 /// cycling the status in the profile strip regroups them here (the panel
 /// is rebuilt on `user_status` changes; see `members_switch`). Spliced in
@@ -1363,25 +1589,6 @@ fn member_panel(
     sidebar: Signal<f32>,
 ) -> Element {
     let mut body: Vec<Element> = Vec::new();
-    // Header: "MEMBER COUNT — N" where N is the roster plus the signed-in
-    // user, who counts as a member like anyone else.
-    let header = format!("MEMBER COUNT — {}", server.members.len() + 1);
-    // Font slightly smaller than the group headers + a touch of negative
-    // letter-spacing so "MEMBER COUNT — N" stays on one line within the panel
-    // width (no white-space/nowrap property exists, so size is the lever).
-    // Left padding matches the group headers below (ONLINE, IDLE, …).
-    let header_style = StyleRules {
-        padding_top: Some(px(14.0)),
-        padding_bottom: Some(px(6.0)),
-        padding_left: Some(px(12.0)),
-        font_size: Some(px(10.0)),
-        letter_spacing: Some(Tokenized::Literal(-0.5)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT_MUTED)),
-        text_transform: Some(TextTransform::Uppercase),
-        ..Default::default()
-    };
-    body.push(ui! { text(style = header_style) { header } });
 
     // Status groups in Discord order: Online, Idle, DND, Offline. The
     // signed-in user is appended to their live-status group (last, Discord's
@@ -2044,7 +2251,7 @@ fn login_screen(authed: Signal<bool>) -> Element {
         border_top_right_radius: Some(px(8.0)),
         border_bottom_left_radius: Some(px(8.0)),
         border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        ..borderless_input()
     };
     let submit_style = StyleRules {
         align_self: Some(AlignSelf::Stretch),
@@ -2378,6 +2585,17 @@ pub fn app() -> Element {
     // Runs once per process (the `app()` entry), so no "only once" guard is
     // needed.
     crate::auth::configure_server();
+    // Root-level document font: publish a system-sans stack so web text does
+    // NOT fall back to the browser's serif default (Times). Without this the
+    // whole app renders in serif — the single biggest "off" feel vs real
+    // Discord, which is 100% sans (gg sans / system sans fallback). This is
+    // the one global control: it cascades to every `text` node (heading,
+    // channel names, message bodies) instead of patching each `text()` style.
+    // Runs once per process, exactly like `configure_server` above.
+    runtime_core::set_default_text_font(Some(FontFamily::System(
+        "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif"
+            .to_string(),
+    )));
     // Mock auth gate: starts signed out (login screen). There's no backend, so
     // "auth" is just a `bool` signal — the login screen sets it true on Sign In
     // (or Continue as guest) and a Log Out in the user panel flips it back. A
@@ -3575,6 +3793,25 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let dm_sent: Rc<RefCell<Vec<(u32, &'static str, String, i64)>>> = Rc::new(RefCell::new(Vec::new()));
     let dm_revision: Signal<u32> = signal(0);
 
+    // --- message reactions (mock, session-local) ---------------------------
+    // Per-message reaction state for the MOCK message list: `reactions` is the
+    // pill map (keyed by `(channel_id, list_index)` — see the `ReactionMap`
+    // doc for why the rendered-list position is a stable-enough key), `picker`
+    // names the message whose add-reaction overlay is open (`None` while
+    // closed), and `reaction_rev` is the rebuild counter the message-list
+    // `switch` folds into its key so a pill change re-renders the list. Owned
+    // here next to the other mock per-app signals; the live/gateway path is
+    // left untouched (this feature is mock/session-local only).
+    let reactions: Rc<RefCell<ReactionMap>> = Rc::new(RefCell::new(HashMap::new()));
+    let reaction_rev: Signal<u32> = signal(0);
+    let picker: Signal<Option<(u32, usize)>> = signal(None);
+    // Reply context for the channel composer: `Some((author, snippet))` while a
+    // message row's hover "Reply" button is composing a reply (the
+    // `ReplyPreviewBar` strip reads it); `None` while not. `PinConfirmToast`'s
+    // `visible` flag, flashed by the "Pin message" overflow-menu entry.
+    let reply_ctx: Signal<Option<(String, String)>> = signal(None);
+    let pin_visible: Signal<bool> = signal(false);
+
     // --- live (backend) DM state -------------------------------------------
     // Parallel to (and independent of) the mock `dm_*` state above, and to the
     // `live_servers`/`live_channels` live-mode idiom. A separate, new entry
@@ -3635,11 +3872,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
             position: Some(Position::Relative),
             align_items: Some(AlignItems::Center),
             justify_content: Some(JustifyContent::Center),
-            background: Some(col(if active.get() == s.id {
-                TEXT
-            } else {
-                BG_SIDEBAR
-            })),
+            // The row keeps its squircle background on selection (Discord does
+            // not invert the icon to white); the active-server pill on the far
+            // left edge is the sole selection signal. Background is static
+            // `BG_SIDEBAR` — no reactive white-invert.
+            background: Some(col(BG_SIDEBAR)),
             // Discord's squircle is a 16px radius on a 48px icon, not a full
             // circle.
             border_top_left_radius: Some(px(16.0)),
@@ -3651,11 +3888,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let label_style = move || StyleRules {
             font_size: Some(px(18.0)),
             font_weight: Some(FontWeight::Bold),
-            color: Some(col(if active.get() == s.id {
-                BG_RAIL
-            } else {
-                TEXT_CHANNEL
-            })),
+            // The label keeps its own color on selection (no white-invert);
+            // the left-edge pill alone signals the active server.
+            color: Some(col(TEXT_CHANNEL)),
             ..Default::default()
         };
         ui! {
@@ -3793,11 +4028,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     position: Some(Position::Relative),
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
-                    background: Some(col(if active.get() == s.id {
-                        TEXT
-                    } else {
-                        BG_SIDEBAR
-                    })),
+                    // No white-invert on selection — the left-edge pill alone
+                    // signals the active created server (matches the mock rows).
+                    background: Some(col(BG_SIDEBAR)),
                     // Discord's squircle is a 16px radius on a 48px icon.
                     border_top_left_radius: Some(px(16.0)),
                     border_top_right_radius: Some(px(16.0)),
@@ -3808,15 +4041,32 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 let label_style = move || StyleRules {
                     font_size: Some(px(18.0)),
                     font_weight: Some(FontWeight::Bold),
-                    color: Some(col(if active.get() == s.id {
-                        BG_RAIL
-                    } else {
-                        TEXT_CHANNEL
-                    })),
+                    color: Some(col(TEXT_CHANNEL)),
                     ..Default::default()
                 };
                 Some(ui! {
                     view(style = row_style) {
+                        // The active-server pill on the far-left rail edge — the
+                        // sole selection signal (the row is `Position::Relative`,
+                        // 48px centered in the 72px rail, so left: -12 is flush).
+                        view(style = move || StyleRules {
+                            position: Some(Position::Absolute),
+                            left: Some(px(-12.0)),
+                            top: Some(px(14.0)),
+                            width: Some(px(4.0)),
+                            height: Some(px(20.0)),
+                            background: Some(col(PILL)),
+                            border_top_left_radius: Some(px(2.0)),
+                            border_top_right_radius: Some(px(2.0)),
+                            border_bottom_left_radius: Some(px(2.0)),
+                            border_bottom_right_radius: Some(px(2.0)),
+                            opacity: Some(Tokenized::Literal(if active.get() == s.id {
+                                1.0
+                            } else {
+                                0.0
+                            })),
+                            ..Default::default()
+                        }) {}
                         text(style = label_style) { s.initial }
                     }
                     .on_touch(move |ev| {
@@ -3889,6 +4139,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
             let row_style = StyleRules {
                 width: Some(px(48.0)),
                 height: Some(px(48.0)),
+                // Positioning ancestor for the active-server pill (the mock rows
+                // do the same).
+                position: Some(Position::Relative),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
                 background: Some(col(BG_SIDEBAR)),
@@ -3915,20 +4168,33 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 let live_mbrs = live_members.clone();
                 let live_mbr_err = live_member_error.clone();
                 let live_kick = live_kick_confirm.clone();
-                // Static base for the squircle; the reactive closure below only
-                // overrides the background so the tapped row lights up without
-                // a full rebuild.
+                // Static base for the squircle. No white-invert on selection —
+                // the left-edge pill alone signals the active live server
+                // (matches the mock / created rows).
                 let base = row_style.clone();
-                let reactive_style = move || StyleRules {
-                    background: Some(col(if active_live.get() == Some(sid) {
-                        TEXT
-                    } else {
-                        BG_SIDEBAR
-                    })),
-                    ..base.clone()
-                };
                 ui! {
-                    view(style = reactive_style) {
+                    view(style = base.clone()) {
+                        // The active-server pill on the far-left rail edge — the
+                        // sole selection signal (the row is `Position::Relative`,
+                        // 48px centered in the 72px rail, so left: -12 is flush).
+                        view(style = move || StyleRules {
+                            position: Some(Position::Absolute),
+                            left: Some(px(-12.0)),
+                            top: Some(px(14.0)),
+                            width: Some(px(4.0)),
+                            height: Some(px(20.0)),
+                            background: Some(col(PILL)),
+                            border_top_left_radius: Some(px(2.0)),
+                            border_top_right_radius: Some(px(2.0)),
+                            border_bottom_left_radius: Some(px(2.0)),
+                            border_bottom_right_radius: Some(px(2.0)),
+                            opacity: Some(Tokenized::Literal(if active_live.get() == Some(sid) {
+                                1.0
+                            } else {
+                                0.0
+                            })),
+                            ..Default::default()
+                        }) {}
                         text(style = initial_style.clone()) { initial }
                     }
                     // Enter live mode: select this real server and pull its
@@ -4155,6 +4421,31 @@ fn app_shell(authed: Signal<bool>) -> Element {
             )
         }
     };
+    // --- "Invite People" (mint a server invite) ------------------------------
+    // LIVE mode only: the USERS icon in the live sidebar header opens this
+    // full-screen overlay. `server_id` is `active_live_server` (read at submit
+    // time, `None` outside live mode = a no-op, the same inert-outside-live
+    // idiom as the channel-management modals above). `expiry` is the selected
+    // option (0 = 30 min, 1 = 1 day, 2 = never), `created` / `created_err` are
+    // the RPC outcome; on a successful mint the modal switches to the
+    // copy-the-link view. All four state signals are owned here so the modal
+    // survives sidebar rebuilds, and reset on re-open (see the header trigger
+    // below).
+    let invite_mode: Signal<bool> = signal(false);
+    let invite_expiry: Signal<usize> = signal(0);
+    let invite_created: Signal<Option<discord_server::invites::Invite>> = signal(None);
+    let invite_err: Signal<String> = signal(String::new());
+    let invite_el = ui! {
+        view {
+            InviteModal(
+                open = invite_mode,
+                server_id = active_live_server,
+                expiry = invite_expiry,
+                created = invite_created,
+                created_err = invite_err,
+            )
+        }
+    };
     // --- Live Server Settings (rename / icon / add member / transfer) --------
     // LIVE mode only: the gear in the live sidebar's header opens this full-screen
     // overlay. `server_id` is `active_live_server` (read at submit time, `None`
@@ -4200,8 +4491,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // the render closure's owned copies of the modal `Signal`s, which a
     // function-scope non-`move` closure could not borrow across the `move`
     // capture boundary.)
-    // Bottom rail actions: Discord's Add-a-Server and Explore circles,
-    // rendered below the live-servers section.
+    // Bottom rail actions, grouped Discord-style: the server cluster (Add-a-
+    // Server (+), Explore (compass), plus the clone's Discover (globe) and
+    // Live-DM (speech-bubble) affordances, which power real functionality and
+    // so are kept reachable above the divider) sits with the server list, and
+    // the Direct Messages + Settings circles sit BELOW it. Real Discord's
+    // bottom rail row is DM + Settings only — that is exactly what the bottom
+    // holds here now.
     let rail_actions = {
         let circle_style = StyleRules {
             width: Some(px(48.0)),
@@ -4215,6 +4511,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
             border_bottom_right_radius: Some(px(24.0)),
             ..Default::default()
         };
+        let divider_style = StyleRules {
+            width: Some(px(32.0)),
+            height: Some(px(1.0)),
+            background: Some(col(BORDER)),
+            ..Default::default()
+        };
         let plus_open = join_open.clone();
         let plus_code = join_code.clone();
         let plus_result = join_result.clone();
@@ -4224,53 +4526,56 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let create_name = create_name.clone();
         let discover_open = discover_open.clone();
         let dm_open = dm_mode.clone();
+        let settings_open = notif_mode.clone();
         ui! {
+            // --- Top cluster: server-related actions (above the divider) ----
+            // Add-a-Server (+) + Explore (compass) sit with the server list;
+            // the clone's Discover (globe) and Live-DM (speech-bubble)
+            // affordances live here too — they power real functionality, so
+            // they're kept reachable above the divider rather than in the
+            // bottom DM+Settings row (which must stay DM + Settings only).
             view(style = circle_style.clone(), test_id = "rail-join-server") {
                 icon(PLUS).color(|| Color::from("#23a55a")).size(20.0)
             }
             // Add-a-Server: open the join modal. Reset the per-open state so a
             // re-open always starts fresh (the same reset the caller owns).
-            .on_touch(move |_ev| {
-                plus_code.set(String::new());
-                plus_result.set(None);
-                plus_error.set(String::new());
-                plus_busy.set(false);
-                plus_open.set(true);
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    plus_code.set(String::new());
+                    plus_result.set(None);
+                    plus_error.set(String::new());
+                    plus_busy.set(false);
+                    plus_open.set(true);
+                }
                 TouchResponse::CONSUMED
             })
-            view(style = circle_style.clone(), test_id = "rail-create-server") {
+            view(style = circle_style.clone(), test_id = "rail-explore-servers") {
                 icon(COMPASS).color(|| Color::from(TEXT_MUTED)).size(20.0)
             }
-            // Create-a-Server: reset the name field and open the create modal
-            // (the same reset-on-open `create_server_modal`'s docs describe).
-            .on_touch(move |_ev| {
-                create_name.set(String::new());
-                create_open.set(true);
+            // Explore/Create-a-Server: reset the name field and open the create
+            // modal (the same reset-on-open `create_server_modal`'s docs
+            // describe). The compass is Discord's Explore affordance.
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    create_name.set(String::new());
+                    create_open.set(true);
+                }
                 TouchResponse::CONSUMED
             })
             // Discover-a-Server: open the discover overlay (no per-open state
-            // to reset — the suggested list is static).
+            // to reset — the suggested list is static). Moved up from the old
+            // bottom slot so it stays reachable without cluttering the DM row.
             view(style = circle_style.clone(), test_id = "rail-discover-servers") {
                 icon(GLOBE).color(|| Color::from(TEXT_MUTED)).size(20.0)
             }
-            .on_touch(move |_ev| {
-                discover_open.set(true);
-                TouchResponse::CONSUMED
-            })
-            // Direct Messages (mock): toggle the full-screen `dm_screen` overlay.
-            // No per-open state to reset — `dm_active` / `dm_sent` / `dm_revision`
-            // are owned in `app_shell` scope and persist across toggles, so a
-            // re-open keeps the previously-selected conversation and any DMs
-            // sent this session (the same persistence as the channel `sent` log).
-            view(style = circle_style.clone(), test_id = "rail-direct-messages") {
-                icon(MAIL).color(|| Color::from(TEXT_MUTED)).size(20.0)
-            }
-            .on_touch(move |_ev| {
-                dm_open.set(!dm_open.get());
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    discover_open.set(true);
+                }
                 TouchResponse::CONSUMED
             })
             // Direct Messages (LIVE / backend): a separate, independent entry
-            // point from the mock DM button above. Toggling it open fetches
+            // point from the mock DM button below. Toggling it open fetches
             // the signed-in user's real DMs via `list_dms` (the same
             // `spawn_async` + `#[server]` RPC idiom as the `live_servers`
             // fetch) the first time it's opened; subsequent opens re-fetch so
@@ -4278,22 +4583,57 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // `live_dm_messages`, `live_dm_revision`) is owned in `app_shell`
             // scope, so a re-open keeps the selected conversation and its
             // fetched history (the same persistence as the mock DM screen).
+            // Moved up from the old bottom slot (which must be DM + Settings
+            // only) so the live-DM feature stays reachable.
             view(style = circle_style.clone(), test_id = "rail-live-direct-messages") {
                 icon(MESSAGE_CIRCLE).color(|| Color::from(TEXT_MUTED)).size(20.0)
             }
-            .on_touch(move |_ev| {
-                let now_open = !live_dm_mode.get();
-                live_dm_mode.set(now_open);
-                if now_open {
-                    // Re-fetch on every open so the list reflects the backend's
-                    // current state (mirrors how a live channel is re-fetched
-                    // when its server is re-selected).
-                    let list = live_dms.clone();
-                    runtime_core::driver::spawn_async(async move {
-                        if let Ok(dms) = crate::dms::list_dms().await {
-                            list.set(dms);
-                        }
-                    });
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    let now_open = !live_dm_mode.get();
+                    live_dm_mode.set(now_open);
+                    if now_open {
+                        // Re-fetch on every open so the list reflects the backend's
+                        // current state (mirrors how a live channel is re-fetched
+                        // when its server is re-selected).
+                        let list = live_dms.clone();
+                        runtime_core::driver::spawn_async(async move {
+                            if let Ok(dms) = crate::dms::list_dms().await {
+                                list.set(dms);
+                            }
+                        });
+                    }
+                }
+                TouchResponse::CONSUMED
+            })
+            // The divider between the top (server-related) cluster and the
+            // bottom (DM + Settings) row — Discord's rail separator.
+            view(style = divider_style) {}
+            // --- Bottom row: Direct Messages (mock) + Settings -------------
+            // Real Discord's bottom rail row is DM + Settings only.
+            view(style = circle_style.clone(), test_id = "rail-direct-messages") {
+                icon(MAIL).color(|| Color::from(TEXT_MUTED)).size(20.0)
+            }
+            // Direct Messages (mock): toggle the full-screen `dm_screen` overlay.
+            // No per-open state to reset — `dm_active` / `dm_sent` / `dm_revision`
+            // are owned in `app_shell` scope and persist across toggles, so a
+            // re-open keeps the previously-selected conversation and any DMs
+            // sent this session (the same persistence as the channel `sent` log).
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    dm_open.set(!dm_open.get());
+                }
+                TouchResponse::CONSUMED
+            })
+            view(style = circle_style.clone(), test_id = "rail-settings") {
+                icon(SETTINGS).color(|| Color::from(TEXT_MUTED)).size(20.0)
+            }
+            // Settings: opens the full-screen Notification Settings overlay
+            // (the same toggle idiom the user-panel's settings gear uses —
+            // `notif_mode` is the same signal that one controls).
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    settings_open.set(true);
                 }
                 TouchResponse::CONSUMED
             })
@@ -4757,12 +5097,34 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         view(style = chan_btn_style.clone(), test_id = "live-channel-add") {
                             icon(PLUS).color(|| Color::from(TEXT_MUTED)).size(14.0)
                         }
-                        .on_touch(move |_ev| {
-                            cc_name.set(String::new());
-                            cc_kind.set("text".to_string());
-                            cc_busy.set(false);
-                            cc_err.set(String::new());
-                            cc_open.set(true);
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                cc_name.set(String::new());
+                                cc_kind.set("text".to_string());
+                                cc_busy.set(false);
+                                cc_err.set(String::new());
+                                cc_open.set(true);
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                    };
+                    // The "Invite People" (USERS) icon on the live header's
+                    // right edge (next to the gear / + buttons): opens the
+                    // LIVE invite overlay. On open it resets the expiry picker
+                    // to the default (30 min) and clears any previous mint /
+                    // error, so a re-open starts fresh — the same
+                    // reset-on-open idiom as the create-channel "+" above.
+                    let invite_btn = ui! {
+                        view(style = chan_btn_style.clone(), test_id = "live-invite") {
+                            icon(USERS).color(|| Color::from(TEXT_MUTED)).size(14.0)
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                invite_expiry.set(0);
+                                invite_created.set(None);
+                                invite_err.set(String::new());
+                                invite_mode.set(true);
+                            }
                             TouchResponse::CONSUMED
                         })
                     };
@@ -4777,22 +5139,24 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         view(style = chan_btn_style.clone(), test_id = "live-server-settings") {
                             icon(SETTINGS).color(|| Color::from(TEXT_MUTED)).size(14.0)
                         }
-                        .on_touch(move |_ev| {
-                            if let Some(active_id) = active_live_server.get() {
-                                let cur = live_servers.get().into_iter().find(|s| s.id == active_id);
-                                if let Some(s) = cur {
-                                    ss_name.set(s.name.clone());
-                                    ss_icon.set(s.icon_url.clone().unwrap_or_default());
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                if let Some(active_id) = active_live_server.get() {
+                                    let cur = live_servers.get().into_iter().find(|s| s.id == active_id);
+                                    if let Some(s) = cur {
+                                        ss_name.set(s.name.clone());
+                                        ss_icon.set(s.icon_url.clone().unwrap_or_default());
+                                    }
                                 }
+                                ss_owner.set(String::new());
+                                // Reset the add-member inputs too, so a re-open
+                                // starts with an empty id and the default role.
+                                ss_add_user_id.set(String::new());
+                                ss_add_role.set("member".to_string());
+                                ss_busy.set(false);
+                                ss_err.set(String::new());
+                                ss_open.set(true);
                             }
-                            ss_owner.set(String::new());
-                            // Reset the add-member inputs too, so a re-open
-                            // starts with an empty id and the default role.
-                            ss_add_user_id.set(String::new());
-                            ss_add_role.set("member".to_string());
-                            ss_busy.set(false);
-                            ss_err.set(String::new());
-                            ss_open.set(true);
                             TouchResponse::CONSUMED
                         })
                     };
@@ -4811,6 +5175,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                     flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
                                     ..Default::default()
                                 }) {}
+                                { invite_btn }
                                 { gear_btn }
                                 { add_btn }
                             }
@@ -5037,14 +5402,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // `app_shell` owns `moderation_mode` and renders the overlay when it flips
     // on; the gavel button in the header below sets this copy.
     let moderation_open = moderation_mode.clone();
-    // `user_status` is in the key (not just read in the arm) so the online
-    // count in the member-count line rebuilds when the signed-in user toggles
-    // presence — without it, the header would show a stale count while the
-    // member panel's ONLINE group updates (value-dedup: rebuilds only on
-    // actual status change).
     let header = switch(
-        move || (active_server.get(), active_channel.get(), active_live_channel.get(), user_status.get()),
-        move |(server_id, channel_id, live_cid, _user_status): &(u32, u32, Option<i64>, Status)| {
+        move || (active_server.get(), active_channel.get(), active_live_channel.get()),
+        move |(server_id, channel_id, live_cid): &(u32, u32, Option<i64>)| {
             let header_style = header_style.clone();
             let hash_style = hash_style.clone();
             let title_style = title_style.clone();
@@ -5070,51 +5430,28 @@ fn app_shell(authed: Signal<bool>) -> Element {
             let channel = server.find_text_channel(*channel_id).unwrap();
             let title = channel.name.to_string();
             let topic = channel.topic.to_string();
-            // Roster plus the signed-in user, who counts as a member like
-            // anyone else (same idiom as the member panel header).
-            let total = (server.members.len() + 1) as i64;
-            // Online count must match the member panel's "ONLINE — N" group:
-            // roster members with `Status::Online`, plus the signed-in user if
-            // their live presence is also Online. Same source as
-            // `member_panel` (see the status-group loop there) so both views
-            // agree.
-            let online = server.members
-                .iter()
-                .filter(|m| m.status == Status::Online)
-                .count()
-                + usize::from(user_status.get() == Status::Online);
             ui! {
                 view(style = header_style) {
                     text(style = hash_style) { "#".to_string() }
                     text(style = title_style) { title }
                     text(style = topic_style) { topic }
-                    // Spacer: eats the row's remaining width so the member
-                    // count, pin badge, and search bar sit at the far right.
+                    // Spacer: eats the row's remaining width so the pin badge
+                    // and search field sit at the far right.
                     view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
-                    member_count_display((online as i64).into(), total.into())
                     PinCountBadge()
-                    // Message-search widget: the one place a "Search messages"
-                    // field belongs — the channel header row (Discord's layout),
-                    // NOT the member-list panel. It can render mock result rows
-                    // below its input, so wrap it in a fixed-width `view` to keep
-                    // the header row from stretching taller/wider. (This is its
-                    // original home; it was once moved to the top of the member
-                    // panel by mistake, which buried the "MEMBER COUNT — N"
-                    // header and made the search bar read as the member list's
-                    // title.)
-                    view(style = StyleRules {
-                        width: Some(px(180.0)),
-                        ..Default::default()
-                    }) {
-                        MessageSearchBar()
-                    }
+                    // Message-search field: a clean field on the right side of
+                    // the channel header row (Discord's layout) — no separate
+                    // label above it.
+                    MessageSearchBar()
                     // Gavel: opens the Server Moderation panel (a full-screen
                     // overlay, same idiom as the Profile Settings overlay).
                     view(style = moderation_style, test_id = "server-moderation") {
                         icon(GAVEL).color(|| Color::from(TEXT_MUTED)).size(15.0)
                     }
-                    .on_touch(move |_ev| {
-                        moderation_open.set(true);
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            moderation_open.set(true);
+                        }
                         TouchResponse::CONSUMED
                     })
                 }
@@ -5134,6 +5471,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // `move`-capture their handles rather than sharing one non-`Copy` value).
     let live_editing_k = live_editing.clone();
     let live_delete_k = live_delete_confirm.clone();
+    // The mock switch's `move` closure below consumes `reactions`; keep a clone
+    // alive for the paint-last `reaction_picker_overlay` call (a separate site).
+    let reactions_overlay = reactions.clone();
+    // Shared reply/pin handles cloned so the `sent_messages` closure can move
+    // its own copies (the action-bar wiring in `message_row_with_actions`).
+    let reply_ctx_k = reply_ctx.clone();
+    let pin_visible_k = pin_visible.clone();
     let sent_messages = switch(
         move || (
             active_server.get(),
@@ -5143,8 +5487,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
             live_revision.get(),
             live_editing_k.get(),
             live_delete_k.get(),
+            reaction_rev.get(),
         ),
-        move |(server_id, channel_id, _revision, live_cid, _live_rev, _editing, _confirm): &(u32, u32, u32, Option<i64>, u32, Option<i64>, Option<i64>)| {
+        move |(server_id, channel_id, _revision, live_cid, _live_rev, _editing, _confirm, _react_rev): &(u32, u32, u32, Option<i64>, u32, Option<i64>, Option<i64>, u32)| {
             // Live/real channel active: render the gateway-fed buffer instead of
             // the mock path. `None` falls through to the mock render unchanged.
             if let Some(live_id) = *live_cid {
@@ -5183,6 +5528,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 for m in mine.iter() {
                     let (mid, aid, author, body, ts, edited_at) = m;
                     let when = format_when(*ts, now);
+                    let full = format_full_when(*ts);
                     let is_mine = self_id != 0 && *aid == self_id;
                     rows.push(live_edit_row(
                         *mid,
@@ -5190,6 +5536,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         BUTTON,
                         body.as_str(),
                         when,
+                        full,
                         edited_at.is_some(),
                         is_mine,
                         editing,
@@ -5210,16 +5557,57 @@ fn app_shell(authed: Signal<bool>) -> Element {
             let cid = *channel_id;
             let now = crate::data::now_secs();
             let mut rows: Vec<Element> = Vec::with_capacity(channel.messages.len());
-            for m in channel.messages.iter() {
+            for (i, m) in channel.messages.iter().enumerate() {
                 let when = format_when(m.ts_secs(now), now);
                 // Mock seed rows carry no edit state; pass `true` to preserve
                 // their previous always-on "(edited)" placeholder rendering.
-                rows.push(message_row(m.author, m.color, m.body, when, true));
+                rows.push(message_row_with_actions(
+                    m.author,
+                    m.color,
+                    m.body,
+                    when,
+                    format_full_when(m.ts_secs(now)),
+                    true,
+                    cid,
+                    i,
+                    picker,
+                    reply_ctx_k,
+                    pin_visible_k,
+                ));
+                // Reaction strip under each mock row, keyed by this row's
+                // rendered-list position (seed messages first, so index `i`).
+                rows.push(reaction_area(cid, i, reactions.clone(), reaction_rev, picker));
             }
             let mine: Vec<(u32, &'static str, String, i64)> = sent_read.borrow().clone();
-            for (_mcid, author, body, ts) in mine.iter().filter(|(mcid, _, _, _)| *mcid == cid) {
+            let mine: Vec<(u32, &'static str, String, i64)> = mine
+                .into_iter()
+                .filter(|(mcid, _, _, _)| *mcid == cid)
+                .collect();
+            for (i, (_mcid, author, body, ts)) in mine.iter().enumerate() {
                 let when = format_when(*ts, now);
-                rows.push(message_row(author, BUTTON, body.as_str(), when, true));
+                // Own prior sends get the same hover bar as the seed rows.
+                rows.push(message_row_with_actions(
+                    author,
+                    BUTTON,
+                    body.as_str(),
+                    when,
+                    format_full_when(*ts),
+                    true,
+                    cid,
+                    channel.messages.len() + i,
+                    picker,
+                    reply_ctx_k,
+                    pin_visible_k,
+                ));
+                // Sent rows continue the list position after the seed rows, so
+                // their key is `seed_len + i` (see `ReactionMap` doc).
+                rows.push(reaction_area(
+                    cid,
+                    channel.messages.len() + i,
+                    reactions.clone(),
+                    reaction_rev,
+                    picker,
+                ));
             }
             ui! {
                 view(style = StyleRules {
@@ -5334,21 +5722,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         border_top_right_radius: Some(px(8.0)),
         border_bottom_left_radius: Some(px(8.0)),
         border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
-    };
-    let send_style = StyleRules {
-        height: Some(px(40.0)),
-        padding_left: Some(px(18.0)),
-        padding_right: Some(px(18.0)),
-        background: Some(col(BUTTON)),
-        color: Some(col(TEXT)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        ..borderless_input()
     };
     // Circular muted-grey icon buttons flanking the composer input — the '+'
     // attachment affordance on the left (stages/unstages a mock attachment),
@@ -5366,10 +5740,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
         ..Default::default()
     };
 
-    // One send action shared by the Send button AND the Enter key on the
-    // composer. Every captured signal/Rc is cloned behind an `Rc` so the
-    // handler can be `Fn` (callable from both the `button on_click` and the
-    // `text_input on_key_down` closures).
+    // One send action, fired by the Enter key on the composer (Discord has no
+    // visible Send button — Enter is the only submit affordance). Every captured
+    // signal/Rc is cloned behind an `Rc` so the handler can be `Fn` (callable
+    // from the `text_input on_key_down` closure).
     let send_composer = composer.clone();
     let sent_write = sent.clone();
     let revision_bump = revision.clone();
@@ -5411,10 +5785,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         // dedups on value, so re-setting the same channel alone would not).
         revision_bump.set(revision_bump.get() + 1);
     };
-    // Button click → send.
     let on_send = Rc::new(do_send);
-    let send_btn = on_send.clone();
-    let on_click = move || (send_btn)();
     // Enter on the composer → send. Plain Enter only; Shift/Ctrl/Alt/Meta+
     // Enter fall through to the platform default. `PreventDefault` stops the
     // input's default Enter handling (no newline / no stray submit) now that
@@ -5428,6 +5799,38 @@ fn app_shell(authed: Signal<bool>) -> Element {
             KeyOutcome::Default
         }
     };
+
+    // --- Composer placeholder: "Message #<channel>" (Discord's real format,
+    // channel-suffixed)
+    // Derives the active channel's display name (same source of truth as the
+    // header: the live backend's channel list when on a live channel, else the
+    // mock server's text-channel table) and prefixes it with "Message #".
+    // A `memo` keeps it reactive: switching channels re-derives the string
+    // without the composer's `text_input` needing to rebuild its own node.
+    // The `placeholder_reactive` prop wants `Reactive<Option<String>>`, so the
+    // memo yields `Some("Message #<name>")` (a `None` placeholder would be
+    // pointless — there is always an active channel).
+    let ph_server = active_server.clone();
+    let ph_channel = active_channel.clone();
+    let ph_live = active_live_channel.clone();
+    let ph_channels = live_channels.clone();
+    let composer_placeholder = memo(move || {
+        let name = if let Some(live_id) = ph_live.get() {
+            ph_channels
+                .get()
+                .iter()
+                .find(|c| c.id == live_id)
+                .map(|c| c.name.to_string())
+                .unwrap_or_default()
+        } else {
+            let server = SERVERS.iter().find(|x| x.id == ph_server.get()).unwrap();
+            server
+                .find_text_channel(ph_channel.get())
+                .map(|c| c.name.to_string())
+                .unwrap_or_default()
+        };
+        Some(format!("Message #{name}"))
+    });
 
     // --- @-mention autocomplete (live mode) ------------------------------
     // Pure client-side: typing `@<prefix>` in the composer opens a dropdown
@@ -5630,8 +6033,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                 ..Default::default()
                             }) { format!("@{}", name) }
                         }
-                        .on_touch(move |_ev| {
-                            (apply_touch)(n.as_str());
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                (apply_touch)(n.as_str());
+                            }
                             TouchResponse::CONSUMED
                         })
                     }
@@ -5743,9 +6148,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                     ..Default::default()
                                 }) { "✕".to_string() }
                             }
-                            .on_touch(move |_ev| {
-                                let cc = chip_clear;
-                                cc.set(None);
+                            .on_touch(move |ev| {
+                                if ev.phase == TouchPhase::Ended {
+                                    let cc = chip_clear;
+                                    cc.set(None);
+                                }
                                 TouchResponse::CONSUMED
                             })
                         }
@@ -5795,11 +6202,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             ..Default::default()
                         }) { glyph }
                     }
-                    .on_touch(move |_ev| {
-                        let mut t = c.get();
-                        t.push_str(&glyph_close);
-                        c.set(t);
-                        eo.set(false);
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            let mut t = c.get();
+                            t.push_str(&glyph_close);
+                            c.set(t);
+                            eo.set(false);
+                        }
                         TouchResponse::CONSUMED
                     })
                 }
@@ -6226,8 +6635,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     ..Default::default()
                 }) { "Done".to_string() }
             }
-            .on_touch(move |_ev| {
-                live_dm_close.set(false);
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    live_dm_close.set(false);
+                }
                 TouchResponse::CONSUMED
             })
         }
@@ -6427,11 +6838,16 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // send with an `Error` frame — and clears it on tap (the
                     // user resends to retry). While unset it renders nothing.
                     SendFailedIndicator(failed = send_failed.clone())
+                    // "Replying to <author>: <snippet>" strip: shows while a
+                    // message's Reply action is active (the per-row action bar
+                    // sets `reply_ctx`), directly above the composer. Its "×"
+                    // clears the same signal the bar reads. Zero-size (nothing
+                    // rendered) while no reply is active.
+                    reply_preview(reply_ctx)
                     attach_chip
                     AttachmentPreviewCard()
                     emoji_popover
                     ac_el
-                    ReplyPreviewBar()
                     SlowmodeIndicator()
                     // Composer-area extras (mock, local only): the slash-command
                     // autocomplete dropdown and the forward-message dialog, both
@@ -6445,25 +6861,28 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         // `+` = stage/unstage the mock attachment. `Signal` is
                         // `Copy`, so each `move` closure captures its own handle;
                         // the chip above the composer mirrors this state.
-                        .on_touch(move |_ev| {
-                            pending_attachment.set(if pending_attachment.get().is_some() {
-                                None
-                            } else {
-                                Some("mock-attachment.png".to_string())
-                            });
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                pending_attachment.set(if pending_attachment.get().is_some() {
+                                    None
+                                } else {
+                                    Some("mock-attachment.png".to_string())
+                                });
+                            }
                             TouchResponse::CONSUMED
                         })
-                        text_input(value = composer, on_change = update_on_type, placeholder = "Message", style = input_style, test_id = "composer").on_key_down(composer_key)
+                        text_input(value = composer, on_change = update_on_type, placeholder_reactive = composer_placeholder.read_only(), style = input_style, test_id = "composer").on_key_down(composer_key)
                         view(style = icon_button_style) {
                             icon(SMILE).color(|| Color::from(TEXT_MUTED)).size(16.0)
                         }
                         // Smile = open/close the emoji popover (a `Copy` handle
                         // on `emoji_open`, mirroring the attachment button).
-                        .on_touch(move |_ev| {
-                            emoji_open.set(!emoji_open.get());
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                emoji_open.set(!emoji_open.get());
+                            }
                             TouchResponse::CONSUMED
                         })
-                        button(label = "Send".to_string(), on_click = on_click, style = send_style, test_id = "send")
                     }
                 }
             }
@@ -6504,6 +6923,17 @@ fn app_shell(authed: Signal<bool>) -> Element {
             dc_el
             moderation_region
             ss_el
+            invite_el
+            // Reaction picker (mock, session-local): full-window emoji grid,
+            // painted last so it covers everything while open (collapses to
+            // zero size while `picker` is `None`).
+            reaction_picker_overlay(picker, reactions_overlay, reaction_rev)
+            // "Message pinned!" toast: floats top-right (a `Position::Absolute`
+            // child of the root `Relative` ancestor) while `pin_visible` is
+            // true. Set by a message's "Pin message" overflow entry; auto-
+            // dismisses after a beat, or manually via its "x". Collapses to
+            // nothing while hidden.
+            crate::pin_confirm_toast::pin_confirm_toast(pin_visible)
         }
     }
 }

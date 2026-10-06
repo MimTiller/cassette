@@ -34,7 +34,7 @@ use runtime_core::{
 
 use crate::app::{format_when, message_row};
 use crate::data::{DMS, USER, find_dm, now_secs};
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{borderless_input, col, px};
 
 // --- palette -----------------------------------------------------------------
 // The same Discord dark palette as `app.rs`, kept local so the module is
@@ -407,13 +407,28 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
             let now = now_secs();
             let mut rows: Vec<Element> = Vec::with_capacity(dm.messages.len());
             for m in dm.messages.iter() {
-                let when = format_when(m.ts_secs(now), now);
-                rows.push(message_row(m.author, m.color, m.body, when, false));
+                let ts = m.ts_secs(now);
+                let when = format_when(ts, now);
+                rows.push(message_row(
+                    m.author,
+                    m.color,
+                    m.body,
+                    when,
+                    crate::app::format_full_when(ts),
+                    false,
+                ));
             }
             let mine: Vec<(u32, &'static str, String, i64)> = sent_read.borrow().clone();
             for (_dmid, author, body, ts) in mine.iter().filter(|(dmid, _, _, _)| *dmid == dm.id) {
                 let when = format_when(*ts, now);
-                rows.push(message_row(author, BUTTON, body.as_str(), when, false));
+                rows.push(message_row(
+                    author,
+                    BUTTON,
+                    body.as_str(),
+                    when,
+                    crate::app::format_full_when(*ts),
+                    false,
+                ));
             }
             ui! {
                 view(style = StyleRules {
@@ -451,7 +466,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
         border_top_right_radius: Some(px(8.0)),
         border_bottom_left_radius: Some(px(8.0)),
         border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        ..borderless_input()
     };
     let send_style = StyleRules {
         height: Some(px(40.0)),

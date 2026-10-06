@@ -40,7 +40,7 @@
 //!   `Tokenized<f32>`, not `px()`) — it uses a flat background + corner radius
 //!   instead, the same look as the input in `profile_settings`.
 
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{borderless_input, col, px};
 use runtime_core::{
     after_ms_detached, component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent,
     StyleRules,
@@ -105,7 +105,7 @@ pub fn NicknameEditField(#[prop(default = "Alex")] default_nickname: String) -> 
         border_top_right_radius: Some(px(6.0)),
         border_bottom_left_radius: Some(px(6.0)),
         border_bottom_right_radius: Some(px(6.0)),
-        ..Default::default()
+        ..borderless_input()
     };
 
     let save_style = StyleRules {

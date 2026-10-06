@@ -33,7 +33,7 @@ use runtime_core::{
     Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
-use crate::style_helpers::{col, pct, px};
+use crate::style_helpers::{borderless_input, col, pct, px};
 
 // Discord dark palette (kept local so the component is self-contained).
 const CARD: &str = "#2b2d31"; // card surface (Discord sidebar gray)
@@ -109,7 +109,7 @@ pub fn CreateChannelModal(
         border_top_right_radius: Some(px(8.0)),
         border_bottom_left_radius: Some(px(8.0)),
         border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        ..borderless_input()
     };
     let seg_row_style = StyleRules {
         margin_top: Some(px(12.0)),

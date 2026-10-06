@@ -37,7 +37,7 @@ use runtime_core::{
 
 use crate::app::{format_when, message_row};
 use crate::dms::{self, Dm};
-use crate::style_helpers::{col, pct, px};
+use crate::style_helpers::{borderless_input, col, pct, px};
 
 // --- palette -----------------------------------------------------------------
 // The same Discord dark palette as `app.rs` / `dm_view.rs`, kept local so the
@@ -127,7 +127,7 @@ fn live_dm_new_row(
         border_top_right_radius: Some(px(6.0)),
         border_bottom_left_radius: Some(px(6.0)),
         border_bottom_right_radius: Some(px(6.0)),
-        ..Default::default()
+        ..borderless_input()
     };
     let go_style = StyleRules {
         height: Some(px(30.0)),
@@ -472,7 +472,7 @@ fn live_dm_conversation(
         border_top_right_radius: Some(px(8.0)),
         border_bottom_left_radius: Some(px(8.0)),
         border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        ..borderless_input()
     };
     let send_style = StyleRules {
         height: Some(px(40.0)),
@@ -632,8 +632,16 @@ fn live_dm_conversation(
             let rows: Vec<Element> = mine
                 .iter()
                 .map(|(author, body, ts, edited_at)| {
-                    let when = format_when(ms_to_secs(*ts), now);
-                    message_row(author.as_str(), BUTTON, body.as_str(), when, edited_at.is_some())
+                    let s = ms_to_secs(*ts);
+                    let when = format_when(s, now);
+                    message_row(
+                        author.as_str(),
+                        BUTTON,
+                        body.as_str(),
+                        when,
+                        crate::app::format_full_when(s),
+                        edited_at.is_some(),
+                    )
                 })
                 .collect();
             ui! {

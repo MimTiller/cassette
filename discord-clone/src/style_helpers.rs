@@ -32,3 +32,38 @@ pub fn pct(v: f32) -> Tokenized<Length> {
 pub fn col(s: &str) -> Tokenized<Color> {
     Tokenized::Literal(Color(s.into()))
 }
+
+/// Border-zeroing fragment for text inputs.
+///
+/// The browser UA stylesheet gives `<input type="text">` (and `<textarea>`) a
+/// chunky `2px inset` gray border, but the native backends render the framework
+/// `TextInput` primitive borderless — the box is just its own background. Left
+/// alone, a web input therefore shows a UA border that no other backend has.
+///
+/// Use as a struct-update base in place of `..Default::default()` on an input's
+/// `StyleRules`:
+///
+/// ```ignore
+/// let input_style = StyleRules {
+///     height: Some(px(40.0)),
+///     background: Some(col(COMPOSER)),
+///     border_top_left_radius: Some(px(8.0)),
+///     // …
+///     ..borderless_input()
+/// };
+/// ```
+///
+/// The struct-update copies the four `border_*_width: 0` fields from this base
+/// (overriding `Default`'s `None`) while every field the caller sets explicitly
+/// still wins. An author-origin `border-<side>-width: 0` beats the UA-origin
+/// `border-width: 2px`, so the inset border disappears without touching the
+/// input's own background / caret / box-shadow styling.
+pub fn borderless_input() -> StyleRules {
+    StyleRules {
+        border_top_width: Some(Tokenized::Literal(0.0)),
+        border_right_width: Some(Tokenized::Literal(0.0)),
+        border_bottom_width: Some(Tokenized::Literal(0.0)),
+        border_left_width: Some(Tokenized::Literal(0.0)),
+        ..Default::default()
+    }
+}

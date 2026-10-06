@@ -1,14 +1,15 @@
-//! `message_timestamp_tooltip` — a self-contained message timestamp for the
-//! Discord clone. By default it shows a short relative string
-//! ("5 minutes ago"); while hovered it shows a full local timestamp
-//! ("Today at 3:42 PM"). A local `hovered` boolean signal drives which text
-//! is rendered, toggled by the `view` primitive's `on_hover` callback (the
-//! `bool` argument is the hover state).
+//! `message_timestamp_tooltip` — the message timestamp for the Discord clone.
+//! At rest it shows the message's short relative time (the `when` label the
+//! message row already computes — "Today at 3:42 PM"); while hovered it shows
+//! the full absolute date/time passed in as the `full` parameter (e.g.
+//! "Saturday, September 12, 2026 at 3:42 PM"). A local `hovered` boolean
+//! signal drives which text is rendered, toggled by the root `view`'s
+//! `on_hover` callback (the `bool` argument is the hover state).
 //!
-//! Everything is hardcoded local state — no backend call, no props, no wiring
-//! into any screen yet. Declared in `lib.rs` so it compiles as part of the
-//! crate, but referenced by nothing (the same shape `idle_timer_badge`
-//! ships in).
+//! Wired into every message row (`app.rs::message_row`) in place of the
+//! row's plain "when" text node, so the timestamp is a real, per-row hover
+//! target. The relative label is the same string `format_when` already hands
+//! the row; the full label is derived from the row's absolute instant.
 //!
 //! Idioms, each verified against this crate's `components/idle_timer_badge.rs`
 //! and `components/screen_share_indicator.rs`:
@@ -16,26 +17,26 @@
 //!   an `Fn` render closure, so every style is written INLINE in `style = …`
 //!   (created fresh per evaluation, never captured across a `when` boundary)
 //!   — the crate's universal style idiom;
-//! - the `on_hover` closure is likewise written INLINE in the `view`
-//!   attribute. `Signal<bool>` is `Copy`, so the inline closure captures a
-//!   copy of the same underlying signal the reactive `if` below reads, and
-//!   is moved into `view` exactly once per render;
+//! - the `on_hover` closure is written INLINE in the `view` attribute. `Signal`
+//!   is `Copy`, so the inline closure captures a copy of the same underlying
+//!   signal the reactive `if` below reads, and is moved into `view` exactly
+//!   once per render;
 //! - the swap is a reactive `if hovered.get() { … } else { … }` inside `ui!`,
 //!   each branch reading the signal so `ui!` lowers it to a `when`.
-
 use crate::style_helpers::{col, px};
-use runtime_core::{component, signal, ui, AlignItems, Element, FlexDirection, StyleRules};
+use runtime_core::{signal, ui, AlignItems, Element, FlexDirection, StyleRules};
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG: &str = "#1e1f22";
 const TEXT: &str = "#949ba4"; // muted timestamp tone
 
-/// The timestamp tooltip. Shows the relative string at rest and the full
-/// local timestamp while hovered.
-#[component]
-#[allow(non_snake_case)]
-pub fn MessageTimestampTooltip() -> Element {
-    // The "is this timestamp hovered" flag — `false` at rest.
+/// The timestamp with hover tooltip. Shows the short `when` label at rest and
+/// the full `full` absolute date/time while hovered. `when` / `full` are static
+/// per-row strings (the row's own `format_when` output and a derived absolute
+/// string), so both bake to static `TextSource` with no reactive machinery.
+pub fn message_timestamp_tooltip(when: String, full: String) -> Element {
+    // The "is this timestamp hovered" flag — `false` at rest. `Signal` is
+    // `Copy`, so the `on_hover` closure below captures a copy of this same
+    // underlying signal as the reactive `if` does.
     let hovered = signal(false);
 
     ui! {
@@ -48,7 +49,6 @@ pub fn MessageTimestampTooltip() -> Element {
             padding_right: Some(px(6.0)),
             padding_top: Some(px(2.0)),
             padding_bottom: Some(px(2.0)),
-            background: Some(col(BG)),
             border_top_left_radius: Some(px(4.0)),
             border_top_right_radius: Some(px(4.0)),
             border_bottom_left_radius: Some(px(4.0)),
@@ -64,13 +64,13 @@ pub fn MessageTimestampTooltip() -> Element {
                     font_size: Some(px(11.0)),
                     color: Some(col(TEXT)),
                     ..Default::default()
-                }) { "Today at 3:42 PM".to_string() }
+                }) { full.clone() }
             } else {
                 text(style = StyleRules {
                     font_size: Some(px(11.0)),
                     color: Some(col(TEXT)),
                     ..Default::default()
-                }) { "5 minutes ago".to_string() }
+                }) { when.clone() }
             }
         }
     }

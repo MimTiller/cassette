@@ -25,7 +25,7 @@
 //!   (lowered to the `when` primitive). `StyleRules` is not `Copy`, so its
 //!   style is written inline in `style = …` (fresh per evaluation).
 
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{borderless_input, col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
     StyleRules,
@@ -94,7 +94,7 @@ pub fn InviteLinkDisplay(code: String) -> Element {
                     border_top_right_radius: Some(px(8.0)),
                     border_bottom_left_radius: Some(px(8.0)),
                     border_bottom_right_radius: Some(px(8.0)),
-                    ..Default::default()
+                    ..borderless_input()
                 },
             )
             button(

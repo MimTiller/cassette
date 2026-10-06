@@ -30,7 +30,7 @@
 //!   counter sits in a right-aligned row `view` (`justify_content: FlexEnd`, a
 //!   variant confirmed in-tree) so it reads like Discord's composer counter.
 
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{borderless_input, col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, StyleRules,
 };
@@ -85,7 +85,7 @@ pub fn CharCounter() -> Element {
         border_top_right_radius: Some(px(6.0)),
         border_bottom_left_radius: Some(px(6.0)),
         border_bottom_right_radius: Some(px(6.0)),
-        ..Default::default()
+        ..borderless_input()
     };
 
     ui! {

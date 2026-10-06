@@ -1,32 +1,31 @@
-//! `pin_confirm_toast` — a self-contained "message pinned" toast for the
-//! Discord clone. A small banner that renders only while a local `visible`
-//! boolean signal is `true` (hardcoded to start `true` for now), showing the
-//! text `"Message pinned!"` with a close "x" button that sets `visible` to
-//! `false`, dismissing the banner.
+//! `pin_confirm_toast` — a "message pinned" toast for the Discord clone. A
+//! small banner that renders only while the caller-supplied `visible` signal
+//! is `true`, showing the text `"Message pinned!"` with a close "x" button
+//! that clears the same `visible` signal, dismissing the banner.
 //!
-//! Everything is hardcoded local state — no backend call, no props, no wiring
-//! into any screen yet. Declared in `lib.rs` so it compiles as part of the
-//! crate, but referenced by nothing (the same shape `welcome_banner` /
-//! `jump_to_bottom_button` ship in).
+//! The caller (`app.rs`) shows it by setting `visible` true (a "Pin message"
+//! tap from the message action bar's overflow menu) and auto-dismisses it a
+//! short while later (`after_ms_detached`); the "x" is the manual dismiss.
+//! The toast is `Position::Absolute` at `top: 16 / right: 16` so it floats in
+//! the top-right corner of the main view while visible, and collapses to
+//! nothing (the reactive branch unmounts) the moment `visible` is cleared.
 //!
-//! Idioms, each verified against this crate's `components/welcome_banner.rs`:
-//! - styles are plain `StyleRules` via the `style_helpers` `px` / `col`
-//!   constructors (one static pass, no live style engine);
-//! - the banner-vs-nothing swap is a node-level reactive
-//!   `if visible.get() { … }` inside `ui!` — the `if` condition reads a
-//!   signal (`.get()`), so it lowers to the `when` primitive (mounts the
-//!   banner while visible, unmounts it the moment the "x" sets it false).
-//!   `StyleRules` is not `Copy`, so every style is written INLINE (created
-//!   fresh per evaluation, never captured across the `when` boundary);
+//! Idioms, each verified against this crate's `components/welcome_banner.rs` /
+//! `app.rs` (`emoji_popover` / `create_server_modal`):
+//! - the show/hide is a reactive `if visible.get() {…}` inside `ui!` — the
+//!   `if` condition reads a signal (`.get()`), so it lowers to the `when`
+//!   primitive (mounts the banner while visible, unmounts it the moment
+//!   `visible` is cleared). `StyleRules` is not `Copy`, so every style is
+//!   written INLINE (created fresh per evaluation, never captured across the
+//!   `when` boundary);
 //! - the close "x" is a `view` + `.on_touch(|ev| …)` box with the
-//!   `TouchPhase::Ended` guard — the app's standard click pattern (the
-//!   runtime's `button` helper takes a fixed `label` prop, which doesn't fit
-//!   a small glyph tap target).
-
+//!   `TouchPhase::Ended` guard — the app's standard click pattern. `visible`
+//!   is `Copy` (`Signal<bool>`), so the `move` handler captures a copy of the
+//!   same signal the branch reads and clears it — no callback prop needed.
 use crate::style_helpers::{col, px};
 use runtime_core::{
-    component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, Position,
-    StyleRules, TouchPhase, TouchResponse,
+    ui, AlignItems, Element, FlexDirection, JustifyContent, Position, Signal, StyleRules,
+    TouchPhase, TouchResponse,
 };
 
 // Discord dark palette — kept local so the component is self-contained.
@@ -39,23 +38,22 @@ const TEXT_MUTED: &str = "#949ba4"; // close "x" glyph
 const TOAST_TEXT: &str = "Message pinned!";
 
 /// The "message pinned" toast. Renders the `"Message pinned!"` banner while
-/// the local `visible` signal is `true` (hardcoded to start `true`); tapping
-/// the close "x" sets `visible` to `false`, which unmounts the banner.
-#[component]
-#[allow(non_snake_case)]
-pub fn PinConfirmToast() -> Element {
-    // Hardcoded to start `true` so the banner is visible on mount. Flipped
-    // to `false` by the close "x" below. No backend call.
-    let visible = signal(true);
-
+/// `visible` is `true`; tapping the close "x" clears `visible` (manual
+/// dismiss). Absolutely positioned at the top-right by the caller's
+/// positioning ancestor.
+pub fn pin_confirm_toast(visible: Signal<bool>) -> Element {
+    // `visible` is `Copy`; both the branch condition and the "x" handler read
+    // copies of the same underlying signal.
+    let visible_chk = visible;
     ui! {
-        // Reactive branch: `if visible.get() {…}` lowers to a `when` that
-        // mounts the banner while visible and unmounts it the moment the "x"
-        // is tapped. A top-level `if` with no wrapping node is a legal `ui!`
-        // tree (the grammar is `ui! := node*`), so the fragment root holds —
-        // same shape `welcome_banner` uses for its banner.
-        if visible.get() {
+        // Reactive branch: `if visible_chk.get() {…}` lowers to a `when` that
+        // mounts the banner while visible and unmounts it the moment `visible`
+        // is cleared (either the "x" or the caller's auto-dismiss timer).
+        if visible_chk.get() {
             view(style = StyleRules {
+                position: Some(Position::Absolute),
+                top: Some(px(16.0)),
+                right: Some(px(16.0)),
                 width: Some(px(320.0)),
                 flex_direction: Some(FlexDirection::Row),
                 align_items: Some(AlignItems::Center),
@@ -80,10 +78,10 @@ pub fn PinConfirmToast() -> Element {
                     ..Default::default()
                 }) { TOAST_TEXT.to_string() }
 
-                // The close "x": a 24x24 tap target. `.on_touch` sets
-                // `visible` to `false` on `TouchPhase::Ended` — the app's
-                // standard click pattern. Style built inline (nothing
-                // captured across the `when` boundary).
+                // The close "x": a 24x24 tap target. `.on_touch` clears
+                // `visible` on `TouchPhase::Ended` — the app's standard click
+                // pattern. `visible` is `Copy`, so the `move` handler captures
+                // a copy of the same signal the branch reads.
                 view(style = StyleRules {
                     width: Some(px(24.0)),
                     height: Some(px(24.0)),
