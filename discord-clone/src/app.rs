@@ -51,6 +51,13 @@ use crate::member_count_display::member_count_display;
 use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
 use crate::ban_list_row::BanListRow;
+use crate::featured_server_banner::FeaturedServerBanner;
+use crate::icon_change_confirm::IconChangeConfirm;
+use crate::ban_reason_input::BanReasonInput;
+use crate::attachment_preview_card::AttachmentPreviewCard;
+use crate::server_icon_upload_placeholder::ServerIconUploadPlaceholder;
+use crate::category_header::CategoryHeader;
+use crate::server_region_selector::ServerRegionSelector;
 use crate::timeout_duration_picker::TimeoutDurationPicker;
 use crate::permission_override_row::PermissionOverrideRow;
 use crate::member_role_list::MemberRoleList;
@@ -3689,6 +3696,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let create_el = ui! {
         view {
             { create_modal_el }
+            ServerIconUploadPlaceholder()
+            ServerRegionSelector()
         }
     };
 
@@ -3887,6 +3896,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             })
             server_stats_card(512.into(), 48.into(), 1204.into())
             ServerEventCard()
+            FeaturedServerBanner()
             server_discovery_card()
             server_folder_group()
             server_template_card()
@@ -4321,8 +4331,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // uppercase header, its text-channel rows, then its voice rows.
             for cat in server.categories {
                 let cat_label = cat.title.to_string();
-                let cat_style = cat_style.clone();
-                rows.push(ui! { text(style = cat_style) { cat_label } });
+                rows.push(ui! { CategoryHeader(title = cat_label, collapsed = signal(false)) });
                 for c in cat.text {
                     let active = channel;
                     // Discord's channel rows are compact (~34px) with a
@@ -5390,6 +5399,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 SettingsTabBar()
                 SetupChecklistDemo()
                 EmojiUploadSlot()
+                IconChangeConfirm()
                 rules_accept_checkbox()
             }
         }
@@ -5785,6 +5795,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         text(style = section_label_style.clone()) { "Banned members".to_string() }
         BanListRow()
         BanListRow()
+        BanReasonInput()
         text(style = section_label_style.clone()) { "Timeout duration".to_string() }
         TimeoutDurationPicker()
         text(style = section_label_style.clone()) { "Role permissions".to_string() }
@@ -5837,6 +5848,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     ..Default::default()
                 }) {
                     attach_chip
+                    AttachmentPreviewCard()
                     emoji_popover
                     ac_el
                     SlashCommandDropdown()
