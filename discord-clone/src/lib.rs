@@ -51,8 +51,6 @@ mod translate_toggle;
 mod permission_override_row;
 #[path = "components/server_icon_fallback.rs"]
 mod server_icon_fallback;
-#[path = "components/message_rating.rs"]
-mod message_rating;
 #[path = "components/message_action_bar.rs"]
 mod message_action_bar;
 #[path = "components/server_event_card.rs"]
@@ -89,10 +87,6 @@ mod code_block;
 mod user_bio_block;
 #[path = "components/server_tag_chips.rs"]
 mod server_tag_chips;
-#[path = "components/reaction_summary.rs"]
-mod reaction_summary;
-#[path = "components/setup_checklist_item.rs"]
-mod setup_checklist_item;
 #[path = "components/dm_request_card.rs"]
 mod dm_request_card;
 #[path = "components/icon_change_confirm.rs"]
@@ -141,8 +135,6 @@ mod custom_status_input;
 mod ban_list_row;
 #[path = "components/blocked_user_row.rs"]
 mod blocked_user_row;
-#[path = "components/role_badge.rs"]
-mod role_badge;
 #[path = "components/screen_share_indicator.rs"]
 mod screen_share_indicator;
 #[path = "components/delete_message_confirm.rs"]
@@ -193,8 +185,6 @@ mod slowmode_indicator;
 mod message_search_bar;
 #[path = "components/server_boost_badge.rs"]
 mod server_boost_badge;
-#[path = "components/dm_notification_badge.rs"]
-mod dm_notification_badge;
 #[path = "components/member_count_display.rs"]
 mod member_count_display;
 #[path = "components/slash_command_dropdown.rs"]

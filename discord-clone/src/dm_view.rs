@@ -35,7 +35,7 @@ use runtime_core::{
 use crate::app::{format_when, message_row};
 use crate::data::{DMS, USER, find_dm, now_secs};
 use crate::read_receipt_indicator::ReadReceiptIndicator;
-use crate::style_helpers::{borderless_input, col, px};
+use crate::style_helpers::{borderless_input, col, px, section_label};
 
 // --- palette -----------------------------------------------------------------
 // The same Discord dark palette as `app.rs`, kept local so the module is
@@ -92,10 +92,7 @@ pub fn dm_list(active: Signal<u32>) -> Element {
         padding_bottom: Some(px(6.0)),
         padding_left: Some(px(16.0)),
         padding_right: Some(px(16.0)),
-        font_size: Some(px(11.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT_MUTED)),
-        ..Default::default()
+        ..section_label()
     };
     let section_label = "Direct Messages".to_string();
 

@@ -36,7 +36,7 @@ use runtime_core::{
     JustifyContent, Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
-use crate::style_helpers::{borderless_input, col, pct, px};
+use crate::style_helpers::{borderless_input, col, pct, px, section_label};
 use crate::audit_log_row::AuditLogRow;
 
 // Discord dark palette (kept local so the component is self-contained).
@@ -159,14 +159,7 @@ pub fn ServerSettingsPanel(
         gap: Some(px(6.0)),
         ..Default::default()
     };
-    let label_style = StyleRules {
-        font_size: Some(px(11.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT_MUTED)),
-        text_transform: Some(runtime_core::TextTransform::Uppercase),
-        letter_spacing: Some(runtime_core::Tokenized::Literal(0.5)),
-        ..Default::default()
-    };
+    let label_style = section_label();
     let input_style = StyleRules {
         height: Some(px(36.0)),
         background: Some(col(INPUT)),
