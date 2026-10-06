@@ -3,7 +3,7 @@
 
 use std::rc::Rc;
 
-use runtime_core::{Color, Length, StyleRules, StyleSheet, Tokenized};
+use runtime_core::{Color, FontWeight, Length, StyleRules, StyleSheet, TextTransform, Tokenized};
 
 /// A named static sheet. The identity feeds `premint_as`, so every
 /// welcome style ships as build-time CSS under `--premint` instead of
@@ -64,6 +64,30 @@ pub fn borderless_input() -> StyleRules {
         border_right_width: Some(Tokenized::Literal(0.0)),
         border_bottom_width: Some(Tokenized::Literal(0.0)),
         border_left_width: Some(Tokenized::Literal(0.0)),
+        ..Default::default()
+    }
+}
+
+/// The app's single canonical **section-label** style — the small, uppercase,
+/// muted heading that labels a group of rows or controls inside a panel
+/// ("Banned members", "Server name", "TEXT CHANNELS", "Direct Messages", the
+/// member-panel status group headers, …).
+///
+/// Real Discord renders these uniformly: 11px, semibold, muted, uppercased,
+/// with a slight (+0.5px) letter-spacing. This helper is the one place that
+/// treatment lives so every panel built by a different author renders the same
+/// scale — instead of the four ad-hoc `StyleRules` blocks this used to be
+/// (12px no-uppercase in the moderation panel, 11px no-letter-spacing in the
+/// category / DM / member headers, 10px −0.5 in the live-member header).
+/// Callers that need extra spacing keep their own `margin_*`/`padding_*` on
+/// top of this; the label's TYPE is always the same.
+pub fn section_label() -> StyleRules {
+    StyleRules {
+        font_size: Some(px(11.0)),
+        font_weight: Some(FontWeight::SemiBold),
+        color: Some(col("#949ba4")),
+        text_transform: Some(TextTransform::Uppercase),
+        letter_spacing: Some(Tokenized::Literal(0.5)),
         ..Default::default()
     }
 }

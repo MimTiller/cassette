@@ -638,7 +638,7 @@ pub static SERVERS: &[Server] = &[
                     TextChannel {
                         id: 101,
                         name: "general",
-                        topic: "Lounge — talk about anything, Rust strongly encouraged",
+                        topic: "General discussion — be kind to each other!",
                         slowmode_secs: None,
                         unread: 3,
                         mentions: 0,

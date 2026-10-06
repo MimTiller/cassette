@@ -31,13 +31,13 @@ use std::rc::Rc;
 
 use runtime_core::{
     AlignItems, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent, KeyOutcome,
-    Overflow, Signal, StyleRules, TextTransform, Tokenized, TouchPhase, TouchResponse, signal,
+    Overflow, Signal, StyleRules, Tokenized, TouchPhase, TouchResponse, signal,
     switch, ui,
 };
 
 use crate::app::{format_when, message_row};
 use crate::dms::{self, Dm};
-use crate::style_helpers::{borderless_input, col, pct, px};
+use crate::style_helpers::{borderless_input, col, pct, px, section_label};
 
 // --- palette -----------------------------------------------------------------
 // The same Discord dark palette as `app.rs` / `dm_view.rs`, kept local so the
@@ -363,11 +363,7 @@ fn live_dm_list(
         padding_bottom: Some(px(6.0)),
         padding_left: Some(px(16.0)),
         padding_right: Some(px(16.0)),
-        font_size: Some(px(11.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT_MUTED)),
-        text_transform: Some(TextTransform::Uppercase),
-        ..Default::default()
+        ..section_label()
     };
 
     let list = switch(

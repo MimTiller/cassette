@@ -97,7 +97,7 @@ use crate::notification_settings::NotificationSettings;
 use crate::keyboard_shortcuts_overlay::keyboard_shortcuts_overlay;
 use crate::profile_settings::profile_settings;
 use crate::dm_view::dm_screen;
-use crate::style_helpers::{borderless_input, col, pct, px};
+use crate::style_helpers::{borderless_input, col, pct, px, section_label};
 use crate::join_modal::JoinServerModal;
 use crate::create_server_modal::create_server_modal;
 use crate::create_channel_modal::CreateChannelModal;
@@ -1816,11 +1816,7 @@ fn member_panel(
             padding_top: Some(px(10.0)),
             padding_bottom: Some(px(2.0)),
             padding_left: Some(px(12.0)),
-            font_size: Some(px(11.0)),
-            font_weight: Some(FontWeight::SemiBold),
-            color: Some(col(TEXT_MUTED)),
-            text_transform: Some(TextTransform::Uppercase),
-            ..Default::default()
+            ..section_label()
         };
         body.push(ui! { text(style = group_style) { group_label } });
         for m in group.iter() {
@@ -2949,12 +2945,7 @@ fn live_member_panel(
         padding_bottom: Some(px(6.0)),
         padding_left: Some(px(12.0)),
         padding_right: Some(px(12.0)),
-        font_size: Some(px(10.0)),
-        letter_spacing: Some(Tokenized::Literal(-0.5)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT_MUTED)),
-        text_transform: Some(TextTransform::Uppercase),
-        ..Default::default()
+        ..section_label()
     };
     let name_style = StyleRules {
         font_size: Some(px(14.0)),
@@ -4925,11 +4916,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         padding_bottom: Some(px(4.0)),
         padding_left: Some(px(16.0)),
         padding_right: Some(px(16.0)),
-        font_size: Some(px(11.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT_MUTED)),
-        text_transform: Some(TextTransform::Uppercase),
-        ..Default::default()
+        ..section_label()
     };
 
     // Profile panel toggle, cloned so the `move` switch closure below can
@@ -6948,14 +6935,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // stacks the eight moderation components, each with a section label; every
     // row is hardcoded mock data, no backend call.
     let moderation_close = moderation_mode.clone();
-    let section_label_style = StyleRules {
-        font_size: Some(px(12.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT_MUTED)),
-        margin_top: Some(px(16.0)),
-        margin_bottom: Some(px(6.0)),
-        ..Default::default()
-    };
+    let section_label_style = section_label();
     let moderation_header = ui! {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Row),
