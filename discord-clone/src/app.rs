@@ -4901,6 +4901,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // hover colour, and the active colour when selected — the
                     // row itself stays transparent otherwise.
                     let hovered = signal(false);
+                    // Per-channel mute state, owned by the row (the same
+                    // per-row `Signal` ownership as `hovered`). Starts unmuted;
+                    // a press on the hover-revealed icon below flips it. It
+                    // survives a sidebar rebuild within a selection (the
+                    // `switch` key doesn't include it), which is the desired
+                    // "my mute choice persists" behavior.
+                    let muted = signal(false);
                     let row_style = move || {
                         let on = active.get() == c.id;
                         StyleRules {
@@ -4952,6 +4959,20 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                 .color(|| Color::from(TEXT_MUTED))
                                 .size(14.0)
                             text(style = label_style) { name }
+                            // Hover-revealed per-channel mute control. A `when`
+                            // gated on `hovered || muted`: the icon appears only
+                            // while the row is hovered, OR while the channel is
+                            // already muted (the persistent red glyph is the
+                            // mute affordance — Discord keeps a muted channel's
+                            // marker visible, not just on hover). A press on it
+                            // flips `muted`; the icon's own `on_touch` CONSUMEs
+                            // so the row's channel-select `on_touch` (below) is
+                            // not also fired. Deliberate per-row OPTION, not a
+                            // persistent widget on every row (the graveyard
+                            // anti-pattern).
+                            if hovered.get() || muted.get() {
+                                crate::mute_channel_toggle::MuteChannelToggle(muted)
+                            }
                             // The unread pill on the row's right edge, vertically
                             // centered in the 34px row. Mock count per channel;
                             // the real value comes from the gateway later.
