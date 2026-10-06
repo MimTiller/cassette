@@ -963,8 +963,6 @@ fn member_row(m: &Member) -> Element {
             text(style = name_style) { m.name.to_string() }
 
             RoleBadge()
-
-            WelcomeBanner()
                     ServerIconFallback()
             AfkTimerDisplay()
             ActivityCard()
@@ -4653,14 +4651,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                 .size(14.0)
                             text(style = label_style) { name }
                             MuteChannelToggle()
-                            SlowmodeIndicator()
-                            ChannelTopicBanner()
-                            NotificationPermissionPrompt()
     TransferOwnershipConfirm()
 
                             AuditLogRow()
-
-                            ReplyPreviewBar()
                             // The unread pill on the row's right edge, vertically
                             // centered in the 34px row. Mock count per channel;
                             // the real value comes from the gateway later.
@@ -6081,8 +6074,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // left/right resizes `sidebar_width` (right = grow, so sign `+1`).
             resize_handle(sidebar_width, 1.0, "resize-sidebar")
             view(style = main_style) {
+                NotificationPermissionPrompt()
                 header
+                ChannelTopicBanner()
                 scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {
+    WelcomeBanner()
     JumpToBottomButton()
     sent_messages
 }
@@ -6099,6 +6095,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     attach_chip
                     emoji_popover
                     ac_el
+                    ReplyPreviewBar()
+                    SlowmodeIndicator()
                     view(style = composer_style) {
                         view(style = icon_button_style.clone()) {
                             icon(PLUS).color(|| Color::from(TEXT_MUTED)).size(16.0)
