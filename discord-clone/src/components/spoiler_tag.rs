@@ -1,15 +1,18 @@
-//! `spoiler_tag` — a self-contained inline spoiler for the Discord clone. It
-//! renders one hardcoded local text string (`SPOILER_TEXT` below) with the
-//! text visible underneath a dark, blurred-out overlay by default. Clicking it
-//! toggles a local `revealed` boolean signal (hardcoded `false` at start);
-//! while it is `false` the overlay covers the text so it reads as a blurred /
-//! blacked-out block, and while it is `true` the overlay unmounts, revealing
-//! the real text.
+//! `spoiler_tag` — an inline spoiler for the Discord clone. It renders the
+//! text from its `text` prop (hardcoded default `"the twist was all along"`,
+//! so the component also compiles standalone) with the text visible
+//! underneath a dark, blurred-out overlay by default. Clicking it toggles a
+//! local `revealed` boolean signal (hardcoded `false` at start); while it is
+//! `false` the overlay covers the text so it reads as a blurred / blacked-out
+//! block, and while it is `true` the overlay unmounts, revealing the real
+//! text.
 //!
-//! Everything is hardcoded local state — no backend call, no props, no wiring
-//! into any screen yet. Declared in `lib.rs` so it compiles as part of the
-//! crate, but referenced by nothing (the same shape `spoiler_image_placeholder`
-//! / `verified_badge` / `jump_to_bottom_button` ship in).
+//! It is wired into `app.rs` `message_body`: a message body is split on
+//! Discord's `||…||` spoiler markers, and each marked run renders as one
+//! `SpoilerTag` (the plain runs stay inline text). Content-dependent — only
+//! the one seed message carrying a `||…||` marker shows a spoiler; the rest
+//! render a single plain run. A deliberate single instance, not a per-row
+//! widget.
 //!
 //! Idioms, each verified against this crate's siblings:
 //! - styles are plain `StyleRules` via the `style_helpers` `px` / `pct` / `col`
@@ -46,22 +49,26 @@ use runtime_core::{
     PointerEvents, Position, StyleRules, Tokenized, TouchPhase, TouchResponse,
 };
 
-// The hardcoded spoiler body — local only, not a prop (the spec calls for a
-// hardcoded local string).
-const SPOILER_TEXT: &str = "the twist was all along";
-
 // Palette, kept local so the component is self-contained.
 const TEXT: &str = "#f2f3f5"; // the real text (Discord near-white)
 const OVERLAY: &str = "#1e1f22"; // the veil (Discord darkest surface)
 const RADIUS: f32 = 6.0;
 
-/// The inline spoiler tag. Renders `SPOILER_TEXT` under a dark blurred-out
+/// The inline spoiler tag. Renders the `text` prop (the spoiler body the
+/// caller extracts from a message's `||…||` marker) under a dark blurred-out
 /// overlay by default; clicking toggles the local `revealed` signal, which
 /// unmounts the overlay and reveals the real text (clicking again toggles it
-/// back). No props, no backend.
+/// back). `text` arrives as a `String` prop with a hardcoded default so the
+/// component still compiles standalone; no backend.
 #[component]
 #[allow(non_snake_case)]
-pub fn SpoilerTag() -> Element {
+pub fn SpoilerTag(
+    #[prop(default = "the twist was all along")] text: String,
+) -> Element {
+    // The spoiler body, read once from the prop. The prop is never `.set`, so
+    // it is a static value (the `RoleBadge` / `ChannelTopicBanner` idiom).
+    let body = text.get();
+
     // Whether the spoiler has been revealed. Local only — starts `false`, so
     // the tag ships covered.
     let revealed = signal(false);
@@ -80,9 +87,12 @@ pub fn SpoilerTag() -> Element {
             overflow: Some(Overflow::Hidden),
             ..Default::default()
         }) {
-            // The real text. A plain string literal, so it bakes to
-            // `TextSource::Static` (no reactive machinery) — always mounted,
-            // only ever covered by the overlay above.
+            // The real text. Read from the `text` prop into a static body; a
+            // `body.clone()` (owned `String`, borrowed — never moves the
+            // non-`Copy` local out of the reactive branch's `Fn` render
+            // closure), so it bakes to `TextSource::Static` (no reactive
+            // machinery) — always mounted, only ever covered by the overlay
+            // above.
             text(style = StyleRules {
                 font_size: Some(px(15.0)),
                 color: Some(col(TEXT)),
@@ -95,7 +105,7 @@ pub fn SpoilerTag() -> Element {
                 border_bottom_left_radius: Some(px(RADIUS)),
                 border_bottom_right_radius: Some(px(RADIUS)),
                 ..Default::default()
-            }) { SPOILER_TEXT.to_string() }
+            }) { body.clone() }
 
             // Reactive branch: `if revealed.get() {…}` lowers to a `when` whose
             // render is an `Fn` closure. `StyleRules` is not `Copy`, so the

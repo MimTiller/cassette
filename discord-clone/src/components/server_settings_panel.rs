@@ -37,6 +37,7 @@ use runtime_core::{
 };
 
 use crate::style_helpers::{borderless_input, col, pct, px};
+use crate::audit_log_row::AuditLogRow;
 
 // Discord dark palette (kept local so the component is self-contained).
 const CARD: &str = "#2b2d31";
@@ -597,6 +598,21 @@ pub fn ServerSettingsPanel(
                     view {}
                 }
             };
+            // A short, static "Audit Log" section: a few plausible mock server
+            // audit events rendered through `AuditLogRow` (one per event). This
+            // is a deliberate, fixed list in the server-settings card — NOT a
+            // per-row widget spliced into every server/member row (the graveyard
+            // anti-pattern). `AuditLogRow`'s `text` / `timestamp` `String` props
+            // are named-arg call sites (the `#[component]` inline-props idiom),
+            // each baking a static event line + relative timestamp.
+            let audit_el = ui! {
+                view(style = section_style.clone()) {
+                    text(style = label_style.clone()) { "Audit log".to_string() }
+                    AuditLogRow(text = "Alex banned Sam".to_string(), timestamp = "2 hours ago".to_string())
+                    AuditLogRow(text = "Sam changed the server icon".to_string(), timestamp = "5 hours ago".to_string())
+                    AuditLogRow(text = "Rae timed out Juno for 10 minutes".to_string(), timestamp = "1 day ago".to_string())
+                }
+            };
             ui! {
                 view(style = card_style.clone()) {
                     { header }
@@ -604,6 +620,7 @@ pub fn ServerSettingsPanel(
                     { icon_row }
                     { add_row }
                     { transfer_el }
+                    { audit_el }
                     { err_el }
                 }
             }

@@ -1,13 +1,14 @@
-//! `link_embed_preview` — a self-contained "link embed" preview card for the
-//! Discord clone. Renders hardcoded local link-preview strings (a title, a
-//! short description, and a site name) in a bordered card with a colored left
-//! accent bar.
+//! `link_embed_preview` — a "link embed" preview card for the Discord clone.
+//! Renders the link's site name, title, and description in a bordered card
+//! with a colored left accent bar.
 //!
-//! Everything is hardcoded local state — no backend call, no props, no wiring
-//! into any screen yet. Declared in `lib.rs` so it compiles as part of the
-//! crate, but referenced by nothing (the same shape `activity_card` /
-//! `server_discovery_card` / `idle_timer_badge` / `server_folder_group` /
-//! `profile_settings` ship in).
+//! The three strings are `String` props (hardcoded defaults `example.com` /
+//! `Example Article` / `A short summary here`, so the component also
+//! compiles standalone). It is wired into `app.rs` `message_row`: a message
+//! whose body contains a `http(s)://…` URL renders one `LinkEmbedPreview`
+//! below its body (the host + title are parsed from the URL via
+//! `link_preview_props`; a URL-less body renders no card). A deliberate
+//! single instance on the link-bearing seed message — not a per-row widget.
 //!
 //! Idioms, each verified against this crate's `app.rs` /
 //! `profile_settings.rs` / `components/activity_card.rs`:
@@ -35,19 +36,26 @@ const ACCENT: &str = "#5865f2";
 const TEXT: &str = "#f2f3f5";
 const TEXT_MUTED: &str = "#949ba4";
 
-/// The hardcoded link title (no props for now).
-const TITLE: &str = "Example Article";
-/// The hardcoded link description.
-const DESCRIPTION: &str = "A short summary here";
-/// The hardcoded site name shown as the card's top meta line.
-const SITE_NAME: &str = "example.com";
-
 /// The link-embed preview card. A bordered card with a colored left accent
-/// bar, containing the hardcoded site name (muted meta) above the title
-/// (primary, semibold) above the description (muted). Purely local — renders
-/// the hardcoded strings above.
+/// bar, containing the site name (muted meta) above the title (primary,
+/// semibold) above the description (muted). The three strings arrive as
+/// `String` props (with hardcoded defaults so the component still compiles
+/// standalone — the `RoleBadge` idiom); no backend, no reactivity (each prop
+/// is read once at build and baked to static text).
 #[component]
-pub fn LinkEmbedPreview() -> Element {
+#[allow(non_snake_case)]
+pub fn LinkEmbedPreview(
+    #[prop(default = "example.com")] site_name: String,
+    #[prop(default = "Example Article")] title: String,
+    #[prop(default = "A short summary here")] description: String,
+) -> Element {
+    // The three lines are static props (never `.set`), so read them once at
+    // build into owned `String`s and bake them as static text bodies. Cloned
+    // (borrowed) at each use so the non-`Copy` locals are never moved out of
+    // the render tree — the `ChannelTopicBanner` idiom.
+    let site = site_name.get();
+    let head = title.get();
+    let desc = description.get();
     let root_style = StyleRules {
         flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Stretch),
@@ -86,20 +94,20 @@ pub fn LinkEmbedPreview() -> Element {
                     font_size: Some(px(12.0)),
                     color: Some(col(TEXT_MUTED)),
                     ..Default::default()
-                }) { SITE_NAME.to_string() }
+                }) { site.clone() }
                 text(style = StyleRules {
                     font_size: Some(px(15.0)),
                     font_weight: Some(FontWeight::SemiBold),
                     color: Some(col(TEXT)),
                     ..Default::default()
-                }) { TITLE.to_string() }
+                }) { head.clone() }
                 // Written INLINE in `style = …` because `StyleRules` is not
                 // `Copy` (a shared `let` would be moved by the lines above).
                 text(style = StyleRules {
                     font_size: Some(px(13.0)),
                     color: Some(col(TEXT_MUTED)),
                     ..Default::default()
-                }) { DESCRIPTION.to_string() }
+                }) { desc.clone() }
             }
         }
     }

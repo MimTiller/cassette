@@ -83,6 +83,7 @@ use crate::screen_share_indicator::ScreenShareIndicator;
 use crate::two_factor_toggle::TwoFactorToggle;
 
 use crate::send_failed_indicator::SendFailedIndicator;
+use crate::slowmode_indicator::SlowmodeIndicator;
 use crate::latency_badge::LatencyBadge;
 use crate::jump_to_bottom_button::JumpToBottomButton;
 use crate::afk_timer_display::AfkTimerDisplay;
@@ -119,7 +120,6 @@ use crate::nickname_edit_field::NicknameEditField;
 use crate::custom_status_input::CustomStatusInput;
 use crate::notification_permission_prompt::NotificationPermissionPrompt;
 use crate::channel_topic_banner::ChannelTopicBanner;
-use crate::slowmode_indicator::SlowmodeIndicator;
 use crate::char_counter::CharCounter;
 use crate::kick_confirm_dialog::KickConfirmDialog;
 use crate::delete_message_confirm::DeleteMessageConfirm;
@@ -298,6 +298,163 @@ pub(crate) fn format_full_when(unix_secs: i64) -> String {
 
 // --- small reusable rows -----------------------------------------------------
 
+/// The inline content of a message body, split on Discord spoiler markers.
+/// Discord marks spoiler text with `||…||`; everything between a pair of
+/// `||` is rendered through `SpoilerTag` (the blurred, click-to-reveal tag)
+/// while the rest renders as plain text. The split runs are laid out in a
+/// `flex_direction: Row` + `flex_wrap: Wrap` container so an inline spoiler
+/// sits on the same line as the surrounding words and wraps like the rest of
+/// the body. A body with no `||…||` marker renders exactly as one plain text
+/// run (the previous behavior), so this is a content-dependent upgrade, not an
+/// unconditional per-row widget.
+fn message_body(body: &str) -> Element {
+    // Split the body into `(is_spoiler, text)` runs. A `||…||` pair becomes a
+    // spoiler run; the surrounding slices become plain runs. We walk the body
+    // by finding each marker pair in turn so the runs stay in document order.
+    let mut runs: Vec<(bool, String)> = Vec::new();
+    let chars: Vec<char> = body.chars().collect();
+    let len = chars.len();
+    let mut i = 0usize;
+    let mut plain = String::new();
+    while i < len {
+        if i + 1 < len && chars[i] == '|' && chars[i + 1] == '|' {
+            // Opening marker: flush the accumulated plain run, then look for
+            // the closing `||` after it.
+            if !plain.is_empty() {
+                runs.push((false, std::mem::take(&mut plain)));
+            }
+            let start = i + 2;
+            let mut close = None;
+            let mut j = start;
+            while j + 1 < len {
+                if chars[j] == '|' && chars[j + 1] == '|' {
+                    close = Some(j);
+                    break;
+                }
+                j += 1;
+            }
+            match close {
+                Some(c) => {
+                    // Spoiler body is the slice between the two markers.
+                    let inner: String = chars[start..c].iter().collect();
+                    runs.push((true, inner));
+                    i = c + 2;
+                }
+                None => {
+                    // Unmatched marker: treat the `||` as literal text.
+                    plain.push('|');
+                    plain.push('|');
+                    i += 2;
+                }
+            }
+        } else {
+            plain.push(chars[i]);
+            i += 1;
+        }
+    }
+    if !plain.is_empty() {
+        runs.push((false, plain));
+    }
+    if runs.is_empty() {
+        // Empty body: render an empty string (keeps the row shape stable).
+        runs.push((false, String::new()));
+    }
+
+    let runs_el: Vec<Element> = runs
+        .iter()
+        .map(|(is_spoiler, text)| {
+            if *is_spoiler {
+                // The click-to-reveal spoiler. The generated component fn takes
+                // a `Reactive<String>` `text` prop; `String: Into<Reactive<String>>`
+                // (the `From<T> for Reactive<T>` impl), so `…into()` bakes a
+                // static prop. (The `text = …` named-prop form only parses
+                // inside `ui!`; here we call the fn directly, positionally.)
+                ui! {
+                    view(style = StyleRules {
+                        margin_left: Some(px(2.0)),
+                        margin_right: Some(px(2.0)),
+                        ..Default::default()
+                    }) {
+                        { crate::spoiler_tag::SpoilerTag(text.to_string().into()) }
+                    }
+                }
+            } else {
+                // Plain run: an inline text node in the same flow as the
+                // spoilers, so the row stays on one visual line when it fits.
+                ui! {
+                    text(style = StyleRules {
+                        font_size: Some(px(15.0)),
+                        color: Some(col(TEXT)),
+                        ..Default::default()
+                    }) { text.to_string() }
+                }
+            }
+        })
+        .collect();
+
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            flex_wrap: Some(FlexWrap::Wrap),
+            flex_grow: Some(grow(1.0)),
+            ..Default::default()
+        }) { runs_el }
+    }
+}
+
+/// Extract a `LinkEmbedPreview` prop pair `(host, mock_title)` from a message
+/// body that contains a URL-looking string (`http://…` / `https://…`). Returns
+/// `None` for a body with no URL — the caller then renders no preview at all,
+/// so this is a content-dependent upgrade (only messages with a link get a
+/// card), never a per-row widget. The host is parsed straight from the URL;
+/// the title is a small deterministic mock derived from the URL's last path
+/// segment (there is no real fetch), so it varies per message.
+fn link_preview_props(body: &str) -> Option<(String, String)> {
+    // Locate the URL substring: from the scheme to the next whitespace (or end).
+    let s = body
+        .find("http://")
+        .or_else(|| body.find("https://"))?;
+    let e = body[s..]
+        .find(char::is_whitespace)
+        .map(|i| s + i)
+        .unwrap_or(body.len());
+    let url = &body[s..e];
+    // Drop the scheme to get "host[/path…][?query…]".
+    let after = url.splitn(2, "://").nth(1).unwrap_or("");
+    // Host = up to the first `/`, `?`, or `:` (port).
+    let host = after
+        .split(|c| c == '/' || c == '?' || c == ':')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if host.is_empty() {
+        return None;
+    }
+    // Path = everything after the first `/`; the LAST non-empty segment is the
+    // mock title source (title-cased) — for `…/owner/repo/…` that's the
+    // resource name (Discord's card shows the page's own title, and the repo
+    // path is the closest stand-in). `.rev().find` walks from the end, so
+    // trailing query/empty segments are skipped. Falls back to a generic label.
+    let path = after.splitn(2, "/").nth(1).unwrap_or("");
+    let last = path
+        .split('/')
+        .rev()
+        .find(|seg| !seg.trim().is_empty())
+        .unwrap_or("");
+    let title = if last.trim().is_empty() {
+        "Linked page".to_string()
+    } else {
+        let clean = last.trim();
+        let mut chars = clean.chars();
+        match chars.next() {
+            Some(c) => c.to_uppercase().to_string() + chars.as_str(),
+            None => clean.to_string(),
+        }
+    };
+    Some((host, title))
+}
+
 /// One message row: avatar chip, then author + "Today at …" line, then body.
 /// Takes `&str`s so it serves both the static seed data and runtime-authored
 /// messages (the strings are copied into the node, so the returned `Element`
@@ -361,13 +518,15 @@ pub(crate) fn message_row(
         color: Some(col(TEXT)),
         ..Default::default()
     };
-    let body_style = StyleRules {
-        font_size: Some(px(15.0)),
-        color: Some(col(TEXT)),
-        flex_grow: Some(grow(1.0)),
-        ..Default::default()
-    };
     let initial = author.chars().next().unwrap_or(' ').to_string();
+    // Content-dependent link preview: only a body that actually contains a
+    // `http(s)://…` string gets a `LinkEmbedPreview` card rendered below it.
+    // `link_preview_props` returns `None` for a URL-less body, so no card is
+    // rendered for the other rows — this is a deliberate single instance on
+    // the one link-bearing seed message, NOT a per-row widget (the graveyard
+    // anti-pattern). `site_name` + `title` are parsed from the URL; the
+    // description is a small mock line.
+    let link = link_preview_props(body);
     ui! {
         view(style = row_style) {
             view(style = avatar_style) {
@@ -382,8 +541,20 @@ pub(crate) fn message_row(
                     // and the full absolute date/time (`full`) while hovered.
                     crate::message_timestamp_tooltip::message_timestamp_tooltip(when, full)
                 }
-                text(style = body_style) { body.to_string() }
+                // The body, split on `||…||` spoiler markers: plain runs render
+                // as text and each spoiler run as a `SpoilerTag` (blurred,
+                // click-to-reveal). Content-dependent — a marker-less body is a
+                // single plain run (the previous rendering).
+                { message_body(body) }
                 if edited { edited_label() }
+                // The link preview card, only when the body carries a URL.
+                if let Some((host, title)) = &link {
+                    crate::link_embed_preview::LinkEmbedPreview(
+                        host.clone().into(),
+                        title.clone().into(),
+                        "Shared a link — preview shown automatically.".to_string().into(),
+                    )
+                }
             }
         }
     }
@@ -398,19 +569,26 @@ pub(crate) fn message_row(
 // call `message_row` directly and never reach this, so they keep rendering
 // exactly as before (no per-row controls added to a loop that shouldn't have them).
 
-/// One entry of the "more" overflow menu (a tap row). The two real Discord
-/// entries: "Copy text" (a harmless no-op that just closes the menu) and
-/// "Pin message" (shows the `PinConfirmToast`). Kept deliberately minimal.
+/// One entry of the "more" overflow menu (a tap row). The real Discord
+/// entries: "Copy text" (a harmless no-op that just closes the menu),
+/// "Pin message" (shows the `PinConfirmToast`), and "Translate message"
+/// (reveals that message's `TranslateToggle`). Kept deliberately minimal.
 enum MoreMenuAction {
     Pin,
     Copy,
+    Translate,
 }
 
 /// The small overflow menu that the action bar's "more" button opens. Rendered
 /// only while `open` is true (the `switch` primitive, same show/hide idiom as
 /// `MessageActionBar`); it drops just below the bar. `on_pin` shows the pin
-/// toast; both entries close the menu on tap.
-fn message_overflow_menu(open: Signal<bool>, on_pin: Rc<dyn Fn()>) -> Element {
+/// toast; `on_translate` reveals the message's translate control; every entry
+/// closes the menu on tap.
+fn message_overflow_menu(
+    open: Signal<bool>,
+    on_pin: Rc<dyn Fn()>,
+    on_translate: Rc<dyn Fn()>,
+) -> Element {
     switch(
         move || open.get(),
         move |show: &bool| {
@@ -424,7 +602,8 @@ fn message_overflow_menu(open: Signal<bool>, on_pin: Rc<dyn Fn()>) -> Element {
                 };
             }
             let pin = on_pin.clone();
-            let menu_row = |label: &'static str, action: MoreMenuAction, pin: Rc<dyn Fn()>| -> Element {
+            let translate = on_translate.clone();
+            let menu_row = |label: &'static str, action: MoreMenuAction, pin: Rc<dyn Fn()>, translate: Rc<dyn Fn()>| -> Element {
                 let row_style = StyleRules {
                     padding_top: Some(px(8.0)),
                     padding_bottom: Some(px(8.0)),
@@ -441,11 +620,12 @@ fn message_overflow_menu(open: Signal<bool>, on_pin: Rc<dyn Fn()>) -> Element {
                 };
                 let open_c = open;
                 // Each action owns its own handles so the `move` handler can own
-                // them (branch-local `pin` clone + a `Copy` `open` handle).
+                // them (branch-local `pin`/`translate` clones + a `Copy` `open`).
                 let touch = move |ev: &runtime_shared::TouchEvent| {
                     if ev.phase == TouchPhase::Ended {
                         match action {
                             MoreMenuAction::Pin => pin(),
+                            MoreMenuAction::Translate => translate(),
                             MoreMenuAction::Copy => {}
                         }
                         open_c.set(false);
@@ -481,8 +661,9 @@ fn message_overflow_menu(open: Signal<bool>, on_pin: Rc<dyn Fn()>) -> Element {
                     border_left_color: Some(col(BORDER)),
                     ..Default::default()
                 }) {
-                    { menu_row("Copy text", MoreMenuAction::Copy, pin.clone()) }
-                    { menu_row("Pin message", MoreMenuAction::Pin, pin) }
+                    { menu_row("Copy text", MoreMenuAction::Copy, pin.clone(), translate.clone()) }
+                    { menu_row("Pin message", MoreMenuAction::Pin, pin.clone(), translate.clone()) }
+                    { menu_row("Translate message", MoreMenuAction::Translate, pin, translate) }
                 }
             }
         },
@@ -508,6 +689,7 @@ fn message_row_with_actions(
     picker: Signal<Option<(u32, usize)>>,
     reply_ctx: Signal<Option<(String, String)>>,
     pin_visible: Signal<bool>,
+    translate_key: Signal<Option<(u32, usize)>>,
 ) -> Element {
     let hovered = signal(false);
     let menu_open = signal(false);
@@ -555,17 +737,47 @@ fn message_row_with_actions(
         after_ms_detached(2_500, move || pin_d.set(false));
     });
 
+    // "Translate message" (from the overflow menu): reveal this row's
+    // `TranslateToggle` below the message. Content-agnostic — any message can
+    // be translated, so the control is a per-row OPTION (the overflow-menu
+    // entry), not a persistent widget: the toggle card only mounts while this
+    // row's key is the active one. `translate_key` is the shared "which row is
+    // translating" signal (the picker idiom), so opening another row's menu
+    // and dismissing both close it. Re-tapping "Translate message" on the same
+    // row toggles it off.
+    let translate_key_c = translate_key;
+    let my_key = (cid, idx);
+    let on_translate = Rc::new(move || {
+        let k = translate_key_c;
+        k.set(if k.get() == Some(my_key) { None } else { Some(my_key) });
+    });
+
     let bar = crate::message_action_bar::message_action_bar(hovered, on_react, on_reply, on_more);
-    let menu = message_overflow_menu(menu_open, on_pin);
+    let menu = message_overflow_menu(menu_open, on_pin, on_translate);
+
+    // The translate control: `original` is the message body; `translated` is a
+    // mock rendering (this clone has no translation backend — the toggle
+    // demonstrates the reveal/dismiss pattern, and the line visibly swaps).
+    // Constructed via the generated props (`.into()` → `Reactive::Static`);
+    // the card only renders while this row is the active translator, so it is
+    // a deliberate single instance, never spliced into every row.
+    let orig = body.to_string();
+    let trans = format!("Translated (mock): {body}");
 
     ui! {
         view(style = StyleRules {
             position: Some(Position::Relative),
+            flex_direction: Some(FlexDirection::Column),
             ..Default::default()
         }) {
             { base }
             { bar }
             { menu }
+            if translate_key.get() == Some((cid, idx)) {
+                view {
+                    crate::translate_toggle::TranslateToggle(orig.clone().into(), trans.clone().into())
+                }
+            }
         }
         .on_hover(move |on| hovered.set(on))
     }
@@ -2125,6 +2337,9 @@ fn create_server(
         id: chan_id,
         name: "general",
         topic: "",
+        // A freshly created channel has no slowmode yet — `None` keeps the
+        // header's `SlowmodeIndicator` from showing on it.
+        slowmode_secs: None,
         messages: &[],
         unread: 0,
         mentions: 0,
@@ -3811,6 +4026,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // `visible` flag, flashed by the "Pin message" overflow-menu entry.
     let reply_ctx: Signal<Option<(String, String)>> = signal(None);
     let pin_visible: Signal<bool> = signal(false);
+    // The per-message "Translate message" overflow-menu entry reveals a
+    // `TranslateToggle` on ONE row at a time (a deliberate single instance, not
+    // a per-row widget). This shared signal names the active row's
+    // `(channel, list_index)` key — the picker idiom — so opening another
+    // row's menu or re-tapping dismisses it. Owned here next to the other mock
+    // per-app signals; threaded into the mock message list only.
+    let translate_key: Signal<Option<(u32, usize)>> = signal(None);
 
     // --- live (backend) DM state -------------------------------------------
     // Parallel to (and independent of) the mock `dm_*` state above, and to the
@@ -5214,6 +5436,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // hover colour, and the active colour when selected — the
                     // row itself stays transparent otherwise.
                     let hovered = signal(false);
+                    // Per-channel mute state, owned by the row (the same
+                    // per-row `Signal` ownership as `hovered`). Starts unmuted;
+                    // a press on the hover-revealed icon below flips it. It
+                    // survives a sidebar rebuild within a selection (the
+                    // `switch` key doesn't include it), which is the desired
+                    // "my mute choice persists" behavior.
+                    let muted = signal(false);
                     let row_style = move || {
                         let on = active.get() == c.id;
                         StyleRules {
@@ -5265,6 +5494,20 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                 .color(|| Color::from(TEXT_MUTED))
                                 .size(14.0)
                             text(style = label_style) { name }
+                            // Hover-revealed per-channel mute control. A `when`
+                            // gated on `hovered || muted`: the icon appears only
+                            // while the row is hovered, OR while the channel is
+                            // already muted (the persistent red glyph is the
+                            // mute affordance — Discord keeps a muted channel's
+                            // marker visible, not just on hover). A press on it
+                            // flips `muted`; the icon's own `on_touch` CONSUMEs
+                            // so the row's channel-select `on_touch` (below) is
+                            // not also fired. Deliberate per-row OPTION, not a
+                            // persistent widget on every row (the graveyard
+                            // anti-pattern).
+                            if hovered.get() || muted.get() {
+                                crate::mute_channel_toggle::MuteChannelToggle(muted)
+                            }
                             // The unread pill on the row's right edge, vertically
                             // centered in the 34px row. Mock count per channel;
                             // the real value comes from the gateway later.
@@ -5459,6 +5702,39 @@ fn app_shell(authed: Signal<bool>) -> Element {
         },
     );
 
+    // Slowmode indicator for the active channel: a channel-keyed `switch` that
+    // resolves the current channel's `slowmode_secs` (`Option<u32>`) and feeds
+    // it to `SlowmodeIndicator(secs)`. When the active channel has no slowmode
+    // (`None`) — or when on a live channel (backend channels have no slowmode
+    // column yet) — it passes `0`, and the component renders *nothing* (no
+    // pill, no empty node). Only the couple of mock channels with
+    // `slowmode_secs: Some(_)` show the pill. Gated per-channel rather than
+    // unconditional, so the "every channel shows a timer" anti-pattern (the one
+    // that spliced a bare `SlowmodeIndicator()` into the composer column) is
+    // gone. `active_server`/`active_channel` are `Copy` signals, so capturing
+    // them is cheap; the arm re-runs only on a real channel/server change.
+    let slowmode_el = switch(
+        move || (active_server.get(), active_channel.get(), active_live_channel.get()),
+        move |(server_id, channel_id, live_cid): &(u32, u32, Option<i64>)| {
+            // Live channels and channels without slowmode resolve to `0` ->
+            // the indicator renders nothing (the component's own static
+            // `if secs > 0` branch mounts no node for `0`).
+            let secs: u32 = if live_cid.is_some() {
+                0
+            } else {
+                SERVERS
+                    .iter()
+                    .find(|x| x.id == *server_id)
+                    .and_then(|s| s.find_text_channel(*channel_id))
+                    .and_then(|c| c.slowmode_secs)
+                    .unwrap_or(0)
+            };
+            ui! {
+                SlowmodeIndicator(secs = secs)
+            }
+        },
+    );
+
     // Message list — the channel's seed messages plus any sent here this session.
     // `sent_read` is a dedicated clone so this closure and `on_send` don't both
     // `move`-capture the same non-`Copy` `Rc`. The key includes `revision`
@@ -5478,6 +5754,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // its own copies (the action-bar wiring in `message_row_with_actions`).
     let reply_ctx_k = reply_ctx.clone();
     let pin_visible_k = pin_visible.clone();
+    let translate_key_k = translate_key.clone();
     let sent_messages = switch(
         move || (
             active_server.get(),
@@ -5573,6 +5850,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     picker,
                     reply_ctx_k,
                     pin_visible_k,
+                    translate_key_k,
                 ));
                 // Reaction strip under each mock row, keyed by this row's
                 // rendered-list position (seed messages first, so index `i`).
@@ -5598,6 +5876,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     picker,
                     reply_ctx_k,
                     pin_visible_k,
+                    translate_key_k,
                 ));
                 // Sent rows continue the list position after the seed rows, so
                 // their key is `seed_len + i` (see `ReactionMap` doc).
@@ -6848,7 +7127,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     AttachmentPreviewCard()
                     emoji_popover
                     ac_el
-                    SlowmodeIndicator()
+                    // Per-channel slowmode indicator (gated): the channel-keyed
+                    // `slowmode_el` above resolves the active channel's
+                    // `slowmode_secs` and renders the pill only for
+                    // slowmode-enabled channels — nothing for the rest. Same
+                    // home b60 dropped the bare, unconditional
+                    // `SlowmodeIndicator()` into; now it reads real state.
+                    slowmode_el
                     // Composer-area extras (mock, local only): the slash-command
                     // autocomplete dropdown and the forward-message dialog, both
                     // stacked above the composer row. No backend.

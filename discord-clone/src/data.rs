@@ -85,6 +85,14 @@ pub struct TextChannel {
     pub id: u32,
     pub name: &'static str,
     pub topic: &'static str,
+    /// Slowmode cooldown in seconds. `None` = slowmode off (the channel shows
+    /// no `SlowmodeIndicator` at all); `Some(n)` = on, with an `n`-second
+    /// cooldown that the header's indicator displays. Static seed data for
+    /// now — a real value would come from the gateway. Only a couple of the
+    /// mock channels set it, so the indicator is gated per-channel rather than
+    /// unconditional (the "every channel shows a pill" anti-pattern this field
+    /// exists to prevent).
+    pub slowmode_secs: Option<u32>,
     pub messages: &'static [Message],
     /// Mock unread count for the sidebar badge. Static seed data for now —
     /// the real value will come from the gateway; the app clears it locally
@@ -631,6 +639,7 @@ pub static SERVERS: &[Server] = &[
                         id: 101,
                         name: "general",
                         topic: "Lounge — talk about anything, Rust strongly encouraged",
+                        slowmode_secs: None,
                         unread: 3,
                         mentions: 0,
                         messages: &[
@@ -658,6 +667,7 @@ pub static SERVERS: &[Server] = &[
                         id: 102,
                         name: "showcase",
                         topic: "Ship something and tell us about it",
+                        slowmode_secs: Some(30),
                         unread: 0,
                         mentions: 0,
                         messages: &[
@@ -673,12 +683,28 @@ pub static SERVERS: &[Server] = &[
                                 body: "link? I need that energy",
                                 age_secs: 3600 * 7 + 20,
                             },
+                            // Content that warrants two message-formatting widgets
+                            // on a GENUINE, deliberate instance (not a per-row
+                            // splice): the body carries a real URL (so
+                            // `message_row` renders a `LinkEmbedPreview` card
+                            // below it) AND wraps one clause in Discord's
+                            // `||…||` spoiler markers (so `message_body` renders
+                            // that clause as a click-to-reveal `SpoilerTag`).
+                            // No other seed message has a URL or a spoiler, so
+                            // this is the single row that shows both.
+                            Message {
+                                author: "dyno",
+                                color: "#57f287",
+                                body: "here it is: https://github.com/dyno/wasm-forge — and the one gotcha that ate an hour was ||passing the linker flag through the profile section, not the target one|| but it's in the README",
+                                age_secs: 3600 * 7 + 75,
+                            },
                         ],
                     },
                     TextChannel {
                         id: 103,
                         name: "random",
                         topic: "Everything else",
+                        slowmode_secs: None,
                         unread: 1,
                         mentions: 1,
                         messages: &[Message {
@@ -734,6 +760,7 @@ pub static SERVERS: &[Server] = &[
                         id: 201,
                         name: "work-in-progress",
                         topic: "Post renders, get feedback",
+                        slowmode_secs: Some(60),
                         unread: 2,
                         mentions: 0,
                         messages: &[
@@ -755,6 +782,7 @@ pub static SERVERS: &[Server] = &[
                         id: 202,
                         name: "assets",
                         topic: "Share textures, fonts, and sounds",
+                        slowmode_secs: None,
                         unread: 5,
                         mentions: 0,
                         messages: &[Message {
@@ -798,6 +826,7 @@ pub static SERVERS: &[Server] = &[
                     id: 301,
                     name: "trips",
                     topic: "Plan the next outing",
+                    slowmode_secs: None,
                     unread: 0,
                     mentions: 0,
                     messages: &[

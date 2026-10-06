@@ -34,6 +34,7 @@ use runtime_core::{
 
 use crate::app::{format_when, message_row};
 use crate::data::{DMS, USER, find_dm, now_secs};
+use crate::read_receipt_indicator::ReadReceiptIndicator;
 use crate::style_helpers::{borderless_input, col, px};
 
 // --- palette -----------------------------------------------------------------
@@ -418,17 +419,56 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
                     false,
                 ));
             }
-            let mine: Vec<(u32, &'static str, String, i64)> = sent_read.borrow().clone();
-            for (_dmid, author, body, ts) in mine.iter().filter(|(dmid, _, _, _)| *dmid == dm.id) {
+            // The messages the current user sent in this DM this session, in
+            // send order (so the LAST entry is the newest). Collected first so
+            // the loop below can know which one is most recent.
+            let mine: Vec<(u32, &'static str, String, i64)> = sent_read
+                .borrow()
+                .clone()
+                .into_iter()
+                .filter(|(dmid, _, _, _)| *dmid == dm.id)
+                .collect();
+            for (i, (_dmid, author, body, ts)) in mine.iter().enumerate() {
                 let when = format_when(*ts, now);
-                rows.push(message_row(
+                let base = message_row(
                     author,
                     BUTTON,
                     body.as_str(),
                     when,
                     crate::app::format_full_when(*ts),
                     false,
-                ));
+                );
+                // Read receipt: Discord's "seen" double-check is a DM
+                // convention (not a server-channel one), shown on the most
+                // recent message the current user sent. `mine` is in send
+                // order, so `i + 1 == mine.len()` holds exactly for that
+                // newest message — a deliberate SINGLE instance on the newest
+                // sent message, NOT a per-row widget (the graveyard
+                // anti-pattern). The other sent rows render `base` unchanged.
+                if i + 1 == mine.len() {
+                    rows.push(ui! {
+                        view(style = StyleRules {
+                            flex_direction: Some(FlexDirection::Column),
+                            ..Default::default()
+                        }) {
+                            { base }
+                            // Right-aligned, just under the newest sent
+                            // message — Discord's receipt sits at the tail of
+                            // the line. The indicator is self-styled.
+                            view(style = StyleRules {
+                                flex_direction: Some(FlexDirection::Row),
+                                justify_content: Some(JustifyContent::FlexEnd),
+                                padding_top: Some(px(1.0)),
+                                padding_right: Some(px(16.0)),
+                                ..Default::default()
+                            }) {
+                                ReadReceiptIndicator()
+                            }
+                        }
+                    });
+                } else {
+                    rows.push(base);
+                }
             }
             ui! {
                 view(style = StyleRules {
