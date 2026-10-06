@@ -130,6 +130,17 @@ use crate::rename_channel_modal::RenameChannelModal;
 use crate::delete_channel_modal::DeleteChannelModal;
 use crate::discover_servers_modal::discover_servers_modal;
 use crate::typing_indicator::TypingIndicator;
+use crate::invite_link_display::InviteLinkDisplay;
+use crate::invite_expiry_selector::InviteExpirySelector;
+use crate::poll_widget::PollWidget;
+use crate::thread_list_row::ThreadListRow;
+use crate::spoiler_image_placeholder::SpoilerImagePlaceholder;
+use crate::forward_message_dialog::ForwardMessageDialog;
+use crate::slash_command_dropdown::SlashCommandDropdown;
+use crate::settings_tab_bar::SettingsTabBar;
+use crate::setup_checklist_item::SetupChecklistDemo;
+use crate::emoji_upload_slot::EmojiUploadSlot;
+use crate::rules_accept_checkbox::rules_accept_checkbox;
 use crate::nickname_edit_field::NicknameEditField;
 use crate::custom_status_input::CustomStatusInput;
 
@@ -4724,6 +4735,20 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             ..Default::default()
                         }) { rows }
                     }
+                    // Mock thread list near the channel sidebar: a short stack
+                    // of `ThreadListRow`s above the user panel. Local mock
+                    // data, no backend.
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Column),
+                        align_items: Some(AlignItems::Stretch),
+                        padding_top: Some(px(8.0)),
+                        padding_left: Some(px(8.0)),
+                        padding_right: Some(px(8.0)),
+                        ..Default::default()
+                    }) {
+                        ThreadListRow()
+                        ThreadListRow()
+                    }
                     user
                 }
             }
@@ -4931,7 +4956,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 view(style = StyleRules {
                     flex_direction: Some(FlexDirection::Column),
                     ..Default::default()
-                }) { rows }
+                }) { rows PollWidget() SpoilerImagePlaceholder() }
             }
         },
     );
@@ -5653,6 +5678,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 DeleteAccountWarning()
                 BanReasonInput()
                 IconChangeConfirm()
+                SettingsTabBar()
+                SetupChecklistDemo()
+                EmojiUploadSlot()
+                rules_accept_checkbox()
             }
         }
     };
@@ -6023,7 +6052,30 @@ fn app_shell(authed: Signal<bool>) -> Element {
         overflow: Some(Overflow::Hidden),
         ..Default::default()
     };
+    // "Invite People" panel (mock, local only): generate a code via
+    // `invite::generate_invite_code`, build its link via `invite::invite_link`,
+    // render both through `InviteLinkDisplay`, with the `InviteExpirySelector`
+    // alongside. Sits at the top of the Server Moderation panel. No backend.
+    let invite_code = crate::invite::generate_invite_code(active_server.get());
+    let invite_url = crate::invite::invite_link(&invite_code);
+    let invite_expiry = signal(0usize);
+    let invite_panel = ui! {
+        text(style = section_label_style.clone()) { "Invite People".to_string() }
+        // `InviteLinkDisplay` formats `discord.gg/{code}` internally, so it
+        // takes the raw code; the full shareable URL from `invite_link` is
+        // shown on its own line below.
+        InviteLinkDisplay(code = invite_code.clone())
+        text(style = StyleRules {
+            font_size: Some(px(13.0)),
+            color: Some(col(TEXT_MUTED)),
+            padding_left: Some(px(16.0)),
+            padding_right: Some(px(16.0)),
+            ..Default::default()
+        }) { invite_url }
+        InviteExpirySelector(value = invite_expiry)
+    };
     let moderation_el = ui! {
+        invite_panel
         text(style = section_label_style.clone()) { "Banned members".to_string() }
         BanListRow()
         BanListRow()
@@ -6097,6 +6149,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     ac_el
                     ReplyPreviewBar()
                     SlowmodeIndicator()
+                    // Composer-area extras (mock, local only): the slash-command
+                    // autocomplete dropdown and the forward-message dialog, both
+                    // stacked above the composer row. No backend.
+                    SlashCommandDropdown()
+                    ForwardMessageDialog()
                     view(style = composer_style) {
                         view(style = icon_button_style.clone()) {
                             icon(PLUS).color(|| Color::from(TEXT_MUTED)).size(16.0)
