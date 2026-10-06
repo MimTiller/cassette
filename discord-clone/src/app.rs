@@ -32,10 +32,11 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use runtime_core::{
-    after_ms_detached, AlignItems, AlignSelf, Color, Cursor, Element, FlexDirection, FlexWrap,
-    FontFamily, FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow, PanEvent, PanRecognizer,
-    Position, Signal, StyleRules, TextAlign, TextTransform, Tokenized, TouchEvent,
-    TouchPhase, TouchResponse, memo, pan, signal, switch, ui, viewport_size,
+    after_animation_frame, after_ms_detached, AlignItems, AlignSelf, Color, Cursor, Element,
+    FlexDirection, FlexWrap, FontFamily, FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow,
+    PanEvent, PanRecognizer, Position, Ref, ScrollViewHandle, Signal, StyleRules, TextAlign,
+    TextTransform, Tokenized, TouchEvent, TouchPhase, TouchResponse, ViewHandle, memo, pan, signal,
+    switch, ui, viewport_size,
 };
 use runtime_core::icon;
 use icons_lucide::{
@@ -52,13 +53,11 @@ use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
 use crate::ban_list_row::BanListRow;
 use crate::timeout_duration_picker::TimeoutDurationPicker;
-use crate::permission_override_row::PermissionOverrideRow;
 use crate::member_role_list::MemberRoleList;
 use crate::verified_badge::VerifiedBadge;
 use crate::icon_change_confirm::IconChangeConfirm;
 use crate::featured_server_banner::FeaturedServerBanner;
 use crate::ban_reason_input::BanReasonInput;
-use crate::attachment_preview_card::AttachmentPreviewCard;
 use crate::delete_account_warning::DeleteAccountWarning;
 
 use crate::server_boost_badge::ServerBoostBadge;
@@ -107,10 +106,7 @@ use crate::discover_servers_modal::discover_servers_modal;
 use crate::typing_indicator::TypingIndicator;
 use crate::invite_link_display::InviteLinkDisplay;
 use crate::invite_expiry_selector::InviteExpirySelector;
-use crate::poll_widget::PollWidget;
 use crate::thread_list_row::ThreadListRow;
-use crate::spoiler_image_placeholder::SpoilerImagePlaceholder;
-use crate::forward_message_dialog::ForwardMessageDialog;
 use crate::slash_command_dropdown::SlashCommandDropdown;
 use crate::settings_tab_bar::SettingsTabBar;
 use crate::setup_checklist_item::SetupChecklistDemo;
@@ -5881,15 +5877,16 @@ fn app_shell(authed: Signal<bool>) -> Element {
             let mut rows: Vec<Element> = Vec::with_capacity(channel.messages.len());
             for (i, m) in channel.messages.iter().enumerate() {
                 let when = format_when(m.ts_secs(now), now);
-                // Mock seed rows carry no edit state; pass `true` to preserve
-                // their previous always-on "(edited)" placeholder rendering.
+                // Mock seed messages carry no edit state: pass `false` so they
+                // don't show a fake "(edited)" tag (the live path uses
+                // `edited_at.is_some()`).
                 rows.push(message_row_with_actions(
                     m.author,
                     m.color,
                     m.body,
                     when,
                     format_full_when(m.ts_secs(now)),
-                    true,
+                    false,
                     MessageKey::Mock { cid, idx: i },
                     picker,
                     reply_ctx_k,
@@ -5912,14 +5909,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 .collect();
             for (i, (_mcid, author, body, ts)) in mine.iter().enumerate() {
                 let when = format_when(*ts, now);
-                // Own prior sends get the same hover bar as the seed rows.
+                // Own prior sends get the same hover bar as the seed rows. `false`
+                // for edited -- these are freshly composed, never-edited sends.
                 rows.push(message_row_with_actions(
                     author,
                     BUTTON,
                     body.as_str(),
                     when,
                     format_full_when(*ts),
-                    true,
+                    false,
                     MessageKey::Mock { cid, idx: channel.messages.len() + i },
                     picker,
                     reply_ctx_k,
@@ -5939,7 +5937,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 view(style = StyleRules {
                     flex_direction: Some(FlexDirection::Column),
                     ..Default::default()
-                }) { rows PollWidget() SpoilerImagePlaceholder() }
+                }) { rows }
             }
         },
     );
@@ -7083,9 +7081,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         BanReasonInput()
         text(style = section_label_style.clone()) { "Timeout duration".to_string() }
         TimeoutDurationPicker()
-        text(style = section_label_style.clone()) { "Role permissions".to_string() }
-        PermissionOverrideRow()
-        PermissionOverrideRow()
         text(style = section_label_style.clone()) { "Member roles".to_string() }
         MemberRoleList()
         MemberRoleList()
@@ -7113,7 +7108,70 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // to zero size while no member is selected (the same toggle idiom as the
     // other overlay regions above).
     let member_profile_el = member_profile_panel(selected_member.clone());
-
+    // --- "jump to bottom" scroll tracking ---------------------------------
+    // The floating "Jump to bottom" pill only appears while the reader has
+    // scrolled UP away from the newest messages. The `scroll_view`'s `on_scroll`
+    // callback reports the raw offset, so the two heights needed to test
+    // "how far from the bottom?" are read live from bound `ViewHandle`s each
+    // time (the same idiom as the website shell's scroll-spy: `absolute_frame()`
+    // is a Backend-trait primitive, uniform across backends, `None` until the
+    // first layout pass). `show` is a dumb `Signal<bool>` the component renders
+    // against — no derived-height signals to keep in sync.
+    let msg_show_jump: Signal<bool> = signal(false);
+    let msg_scroll_ref: Ref<ScrollViewHandle> = Ref::<ScrollViewHandle>::new();
+    let msg_viewport_ref: Ref<ViewHandle> = Ref::<ViewHandle>::new();
+    let msg_content_ref: Ref<ViewHandle> = Ref::<ViewHandle>::new();
+    // Recompute "away from bottom?" from the live measured sizes. `on_scroll`
+    // only delivers the offset, so read the content column and the scroll
+    // viewport boxes here; both are read on every scroll, which also refreshes
+    // the state after a channel switch (the `when` content rebuild resets the
+    // scroll offset, firing a fresh `on_scroll`). The closure is wrapped in `Rc`
+    // so it can be shared by the `on_scroll` handler and the post-layout nudge
+    // without being moved into both.
+    let msg_recompute_jump: Rc<dyn Fn(f32)> = Rc::new({
+        let show = msg_show_jump;
+        let viewport_ref = msg_viewport_ref;
+        let content_ref = msg_content_ref;
+        move |scroll_y: f32| {
+            let viewport_h = viewport_ref
+                .with(|v| v.absolute_frame().map(|r| r.height))
+                .flatten()
+                .unwrap_or(0.0);
+            let content_h = content_ref
+                .with(|v| v.absolute_frame().map(|r| r.height))
+                .flatten()
+                .unwrap_or(0.0);
+            // "At the bottom" ⇔ the reader's viewport bottom reaches (or
+            // passes) the content bottom. Away ⇔ there's a visible gap of more
+            // than ~48px of unread content below. Guard `content_h <= viewport_h`
+            // (no scroll possible ⇒ always "at the bottom" ⇒ hide).
+            let away = viewport_h > 0.0
+                && content_h > viewport_h
+                && scroll_y + viewport_h < content_h - 48.0;
+            show.set(away);
+        }
+    });
+    // First read happens before the column has laid out (`absolute_frame()` is
+    // `None` then), so it reads "at the bottom" (content_h 0) — the correct
+    // pill-hidden state. Nudge once after layout so the measured sizes settle
+    // even if the reader's initial offset is non-zero (e.g. a channel that
+    // restores a scroll position).
+    after_animation_frame({
+        let r = msg_recompute_jump.clone();
+        move || r(0.0)
+    });
+    // The floating pill. `msg_show_jump` is driven by the scroll tracking above
+    // (only `true` while the reader is away from the newest messages). `on_jump`
+    // scrolls the message list back to the bottom — `ScrollViewHandle` has no
+    // `scroll_to_bottom`, but the web backend's `scroll_to` clamps `scrollTop` to
+    // the scrollable range, so a large `y` lands exactly on the last message.
+    let msg_scroll_handle = msg_scroll_ref.clone();
+    let msg_jump_el = JumpToBottomButton(
+        msg_show_jump.clone(),
+        Rc::new(move || {
+            msg_scroll_handle.with(|h| h.scroll_to(0.0, 1_000_000.0));
+        }),
+    );
 
     ui! {
         view(style = StyleRules {
@@ -7133,14 +7191,41 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // left/right resizes `sidebar_width` (right = grow, so sign `+1`).
             resize_handle(sidebar_width, 1.0, "resize-sidebar")
             view(style = main_style) {
-                NotificationPermissionPrompt()
                 header
-                ChannelTopicBanner()
-                scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {
-    WelcomeBanner()
-    JumpToBottomButton()
-    sent_messages
-}
+                // `Position::Relative` wrapper around the scroll surface: it
+                // tightly wraps the `scroll_view` (which fills it via
+                // `flex_grow`), so its measured box is the visible scroll
+                // viewport — the "bottom" the pill measures against. The floating
+                // pill is anchored here (a sibling of the scroll surface, so it
+                // does NOT scroll with content).
+                view(style = StyleRules {
+                    position: Some(Position::Relative),
+                    flex_grow: Some(grow(1.0)),
+                    overflow: Some(Overflow::Hidden),
+                    ..Default::default()
+                }) {
+                    // Content column: a plain (non-`flex_grow`) column that sizes
+                    // to its content, so its measured height is the total
+                    // scrollable height. The `sent_messages` switch is the only
+                    // real child (the graveyard WelcomeBanner is gone).
+                    scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {
+                        view(style = StyleRules {
+                            flex_direction: Some(FlexDirection::Column),
+                            ..Default::default()
+                        }) {
+                            sent_messages
+                        }.bind(msg_content_ref)
+                    }
+                        .bind(msg_scroll_ref)
+                        .on_scroll({
+                            let recompute = msg_recompute_jump.clone();
+                            move |_x, y| recompute(y)
+                        })
+                    // Floating "Jump to bottom" pill (anchored to this wrapper);
+                    // shown only while the reader is away from the newest
+                    // messages.
+                    msg_jump_el
+                }.bind(msg_viewport_ref)
                 typing_row
                 // Positioning ancestor for the @-mention dropdown and the
                 // emoji popover (both anchor above the input via
@@ -7164,7 +7249,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // rendered) while no reply is active.
                     reply_preview(reply_ctx)
                     attach_chip
-                    AttachmentPreviewCard()
                     emoji_popover
                     ac_el
                     // Per-channel slowmode indicator (gated): the channel-keyed
@@ -7174,11 +7258,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // home b60 dropped the bare, unconditional
                     // `SlowmodeIndicator()` into; now it reads real state.
                     slowmode_el
-                    // Composer-area extras (mock, local only): the slash-command
-                    // autocomplete dropdown and the forward-message dialog, both
-                    // stacked above the composer row. No backend.
-                    SlashCommandDropdown()
-                    ForwardMessageDialog()
+                    // Slash-command autocomplete: shown only while the composer
+                    // text actually starts with "/" (a real slash command is
+                    // being typed), not on every render. `composer` is the
+                    // live text signal.
+                    if composer.get().starts_with('/') {
+                        SlashCommandDropdown()
+                    }
                     view(style = composer_style) {
                         view(style = icon_button_style.clone()) {
                             icon(PLUS).color(|| Color::from(TEXT_MUTED)).size(16.0)
