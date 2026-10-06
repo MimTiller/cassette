@@ -237,6 +237,35 @@ pub(crate) fn format_when(unix_secs: i64, now_secs: i64) -> String {
     }
 }
 
+/// Full absolute date/time for a message's instant — the hover tooltip's
+/// "Saturday, September 12, 2026 at 3:42 PM" form (the counterpart to
+/// `format_when`'s short relative label). Pure integer math over the same
+/// `local_day_clock` / `civil_ymd_from_day` helpers; the weekday is derived
+/// from the day number (1970-01-01 was a Thursday).
+pub(crate) fn format_full_when(unix_secs: i64) -> String {
+    let (day, h, m) = local_day_clock(unix_secs);
+    let (y, mo, d) = civil_ymd_from_day(day);
+    // 1970-01-01 (day 0) was a Thursday, so `day.rem_euclid(7)` indexes a
+    // Thursday-first weekday table.
+    let weekday = [
+        "Thursday", "Friday", "Saturday", "Sunday", "Monday", "Tuesday", "Wednesday",
+    ][day.rem_euclid(7) as usize];
+    let month = [
+        "January", "February", "March", "April", "May", "June", "July", "August",
+        "September", "October", "November", "December",
+    ][(mo - 1) as usize];
+    let h12 = {
+        let h12 = h % 12;
+        if h12 == 0 {
+            12
+        } else {
+            h12
+        }
+    };
+    let suffix = if h < 12 { "AM" } else { "PM" };
+    format!("{weekday}, {month} {d}, {y} at {h12}:{m:02} {suffix}")
+}
+
 // --- small reusable rows -----------------------------------------------------
 
 /// One message row: avatar chip, then author + "Today at …" line, then body.
@@ -245,7 +274,14 @@ pub(crate) fn format_when(unix_secs: i64, now_secs: i64) -> String {
 /// is self-contained). `edited` gates the "(edited)" marker: live rows pass
 /// the message's real `edited_at.is_some()`; the mock path passes `true` to
 /// preserve its previous (always-on placeholder) rendering.
-pub(crate) fn message_row(author: &str, color: &str, body: &str, when: String, edited: bool) -> Element {
+pub(crate) fn message_row(
+    author: &str,
+    color: &str,
+    body: &str,
+    when: String,
+    full: String,
+    edited: bool,
+) -> Element {
     let row_style = StyleRules {
         padding_top: Some(px(8.0)),
         padding_bottom: Some(px(2.0)),
@@ -295,11 +331,6 @@ pub(crate) fn message_row(author: &str, color: &str, body: &str, when: String, e
         color: Some(col(TEXT)),
         ..Default::default()
     };
-    let when_style = StyleRules {
-        font_size: Some(px(11.0)),
-        color: Some(col(TEXT_MUTED)),
-        ..Default::default()
-    };
     let body_style = StyleRules {
         font_size: Some(px(15.0)),
         color: Some(col(TEXT)),
@@ -316,13 +347,211 @@ pub(crate) fn message_row(author: &str, color: &str, body: &str, when: String, e
                 view(style = meta_style) {
                     text(style = author_style) { author.to_string() }
                     if author == "miri" { VerifiedBadge() }
-                    text(style = when_style) { when }
+                    // The relative "when" label is a real hover target now:
+                    // `message_timestamp_tooltip` shows the short label at rest
+                    // and the full absolute date/time (`full`) while hovered.
+                    crate::message_timestamp_tooltip::message_timestamp_tooltip(when, full)
                 }
                 text(style = body_style) { body.to_string() }
                 if edited { edited_label() }
             }
         }
     }
+}
+
+// --- per-row hover action bar + overflow menu (channel message list) --------
+// These wrap `message_row` for the CHANNEL message list only (the mock rows
+// that also carry a `reaction_area` + the shared reaction `picker`). The wrapper
+// adds a `Position::Relative` box around the base row, drives a per-row `hovered`
+// signal from the box's `on_hover` (the voice-channel-row idiom), and floats the
+// `MessageActionBar` over the row's top-right. DM rows and the live/edit rows
+// call `message_row` directly and never reach this, so they keep rendering
+// exactly as before (no per-row controls added to a loop that shouldn't have them).
+
+/// One entry of the "more" overflow menu (a tap row). The two real Discord
+/// entries: "Copy text" (a harmless no-op that just closes the menu) and
+/// "Pin message" (shows the `PinConfirmToast`). Kept deliberately minimal.
+enum MoreMenuAction {
+    Pin,
+    Copy,
+}
+
+/// The small overflow menu that the action bar's "more" button opens. Rendered
+/// only while `open` is true (the `switch` primitive, same show/hide idiom as
+/// `MessageActionBar`); it drops just below the bar. `on_pin` shows the pin
+/// toast; both entries close the menu on tap.
+fn message_overflow_menu(open: Signal<bool>, on_pin: Rc<dyn Fn()>) -> Element {
+    switch(
+        move || open.get(),
+        move |show: &bool| {
+            if !show {
+                return ui! {
+                    view(style = StyleRules {
+                        width: Some(px(0.0)),
+                        height: Some(px(0.0)),
+                        ..Default::default()
+                    }) {}
+                };
+            }
+            let pin = on_pin.clone();
+            let menu_row = |label: &'static str, action: MoreMenuAction, pin: Rc<dyn Fn()>| -> Element {
+                let row_style = StyleRules {
+                    padding_top: Some(px(8.0)),
+                    padding_bottom: Some(px(8.0)),
+                    padding_left: Some(px(12.0)),
+                    padding_right: Some(px(12.0)),
+                    flex_direction: Some(FlexDirection::Row),
+                    align_items: Some(AlignItems::Center),
+                    ..Default::default()
+                };
+                let label_style = StyleRules {
+                    font_size: Some(px(14.0)),
+                    color: Some(col(TEXT)),
+                    ..Default::default()
+                };
+                let open_c = open;
+                // Each action owns its own handles so the `move` handler can own
+                // them (branch-local `pin` clone + a `Copy` `open` handle).
+                let touch = move |ev: &runtime_shared::TouchEvent| {
+                    if ev.phase == TouchPhase::Ended {
+                        match action {
+                            MoreMenuAction::Pin => pin(),
+                            MoreMenuAction::Copy => {}
+                        }
+                        open_c.set(false);
+                    }
+                    TouchResponse::CONSUMED
+                };
+                ui! {
+                    view(style = row_style) {
+                        text(style = label_style) { label.to_string() }
+                    }
+                    .on_touch(touch)
+                }
+            };
+            ui! {
+                view(style = StyleRules {
+                    position: Some(Position::Absolute),
+                    top: Some(px(40.0)),
+                    right: Some(px(12.0)),
+                    width: Some(px(190.0)),
+                    flex_direction: Some(FlexDirection::Column),
+                    background: Some(col("#111214")),
+                    border_top_left_radius: Some(px(8.0)),
+                    border_top_right_radius: Some(px(8.0)),
+                    border_bottom_left_radius: Some(px(8.0)),
+                    border_bottom_right_radius: Some(px(8.0)),
+                    border_top_width: Some(border_width(1.0)),
+                    border_right_width: Some(border_width(1.0)),
+                    border_bottom_width: Some(border_width(1.0)),
+                    border_left_width: Some(border_width(1.0)),
+                    border_top_color: Some(col(BORDER)),
+                    border_right_color: Some(col(BORDER)),
+                    border_bottom_color: Some(col(BORDER)),
+                    border_left_color: Some(col(BORDER)),
+                    ..Default::default()
+                }) {
+                    { menu_row("Copy text", MoreMenuAction::Copy, pin.clone()) }
+                    { menu_row("Pin message", MoreMenuAction::Pin, pin) }
+                }
+            }
+        },
+    )
+}
+
+/// A channel message row with the hover `MessageActionBar` + overflow menu.
+/// Wraps `message_row` (the base content) in a `Position::Relative` box and
+/// floats the action bar over the row's top-right while hovered. React points
+/// the SHARED reaction `picker` at this row (the same picker `reaction_area`'s
+/// add button opens — no second reaction UI); Reply populates the composer's
+/// `reply_ctx` (read by `ReplyPreviewBar`); More opens `message_overflow_menu`
+/// whose "Pin message" shows `PinConfirmToast`.
+fn message_row_with_actions(
+    author: &str,
+    color: &str,
+    body: &str,
+    when: String,
+    full: String,
+    edited: bool,
+    cid: u32,
+    idx: usize,
+    picker: Signal<Option<(u32, usize)>>,
+    reply_ctx: Signal<Option<(String, String)>>,
+    pin_visible: Signal<bool>,
+) -> Element {
+    let hovered = signal(false);
+    let menu_open = signal(false);
+    let base = message_row(author, color, body, when, full, edited);
+
+    // Reply context: author name + a short snippet of the body. `Signal` is
+    // `Copy`, so each `move` handler captures its own copy; the `String`s are
+    // cloned per press so the handlers stay `Fn`.
+    let author_owned = author.to_string();
+    let snippet: String = {
+        let s: String = body.chars().take(48).collect();
+        if body.chars().count() > 48 {
+            format!("{s}…")
+        } else {
+            s
+        }
+    };
+    let reply_c = reply_ctx;
+    let author_r = author_owned.clone();
+    let snippet_r = snippet.clone();
+    let on_reply = Rc::new(move || {
+        reply_c.set(Some((author_r.clone(), snippet_r.clone())));
+    });
+
+    // React: point the shared picker at this row's (channel, index) key — the
+    // exact entry point `reaction_area`'s add button uses. No second UI.
+    let picker_c = picker;
+    let key = (cid, idx);
+    let on_react = Rc::new(move || {
+        picker_c.set(Some(key));
+    });
+
+    // More: toggle the overflow menu.
+    let menu_c = menu_open;
+    let on_more = Rc::new(move || {
+        menu_c.set(!menu_c.get());
+    });
+
+    // "Pin message" (from the overflow menu): flash the toast, then auto-dismiss
+    // after a beat. The toast's own "x" is the manual dismiss.
+    let pin_c = pin_visible;
+    let on_pin = Rc::new(move || {
+        pin_c.set(true);
+        let pin_d = pin_c;
+        after_ms_detached(2_500, move || pin_d.set(false));
+    });
+
+    let bar = crate::message_action_bar::message_action_bar(hovered, on_react, on_reply, on_more);
+    let menu = message_overflow_menu(menu_open, on_pin);
+
+    ui! {
+        view(style = StyleRules {
+            position: Some(Position::Relative),
+            ..Default::default()
+        }) {
+            { base }
+            { bar }
+            { menu }
+        }
+        .on_hover(move |on| hovered.set(on))
+    }
+}
+
+/// The composer's "Replying to …" strip: wraps `reply_preview_bar` and backs
+/// its "×" cancel with a callback that clears the shared `reply_ctx` signal
+/// (the same signal each message's Reply action sets). `reply_ctx` is `Copy`,
+/// so the `on_cancel` closure captures its own handle; the bar itself reads a
+/// separate copy (both are the same underlying signal).
+fn reply_preview(reply_ctx: Signal<Option<(String, String)>>) -> Element {
+    let clear = reply_ctx;
+    let on_cancel = Rc::new(move || {
+        clear.set(None);
+    });
+    crate::reply_preview_bar::reply_preview_bar(reply_ctx, on_cancel)
 }
 
 // --- message reactions (mock, session-local) --------------------------------
@@ -633,6 +862,7 @@ fn live_edit_row(
     color: &str,
     body: &str,
     when: String,
+    full: String,
     edited: bool,
     is_mine: bool,
     live_editing: Signal<Option<i64>>,
@@ -645,7 +875,7 @@ fn live_edit_row(
 ) -> Element {
     // The base row is identical to the mock path except it carries the real
     // `(edited)` marker (gated on the message's `edited_at` state).
-    let base = message_row(author, color, body, when, edited);
+    let base = message_row(author, color, body, when, full, edited);
     // Only one's own messages are editable/deletable — the backend enforces the
     // same, but the affordance is hidden for other authors' rows.
     if !is_mine {
@@ -3322,6 +3552,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let reactions: Rc<RefCell<ReactionMap>> = Rc::new(RefCell::new(HashMap::new()));
     let reaction_rev: Signal<u32> = signal(0);
     let picker: Signal<Option<(u32, usize)>> = signal(None);
+    // Reply context for the channel composer: `Some((author, snippet))` while a
+    // message row's hover "Reply" button is composing a reply (the
+    // `ReplyPreviewBar` strip reads it); `None` while not. `PinConfirmToast`'s
+    // `visible` flag, flashed by the "Pin message" overflow-menu entry.
+    let reply_ctx: Signal<Option<(String, String)>> = signal(None);
+    let pin_visible: Signal<bool> = signal(false);
 
     // --- live (backend) DM state -------------------------------------------
     // Parallel to (and independent of) the mock `dm_*` state above, and to the
@@ -4903,6 +5139,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // The mock switch's `move` closure below consumes `reactions`; keep a clone
     // alive for the paint-last `reaction_picker_overlay` call (a separate site).
     let reactions_overlay = reactions.clone();
+    // Shared reply/pin handles cloned so the `sent_messages` closure can move
+    // its own copies (the action-bar wiring in `message_row_with_actions`).
+    let reply_ctx_k = reply_ctx.clone();
+    let pin_visible_k = pin_visible.clone();
     let sent_messages = switch(
         move || (
             active_server.get(),
@@ -4953,6 +5193,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 for m in mine.iter() {
                     let (mid, aid, author, body, ts, edited_at) = m;
                     let when = format_when(*ts, now);
+                    let full = format_full_when(*ts);
                     let is_mine = self_id != 0 && *aid == self_id;
                     rows.push(live_edit_row(
                         *mid,
@@ -4960,6 +5201,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         BUTTON,
                         body.as_str(),
                         when,
+                        full,
                         edited_at.is_some(),
                         is_mine,
                         editing,
@@ -4984,7 +5226,19 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 let when = format_when(m.ts_secs(now), now);
                 // Mock seed rows carry no edit state; pass `true` to preserve
                 // their previous always-on "(edited)" placeholder rendering.
-                rows.push(message_row(m.author, m.color, m.body, when, true));
+                rows.push(message_row_with_actions(
+                    m.author,
+                    m.color,
+                    m.body,
+                    when,
+                    format_full_when(m.ts_secs(now)),
+                    true,
+                    cid,
+                    i,
+                    picker,
+                    reply_ctx_k,
+                    pin_visible_k,
+                ));
                 // Reaction strip under each mock row, keyed by this row's
                 // rendered-list position (seed messages first, so index `i`).
                 rows.push(reaction_area(cid, i, reactions.clone(), reaction_rev, picker));
@@ -4996,7 +5250,20 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 .collect();
             for (i, (_mcid, author, body, ts)) in mine.iter().enumerate() {
                 let when = format_when(*ts, now);
-                rows.push(message_row(author, BUTTON, body.as_str(), when, true));
+                // Own prior sends get the same hover bar as the seed rows.
+                rows.push(message_row_with_actions(
+                    author,
+                    BUTTON,
+                    body.as_str(),
+                    when,
+                    format_full_when(*ts),
+                    true,
+                    cid,
+                    channel.messages.len() + i,
+                    picker,
+                    reply_ctx_k,
+                    pin_visible_k,
+                ));
                 // Sent rows continue the list position after the seed rows, so
                 // their key is `seed_len + i` (see `ReactionMap` doc).
                 rows.push(reaction_area(
@@ -6188,6 +6455,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // send with an `Error` frame — and clears it on tap (the
                     // user resends to retry). While unset it renders nothing.
                     SendFailedIndicator(failed = send_failed.clone())
+                    // "Replying to <author>: <snippet>" strip: shows while a
+                    // message's Reply action is active (the per-row action bar
+                    // sets `reply_ctx`), directly above the composer. Its "×"
+                    // clears the same signal the bar reads. Zero-size (nothing
+                    // rendered) while no reply is active.
+                    reply_preview(reply_ctx)
                     attach_chip
                     emoji_popover
                     ac_el
@@ -6262,6 +6535,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // painted last so it covers everything while open (collapses to
             // zero size while `picker` is `None`).
             reaction_picker_overlay(picker, reactions_overlay, reaction_rev)
+            // "Message pinned!" toast: floats top-right (a `Position::Absolute`
+            // child of the root `Relative` ancestor) while `pin_visible` is
+            // true. Set by a message's "Pin message" overflow entry; auto-
+            // dismisses after a beat, or manually via its "x". Collapses to
+            // nothing while hidden.
+            crate::pin_confirm_toast::pin_confirm_toast(pin_visible)
         }
     }
 }

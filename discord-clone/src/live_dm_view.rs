@@ -632,8 +632,16 @@ fn live_dm_conversation(
             let rows: Vec<Element> = mine
                 .iter()
                 .map(|(author, body, ts, edited_at)| {
-                    let when = format_when(ms_to_secs(*ts), now);
-                    message_row(author.as_str(), BUTTON, body.as_str(), when, edited_at.is_some())
+                    let s = ms_to_secs(*ts);
+                    let when = format_when(s, now);
+                    message_row(
+                        author.as_str(),
+                        BUTTON,
+                        body.as_str(),
+                        when,
+                        crate::app::format_full_when(s),
+                        edited_at.is_some(),
+                    )
                 })
                 .collect();
             ui! {
