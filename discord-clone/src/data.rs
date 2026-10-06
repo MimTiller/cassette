@@ -683,6 +683,21 @@ pub static SERVERS: &[Server] = &[
                                 body: "link? I need that energy",
                                 age_secs: 3600 * 7 + 20,
                             },
+                            // Content that warrants two message-formatting widgets
+                            // on a GENUINE, deliberate instance (not a per-row
+                            // splice): the body carries a real URL (so
+                            // `message_row` renders a `LinkEmbedPreview` card
+                            // below it) AND wraps one clause in Discord's
+                            // `||…||` spoiler markers (so `message_body` renders
+                            // that clause as a click-to-reveal `SpoilerTag`).
+                            // No other seed message has a URL or a spoiler, so
+                            // this is the single row that shows both.
+                            Message {
+                                author: "dyno",
+                                color: "#57f287",
+                                body: "here it is: https://github.com/dyno/wasm-forge — and the one gotcha that ate an hour was ||passing the linker flag through the profile section, not the target one|| but it's in the README",
+                                age_secs: 3600 * 7 + 75,
+                            },
                         ],
                     },
                     TextChannel {

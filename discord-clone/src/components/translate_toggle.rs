@@ -1,14 +1,16 @@
-//! `translate_toggle` — a self-contained translate switch for the Discord
-//! clone. It renders one line of text that flips between two hardcoded local
-//! strings — an original (`"Bonjour"`) and a `"translated"` (`"Hello"`)
-//! version — driven by a local `showTranslated` boolean signal (hardcoded
+//! `translate_toggle` — a translate switch for the Discord clone. It renders
+//! one line of text that flips between an `original` and a `translated`
+//! string, driven by a local `showTranslated` boolean signal (hardcoded
 //! `false` at start, so the original shows first). A `button` toggles the
 //! signal on every press, swapping which string the line displays.
 //!
-//! Everything is hardcoded local state — no backend call, no props, no wiring
-//! into any screen yet. Declared in `lib.rs` so it compiles as part of the
-//! crate, but referenced by nothing (the same shape `verified_badge` /\
-//! `idle_timer_badge` / `emoji_upload_slot` ship in).
+//! Both strings are `String` props (hardcoded defaults `"Bonjour"` /
+//! `"Hello"`, so the component also compiles standalone). It is wired into
+//! the mock channel message list as a per-message "Translate message"
+//! overflow-menu option (`app.rs` `message_row_with_actions`): the toggle
+//! card only mounts for the one row whose menu item was tapped (the shared
+//! `translate_key` signal names the active row) — a deliberate single
+//! instance, not a per-row widget.
 //!
 //! Idioms, each verified against this crate's `components/idle_timer_badge.rs`
 //! / `components/emoji_upload_slot.rs` / `components/verified_badge.rs`:
@@ -38,17 +40,27 @@ const BG_CARD: &str = "#2b2d31"; // card surface (Discord sidebar gray)
 const TEXT: &str = "#f2f3f5"; // primary text
 const BLURPLE: &str = "#5865f2"; // toggle button (Discord accent)
 
-// The two hardcoded local strings. Original language line and its (fake)
-// translation — no backend call, just two literals the signal switches between.
-const ORIGINAL: &str = "Bonjour";
-const TRANSLATED: &str = "Hello";
-
-/// The translate switch. Renders a single line of text that shows the original
-/// string while the local `showTranslated` signal is `false` (the start state)
-/// and the translated string while it is `true`; a `button` toggles the signal
-/// on every press, swapping the displayed line.
+/// The translate switch. Renders a single line of text that shows the
+/// `original` string while the local `showTranslated` signal is `false` (the
+/// start state) and the `translated` string while it is `true`; a `button`
+/// toggles the signal on every press, swapping the displayed line. Both
+/// strings arrive as `String` props (with hardcoded defaults — the original
+/// `"Bonjour"` / `"Hello"` — so the component still compiles standalone); no
+/// backend call, just the two literals the signal switches between.
 #[component]
-pub fn TranslateToggle() -> Element {
+#[allow(non_snake_case)]
+pub fn TranslateToggle(
+    #[prop(default = "Bonjour")] original: String,
+    #[prop(default = "Hello")] translated: String,
+) -> Element {
+    // Both lines are static props (never `.set`), so read them once at build
+    // into owned `String`s and bake them as static text bodies. Cloned
+    // (borrowed) at each use so the non-`Copy` locals are never moved out of
+    // the reactive branch's `Fn` render closure — the `ChannelTopicBanner`
+    // idiom.
+    let orig = original.get();
+    let trans = translated.get();
+
     let showTranslated = signal(false);
 
     // Toggle: flip `showTranslated` on every press. `showTranslated` is `Copy`,
@@ -81,13 +93,13 @@ pub fn TranslateToggle() -> Element {
                     font_size: Some(px(18.0)),
                     color: Some(col(TEXT)),
                     ..Default::default()
-                }) { TRANSLATED.to_string() }
+                }) { trans.clone() }
             } else {
                 text(style = StyleRules {
                     font_size: Some(px(18.0)),
                     color: Some(col(TEXT)),
                     ..Default::default()
-                }) { ORIGINAL.to_string() }
+                }) { orig.clone() }
             }
 
             // The toggle button. `on_click = toggle` is the app's standard
