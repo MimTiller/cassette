@@ -684,12 +684,11 @@ fn message_row_with_actions(
     when: String,
     full: String,
     edited: bool,
-    cid: u32,
-    idx: usize,
-    picker: Signal<Option<(u32, usize)>>,
+    key: MessageKey,
+    picker: Signal<Option<MessageKey>>,
     reply_ctx: Signal<Option<(String, String)>>,
     pin_visible: Signal<bool>,
-    translate_key: Signal<Option<(u32, usize)>>,
+    translate_key: Signal<Option<MessageKey>>,
 ) -> Element {
     let hovered = signal(false);
     let menu_open = signal(false);
@@ -714,10 +713,9 @@ fn message_row_with_actions(
         reply_c.set(Some((author_r.clone(), snippet_r.clone())));
     });
 
-    // React: point the shared picker at this row's (channel, index) key — the
-    // exact entry point `reaction_area`'s add button uses. No second UI.
+    // React: point the shared picker at this row's `MessageKey` — the exact
+    // entry point `reaction_area`'s add button uses. No second UI.
     let picker_c = picker;
-    let key = (cid, idx);
     let on_react = Rc::new(move || {
         picker_c.set(Some(key));
     });
@@ -746,7 +744,7 @@ fn message_row_with_actions(
     // and dismissing both close it. Re-tapping "Translate message" on the same
     // row toggles it off.
     let translate_key_c = translate_key;
-    let my_key = (cid, idx);
+    let my_key = key;
     let on_translate = Rc::new(move || {
         let k = translate_key_c;
         k.set(if k.get() == Some(my_key) { None } else { Some(my_key) });
@@ -773,7 +771,7 @@ fn message_row_with_actions(
             { base }
             { bar }
             { menu }
-            if translate_key.get() == Some((cid, idx)) {
+            if translate_key.get() == Some(key) {
                 view {
                     crate::translate_toggle::TranslateToggle(orig.clone().into(), trans.clone().into())
                 }
@@ -796,18 +794,33 @@ fn reply_preview(reply_ctx: Signal<Option<(String, String)>>) -> Element {
     crate::reply_preview_bar::reply_preview_bar(reply_ctx, on_cancel)
 }
 
-// --- message reactions (mock, session-local) --------------------------------
-// Per-message reaction state for the MOCK message list. Keyed by
-// (channel_id, message_index) where the index is the message's position in that
-// channel's rendered list (seed messages first, then this session's sends) — a
+// --- message reactions (session-local, mock + live) -------------------------
+// Per-message reaction state shared by BOTH the MOCK and the LIVE (gateway)
+// message lists. Keyed by `MessageKey`: MOCK rows key by `(channel_id,
+// rendered-list-index)` (seed messages first, then this session's sends — a
 // stable identity across `revision` bumps, since the list order is
-// deterministic. Each value is a list of `(emoji, count, reacted_by_me)`
-// pills. Mutating the map does not fire reactivity, so the message-list
-// `switch` folds `reaction_rev` into its key (the `revision` idiom) and re-reads
-// the map on every rebuild. Purely session-local — nothing is persisted or
-// synced, and the separate live messaging path is untouched.
+// deterministic), LIVE rows key by their real wire `message_id`. Each value is
+// a list of `(emoji, count, reacted_by_me)` pills. Mutating the map does not
+// fire reactivity, so the message-list `switch` folds `reaction_rev` into its
+// key (the `revision` idiom) and re-reads the map on every rebuild. Purely
+// session-local — nothing is persisted or synced (there is no backend reaction
+// store); the live rows reuse the exact same pill store as the mock rows.
 type Reaction = (String, u32, bool);
-type ReactionMap = HashMap<(u32, usize), Vec<Reaction>>;
+
+/// The identity key for per-message session-local state (the reaction `picker`,
+/// the `reactions` pill map, and the `translate_key`). MOCK rows key by their
+/// `(channel_id, rendered-list-index)` — the pre-existing stable-enough key —
+/// while LIVE (gateway) rows key by their real wire `message_id`. The two are
+/// disjoint enum variants, so a live message's id can never collide with a mock
+/// `(cid, idx)`; the mock path's existing keys are preserved exactly (wrapped in
+/// `Mock { .. }`) and the live path gets its own namespace beside them.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum MessageKey {
+    Mock { cid: u32, idx: usize },
+    Live { id: i64 },
+}
+
+type ReactionMap = HashMap<MessageKey, Vec<Reaction>>;
 
 /// The 12 common glyphs the add-reaction picker offers — the same set the
 /// composer's emoji popover uses (see `emoji_popover`).
@@ -825,13 +838,11 @@ const REACT_EMOJIS: [&str; 12] = [
 /// itself has no `on_touch` method, so the handler must live on the builder,
 /// not on the returned `Element`.
 fn reaction_area(
-    cid: u32,
-    idx: usize,
+    key: MessageKey,
     reactions: Rc<RefCell<ReactionMap>>,
     reaction_rev: Signal<u32>,
-    picker: Signal<Option<(u32, usize)>>,
+    picker: Signal<Option<MessageKey>>,
 ) -> Element {
-    let key = (cid, idx);
     // Current pills for this message (a clone — the borrow is released before
     // this call returns, so the list `switch` body can borrow again freely).
     let list: Vec<Reaction> = reactions.borrow().get(&key).cloned().unwrap_or_default();
@@ -922,9 +933,9 @@ fn reaction_area(
 
     // The always-visible "add reaction" button: a small circular glyph target
     // (a `view` + icon, the composer icon-button shape) whose `.on_touch` opens
-    // the picker for this message, keyed by `(cid, idx)`.
+    // the picker for this message, keyed by the row's `MessageKey`.
     let add = picker;
-    let add_key = (cid, idx);
+    let add_key = key;
     let add_button = ui! {
         view(style = StyleRules {
             position: Some(Position::Relative),
@@ -979,14 +990,14 @@ fn reaction_area(
 /// the root `Relative` ancestor, painted last like `profile_region` /
 /// `notif_region`) and the composer's emoji grid.
 fn reaction_picker_overlay(
-    picker: Signal<Option<(u32, usize)>>,
+    picker: Signal<Option<MessageKey>>,
     reactions: Rc<RefCell<ReactionMap>>,
     reaction_rev: Signal<u32>,
 ) -> Element {
     switch(
         move || picker.get(),
-        move |p: &Option<(u32, usize)>| {
-            let Some((cid, idx)) = p else {
+        move |p: &Option<MessageKey>| {
+            let Some(sel) = p else {
                 return ui! {
                     view(style = StyleRules {
                         width: Some(px(0.0)),
@@ -995,14 +1006,14 @@ fn reaction_picker_overlay(
                     }) {}
                 };
             };
-            let (cid, idx) = (*cid, *idx);
+            let key = *sel;
             let cells: Vec<Element> = REACT_EMOJIS.iter().map(|g| {
                 let glyph = g.to_string();
                 let glyph_close = glyph.clone();
                 let r = reactions.clone();
                 let rev = reaction_rev;
                 let close = picker;
-                let key = (cid, idx);
+                let key = key;
                 ui! {
                     view(style = StyleRules {
                         width: Some(px(34.0)),
@@ -1088,16 +1099,21 @@ fn reaction_picker_overlay(
 }
 
 
-/// One LIVE (gateway-fed) message row: the `message_row` content, plus — for
-/// the signed-in user's own messages — a compact Edit / Delete affordance and
-/// the inline edit input. The mock path has no wire `message_id`, so it never
-/// reaches this function and renders identically to before.
+/// One LIVE (gateway-fed) message row: the `message_row_with_actions` content
+/// (the hover `MessageActionBar` + react / reply / pin / translate, exactly
+/// like a mock row), plus — for the signed-in user's own messages — a compact
+/// always-visible Edit / Delete affordance and the inline edit input, which
+/// coexist beneath the hover bar (Discord's own-message edit/delete home; the
+/// hover bar handles the shared react/reply/pin/translate actions).
 ///
 /// `live_editing` / `live_delete_confirm` / `live_edit_text` are
 /// `app_shell`-scope signals that drive per-row edit/delete mode; `gateway` is
 /// a `Copy` `UseSocket` handle for sending `EditMessage` / `DeleteMessage`.
-/// The row rebuilds when its state changes because the message-list `switch`'s
-/// key folds these signals in (see `sent_messages`).
+/// `key` is the row's `MessageKey` (the real wire `message_id` under `Live`),
+/// plus the shared `picker` / `reply_ctx` / `pin_visible` / `translate_key`
+/// handles threaded from `app_shell`. The row rebuilds when its state changes
+/// because the message-list `switch`'s key folds these signals in (see
+/// `sent_messages`).
 fn live_edit_row(
     message_id: i64,
     author: &str,
@@ -1114,10 +1130,33 @@ fn live_edit_row(
         discord_server::server_settings::WsServerMsg,
         discord_server::server_settings::WsClientMsg,
     >,
+    // Interaction parity with the mock path: the row's identity key (the real
+    // wire `message_id` under the `Live` variant) plus the shared picker /
+    // reply / pin / translate handles, so the hover action bar and the
+    // overflow-menu actions behave identically to a mock row.
+    key: MessageKey,
+    picker: Signal<Option<MessageKey>>,
+    reply_ctx: Signal<Option<(String, String)>>,
+    pin_visible: Signal<bool>,
+    translate_key: Signal<Option<MessageKey>>,
 ) -> Element {
-    // The base row is identical to the mock path except it carries the real
-    // `(edited)` marker (gated on the message's `edited_at` state).
-    let base = message_row(author, color, body, when, full, edited);
+    // The base row now carries the hover `MessageActionBar` + overflow menu
+    // exactly like the mock path (react / reply / pin / translate). The only
+    // difference is the real `(edited)` marker (gated on the message's
+    // `edited_at` state) and the live `MessageKey`.
+    let base = message_row_with_actions(
+        author,
+        color,
+        body,
+        when,
+        full,
+        edited,
+        key,
+        picker,
+        reply_ctx,
+        pin_visible,
+        translate_key,
+    );
     // Only one's own messages are editable/deletable — the backend enforces the
     // same, but the affordance is hidden for other authors' rows.
     if !is_mine {
@@ -4010,7 +4049,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // left untouched (this feature is mock/session-local only).
     let reactions: Rc<RefCell<ReactionMap>> = Rc::new(RefCell::new(HashMap::new()));
     let reaction_rev: Signal<u32> = signal(0);
-    let picker: Signal<Option<(u32, usize)>> = signal(None);
+    let picker: Signal<Option<MessageKey>> = signal(None);
     // Reply context for the channel composer: `Some((author, snippet))` while a
     // message row's hover "Reply" button is composing a reply (the
     // `ReplyPreviewBar` strip reads it); `None` while not. `PinConfirmToast`'s
@@ -4023,7 +4062,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // `(channel, list_index)` key — the picker idiom — so opening another
     // row's menu or re-tapping dismisses it. Owned here next to the other mock
     // per-app signals; threaded into the mock message list only.
-    let translate_key: Signal<Option<(u32, usize)>> = signal(None);
+    let translate_key: Signal<Option<MessageKey>> = signal(None);
 
     // --- live (backend) DM state -------------------------------------------
     // Parallel to (and independent of) the mock `dm_*` state above, and to the
@@ -5788,12 +5827,17 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 let delete_c = live_delete_confirm;
                 let edit_text = live_edit_text;
                 let gw = gateway;
-                let mut rows: Vec<Element> = Vec::with_capacity(mine.len());
+                let picker_l = picker;
+                let reply_l = reply_ctx_k;
+                let pin_l = pin_visible_k;
+                let trans_l = translate_key_k;
+                let mut rows: Vec<Element> = Vec::with_capacity(mine.len() * 2);
                 for m in mine.iter() {
                     let (mid, aid, author, body, ts, edited_at) = m;
                     let when = format_when(*ts, now);
                     let full = format_full_when(*ts);
                     let is_mine = self_id != 0 && *aid == self_id;
+                    let lkey = MessageKey::Live { id: *mid };
                     rows.push(live_edit_row(
                         *mid,
                         author.as_str(),
@@ -5807,6 +5851,20 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         edit_text,
                         delete_c,
                         gw,
+                        lkey,
+                        picker_l,
+                        reply_l,
+                        pin_l,
+                        trans_l,
+                    ));
+                    // Reaction strip under each live row, keyed by the real wire
+                    // `message_id` — the same session-local pill store the mock
+                    // rows use, so live reactions behave exactly like mock ones.
+                    rows.push(reaction_area(
+                        lkey,
+                        reactions.clone(),
+                        reaction_rev,
+                        picker_l,
                     ));
                 }
                 return ui! {
@@ -5832,8 +5890,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     when,
                     format_full_when(m.ts_secs(now)),
                     true,
-                    cid,
-                    i,
+                    MessageKey::Mock { cid, idx: i },
                     picker,
                     reply_ctx_k,
                     pin_visible_k,
@@ -5841,7 +5898,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 ));
                 // Reaction strip under each mock row, keyed by this row's
                 // rendered-list position (seed messages first, so index `i`).
-                rows.push(reaction_area(cid, i, reactions.clone(), reaction_rev, picker));
+                rows.push(reaction_area(
+                    MessageKey::Mock { cid, idx: i },
+                    reactions.clone(),
+                    reaction_rev,
+                    picker,
+                ));
             }
             let mine: Vec<(u32, &'static str, String, i64)> = sent_read.borrow().clone();
             let mine: Vec<(u32, &'static str, String, i64)> = mine
@@ -5858,8 +5920,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     when,
                     format_full_when(*ts),
                     true,
-                    cid,
-                    channel.messages.len() + i,
+                    MessageKey::Mock { cid, idx: channel.messages.len() + i },
                     picker,
                     reply_ctx_k,
                     pin_visible_k,
@@ -5868,8 +5929,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 // Sent rows continue the list position after the seed rows, so
                 // their key is `seed_len + i` (see `ReactionMap` doc).
                 rows.push(reaction_area(
-                    cid,
-                    channel.messages.len() + i,
+                    MessageKey::Mock { cid, idx: channel.messages.len() + i },
                     reactions.clone(),
                     reaction_rev,
                     picker,
