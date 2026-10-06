@@ -4059,6 +4059,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let create_el = ui! {
         view {
             { create_modal_el }
+            ServerIconUploadPlaceholder()
+            ServerRegionSelector()
         }
     };
 
@@ -4306,7 +4308,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
             server_template_card()
             TemplateGalleryGrid()
             server_tag_chips()
-            AttachmentPreviewCard()
             FeaturedServerBanner()
         }
     };
@@ -4946,6 +4947,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     user_status.clone(),
                 ));
             }
+            // Mock thread list appended below the channel rows — local-only
+            // showcase of the thread rows (no backend call).
+            rows.push(ThreadListRow());
+            rows.push(ThreadListRow());
             let title = server.name.to_string();
             // The user profile is the bottom-left of the sidebar (Discord
             // convention). The member list is a separate right-side panel —
@@ -5943,7 +5948,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 // Account-security setting, living with the other account
                 // settings in this overlay (it is NOT a composer element).
                 TwoFactorToggle()
-                BanReasonInput()
                 IconChangeConfirm()
                 SettingsTabBar()
                 SetupChecklistDemo()
@@ -6346,6 +6350,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         text(style = section_label_style.clone()) { "Banned members".to_string() }
         BanListRow()
         BanListRow()
+        BanReasonInput()
         text(style = section_label_style.clone()) { "Timeout duration".to_string() }
         TimeoutDurationPicker()
         text(style = section_label_style.clone()) { "Role permissions".to_string() }
@@ -6423,6 +6428,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // user resends to retry). While unset it renders nothing.
                     SendFailedIndicator(failed = send_failed.clone())
                     attach_chip
+                    AttachmentPreviewCard()
                     emoji_popover
                     ac_el
                     ReplyPreviewBar()
