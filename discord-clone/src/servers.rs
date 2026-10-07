@@ -9,7 +9,6 @@ pub use discord_server::server_settings::{MarkReadResult, UnreadCount};
 pub use discord_server::servers::{ChannelSummary, ServerSummary};
 
 /// Create a new server, owned by the caller.
-#[allow(dead_code)] // consumed by the UI in a follow-up task.
 pub async fn create_server(name: &str) -> Result<ServerSummary, String> {
     let input = discord_server::servers::CreateServerInput {
         name: name.to_string(),

@@ -211,7 +211,7 @@ pub struct User {
 }
 
 pub const USER: User = User {
-    name: "you",
+    name: "Nova",
     color: "#5865f2",
 };
 
@@ -267,7 +267,7 @@ pub const DEFAULT_MEMBER_PROFILE: MemberProfile = MemberProfile {
     role_color: "#949ba4",
     bio: "Tell us about yourself...",
     boost_level: 2,
-    nickname: "you",
+    nickname: "Nova",
     friend_sender: "Fen",
 };
 
@@ -518,7 +518,7 @@ pub static DMS: &[Dm] = &[
                 age_secs: 3600 * 3,
             },
             DmMessage {
-                author: "you",
+                author: "Nova",
                 color: "#5865f2",
                 body: "almost — the lifetime on the helper was the whole thing",
                 age_secs: 3600 * 3 - 60,
@@ -542,7 +542,7 @@ pub static DMS: &[Dm] = &[
                 age_secs: 3600 * 5,
             },
             DmMessage {
-                author: "you",
+                author: "Nova",
                 color: "#5865f2",
                 body: "yeah, it shells out to wasm-bindgen-cli under the hood",
                 age_secs: 3600 * 5 - 45,
@@ -554,7 +554,7 @@ pub static DMS: &[Dm] = &[
                 age_secs: 3600 * 5 - 80,
             },
             DmMessage {
-                author: "you",
+                author: "Nova",
                 color: "#5865f2",
                 body: "let me know if it chokes on your setup",
                 age_secs: 3600 * 5 - 120,
@@ -572,7 +572,7 @@ pub static DMS: &[Dm] = &[
                 age_secs: 3600 * 12,
             },
             DmMessage {
-                author: "you",
+                author: "Nova",
                 color: "#5865f2",
                 body: "got a rain shell + a base layer, should be plenty",
                 age_secs: 3600 * 12 - 30,
@@ -590,7 +590,7 @@ pub static DMS: &[Dm] = &[
                 age_secs: 3600 * 8,
             },
             DmMessage {
-                author: "you",
+                author: "Nova",
                 color: "#5865f2",
                 body: "warmer reads better against the dark bg, yes",
                 age_secs: 3600 * 8 - 60,
@@ -614,7 +614,7 @@ pub static DMS: &[Dm] = &[
                 age_secs: 3600 * 18,
             },
             DmMessage {
-                author: "you",
+                author: "Nova",
                 color: "#5865f2",
                 body: "the showcase thread mostly, and the hike plan",
                 age_secs: 3600 * 18 - 40,

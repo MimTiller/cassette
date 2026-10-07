@@ -42,6 +42,7 @@ pub async fn login(username: &str, password: &str) -> Result<i64, String> {
             CURRENT_USER_ID
                 .store(result.user_id, std::sync::atomic::Ordering::SeqCst);
             *CURRENT_TOKEN.lock().unwrap_or_else(|p| p.into_inner()) = result.token;
+            *CURRENT_USERNAME.lock().unwrap_or_else(|p| p.into_inner()) = result.username;
             Ok(result.user_id)
         }
         Err(error) => Err(error.to_string()),
@@ -99,9 +100,25 @@ pub(crate) static CURRENT_USER_ID: std::sync::atomic::AtomicI64 =
 pub(crate) static CURRENT_TOKEN: std::sync::Mutex<String> =
     std::sync::Mutex::new(String::new());
 
+/// The signed-in account's username, kept process-wide so it outlives the
+/// login screen. The profile strip reads it to label the signed-in identity
+/// with the real name (instead of the mock `USER.name` "you" placeholder).
+/// Empty means "not logged in" (guest mode) — the sentinel the holder starts
+/// at. Written by [`login`] (which signup also routes through), so one fix
+/// covers both sign-in and sign-up.
+pub(crate) static CURRENT_USERNAME: std::sync::Mutex<String> =
+    std::sync::Mutex::new(String::new());
+
 /// The current session token, or an empty string when not logged in.
 pub(crate) fn current_token() -> String {
     CURRENT_TOKEN.lock().map(|t| t.clone()).unwrap_or_default()
+}
+
+/// The signed-in account's username, or an empty string when not logged in
+/// (guest mode). The profile strip falls back to the mock `USER` identity for
+/// an empty value.
+pub(crate) fn current_username() -> String {
+    CURRENT_USERNAME.lock().map(|u| u.clone()).unwrap_or_default()
 }
 
 /// The page's own origin on the web target (the bundle is served same-origin
