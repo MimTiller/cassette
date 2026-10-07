@@ -36,6 +36,11 @@ use crate::category_filter_chips::category_filter_chips;
 use crate::server_discovery_card::server_discovery_card;
 use crate::server_event_card::ServerEventCard;
 use crate::server_stats_card::server_stats_card;
+use crate::server_folder_group::server_folder_group;
+use crate::server_template_card::server_template_card;
+use crate::template_gallery_grid::TemplateGalleryGrid;
+use crate::server_tag_chips::server_tag_chips;
+use crate::featured_server_banner::FeaturedServerBanner;
 
 // Discord dark palette (kept local so the component is self-contained).
 const CARD: &str = "#2b2d31";
@@ -283,6 +288,47 @@ fn discover_panel(open: Signal<bool>, on_join: Rc<dyn Fn(String)>) -> Element {
                 ..Default::default()
             }) {
                 category_filter_chips()
+            }
+            // More discovery browsing content, relocated here from the server
+            // rail during a later review (same reasoning as the four cards
+            // above -- none of these fit a 72px icon rail): a folder of
+            // servers, a templated server card, a template gallery grid, the
+            // tag chips that filter a discovery result set, and a featured-
+            // server promo banner. All mock/local state.
+            view(style = StyleRules {
+                width: Some(pct(100.0)),
+                margin_top: Some(px(10.0)),
+                ..Default::default()
+            }) {
+                server_folder_group()
+            }
+            view(style = StyleRules {
+                width: Some(pct(100.0)),
+                margin_top: Some(px(8.0)),
+                ..Default::default()
+            }) {
+                server_template_card()
+            }
+            view(style = StyleRules {
+                width: Some(pct(100.0)),
+                margin_top: Some(px(8.0)),
+                ..Default::default()
+            }) {
+                TemplateGalleryGrid()
+            }
+            view(style = StyleRules {
+                width: Some(pct(100.0)),
+                margin_top: Some(px(8.0)),
+                ..Default::default()
+            }) {
+                server_tag_chips()
+            }
+            view(style = StyleRules {
+                width: Some(pct(100.0)),
+                margin_top: Some(px(8.0)),
+                ..Default::default()
+            }) {
+                FeaturedServerBanner()
             }
             view(style = list_style) { { list } }
         }

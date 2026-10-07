@@ -56,7 +56,6 @@ use crate::timeout_duration_picker::TimeoutDurationPicker;
 use crate::member_role_list::MemberRoleList;
 use crate::verified_badge::VerifiedBadge;
 use crate::icon_change_confirm::IconChangeConfirm;
-use crate::featured_server_banner::FeaturedServerBanner;
 use crate::ban_reason_input::BanReasonInput;
 use crate::delete_account_warning::DeleteAccountWarning;
 
@@ -65,10 +64,6 @@ use crate::language_picker::LanguagePicker;
 use crate::user_bio_block::user_bio_block;
 use crate::dm_request_card::DmRequestCard;
 use crate::blocked_user_row::BlockedUserRow;
-use crate::server_folder_group::server_folder_group;
-use crate::server_template_card::server_template_card;
-use crate::template_gallery_grid::TemplateGalleryGrid;
-use crate::server_tag_chips::server_tag_chips;
 use crate::server_region_selector::ServerRegionSelector;
 use crate::server_icon_upload_placeholder::ServerIconUploadPlaceholder;
 use crate::category_header::CategoryHeader;
@@ -4885,18 +4880,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 }
                 TouchResponse::CONSUMED
             })
-            // Explore / discovery browsing content: a folder of servers, a
-            // templated server card, a template gallery grid, and the tag
-            // chips that filter a discovery result set. All mock/local state.
-            // (The older server_stats_card/ServerEventCard/server_discovery_card/
-            // category_filter_chips cards that used to sit here were already
-            // re-homed into the Discover Servers overlay -- see fa4bf410 --
-            // so they are deliberately NOT re-added here.)
-            server_folder_group()
-            server_template_card()
-            TemplateGalleryGrid()
-            server_tag_chips()
-            FeaturedServerBanner()
+            // (server_folder_group/server_template_card/TemplateGalleryGrid/
+            // server_tag_chips/FeaturedServerBanner used to be spliced directly
+            // into this 72px icon rail -- a real usability regression, it
+            // pushed the real rail controls (add-server/DM/settings) below the
+            // fold. Moved into the Discover Servers overlay instead, alongside
+            // the other discovery cards that were already re-homed there for
+            // the same reason -- see fa4bf410 and discover_servers_modal.rs.)
         }
     };
 
@@ -5613,7 +5603,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // of `ThreadListRow`s above the user panel. Local mock
                     // data, no backend.
                     view(style = thread_list_style) {
-                        ThreadListRow()
                         ThreadListRow()
                     }
                     user
