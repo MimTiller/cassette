@@ -92,6 +92,7 @@ pub enum WsServerMsg {
         message_id: i64,
         channel_id: i64,
         author_id: i64,
+        author_username: String,
         content: String,
         created_at: i64,
         edited_at: Option<i64>,
@@ -212,11 +213,16 @@ pub async fn message_gateway(
                 Ok(messages) => {
                     let _ = ch.send(WsServerMsg::History { channel_id }).await;
                     for m in messages {
+                        let author_username = db
+                            .user_by_id(m.author_id)
+                            .map(|(_, n)| n)
+                            .unwrap_or_default();
                         let _ = ch
                             .send(WsServerMsg::Message {
                                 message_id: m.id,
                                 channel_id: m.channel_id,
                                 author_id: m.author_id,
+                                author_username,
                                 content: m.content,
                                 created_at: m.created_at,
                                 edited_at: m.edited_at,

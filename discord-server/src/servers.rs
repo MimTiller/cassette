@@ -43,11 +43,23 @@ pub struct ChannelSummary {
 }
 
 #[cfg(feature = "server")]
+use crate::roles::ChannelKind;
+
+#[cfg(feature = "server")]
 use crate::session::acting_user;
 
 #[cfg(feature = "server")]
 fn db_from_state() -> Result<Db, ServerError> {
     server::use_state::<Db>().ok_or_else(|| ServerError::failed("database not installed"))
+}
+
+/// Epoch-milliseconds timestamp for the default channel seeded below.
+#[cfg(feature = "server")]
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 /// Create a new server, owned by the caller (who becomes its first
@@ -61,6 +73,12 @@ pub async fn create_server(input: CreateServerInput) -> Result<ServerSummary, Se
     }
     let id = db
         .insert_server(caller, &input.name)
+        .map_err(|e| ServerError::failed(e.to_string()))?;
+    // Seed a default `#general` text channel so the fresh server is
+    // immediately usable (a server with zero channels has nowhere to send a
+    // message). `insert_server` already wrote the owner's `server_memberships`
+    // row, so this channel belongs to a server the caller can actually reach.
+    db.insert_channel(id, "general", ChannelKind::Text, None, now_millis())
         .map_err(|e| ServerError::failed(e.to_string()))?;
     Ok(ServerSummary {
         id,

@@ -1921,6 +1921,18 @@ fn user_panel(
         move || (user_status.get(), voice_name_for(joined_voice.get())),
         move |(status, voice_name): &(Status, Option<String>)| {
             let user = USER;
+            // Real signed-in identity: when genuinely logged in (not guest), the
+            // backend's username was stored in `CURRENT_USERNAME` at login and
+            // outlives this screen. Guest mode leaves it empty, so the strip
+            // falls back to the mock `USER` identity ("Nova") there. The value
+            // is set before `authed` flips (login completes first), so a plain
+            // read here is stable for the whole mount — no reactivity needed.
+            let real_name = crate::auth::current_username();
+            let display_name = if !real_name.is_empty() {
+                real_name
+            } else {
+                user.name.to_string()
+            };
             let voice_name = voice_name.clone();
             // Two rows (see the fn doc): identity on top, the icon-button
             // control row beneath.
@@ -1999,8 +2011,8 @@ fn user_panel(
                 color: Some(col(TEXT)),
                 ..Default::default()
             };
-            let initial = user.name.chars().next().unwrap_or(' ').to_string();
-            let name = user.name.to_string();
+            let initial = display_name.chars().next().unwrap_or(' ').to_string();
+            let name = display_name;
 
             // In a voice channel? Replace the name/status pair with the
             // Discord-style connection line: green "Voice Connected" + the
@@ -3747,6 +3759,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 message_id,
                 channel_id,
                 author_id,
+                author_username,
                 content,
                 created_at,
                 edited_at,
@@ -3755,7 +3768,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 ..
             }) = frame
             {
-                let label = format!("user {}", author_id);
+                // The server resolved the author's username for the frame
+                // (`WsServerMsg::Message.author_username`), so the row shows a
+                // real name instead of an id. `author_id` still rides along for
+                // the "@me / self" checks below.
+                let label = author_username.clone();
                 // Push the full 6-tuple: the wire `message_id` + the optional
                 // `edited_at` (epoch millis -> secs, like `created_at`) ride
                 // along so the row's edit affordance and "(edited)" marker can
@@ -4546,23 +4563,75 @@ fn app_shell(authed: Signal<bool>) -> Element {
 
     // --- "Create a Server" modal ------------------------------------------
     // Trigger is the rail's COMPASS circle (the green PLUS is taken by the
-    // Join flow). `on_create` mints a fresh server via `create_server`, appends
-    // its id to `server_rail` (the rail's re-render trigger — the
-    // `create_server_section` `switch` above rebuilds and shows the row), and
-    // closes the modal. Both the `Cell` and the `HashMap` are `Rc` so this
-    // `Fn` closure can mutate them; `Signal` is `Copy`, so the `set(false)`
-    // capture stays `Fn`.
+    // Join flow). `on_create` mints a REAL backend server via the
+    // `crate::servers::create_server` RPC (the backend seeds the owner's
+    // membership row plus a default `#general` text channel, so the fresh
+    // server is immediately usable), then re-fetches `live_servers` so the new
+    // server appears in the rail's live section (the same refresh the Join
+    // modal uses) and auto-enters it (selects it + pulls its channels, the
+    // enter-live pattern below). `Signal` is `Copy`, so the captured `set`
+    // stays `Fn`.
     let create_on_create: Rc<dyn Fn(String)> = Rc::new({
-        let next_id = next_id.clone();
-        let dynamic_servers = dynamic_servers.clone();
-        let server_rail = server_rail.clone();
+        let live_servers = live_servers.clone();
+        let active_live_server = active_live_server.clone();
+        let active_live_channel = active_live_channel.clone();
+        let live_channels = live_channels.clone();
+        let live_members = live_members.clone();
+        let live_member_error = live_member_error.clone();
+        let live_kick_confirm = live_kick_confirm.clone();
+        let live_unread = live_unread.clone();
+        let live_unread_rev = live_unread_rev.clone();
         let create_open = create_open;
         move |name: String| {
-            let new_id = create_server(&name, &*next_id, &dynamic_servers);
-            let mut ids = server_rail.get();
-            ids.push(new_id);
-            server_rail.set(ids);
-            create_open.set(false);
+            let name_owned = name.clone();
+            // Clone the `Rc` in the `Fn` body (not inside the `async move`):
+            // the `async move` block would otherwise try to move the captured
+            // `Rc` out of the `Fn` closure (E0507) — the enter-live handler
+            // uses the same `let unread_buf = unread_buf.clone()` idiom.
+            let buf = live_unread.clone();
+            runtime_core::driver::spawn_async(async move {
+                match crate::servers::create_server(&name_owned).await {
+                    Ok(summary) => {
+                        // The backend persisted the server + default channel;
+                        // re-fetch the live server list (the same RPC the rail's
+                        // live section uses) so the new server appears without a
+                        // reload.
+                        if let Ok(list) = crate::servers::list_servers().await {
+                            live_servers.set(list);
+                        }
+                        // Auto-enter the new server, mirroring the enter-live
+                        // handler: select it, reset any stale channel/moderation
+                        // state, and pull its channels + roster + unread counts.
+                        active_live_server.set(Some(summary.id));
+                        active_live_channel.set(None);
+                        live_kick_confirm.set(None);
+                        live_member_error.set(String::new());
+                        live_members.set(Vec::new());
+                        let sid = summary.id;
+                        if let Ok(channels) = crate::servers::list_channels(sid).await {
+                            live_channels.set(channels);
+                        }
+                        if let Ok(members) = crate::moderation::list_members(sid).await {
+                            live_members.set(members);
+                        }
+                        if let Ok(counts) = crate::servers::unread_counts(sid).await {
+                            let rev = live_unread_rev;
+                            buf.borrow_mut()
+                                .extend(counts.into_iter().map(|c| {
+                                    (c.channel_id, (c.count, c.unread_mentions))
+                                }));
+                            rev.set(rev.get() + 1);
+                        }
+                    }
+                    Err(_msg) => {
+                        // Surface the backend's own rejection; the modal stays
+                        // open (it has no inline error slot, so we just log and
+                        // close on a fresh attempt).
+                        eprintln!("create_server failed: {_msg}");
+                    }
+                }
+                create_open.set(false);
+            });
         }
     });
     let create_modal_el: Element =
@@ -6090,7 +6159,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             return;
         }
         let cid = active_channel.get();
-        sent_write.borrow_mut().push((cid, "you", out_body, crate::data::now_secs()));
+        sent_write.borrow_mut().push((cid, "Nova", out_body, crate::data::now_secs()));
         send_composer.set(String::new());
         // Bump the revision so the message-list `switch` rebuilds (its key
         // dedups on value, so re-setting the same channel alone would not).

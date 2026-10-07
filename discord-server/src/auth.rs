@@ -129,6 +129,10 @@ pub struct LoginInput {
 pub struct LoginResult {
     pub user_id: i64,
     pub token: String,
+    /// The account's username, echoed back so the client can label the signed-in
+    /// identity (the profile strip) with the real name rather than an id or the
+    /// mock "you" placeholder.
+    pub username: String,
 }
 
 #[cfg(feature = "server")]
@@ -149,7 +153,7 @@ impl AuthService {
     ///   record a failure when the account exists) so the endpoint never
     ///   leaks which usernames are registered.
     pub fn login(&self, username: &str, password: &str) -> Result<LoginResult, String> {
-        let (user_id, _stored_username, stored_hash) = self
+        let (user_id, stored_username, stored_hash) = self
             .db
             .user_by_username_creds(username)
             .ok_or_else(|| "invalid username or password".to_string())?;
@@ -177,7 +181,7 @@ impl AuthService {
         self.db
             .clear_login_failures(user_id)
             .map_err(|e| format!("failed to clear login failures: {e}"))?;
-        Ok(LoginResult { user_id, token: crate::session::issue_token(user_id) })
+        Ok(LoginResult { user_id, token: crate::session::issue_token(user_id), username: stored_username })
     }
 
     /// Seconds until the account's lockout window slides past its oldest

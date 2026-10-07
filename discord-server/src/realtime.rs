@@ -264,12 +264,20 @@ pub fn post_channel_message(
     if let Err(e) = db.insert_message_mentions(message_id, &mentioned_user_ids) {
         return Err(format!("failed to store mentions: {e}"));
     }
+    // Resolve the author's username for the wire frame so the live client can
+    // label the message with a real name, not an id (mirrors DmMessage's
+    // `author_username`).
+    let author_username = db
+        .user_by_id(user_id)
+        .map(|(_, n)| n)
+        .unwrap_or_default();
     hub().publish(
         &server_audience(db, server_id),
         &WsServerMsg::Message {
             message_id,
             channel_id,
             author_id: user_id,
+            author_username,
             content: content.to_string(),
             created_at,
             edited_at: None,
