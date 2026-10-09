@@ -4354,6 +4354,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
     ));
     let create_open: Signal<bool> = signal(false);
     let create_name: Signal<String> = signal(String::new());
+    // The create modal's inline error (the backend's own rejection wording)
+    // and in-flight busy guard. Both owned by the app (like the join modal's
+    // `join_error` / `join_busy`) and reset on re-open below.
+    let create_error: Signal<String> = signal(String::new());
+    let create_busy: Signal<bool> = signal(false);
 
     // Dynamically created servers — a separate section below the mock rows.
     // Rebuilt whenever `server_rail` changes (a new id appended). Each row
@@ -4668,6 +4673,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let live_unread = live_unread.clone();
         let live_unread_rev = live_unread_rev.clone();
         let create_open = create_open;
+        let create_error = create_error;
+        let create_busy = create_busy;
         move |name: String| {
             let name_owned = name.clone();
             // Clone the `Rc` in the `Fn` body (not inside the `async move`):
@@ -4675,7 +4682,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // `Rc` out of the `Fn` closure (E0507) — the enter-live handler
             // uses the same `let unread_buf = unread_buf.clone()` idiom.
             let buf = live_unread.clone();
+            let c_err = create_error;
+            let c_busy = create_busy;
             runtime_core::driver::spawn_async(async move {
+                // Clear any prior rejection and mark in-flight; the modal's
+                // Create button shows "Creating…" while this runs (the busy
+                // guard also stops a fast double-tap from minting two).
+                c_err.set(String::new());
+                c_busy.set(true);
                 match crate::servers::create_server(&name_owned).await {
                     Ok(summary) => {
                         // The backend persisted the server + default channel;
@@ -4708,20 +4722,29 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                 }));
                             rev.set(rev.get() + 1);
                         }
+                        // Success: the server exists and we're auto-entering
+                        // it, so close the modal. (On the error path below the
+                        // modal stays open so the inline message is visible and
+                        // the name field can be corrected and resubmitted.)
+                        create_open.set(false);
                     }
-                    Err(_msg) => {
-                        // Surface the backend's own rejection; the modal stays
-                        // open (it has no inline error slot, so we just log and
-                        // close on a fresh attempt).
-                        eprintln!("create_server failed: {_msg}");
+                    Err(msg) => {
+                        // Surface the backend's own rejection inline in the
+                        // modal (e.g. an empty name -> "server name must not
+                        // be empty"). The modal stays open; the name field is
+                        // still editable so the user can correct it and hit
+                        // Create again. We do NOT close here — closing on
+                        // failure would hide the very message we just set.
+                        eprintln!("create_server failed: {msg}");
+                        c_err.set(msg);
                     }
                 }
-                create_open.set(false);
+                c_busy.set(false);
             });
         }
     });
     let create_modal_el: Element =
-        create_server_modal(create_open, create_name, create_on_create);
+        create_server_modal(create_open, create_name, create_error, create_busy, create_on_create);
     let create_el = ui! {
         view {
             { create_modal_el }
@@ -4922,6 +4945,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let plus_busy = join_busy.clone();
         let create_open = create_open.clone();
         let create_name = create_name.clone();
+        let create_error = create_error.clone();
+        let create_busy = create_busy.clone();
         let discover_open = discover_open.clone();
         let dm_open = dm_mode.clone();
         let settings_open = notif_mode.clone();
@@ -4952,10 +4977,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
             }
             // Explore/Create-a-Server: reset the name field and open the create
             // modal (the same reset-on-open `create_server_modal`'s docs
-            // describe). The compass is Discord's Explore affordance.
+            // describe). The compass is Discord's Explore affordance. Also
+            // clear the prior attempt's inline error and busy state so a
+            // re-open always starts fresh (the same per-open reset the join
+            // modal applies to its `join_error` / `join_busy`).
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
                     create_name.set(String::new());
+                    create_error.set(String::new());
+                    create_busy.set(false);
                     create_open.set(true);
                 }
                 TouchResponse::CONSUMED

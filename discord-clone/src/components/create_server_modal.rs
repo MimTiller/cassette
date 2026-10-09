@@ -3,21 +3,27 @@
 //!
 //! A centered card over a dimmed full-screen backdrop (the same build-once/
 //! toggle idiom as `join_modal.rs`: when `open` is false the wrapper collapses
-//! to zero size; when true it fills the window). It has a single state: a
-//! `text_input` for the server name above a **Create** button. A **Cancel**
-//! button (or tapping the backdrop) closes the modal without creating
-//! anything.
+//! to zero size; when true it fills the window). A `text_input` for the server
+//! name above a **Create** button. A **Cancel** button (or tapping the
+//! backdrop) closes the modal without creating anything.
 //!
-//! The `open` / `name` signals are owned by the caller (`app.rs`), which
-//! resets `name` on open so a re-open always starts fresh. The `on_create`
-//! callback is called with the trimmed name when Create is tapped with a
-//! non-empty name; it is the caller's responsibility to create the server and
-//! close the modal.
+//! The `open` / `name` / `error` / `busy` signals are owned by the caller
+//! (`app.rs`), which resets `name` / `error` / `busy` on open so a re-open
+//! always starts fresh. The `on_create` callback is called with the trimmed
+//! name (possibly empty) when Create is tapped — the modal itself imposes no
+//! empty-name gate; the backend is the single source of truth for that (its
+//! own wording, "server name must not be empty"). When the backend rejects,
+//! the caller sets `error`, which is shown inline below the input while the
+//! modal stays open (the name field remains editable so it can be corrected
+//! and resubmitted); on success the caller closes the modal. `busy` guards
+//! against a double-tap firing two RPCs and drives the button's
+//! "Creating…" pending label.
 //!
 //! Idioms: the button `.on_touch` chains are built as `let` bindings (the
 //! `close_btn` idiom in `invite_modal.rs`) so the method chain lives outside
-//! the `ui!` child position. `Signal` is `Copy`, so every `move` closure
-//! captures a copy and stays `Fn`.
+//! the `ui!` child position. The inline `error` line is the reactive
+//! `if !…is_empty() { text { move || … } }` idiom from `app.rs`. `Signal` is
+//! `Copy`, so every `move` closure captures a copy and stays `Fn`.
 use std::rc::Rc;
 
 use runtime_core::{
@@ -41,10 +47,14 @@ const TEXT_MUTED: &str = "#949ba4";
 pub fn create_server_modal(
     open: Signal<bool>,
     name: Signal<String>,
+    error: Signal<String>,
+    busy: Signal<bool>,
     on_create: Rc<dyn Fn(String)>,
 ) -> Element {
     let close = open;
     let n = name;
+    let e = error;
+    let b = busy;
     let create = on_create.clone();
 
     // Shared card/field/button styles (one static pass).
@@ -124,20 +134,43 @@ pub fn create_server_modal(
         color: Some(col(TEXT)),
         ..Default::default()
     };
+    let err_style = StyleRules {
+        font_size: Some(px(13.0)),
+        color: Some(col("#f23f43")),
+        margin_top: Some(px(12.0)),
+        ..Default::default()
+    };
 
-    // Create handler: gate on non-empty trimmed name, then call the callback.
+    // Create handler: the only client-side gate is the in-flight `busy` guard
+    // (a fast double-tap would otherwise fire two RPCs and mint two servers).
+    // The empty-name check is the backend's (its own wording, "server name
+    // must not be empty"), so we do NOT short-circuit on an empty field — we
+    // hand the trimmed name to the caller and surface the backend's rejection
+    // in the inline `error` slot below. `Signal` is `Copy`, so every captured
+    // copy stays `Fn`.
     let on_create = move || {
-        let raw = n.get();
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
+        if b.get() {
             return;
         }
-        create(trimmed.to_string());
+        let raw = n.get();
+        let trimmed = raw.trim().to_string();
+        b.set(true);
+        e.set(String::new());
+        create(trimmed);
     };
+    // The `name` signal is the input's source of truth. `value = name` is the
+    // signal→widget leg only: keystrokes arrive via `on_change` (per the
+    // `input_with_submit.rs` recipe — "without this, the signal never updates
+    // and `get()` is always empty"). Without this callback the `name` signal
+    // stayed empty while the DOM field showed the typed text, so Create always
+    // handed the backend an empty name and every submit was rejected with
+    // "server name must not be empty". `Signal` is `Copy`, so this closure
+    // captures a copy of `n` and stays `Fn` on each keystroke.
+    let on_name_change = move |s: String| n.set(s);
 
     let create_btn = ui! {
         view(style = create_btn_style.clone(), test_id = "create-server-create") {
-            text(style = btn_label_style.clone()) { "Create".to_string() }
+            text(style = btn_label_style.clone()) { move || (if b.get() { "Creating…" } else { "Create" }).to_string() }
         }
         .on_touch(move |ev| {
             if ev.phase == TouchPhase::Ended {
@@ -164,6 +197,7 @@ pub fn create_server_modal(
             text(style = sub_style.clone()) { "Enter a name for your new server".to_string() }
             text_input(
                 value = name.clone(),
+                on_change = on_name_change,
                 placeholder = "Server name",
                 style = input_style.clone(),
                 test_id = "create-server-name-input",
@@ -182,6 +216,14 @@ pub fn create_server_modal(
             }) {
                 ServerIconUploadPlaceholder()
                 ServerRegionSelector()
+            }
+            // Inline backend rejection (the backend's own wording — e.g. an
+            // empty name). Shown only when a Create attempt was rejected; the
+            // name field above stays editable so it can be corrected and
+            // resubmitted. The same reactive-inline idiom as the per-row
+            // backend error in app.rs (kick/role-change).
+            if !e.get().is_empty() {
+                text(style = err_style.clone()) { move || e.get().clone() }
             }
             view(style = btn_row_style.clone()) {
                 { create_btn }
