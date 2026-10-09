@@ -2968,12 +2968,19 @@ fn live_member_panel(
     members: Signal<Vec<crate::moderation::MemberInfo>>,
     error: Signal<String>,
     kick_confirm: Signal<Option<i64>>,
+    presence: Rc<RefCell<HashMap<i64, String>>>,
 ) -> Element {
     // Snapshot of the current roster. The panel is rebuilt (by the caller's
     // `switch` keyed on this signal) whenever the roster changes — including
     // the re-fetch the mutation callbacks below trigger on success — so a
     // local snapshot is always current here.
     let roster = members.get();
+    // Snapshot the live presence map the same way. The caller's `switch` key
+    // also folds in `live_presence_rev`, so a `Presence` frame forces a
+    // rebuild and this snapshot picks up the new status. A member absent from
+    // the map (e.g. just after the roster loads, before any frame arrived) is
+    // rendered as a grey "offline" dot below.
+    let presence: HashMap<i64, String> = presence.borrow().clone();
     // The signed-in user's own numeric id — their own row is marked "(you)" and
     // the rest is left to the backend's permission checks (no client-side
     // pre-computation). `CURRENT_USER_ID` is `0` when signed out, which can't
@@ -3127,6 +3134,33 @@ fn live_member_panel(
         // its own pre-made clone here instead, outside the macro entirely.
         let name_style_self_branch = name_style.clone();
         let name_style_other_branch = name_style;
+        // Live presence dot for this row. `presence` is the snapshot taken at
+        // the top of the fn (rebuilt on every `live_presence_rev` bump); the
+        // status string is whatever this member last reported over the gateway.
+        // Absent (no frame yet — e.g. right after the roster first loads) and
+        // any value the backend doesn't send are both rendered as the offline
+        // grey. The colors mirror the mock `Status::color()` convention so the
+        // live panel reads like the mock one: green online, amber away (the
+        // server's idle state), grey offline. A standalone filled circle — the
+        // live rows carry no avatar chip, so this is the plain dot, not the
+        // ring-on-avatar variant the mock `member_row` uses.
+        let presence_color = match presence.get(&member_id).map(|s| s.as_str()) {
+            Some("online") => "#23a559",
+            Some("away") => "#f0b232",
+            Some("offline") => "#80848e",
+            _ => "#80848e",
+        };
+        let dot_style = StyleRules {
+            width: Some(px(10.0)),
+            height: Some(px(10.0)),
+            background: Some(col(presence_color)),
+            border_top_left_radius: Some(px(5.0)),
+            border_top_right_radius: Some(px(5.0)),
+            border_bottom_left_radius: Some(px(5.0)),
+            border_bottom_right_radius: Some(px(5.0)),
+            flex_shrink: Some(grow(0.0)),
+            ..Default::default()
+        };
 
         let row = ui! {
             view(style = StyleRules {
@@ -3139,6 +3173,10 @@ fn live_member_panel(
                 gap: Some(px(8.0)),
                 ..Default::default()
             }) {
+                // Live presence dot (green/amber/grey from the `live_presence`
+                // map; grey when no `Presence` frame has landed for this member
+                // yet). Placed first so it leads the row.
+                view(style = dot_style) {}
                 // Name (+ a "(you)" tag on the signed-in user's own row).
                 view(style = StyleRules {
                     flex_shrink: Some(grow(1.0)),
@@ -3668,6 +3706,30 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let live_members: Signal<Vec<crate::moderation::MemberInfo>> = signal(Vec::new());
     let live_kick_confirm: Signal<Option<i64>> = signal(None);
     let live_member_error: Signal<String> = signal(String::new());
+    // Live presence: `user_id -> status string`. The backend broadcasts
+    // `WsServerMsg::Presence` ('online' on socket auth + activity, 'away' after
+    // `PRESENCE_IDLE_SECS` of no inbound frames, 'offline' on the user's last
+    // socket disconnect) over the gateway, so the member panel can show a
+    // per-row status dot. Mutating the `Rc` does not trigger reactivity, so
+    // `live_presence_rev` is bumped on every frame and folded into the member
+    // panel's `switch` key (the `live_revision` / `live_typing_rev` idiom). A
+    // member with no frame yet (just after the roster loads) reads as absent
+    // and is rendered as a grey "offline" dot.
+    let live_presence: Rc<RefCell<HashMap<i64, String>>> =
+        Rc::new(RefCell::new(HashMap::new()));
+    let live_presence_rev: Signal<u32> = signal(0);
+    // Live presence: `user_id -> status string`. The backend broadcasts
+    // `WsServerMsg::Presence` ('online' on socket auth + activity, 'away' after
+    // `PRESENCE_IDLE_SECS` of no inbound frames, 'offline' on the user's last
+    // socket disconnect) over the gateway, so the member panel can show a
+    // per-row status dot. Mutating the `Rc` does not trigger reactivity, so
+    // `live_presence_rev` is bumped on every frame and folded into the member
+    // panel's `switch` key (the `live_revision` / `live_typing_rev` idiom). A
+    // member with no frame yet (just after the roster loads) reads as absent
+    // and is rendered as a grey "offline" dot.
+    let live_presence: Rc<RefCell<HashMap<i64, String>>> =
+        Rc::new(RefCell::new(HashMap::new()));
+    let live_presence_rev: Signal<u32> = signal(0);
 
     // Realtime gateway: the signed session token authenticates the connect
     // (the backend verifies it). It rides the connect URL's `?args=` query —
@@ -3752,6 +3814,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // appears. A successful send is echoed as a `Message` frame instead, which
     // is handled above — so only a genuine failure flips this.
     let send_failed_sig = send_failed.clone();
+    let presence_buf = live_presence.clone();
+    let presence_rev = live_presence_rev.clone();
     let gateway_incoming_effect = switch(
         move || gateway.incoming().get(),
         move |frame: &Option<discord_server::server_settings::WsServerMsg>| {
@@ -3898,6 +3962,24 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     }
                     live_rev.set(live_rev.get() + 1);
                 }
+            }
+            // A presence change for a user on a shared server: record
+            // `user_id -> status` in `live_presence` and bump `live_presence_rev`
+            // so the live member panel's `switch` re-renders (the row's dot
+            // updates). The backend sends 'online' on socket auth + activity,
+            // 'away' after the idle timeout, and 'offline' on the user's last
+            // socket disconnect — so every status we can receive is a real
+            // server value (no client-invented states). `frame` is a `&WsServerMsg`
+            // borrowed for this one call, so copy the fields out to owned values.
+            if let Some(discord_server::server_settings::WsServerMsg::Presence {
+                user_id,
+                status,
+            }) = frame
+            {
+                let user_id = *user_id;
+                let status = status.clone();
+                presence_buf.borrow_mut().insert(user_id, status);
+                presence_rev.set(presence_rev.get() + 1);
             }
             // Typing frame from another member of the channel: record who is
             // typing in `live_typing` and bump `live_typing_rev` so the
@@ -6644,11 +6726,57 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // roster) AND when the signed-in user's live status changes — the user
     // regroups to their new status bucket, and the member count follows.
     // Rendered as the right-most top-level column.
+    // The right-side member column. Mirrors the middle view's mock/live split:
+    // when a *live* server is active (`active_live_server` is `Some`, set the
+    // moment a live channel is opened) render the real `live_member_panel`
+    // backed by the gateway-fed `live_members` roster + `live_presence` map;
+    // otherwise (a mock server is selected) render the static `member_panel`.
+    // The key folds in every signal the live panel reads — roster, error,
+    // kick-confirm, and the presence revision — so any of those changes (e.g.
+    // a `Presence` frame arriving) rebuilds the panel and the dots update.
+    let live_members_panel = live_members.clone();
+    let live_member_error_panel = live_member_error.clone();
+    let live_kick_panel = live_kick_confirm.clone();
+    let live_presence_panel = live_presence.clone();
     let members_switch = switch(
-        move || (active_server.get(), user_status.get()),
-        move |(server_id, user_status): &(u32, Status)| {
-            let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
-            member_panel(server, &USER.as_member(*user_status), selected_member.clone(), member_panel_width, sidebar_width)
+        move || {
+            (
+                active_server.get(),
+                user_status.get(),
+                active_live_server.get(),
+                live_members.get(),
+                live_member_error.get(),
+                live_kick_confirm.get(),
+                live_presence_rev.get(),
+            )
+        },
+        move |(_server_id, user_status, live_active, _live_members, _live_err, _live_kick, _presence_rev): &(
+            u32,
+            Status,
+            Option<i64>,
+            Vec<crate::moderation::MemberInfo>,
+            String,
+            Option<i64>,
+            u32,
+        )| {
+            if let Some(ls) = *live_active {
+                // Live server: real roster + live presence dots. The panel owns
+                // its width internally (fixed 260px, same as the mock default
+                // before a user drags the handle).
+                live_member_panel(
+                    ls,
+                    live_members_panel,
+                    live_member_error_panel,
+                    live_kick_panel,
+                    // `Rc` isn't `Copy`, and this is an `Fn` (re-entrant) closure —
+                    // clone the handle each render.
+                    live_presence_panel.clone(),
+                )
+            } else {
+                // Mock server: the static grouped panel.
+                let server = SERVERS.iter().find(|x| x.id == *_server_id).unwrap();
+                member_panel(server, &USER.as_member(*user_status), selected_member.clone(), member_panel_width, sidebar_width)
+            }
         },
     );
 
