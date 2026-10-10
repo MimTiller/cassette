@@ -646,8 +646,8 @@ pub static SERVERS: &[Server] = &[
                             Message {
                                 author: "miri",
                                 color: "#5865f2",
-                                body: "morning all ☕ anyone up for a borrow-checker war story?",
-                                age_secs: 3600 * 9,
+                                body: "the classic. the compiler was being generous",
+                                age_secs: 3600 * 9 + 95,
                             },
                             Message {
                                 author: "dyno",
@@ -658,8 +658,8 @@ pub static SERVERS: &[Server] = &[
                             Message {
                                 author: "miri",
                                 color: "#5865f2",
-                                body: "the classic. the compiler was being generous",
-                                age_secs: 3600 * 9 + 95,
+                                body: "morning all ☕ anyone up for a borrow-checker war story?",
+                                age_secs: 3600 * 9,
                             },
                         ],
                     },
@@ -671,18 +671,6 @@ pub static SERVERS: &[Server] = &[
                         unread: 0,
                         mentions: 0,
                         messages: &[
-                            Message {
-                                author: "dyno",
-                                color: "#57f287",
-                                body: "wrote a tiny WASM build tool over the weekend — 400 lines, zero deps",
-                                age_secs: 3600 * 7,
-                            },
-                            Message {
-                                author: "nara",
-                                color: "#eb459e",
-                                body: "link? I need that energy",
-                                age_secs: 3600 * 7 + 20,
-                            },
                             // Content that warrants two message-formatting widgets
                             // on a GENUINE, deliberate instance (not a per-row
                             // splice): the body carries a real URL (so
@@ -697,6 +685,12 @@ pub static SERVERS: &[Server] = &[
                                 color: "#57f287",
                                 body: "here it is: https://github.com/dyno/wasm-forge — and the one gotcha that ate an hour was ||passing the linker flag through the profile section, not the target one|| but it's in the README",
                                 age_secs: 3600 * 7 + 75,
+                            },
+                            Message {
+                                author: "nara",
+                                color: "#eb459e",
+                                body: "link? I need that energy",
+                                age_secs: 3600 * 7 + 20,
                             },
                         ],
                     },
@@ -765,16 +759,16 @@ pub static SERVERS: &[Server] = &[
                         mentions: 0,
                         messages: &[
                             Message {
-                                author: "kai",
-                                color: "#fee75c",
-                                body: "first pass on the title screen, still a mess but the lighting feels right",
-                                age_secs: 3600 * 5,
-                            },
-                            Message {
                                 author: "sol",
                                 color: "#ed4245",
                                 body: "that glow on the emblem is doing a lot — love it",
                                 age_secs: 3600 * 5 + 15,
+                            },
+                            Message {
+                                author: "kai",
+                                color: "#fee75c",
+                                body: "first pass on the title screen, still a mess but the lighting feels right",
+                                age_secs: 3600 * 5,
                             },
                         ],
                     },
@@ -833,14 +827,14 @@ pub static SERVERS: &[Server] = &[
                         Message {
                             author: "rio",
                             color: "#3ba55c",
-                            body: "weekend hike is a go — 14 people confirmed, meeting at the north lot 7am",
-                            age_secs: 3600 * 16,
+                            body: "bring layers, the ridge is windy",
+                            age_secs: 3600 * 16 + 30,
                         },
                         Message {
                             author: "rio",
                             color: "#3ba55c",
-                            body: "bring layers, the ridge is windy",
-                            age_secs: 3600 * 16 + 30,
+                            body: "weekend hike is a go — 14 people confirmed, meeting at the north lot 7am",
+                            age_secs: 3600 * 16,
                         },
                     ],
                 }],
