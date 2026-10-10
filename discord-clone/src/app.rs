@@ -4579,7 +4579,26 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                 if let Ok(channels) =
                                     crate::servers::list_channels(sid).await
                                 {
+                                    // Auto-select the first text channel so the
+                                    // main panes enter live mode: the header,
+                                    // message list, and composer all key on
+                                    // `active_live_channel`, which stays `None`
+                                    // here until a channel row is tapped. The
+                                    // mock tile handler does the same via
+                                    // `first_text_channel()` — without it,
+                                    // clicking a live tile updates only the
+                                    // sidebar (keyed on `active_live_server`)
+                                    // and the header / messages keep showing the
+                                    // mock server. Resolved before `channels`
+                                    // is moved into `live_ch`.
+                                    let first = channels
+                                        .iter()
+                                        .find(|c| c.kind == "text")
+                                        .map(|c| c.id);
                                     live_ch.set(channels);
+                                    if let Some(id) = first {
+                                        live_ch_sel.set(Some(id));
+                                    }
                                 }
                                 if let Ok(members) =
                                     crate::moderation::list_members(sid).await
@@ -4709,7 +4728,19 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         live_members.set(Vec::new());
                         let sid = summary.id;
                         if let Ok(channels) = crate::servers::list_channels(sid).await {
+                            // Auto-select the first text channel (same as the
+                            // enter-live tile handler): the main panes key on
+                            // `active_live_channel`, so a freshly created server
+                            // would otherwise sit on a stale / mock main pane
+                            // until a channel row is tapped.
+                            let first = channels
+                                .iter()
+                                .find(|c| c.kind == "text")
+                                .map(|c| c.id);
                             live_channels.set(channels);
+                            if let Some(id) = first {
+                                active_live_channel.set(Some(id));
+                            }
                         }
                         if let Ok(members) = crate::moderation::list_members(sid).await {
                             live_members.set(members);
