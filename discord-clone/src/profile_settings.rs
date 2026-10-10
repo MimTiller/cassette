@@ -1,13 +1,9 @@
-//! `profile_settings` — a minimal ProfileSettings screen: a display-name text
-//! input, a circular avatar placeholder (colored circle + the first letter of
-//! the name), and a status-message text input. All three fields are bound to
-//! local component state — no backend call, no navigation wiring, no
-//! validation. (The fuller "User Settings" overlay lives in
-//! `profile_settings.rs::user_settings`; this is the small screen.)
-//!
-//! Deliberately not wired into navigation yet — that is a separate follow-up.
-//! Declared in `lib.rs` so it compiles as part of the crate, but referenced by
-//! nothing (the same shape the `user_settings` overlay ships in).
+//! `profile_settings` — the Profile screen: a display-name text input seeded
+//! from the signed-in account (the real backend username from
+//! `crate::auth::current_username()`, falling back to the mock `USER` identity
+//! in guest mode), a circular avatar (colored circle + the first letter of the
+//! name), and a status-message text input. Opened as a full-screen overlay by
+//! the "Profile" pill in the user panel (`app.rs::user_panel`).
 
 use runtime_core::{
     component, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent, StyleRules,
@@ -33,8 +29,21 @@ fn grow(v: f32) -> Tokenized<f32> {
 /// letter tracks the display name reactively.
 #[component]
 pub fn profile_settings() -> Element {
-    let display_name = signal("Alex".to_string());
-    let status_message = signal("Available".to_string());
+    // Real signed-in identity: the backend username recorded at login in
+    // `CURRENT_USERNAME` (see `crate::auth`), the same source the user panel
+    // reads (`app.rs::user_panel`). Guest mode leaves it empty, so fall back to
+    // the mock `USER` identity there. This component is rebuilt when the
+    // `authed` gate flips on login, so a plain read here captures the real name.
+    let real_name = crate::auth::current_username();
+    let display_name = signal(if !real_name.is_empty() {
+        real_name
+    } else {
+        crate::data::USER.name.to_string()
+    });
+    // Status message: no backend field yet, so seed from the real presence
+    // status vocabulary (`Status::Online.name()` = "Online") rather than a
+    // mock placeholder.
+    let status_message = signal(crate::data::Status::Online.name().to_string());
 
     // The avatar's first letter, recomputed whenever the name changes.
     let avatar_letter = {
