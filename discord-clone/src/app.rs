@@ -83,7 +83,6 @@ use crate::jump_to_bottom_button::JumpToBottomButton;
 use crate::afk_timer_display::AfkTimerDisplay;
 use crate::connection_quality_indicator::ConnectionQualityIndicator;
 use crate::voice_join_button::VoiceJoinButton;
-use crate::voice_participant_list::VoiceParticipantList;
 use crate::volume_slider::VolumeSlider;
 use crate::soundboard_button::SoundboardButton;
 use crate::edited_label::edited_label;
@@ -1691,6 +1690,30 @@ fn voice_section(
                 }
             });
         }
+        // "VOICE — N CONNECTED" section header, shown only while joined — the
+        // count is the real connected set rendered beneath (the channel's
+        // speakers plus your own row), not a hardcoded mock. Matches the
+        // member-panel group-label "LABEL — N" idiom.
+        if joined_voice.get() == Some((server_id, v.id)) {
+            let connected = v.speakers.len() + 1;
+            let hdr_style = StyleRules {
+                padding_top: Some(px(4.0)),
+                padding_left: Some(px(12.0)),
+                padding_right: Some(px(8.0)),
+                ..Default::default()
+            };
+            let hdr_text_style = StyleRules {
+                font_size: Some(px(11.0)),
+                font_weight: Some(FontWeight::SemiBold),
+                color: Some(col(TEXT_MUTED)),
+                ..Default::default()
+            };
+            out.push(ui! {
+                view(style = hdr_style) {
+                    text(style = hdr_text_style) { format!("VOICE — {} CONNECTED", connected) }
+                }
+            });
+        }
         // Connected members, Discord's voice layout (avatar + name, indented).
         for sp in v.speakers {
             let row_style = StyleRules {
@@ -1735,12 +1758,6 @@ fn voice_section(
                     text(style = name_style) { sp.name.to_string() }
                 }
             });
-        }
-        // The mock voice-participant list (three fake participants with mic
-        // states) sits alongside the connected-member sub-rows while the user
-        // is joined to this channel. Local/mock only — no backend call.
-        if joined_voice.get() == Some((server_id, v.id)) {
-            out.push(VoiceParticipantList());
         }
         // While joined, the user's own row appears beneath the seed members —
         // Discord shows you in the channel you're in. Built as a plain row

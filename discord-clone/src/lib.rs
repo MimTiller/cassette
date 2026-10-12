@@ -191,8 +191,6 @@ mod server_boost_badge;
 mod member_count_display;
 #[path = "components/slash_command_dropdown.rs"]
 mod slash_command_dropdown;
-#[path = "components/voice_participant_list.rs"]
-mod voice_participant_list;
 #[path = "components/settings_tab_bar.rs"]
 mod settings_tab_bar;
 
