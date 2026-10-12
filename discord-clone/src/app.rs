@@ -4184,6 +4184,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // Mock-only: renders the eight unwired moderation components with hardcoded
     // rows; no backend call.
     let moderation_mode: Signal<bool> = signal(false);
+    // "Bug reports" thread: the `ThreadListRow` in the channel sidebar opens
+    // this as a full-screen overlay (the same toggle idiom as `moderation_mode`).
+    // Mock-only: a handful of hardcoded placeholder reports, no backend call.
+    let bug_reports_mode: Signal<bool> = signal(false);
 
     // --- server rail -----------------------------------------------------
     let rail_style = StyleRules {
@@ -5161,6 +5165,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             let sidebar_title_style = sidebar_title_style.clone();
             let chevron_style = chevron_style.clone();
             let cat_style = cat_style.clone();
+            let bug_reports_open = bug_reports_mode.clone();
             let channel = active_channel;
 
             // Live (backend) mode: build the live channel rows up front
@@ -5725,7 +5730,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // put regardless of channel-list scroll position.
             let thread_list_style = StyleRules {
                 flex_direction: Some(FlexDirection::Column),
-                padding_top: Some(px(4.0)),
+                padding_top: Some(px(8.0)),
+                padding_left: Some(px(8.0)),
+                padding_right: Some(px(8.0)),
                 ..Default::default()
             };
             // The user profile is the bottom-left of the sidebar (Discord
@@ -5750,12 +5757,19 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             ..Default::default()
                         }) { rows }
                     }
-                    // Mock thread list near the channel sidebar: a short stack
-                    // of `ThreadListRow`s above the user panel. Local mock
-                    // data, no backend.
+                    // Mock thread list near the channel sidebar: a `ThreadListRow`
+                    // above the user panel. Local mock data, no backend. Clicking
+                    // it opens the "Bug reports" full-screen overlay (flips
+                    // `bug_reports_mode`; the overlay's "Done" pill closes it).
                     view(style = thread_list_style) {
                         ThreadListRow()
                     }
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            bug_reports_open.set(!bug_reports_open.get());
+                        }
+                        TouchResponse::CONSUMED
+                    })
                     user
                 }
             }
@@ -7292,6 +7306,131 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // to zero size while no member is selected (the same toggle idiom as the
     // other overlay regions above).
     let member_profile_el = member_profile_panel(selected_member.clone());
+
+    // --- Bug reports overlay -----------------------------------------------
+    // The `ThreadListRow` "Bug reports" row in the channel sidebar flips
+    // `bug_reports_mode`; this full-screen overlay lists a handful of
+    // hardcoded placeholder reports (mock-only, no backend call). Same
+    // paint-last / collapse-to-zero idiom as `moderation_region`.
+    let bug_reports_close = bug_reports_mode.clone();
+    let bug_reports_header = ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(JustifyContent::SpaceBetween),
+            padding_top: Some(px(16.0)),
+            padding_bottom: Some(px(16.0)),
+            padding_left: Some(px(16.0)),
+            padding_right: Some(px(16.0)),
+            ..Default::default()
+        }) {
+            text(style = StyleRules {
+                font_size: Some(px(18.0)),
+                font_weight: Some(FontWeight::Bold),
+                color: Some(col(TEXT)),
+                ..Default::default()
+            }) { "Bug reports".to_string() }
+            view(style = StyleRules {
+                height: Some(px(26.0)),
+                padding_left: Some(px(12.0)),
+                padding_right: Some(px(12.0)),
+                background: Some(col(BG_SIDEBAR)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                border_top_left_radius: Some(px(6.0)),
+                border_top_right_radius: Some(px(6.0)),
+                border_bottom_left_radius: Some(px(6.0)),
+                border_bottom_right_radius: Some(px(6.0)),
+                ..Default::default()
+            }) {
+                text(style = StyleRules {
+                    color: Some(col(TEXT)),
+                    font_size: Some(px(12.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    ..Default::default()
+                }) { "Done".to_string() }
+            }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    bug_reports_close.set(false);
+                }
+                TouchResponse::CONSUMED
+            })
+        }
+    };
+    // (title, reporter, status) — static placeholder reports.
+    let bug_report_rows: Vec<(&str, &str, &str)> = vec![
+        ("Messages fail to load on slow connections", "nova", "Open"),
+        ("Voice channel drops after ~5 minutes", "kito", "Open"),
+        ("Emoji picker does not close on outside tap", "mira", "In review"),
+        ("Sidebar channel names truncate too early", "juno", "In review"),
+        ("DM list loses scroll position on refresh", "sami", "Resolved"),
+    ];
+    let bug_reports_el = ui! {
+        for (title, reporter, status) in &bug_report_rows {
+            view(style = StyleRules {
+                flex_direction: Some(FlexDirection::Column),
+                margin_left: Some(px(16.0)),
+                margin_right: Some(px(16.0)),
+                margin_top: Some(px(8.0)),
+                padding_top: Some(px(10.0)),
+                padding_bottom: Some(px(10.0)),
+                padding_left: Some(px(12.0)),
+                padding_right: Some(px(12.0)),
+                background: Some(col(BG_SIDEBAR)),
+                border_top_left_radius: Some(px(6.0)),
+                border_top_right_radius: Some(px(6.0)),
+                border_bottom_left_radius: Some(px(6.0)),
+                border_bottom_right_radius: Some(px(6.0)),
+                ..Default::default()
+            }) {
+                text(style = StyleRules {
+                    font_size: Some(px(14.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    color: Some(col(TEXT)),
+                    ..Default::default()
+                }) { (*title).to_string() }
+                view(style = StyleRules {
+                    flex_direction: Some(FlexDirection::Row),
+                    justify_content: Some(JustifyContent::SpaceBetween),
+                    margin_top: Some(px(4.0)),
+                    ..Default::default()
+                }) {
+                    text(style = StyleRules {
+                        font_size: Some(px(12.0)),
+                        color: Some(col(TEXT_MUTED)),
+                        ..Default::default()
+                    }) { (format!("reported by {}", reporter)).to_string() }
+                    text(style = StyleRules {
+                        font_size: Some(px(12.0)),
+                        color: Some(col(TEXT_MUTED)),
+                        ..Default::default()
+                    }) { (*status).to_string() }
+                }
+            }
+        }
+    };
+    let bug_reports_open_chk = bug_reports_mode.clone();
+    let bug_reports_wrap = move || StyleRules {
+        position: Some(Position::Absolute),
+        left: Some(px(0.0)),
+        top: Some(px(0.0)),
+        width: Some(if bug_reports_open_chk.get() { pct(100.0) } else { px(0.0) }),
+        height: Some(if bug_reports_open_chk.get() { pct(100.0) } else { px(0.0) }),
+        background: Some(col(BG_MAIN)),
+        flex_direction: Some(FlexDirection::Column),
+        overflow: Some(Overflow::Hidden),
+        ..Default::default()
+    };
+    let bug_reports_region = ui! {
+        view(style = bug_reports_wrap) {
+            bug_reports_header
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
+                scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { bug_reports_el }
+            }
+        }
+    };
+
     // --- "jump to bottom" scroll tracking ---------------------------------
     // The floating "Jump to bottom" pill only appears while the reader has
     // scrolled UP away from the newest messages. The `scroll_view`'s `on_scroll`
@@ -7529,6 +7668,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // dismisses after a beat, or manually via its "x". Collapses to
             // nothing while hidden.
             crate::pin_confirm_toast::pin_confirm_toast(pin_visible)
+            // "Bug reports" overlay: same full-screen, paint-last idiom as
+            // `moderation_region` above.
+            bug_reports_region
         }
     }
 }
