@@ -2798,6 +2798,11 @@ fn login_screen(authed: Signal<bool>) -> Element {
                         placeholder = "username",
                         style = field_style.clone(),
                     )
+                    // Enter in the username field submits too -- without this,
+                    // only the password field (below) responded to Enter, so
+                    // the natural "type username, hit Enter" flow silently did
+                    // nothing until the user tabbed into the password field.
+                    .on_key_down(on_pw_enter)
                     text(style = label_style.clone()) { "Password".to_string() }
                     text_input(
                         value = password,
