@@ -73,6 +73,13 @@ discord-server = { path = "/root/idealyst-native-v100/discord-server" }
 # `server::credentials_from_fn`. `discord-server` also pulls it in transitively
 # for its codegen'd stubs; the direct dep is for the `configure` call site.
 server = { path = "/root/idealyst-native/crates/api/server" }
+# Cross-platform clipboard SDK (the `InviteLinkDisplay` Copy button writes the
+# shareable link to the system clipboard). Per-backend: `navigator.clipboard`
+# on wasm, UIPasteboard/NSPasteboard on Apple, ClipboardManager on Android,
+# `arboard` on Linux desktop. Same path root as the other framework deps, so
+# its `runtime-core`/`runtime-vocabulary` deps resolve to the identical crate
+# instances this crate already uses.
+clipboard = { path = "/root/idealyst-native/crates/sdk/client/clipboard" }
 
 # No backend deps: `register_scene_extensions` is generic over the scene
 # `Host` (this scaffold registers no third-party SDKs), so the app crate

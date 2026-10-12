@@ -51,10 +51,24 @@ pub fn InviteLinkDisplay(code: String) -> Element {
     // Flipped by the Copy button for display only — no clipboard access.
     let copied = signal(false);
 
-    // `Copy`: mark the link as copied. `copied` is `Copy`, so the `move`
-    // closure captures a copy of the same underlying signal and remains `Fn`
-    // on every press. No backend call.
-    let on_copy = move || copied.set(true);
+    // `Copy`: write the link to the system clipboard for real, then reveal the
+    // `Copied!` line. The clipboard SDK (`clipboard::set_text`) is async and
+    // per-backend (navigator.clipboard on web, UIPasteboard on Apple,
+    // ClipboardManager on Android, arboard on Linux), so the work is spawned
+    // via `runtime_core::driver::spawn_async` (the same idiom the channel /
+    // join / invite modals use) and the confirmation flips only on success —
+    // a failed write (no clipboard available) shows nothing rather than a lie.
+    // `copied` is `Copy`, so it's moved into the async block as a plain handle;
+    // `text` is an owned `String` (the link) moved with it.
+    let on_copy = move || {
+        let text = link.get();
+        let copied = copied;
+        runtime_core::driver::spawn_async(async move {
+            if clipboard::set_text(&text).await.is_ok() {
+                copied.set(true);
+            }
+        });
+    };
 
     ui! {
         view(style = StyleRules {

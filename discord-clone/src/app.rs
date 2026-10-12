@@ -41,7 +41,7 @@ use runtime_core::{
 use runtime_core::icon;
 use icons_lucide::{
     CHEVRON_DOWN, CIRCLE_HELP, COMPASS, GAVEL, GLOBE, HASH, HEADPHONES, MAIL, MESSAGE_CIRCLE, MIC,
-    MIC_OFF, PENCIL, PLUS, SETTINGS, SMILE, SMILE_PLUS, TRASH_2, VOLUME_2, USERS,
+    MIC_OFF, PENCIL, PLUS, SETTINGS, SMILE, SMILE_PLUS, TRASH_2, USER_PLUS, USERS, VOLUME_2,
 };
 use crate::idle_timer_badge::idle_timer_badge;
 use crate::server_settings_panel::ServerSettingsPanel;
@@ -4211,6 +4211,19 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // Mock-only: a handful of hardcoded placeholder reports, no backend call.
     let bug_reports_mode: Signal<bool> = signal(false);
 
+    // Live "Invite People" flow (real backend, live mode only): the `USER_PLUS`
+    // action in the live channel header opens this overlay, which mints a real
+    // invite via `invite::create_invite` against `active_live_server` and shows
+    // the resulting code in `InviteLinkDisplay` (whose Copy button now writes
+    // the link to the system clipboard). `live_invite_code` holds the freshly
+    // minted code (None until created); `live_invite_error` carries a backend
+    // rejection message. Built once here, painted last (same idiom as
+    // `moderation_region`), inert outside live mode (no header action to open
+    // it, and `active_live_server` is None when a mock server is active).
+    let live_invite_mode: Signal<bool> = signal(false);
+    let live_invite_code: Signal<Option<String>> = signal(None);
+    let live_invite_error: Signal<String> = signal(String::new());
+
     // --- server rail -----------------------------------------------------
     let rail_style = StyleRules {
         width: Some(px(72.0)),
@@ -5549,6 +5562,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                             gw.send(
                                                 discord_server::server_settings::WsClientMsg::History {
                                                     channel_id: cid,
+                                                    // `before_id: None` = fetch the
+                                                    // latest page (no before-cursor) —
+                                                    // the initial load on channel select.
                                                     before_id: None,
                                                 },
                                             );
@@ -5928,6 +5944,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // `app_shell` owns `moderation_mode` and renders the overlay when it flips
     // on; the gavel button in the header below sets this copy.
     let moderation_open = moderation_mode.clone();
+    // Live-mode invite entry: the `USER_PLUS` action in the live header flips
+    // this (a clone of `live_invite_mode`, declared above). The live header arm
+    // is the only place a real backend `server_id` (`active_live_server`) is
+    // in scope, so the invite flow lives here — the mock moderation panel has
+    // no real server to mint against.
+    let live_invite_open = live_invite_mode.clone();
     let header = switch(
         move || (active_server.get(), active_channel.get(), active_live_channel.get()),
         move |(server_id, channel_id, live_cid): &(u32, u32, Option<i64>)| {
@@ -5944,11 +5966,27 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     .map(|c| c.name.clone())
                     .unwrap_or_default();
                 let topic = "No topic set yet".to_string();
+                // The live header early-returns here (before the mock server
+                // lookup at the bottom of this `switch` render, which would
+                // `unwrap()` a non-mock id and panic in live mode).
                 return ui! {
                     view(style = header_style) {
                         text(style = hash_style) { "#".to_string() }
                         text(style = title_style) { title }
                         text(style = topic_style) { topic }
+                        // Spacer: eats the row's remaining width so the invite
+                        // action sits at the far right (same idiom as the mock
+                        // header's member-count spacer).
+                        view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
+                        // Invite: opens the live "Invite People" overlay, which
+                        // mints a real invite for this live server.
+                        view(style = moderation_style, test_id = "invite-live") {
+                            icon(USER_PLUS).color(|| Color::from(TEXT_MUTED)).size(15.0)
+                        }
+                        .on_touch(move |_ev| {
+                            live_invite_open.set(true);
+                            TouchResponse::CONSUMED
+                        })
                     }
                 };
             }
@@ -7416,6 +7454,182 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // other overlay regions above).
     let member_profile_el = member_profile_panel(selected_member.clone());
 
+    // --- Live "Invite People" overlay (real backend) ----------------------
+    // The live channel header's `USER_PLUS` action opens this. Unlike the mock
+    // invite panel above (which only generates a deterministic code), this
+    // mints a REAL invite via `invite::create_invite` against `active_live_server`
+    // (the only context with a real backend `server_id`) and shows the resulting
+    // code in `InviteLinkDisplay`, whose Copy button now writes the link to the
+    // system clipboard. `live_invite_expiry` is the expiry the user picked
+    // (index 0/1/2 = 30 min / 1 day / never, per `InviteExpirySelector`); the
+    // Create tap converts it to an `expires_at` epoch-seconds `Option` for the
+    // backend. The content `switch`es on `live_invite_code` so the view flips
+    // from the create form to the link display the moment a code is minted.
+    // Same full-screen, paint-last idiom as `moderation_region`; inert outside
+    // live mode (no entry point + `active_live_server` is None on a mock server).
+    let live_invite_close = live_invite_mode.clone();
+    let live_invite_header = ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(JustifyContent::SpaceBetween),
+            padding_top: Some(px(16.0)),
+            padding_bottom: Some(px(16.0)),
+            padding_left: Some(px(16.0)),
+            padding_right: Some(px(16.0)),
+            ..Default::default()
+        }) {
+            text(style = StyleRules {
+                font_size: Some(px(18.0)),
+                font_weight: Some(FontWeight::Bold),
+                color: Some(col(TEXT)),
+                ..Default::default()
+            }) { "Invite People".to_string() }
+            view(style = StyleRules {
+                height: Some(px(26.0)),
+                padding_left: Some(px(12.0)),
+                padding_right: Some(px(12.0)),
+                background: Some(col(BG_SIDEBAR)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                border_top_left_radius: Some(px(6.0)),
+                border_top_right_radius: Some(px(6.0)),
+                border_bottom_left_radius: Some(px(6.0)),
+                border_bottom_right_radius: Some(px(6.0)),
+                ..Default::default()
+            }) {
+                text(style = StyleRules {
+                    color: Some(col(TEXT)),
+                    font_size: Some(px(12.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    ..Default::default()
+                }) { "Done".to_string() }
+            }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    live_invite_close.set(false);
+                }
+                TouchResponse::CONSUMED
+            })
+        }
+    };
+    let live_invite_open_chk = live_invite_mode.clone();
+    let live_invite_wrap = move || StyleRules {
+        position: Some(Position::Absolute),
+        left: Some(px(0.0)),
+        top: Some(px(0.0)),
+        width: Some(if live_invite_open_chk.get() { pct(100.0) } else { px(0.0) }),
+        height: Some(if live_invite_open_chk.get() { pct(100.0) } else { px(0.0) }),
+        background: Some(col(BG_MAIN)),
+        flex_direction: Some(FlexDirection::Column),
+        overflow: Some(Overflow::Hidden),
+        ..Default::default()
+    };
+    // Local expiry picker for this flow (separate from the mock panel's
+    // `invite_expiry` signal); the Create tap reads it at submit time.
+    let live_invite_expiry = signal(0usize);
+    // The "Create" action: read the live server id + chosen expiry, compute the
+    // `expires_at` epoch-seconds (`None` = never expires), then spawn the RPC
+    // and write the resulting code back to `live_invite_code` (which flips the
+    // content view). On rejection, the backend message lands in
+    // `active_live_server.get()` is `Option<i64>`; `None` (no live server —
+    // shouldn't happen, the entry point only exists in live mode) reports the
+    // rejection rather than panicking. The closure captures only `Copy` signal
+    // handles (the spawned async block clones the ones it needs to outlive the
+    // `Fn`), so the closure itself is `Copy` and can be passed into `ui!` across
+    // `switch` re-renders (the same idiom as `on_submit_click`).
+    let live_invite_create = move || {
+        let sid = match active_live_server.get() {
+            Some(s) => s,
+            None => {
+                live_invite_error.set("No live server selected.".to_string());
+                return;
+            }
+        };
+        let exp = live_invite_expiry.get();
+        let code = live_invite_code.clone();
+        let err = live_invite_error.clone();
+        runtime_core::driver::spawn_async(async move {
+            let expires_at: Option<i64> = match exp {
+                0 => Some(runtime_shared::time::epoch_millis() / 1000 + 30 * 60),
+                1 => Some(runtime_shared::time::epoch_millis() / 1000 + 24 * 60 * 60),
+                _ => None,
+            };
+            match crate::invite::create_invite(sid, expires_at, None).await {
+                Ok(inv) => code.set(Some(inv.code)),
+                Err(msg) => err.set(msg),
+            }
+        });
+    };
+    // The content `switch`es on `(code, error)`: with a code it shows the link;
+    // otherwise it shows the create form, plus the backend rejection (if the
+    // last Create failed) under it. Keying on both means the view also rebuilds
+    // when an error lands (a failed submit sets `error` while `code` stays None).
+    let live_invite_content = switch(
+        move || (live_invite_code.get(), live_invite_error.get()),
+        move |state: &(Option<String>, String)| {
+            let (code, err) = (&state.0, state.1.clone());
+            if let Some(c) = code {
+                let code = c.clone();
+                ui! {
+                    text(style = section_label_style.clone()) { "Your invite link".to_string() }
+                    InviteLinkDisplay(code = code)
+                }
+            } else {
+                // The rejection, shown only while non-empty (a successful
+                // Create clears it by setting `code`, which rebuilds the view).
+                let err_style = StyleRules {
+                    margin_top: Some(px(8.0)),
+                    margin_left: Some(px(16.0)),
+                    margin_right: Some(px(16.0)),
+                    font_size: Some(px(13.0)),
+                    color: Some(col(TEXT_MUTED)),
+                    ..Default::default()
+                };
+                let err_el = if err.is_empty() {
+                    None
+                } else {
+                    Some(ui! { text(style = err_style) { err } })
+                };
+                ui! {
+                    InviteExpirySelector(value = live_invite_expiry)
+                    if let Some(el) = err_el {
+                        el
+                    }
+                    button(
+                        label = "Create invite".to_string(),
+                        on_click = live_invite_create,
+                        style = StyleRules {
+                            height: Some(px(40.0)),
+                            margin_top: Some(px(16.0)),
+                            margin_left: Some(px(16.0)),
+                            margin_right: Some(px(16.0)),
+                            background: Some(col(BUTTON)),
+                            color: Some(col(TEXT)),
+                            font_size: Some(px(15.0)),
+                            font_weight: Some(FontWeight::SemiBold),
+                            border_top_left_radius: Some(px(8.0)),
+                            border_top_right_radius: Some(px(8.0)),
+                            border_bottom_left_radius: Some(px(8.0)),
+                            border_bottom_right_radius: Some(px(8.0)),
+                            align_items: Some(AlignItems::Center),
+                            justify_content: Some(JustifyContent::Center),
+                            ..Default::default()
+                        },
+                    )
+                }
+            }
+        },
+    );
+    let live_invite_region = ui! {
+        view(style = live_invite_wrap) {
+            live_invite_header
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
+                scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { live_invite_content }
+            }
+        }
+    };
+
     // --- Bug reports overlay -----------------------------------------------
     // The `ThreadListRow` "Bug reports" row in the channel sidebar flips
     // `bug_reports_mode`; this full-screen overlay lists a handful of
@@ -7777,6 +7991,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // dismisses after a beat, or manually via its "x". Collapses to
             // nothing while hidden.
             crate::pin_confirm_toast::pin_confirm_toast(pin_visible)
+            // "Invite People" (LIVE / backend): full-screen, same paint-last
+            // idiom as `moderation_region`. Reached only from the live channel
+            // header's invite action; inert outside live mode (no entry point +
+            // `active_live_server` is None on a mock server).
+            live_invite_region
             // "Bug reports" overlay: same full-screen, paint-last idiom as
             // `moderation_region` above.
             bug_reports_region
