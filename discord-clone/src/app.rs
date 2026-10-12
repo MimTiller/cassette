@@ -5519,6 +5519,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                             gw.send(
                                                 discord_server::server_settings::WsClientMsg::History {
                                                     channel_id: cid,
+                                                    before_id: None,
                                                 },
                                             );
                                         }
