@@ -4615,6 +4615,20 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                     live_ch.set(channels);
                                     if let Some(id) = first {
                                         live_ch_sel.set(Some(id));
+                                        // Auto-selecting only sets which channel
+                                        // is "active" — it does NOT populate
+                                        // `live_messages` for it. A manual row
+                                        // tap also sends History (see the
+                                        // channel row's `on_touch` below); do
+                                        // the same here so the auto-selected
+                                        // channel isn't stuck showing stale/no
+                                        // messages until the user re-taps it.
+                                        gateway.send(
+                                            discord_server::server_settings::WsClientMsg::History {
+                                                channel_id: id,
+                                                before_id: None,
+                                            },
+                                        );
                                     }
                                 }
                                 if let Ok(members) =
@@ -4757,6 +4771,17 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             live_channels.set(channels);
                             if let Some(id) = first {
                                 active_live_channel.set(Some(id));
+                                // See the enter-live tile handler's identical
+                                // fix: auto-selecting doesn't fetch history on
+                                // its own, so send it explicitly or the fresh
+                                // server sits on an empty pane until a channel
+                                // row is manually re-tapped.
+                                gateway.send(
+                                    discord_server::server_settings::WsClientMsg::History {
+                                        channel_id: id,
+                                        before_id: None,
+                                    },
+                                );
                             }
                         }
                         if let Ok(members) = crate::moderation::list_members(sid).await {
