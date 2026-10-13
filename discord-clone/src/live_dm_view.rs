@@ -35,7 +35,7 @@ use runtime_core::{
     switch, ui,
 };
 
-use crate::app::{format_when, message_row};
+use crate::app::{format_when, message_row, same_group};
 use crate::dms::{self, Dm};
 use crate::style_helpers::{borderless_input, col, pct, px, section_label};
 
@@ -625,21 +625,30 @@ fn live_dm_conversation(
                     }
                 };
             }
-            let rows: Vec<Element> = mine
-                .iter()
-                .map(|(author, body, ts, edited_at)| {
-                    let s = ms_to_secs(*ts);
-                    let when = format_when(s, now);
-                    message_row(
-                        author.as_str(),
-                        BUTTON,
-                        body.as_str(),
-                        when,
-                        crate::app::format_full_when(s),
-                        edited_at.is_some(),
-                    )
-                })
-                .collect();
+            // Message-grouping state carried across rows (oldest-first):
+            // the previous row's author + timestamp. An edited message keeps
+            // its own header (a marker on a headerless row would be orphaned).
+            let mut rows: Vec<Element> = Vec::with_capacity(mine.len());
+            let mut prev: Option<(String, i64)> = None;
+            for (author, body, ts, edited_at) in mine.iter() {
+                let ts_s = ms_to_secs(*ts);
+                let when = format_when(ts_s, now);
+                let grouped = prev
+                    .as_ref()
+                    .map(|(pa, pts)| same_group(pa, *pts, author.as_str(), ts_s))
+                    .unwrap_or(false)
+                    && edited_at.is_none();
+                rows.push(message_row(
+                    author.as_str(),
+                    BUTTON,
+                    body.as_str(),
+                    when,
+                    crate::app::format_full_when(ts_s),
+                    edited_at.is_some(),
+                    grouped,
+                ));
+                prev = Some((author.clone(), ts_s));
+            }
             ui! {
                 view(style = pane_style) {
                     view(style = header_style) {

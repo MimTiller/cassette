@@ -183,7 +183,19 @@ const PLAIN_BORDER: &str = "#4e5058";
 /// The user-profile section at the bottom of the sidebar sits a shade darker
 /// than the channel list above it.
 const USER_BAR: &str = "#232428";
+/// Discord's message-grouping window: consecutive messages from the same
+/// author closer together than this (seconds) collapse into one group —
+/// avatar + name + timestamp on the first only, tightly-spaced body-only
+/// rows after. Discord's own window is ~7 minutes (420s).
+const GROUP_WINDOW_SECS: i64 = 420;
 
+/// "Does `cur` continue `prev`'s message group?" — same author and the gap
+/// between the two instants inside `GROUP_WINDOW_SECS`. Used by the mock
+/// channel, live channel, and both DM render paths (the list is always
+/// oldest-first, so "previous" is the row rendered just above).
+pub(crate) fn same_group(prev_author: &str, prev_ts: i64, cur_author: &str, cur_ts: i64) -> bool {
+    prev_author == cur_author && cur_ts >= prev_ts && cur_ts - prev_ts < GROUP_WINDOW_SECS
+}
 /// One buffered live (gateway-fed) message: the server's wire `message_id`,
 /// then `author_id` + `author_label`, `content`, `created_at_secs`, and
 /// `edited_at` (the `MessageEdited` timestamp in seconds, `None` until edited).
@@ -453,7 +465,14 @@ fn link_preview_props(body: &str) -> Option<(String, String)> {
 /// messages (the strings are copied into the node, so the returned `Element`
 /// is self-contained). `edited` gates the "(edited)" marker: live rows pass
 /// the message's real `edited_at.is_some()`; the mock path passes `true` to
-/// preserve its previous (always-on placeholder) rendering.
+/// preserve its previous (always-on placeholder) rendering. `grouped` is the
+/// Discord message-grouping form: the row continues the previous message's
+/// group (same author within `GROUP_WINDOW_SECS`), so it renders no avatar
+/// and no author/time header — just the body, tightly spaced (3px instead of
+/// 8px above) and left-aligned under where the name starts (66px = 16px pad
+/// + 40px avatar + 10px gap), with no right margin (a body that wide is
+/// full-width by construction). `same_group` computes the flag at each call
+/// site.
 pub(crate) fn message_row(
     author: &str,
     color: &str,
@@ -461,6 +480,7 @@ pub(crate) fn message_row(
     when: String,
     full: String,
     edited: bool,
+    grouped: bool,
 ) -> Element {
     let row_style = StyleRules {
         padding_top: Some(px(8.0)),
@@ -511,7 +531,33 @@ pub(crate) fn message_row(
         color: Some(col(TEXT)),
         ..Default::default()
     };
+    let body_style = StyleRules {
+        font_size: Some(px(15.0)),
+        color: Some(col(TEXT)),
+        flex_grow: Some(grow(1.0)),
+        ..Default::default()
+    };
     let initial = author.chars().next().unwrap_or(' ').to_string();
+    if grouped {
+        // Grouped form (Discord convention): no avatar, no author/time
+        // header. Just the body, tightly spaced above the row it follows
+        // (3px vs the 8px of a fresh header row) and left-aligned under
+        // where the name would start: 16px pad + 40px avatar + 10px gap.
+        // No right padding — at this width the body is full-width anyway.
+        let grouped_style = StyleRules {
+            padding_top: Some(px(3.0)),
+            padding_bottom: Some(px(2.0)),
+            padding_left: Some(px(66.0)),
+            padding_right: Some(px(16.0)),
+            ..Default::default()
+        };
+        return ui! {
+            view(style = grouped_style) {
+                text(style = body_style) { body.to_string() }
+                if edited { edited_label() }
+            }
+        };
+    }
     // Content-dependent link preview: only a body that actually contains a
     // `http(s)://…` string gets a `LinkEmbedPreview` card rendered below it.
     // `link_preview_props` returns `None` for a URL-less body, so no card is
@@ -677,6 +723,7 @@ fn message_row_with_actions(
     when: String,
     full: String,
     edited: bool,
+    grouped: bool,
     key: MessageKey,
     picker: Signal<Option<MessageKey>>,
     reply_ctx: Signal<Option<(String, String)>>,
@@ -685,7 +732,7 @@ fn message_row_with_actions(
 ) -> Element {
     let hovered = signal(false);
     let menu_open = signal(false);
-    let base = message_row(author, color, body, when, full, edited);
+    let base = message_row(author, color, body, when, full, edited, grouped);
 
     // Reply context: author name + a short snippet of the body. `Signal` is
     // `Copy`, so each `move` handler captures its own copy; the `String`s are
@@ -1116,6 +1163,7 @@ fn live_edit_row(
     full: String,
     edited: bool,
     is_mine: bool,
+    grouped: bool,
     live_editing: Signal<Option<i64>>,
     live_edit_text: Signal<String>,
     live_delete_confirm: Signal<Option<i64>>,
@@ -1135,8 +1183,9 @@ fn live_edit_row(
 ) -> Element {
     // The base row now carries the hover `MessageActionBar` + overflow menu
     // exactly like the mock path (react / reply / pin / translate). The only
-    // difference is the real `(edited)` marker (gated on the message's
-    // `edited_at` state) and the live `MessageKey`.
+    // differences are the real `(edited)` marker (gated on the message's
+    // `edited_at` state), the live `MessageKey`, and — when `grouped` — the
+    // headerless condensed form (see `message_row`).
     let base = message_row_with_actions(
         author,
         color,
@@ -1144,6 +1193,7 @@ fn live_edit_row(
         when,
         full,
         edited,
+        grouped,
         key,
         picker,
         reply_ctx,
@@ -3617,6 +3667,36 @@ fn effective_panel_widths_for(vw: f32, sidebar: f32, member: f32) -> (f32, f32) 
 fn effective_panel_widths(sidebar: Signal<f32>, member: Signal<f32>) -> (f32, f32) {
     let vw = viewport_size().get().width;
     effective_panel_widths_for(vw, sidebar.get(), member.get())
+}
+
+#[cfg(test)]
+mod grouping_tests {
+    use super::*;
+
+    /// Discord convention: same author within the 7-minute window groups.
+    #[test]
+    fn same_author_within_window_groups() {
+        assert!(same_group("alice", 1_000_000, "alice", 1_000_000 + 419));
+        assert!(same_group("alice", 1_000_000, "alice", 1_000_000));
+    }
+
+    /// Same author past the window → fresh header.
+    #[test]
+    fn same_author_past_window_breaks() {
+        assert!(!same_group("alice", 1_000_000, "alice", 1_000_000 + 420));
+    }
+
+    /// Different author → always breaks, regardless of timing.
+    #[test]
+    fn different_author_breaks() {
+        assert!(!same_group("alice", 1_000_000, "bob", 1_000_001));
+    }
+
+    /// A message older than the previous one (out of order) never groups.
+    #[test]
+    fn out_of_order_never_groups() {
+        assert!(!same_group("alice", 1_000_000, "alice", 999_999));
+    }
 }
 
 #[cfg(test)]
@@ -6269,12 +6349,25 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 let pin_l = pin_visible_k;
                 let trans_l = translate_key_k;
                 let mut rows: Vec<Element> = Vec::with_capacity(mine.len() * 2);
+                // Message-grouping state carried across iterations (the
+                // buffer is oldest-first): the previous row's author label +
+                // timestamp, for the `same_group` test below.
+                let mut prev: Option<(String, i64)> = None;
                 for m in mine.iter() {
                     let (mid, aid, author, body, ts, edited_at) = m;
                     let when = format_when(*ts, now);
                     let full = format_full_when(*ts);
                     let is_mine = self_id != 0 && *aid == self_id;
                     let lkey = MessageKey::Live { id: *mid };
+                    // Grouped with the row above? (same author, within the
+                    // window). Edited messages keep their own header: an
+                    // `(edited)` marker on a headerless row would be
+                    // orphaned, so `edited_at.is_some()` breaks the group.
+                    let grouped = prev
+                        .as_ref()
+                        .map(|(pa, pts)| same_group(pa, *pts, author.as_str(), *ts))
+                        .unwrap_or(false)
+                        && edited_at.is_none();
                     rows.push(live_edit_row(
                         *mid,
                         author.as_str(),
@@ -6284,6 +6377,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         full,
                         edited_at.is_some(),
                         is_mine,
+                        grouped,
                         editing,
                         edit_text,
                         delete_c,
@@ -6303,6 +6397,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         reaction_rev,
                         picker_l,
                     ));
+                    prev = Some((author.clone(), *ts));
                 }
                 return ui! {
                     view(style = StyleRules {
@@ -6316,18 +6411,27 @@ fn app_shell(authed: Signal<bool>) -> Element {
             let cid = *channel_id;
             let now = crate::data::now_secs();
             let mut rows: Vec<Element> = Vec::with_capacity(channel.messages.len());
+            // Message-grouping state carried across both loops (seed then
+            // this session's sends — oldest-first): the previous row's author
+            // + timestamp for the `same_group` test.
+            let mut prev: Option<(&str, i64)> = None;
             for (i, m) in channel.messages.iter().enumerate() {
-                let when = format_when(m.ts_secs(now), now);
+                let ts = m.ts_secs(now);
+                let when = format_when(ts, now);
                 // Mock seed messages carry no edit state: pass `false` so they
                 // don't show a fake "(edited)" tag (the live path uses
                 // `edited_at.is_some()`).
+                let grouped = prev
+                    .map(|(pa, pts)| same_group(pa, pts, m.author, ts))
+                    .unwrap_or(false);
                 rows.push(message_row_with_actions(
                     m.author,
                     m.color,
                     m.body,
                     when,
-                    format_full_when(m.ts_secs(now)),
+                    format_full_when(ts),
                     false,
+                    grouped,
                     MessageKey::Mock { cid, idx: i },
                     picker,
                     reply_ctx_k,
@@ -6342,6 +6446,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     reaction_rev,
                     picker,
                 ));
+                prev = Some((m.author, ts));
             }
             let mine: Vec<(u32, &'static str, String, i64)> = sent_read.borrow().clone();
             let mine: Vec<(u32, &'static str, String, i64)> = mine
@@ -6352,6 +6457,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 let when = format_when(*ts, now);
                 // Own prior sends get the same hover bar as the seed rows. `false`
                 // for edited -- these are freshly composed, never-edited sends.
+                let grouped = prev
+                    .map(|(pa, pts)| same_group(pa, pts, author, *ts))
+                    .unwrap_or(false);
                 rows.push(message_row_with_actions(
                     author,
                     BUTTON,
@@ -6359,6 +6467,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     when,
                     format_full_when(*ts),
                     false,
+                    grouped,
                     MessageKey::Mock { cid, idx: channel.messages.len() + i },
                     picker,
                     reply_ctx_k,
@@ -6373,6 +6482,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     reaction_rev,
                     picker,
                 ));
+                prev = Some((author, *ts));
             }
             ui! {
                 view(style = StyleRules {

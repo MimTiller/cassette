@@ -6,8 +6,10 @@
 //! **new, self-contained module** — it does not touch `app.rs`'s existing
 //! channel view or composer. It reuses two standalone pieces from `app.rs`
 //! (both promoted to `pub(crate)` for that):
-//! - `crate::app::message_row(author, color, body, when)` renders each message
-//!   row (avatar chip + author/"Today at …" line + body);
+//! - `crate::app::message_row(author, color, body, when, edited, grouped)`
+//!   renders each message row (avatar chip + author/"Today at …" line +
+//!   body; the `grouped` form drops the header for same-author messages
+//!   inside the grouping window — see `crate::app::same_group`);
 //! - `crate::app::format_when(unix_secs, now_secs)` renders the time line.
 //!
 //! The composer itself (a `Signal<String>` + a styled `text_input` with an
@@ -32,7 +34,7 @@ use runtime_core::{
     signal, switch, ui,
 };
 
-use crate::app::{format_when, message_row};
+use crate::app::{format_when, message_row, same_group};
 use crate::data::{DMS, USER, find_dm, now_secs};
 use crate::read_receipt_indicator::ReadReceiptIndicator;
 use crate::style_helpers::{borderless_input, col, px, section_label};
@@ -404,9 +406,15 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
         move |_: &u32| {
             let now = now_secs();
             let mut rows: Vec<Element> = Vec::with_capacity(dm.messages.len());
+            // Message-grouping state (seed then this session's sends —
+            // oldest-first): the previous row's author + timestamp.
+            let mut prev: Option<(&str, i64)> = None;
             for m in dm.messages.iter() {
                 let ts = m.ts_secs(now);
                 let when = format_when(ts, now);
+                let grouped = prev
+                    .map(|(pa, pts)| same_group(pa, pts, m.author, ts))
+                    .unwrap_or(false);
                 rows.push(message_row(
                     m.author,
                     m.color,
@@ -414,7 +422,9 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
                     when,
                     crate::app::format_full_when(ts),
                     false,
+                    grouped,
                 ));
+                prev = Some((m.author, ts));
             }
             // The messages the current user sent in this DM this session, in
             // send order (so the LAST entry is the newest). Collected first so
@@ -427,6 +437,9 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
                 .collect();
             for (i, (_dmid, author, body, ts)) in mine.iter().enumerate() {
                 let when = format_when(*ts, now);
+                let grouped = prev
+                    .map(|(pa, pts)| same_group(pa, pts, author, *ts))
+                    .unwrap_or(false);
                 let base = message_row(
                     author,
                     BUTTON,
@@ -434,6 +447,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
                     when,
                     crate::app::format_full_when(*ts),
                     false,
+                    grouped,
                 );
                 // Read receipt: Discord's "seen" double-check is a DM
                 // convention (not a server-channel one), shown on the most
@@ -466,6 +480,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
                 } else {
                     rows.push(base);
                 }
+                prev = Some((author, *ts));
             }
             ui! {
                 view(style = StyleRules {
