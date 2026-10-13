@@ -3067,15 +3067,23 @@ pub fn app() -> Element {
     // to be stale, the first authenticated backend call fails and the app
     // shell routes the failure back here (see `live_servers` fetch), clearing
     // the saved session and showing "session expired" on the login screen.
-    let restored = matches!(crate::auth::load_session(), Some((token, user_id))
+    let restored = matches!(crate::auth::load_session(), Some((token, user_id, _))
         if !token.is_empty() && user_id != 0);
     if restored {
-        if let Some((token, user_id)) = crate::auth::load_session() {
+        if let Some((token, user_id, username)) = crate::auth::load_session() {
             crate::auth::CURRENT_USER_ID
                 .store(user_id, std::sync::atomic::Ordering::SeqCst);
             *crate::auth::CURRENT_TOKEN
                 .lock()
                 .unwrap_or_else(|p| p.into_inner()) = token;
+            // The username segment is absent in sessions persisted before it
+            // was saved (they restore with an empty name) — skip the write
+            // then so a stale empty value can't clobber anything.
+            if !username.is_empty() {
+                *crate::auth::CURRENT_USERNAME
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner()) = username;
+            }
         }
         RESTORED.store(true, std::sync::atomic::Ordering::SeqCst);
     }

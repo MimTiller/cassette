@@ -42,12 +42,14 @@ pub async fn login(username: &str, password: &str) -> Result<i64, String> {
             CURRENT_USER_ID
                 .store(result.user_id, std::sync::atomic::Ordering::SeqCst);
             *CURRENT_TOKEN.lock().unwrap_or_else(|p| p.into_inner()) = result.token.clone();
-            *CURRENT_USERNAME.lock().unwrap_or_else(|p| p.into_inner()) = result.username;
+            let username = result.username.clone();
+            *CURRENT_USERNAME.lock().unwrap_or_else(|p| p.into_inner()) = username.clone();
             // Persist the signed session so a page refresh (which wipes these
             // statics and reloads the WASM module) can restore it without a
-            // re-login. `signup` funnels through `login`, so one call site
-            // covers both.
-            save_session(&result.token, result.user_id);
+            // re-login — username included, so the profile strip keeps the
+            // real identity after a refresh too. `signup` funnels through
+            // `login`, so one call site covers both.
+            save_session(&result.token, result.user_id, &username);
             Ok(result.user_id)
         }
         Err(error) => Err(error.to_string()),
@@ -167,8 +169,9 @@ pub(crate) static CURRENT_TOKEN: std::sync::Mutex<String> =
 /// login screen. The profile strip reads it to label the signed-in identity
 /// with the real name (instead of the mock `USER.name` "you" placeholder).
 /// Empty means "not logged in" (guest mode) — the sentinel the holder starts
-/// at. Written by [`login`] (which signup also routes through), so one fix
-/// covers both sign-in and sign-up.
+/// at. Written by [`login`] (which signup also routes through), and restored
+/// from the persisted session on a page refresh (see [`save_session`] /
+/// [`load_session`]).
 pub(crate) static CURRENT_USERNAME: std::sync::Mutex<String> =
     std::sync::Mutex::new(String::new());
 
@@ -224,26 +227,32 @@ pub fn configure_server() {
 // --- persisted session ------------------------------------------------------
 //
 // The WASM module reloads its process-wide statics from scratch on every page
-// refresh, wiping [`CURRENT_TOKEN`]/[`CURRENT_USER_ID`]. `window.localStorage`
-// survives that, so a successful login writes the signed session there and
-// `app()` reads it back before defaulting `authed` to false — a returning
-// visitor lands signed in without retyping credentials. The display name
-// needs no persistence: it is derived from the live `list_members` fetch the
-// app shell runs on mount.
+// refresh, wiping [`CURRENT_TOKEN`]/[`CURRENT_USER_ID`]/[`CURRENT_USERNAME`].
+// `window.localStorage` survives that, so a successful login writes the signed
+// session (token + user id + username) there and `app()` reads it back before
+// defaulting `authed` to false — a returning visitor lands signed in without
+// retyping credentials, with the profile strip showing the real identity
+// (persisting the username is what a restored session used to miss: the
+// display name has no other post-refresh source).
 
 #[cfg(target_arch = "wasm32")]
-fn save_session(token: &str, user_id: i64) {
+fn save_session(token: &str, user_id: i64, username: &str) {
     if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
-        let _ = storage
-            .set_item("discord_session", &format!("{user_id}\u{0}{token}"));
+        let _ = storage.set_item(
+            "discord_session",
+            &format!("{user_id}\u{0}{token}\u{0}{username}"),
+        );
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn save_session(_token: &str, _user_id: i64) {}
+fn save_session(_token: &str, _user_id: i64, _username: &str) {}
 
-/// A persisted session, or `None` when there is none to restore.
-pub(crate) fn load_session() -> Option<(String, i64)> {
+/// A persisted session `(token, user_id, username)`, or `None` when there is
+/// none to restore. The username segment is absent in sessions saved before
+/// was persisted — those restore with an empty name (the profile strip
+/// falls back to the mock identity until the next login re-saves it).
+pub(crate) fn load_session() -> Option<(String, i64, String)> {
     #[cfg(target_arch = "wasm32")]
     {
         // `local_storage()` and `get_item()` return `Result<_, JsValue>`; fold
@@ -253,10 +262,11 @@ pub(crate) fn load_session() -> Option<(String, i64)> {
             .get_item("discord_session")
             .ok()
             .flatten()?;
-        match raw.find('\u{0}') {
-            Some(i) => Some((raw[i + 1..].to_string(), raw[..i].parse().ok()?)),
-            None => None,
-        }
+        let mut parts = raw.split('\u{0}');
+        let user_id: i64 = parts.next()?.parse().ok()?;
+        let token = parts.next().unwrap_or_default().to_string();
+        let username = parts.next().unwrap_or_default().to_string();
+        Some((token, user_id, username))
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
