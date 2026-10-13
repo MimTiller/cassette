@@ -3789,12 +3789,19 @@ mod responsive_width_tests {
 fn app_shell(authed: Signal<bool>) -> Element {
     // `app_shell` is only reached once `authed` is true, which a "Continue as
     // guest" also flips — so `authed` alone can't tell a real account from a
-    // guest. The real-account sentinel is a non-empty signed-in username
-    // (`current_username` records it on login/signup and clears on logout).
-    // This is read once, here in `app_shell` scope: `app_shell` is re-invoked
-    // on every `authed` flip (see the `switch` in `app`), so the value is
-    // always the signed-in one at build time (the `user_panel` idiom).
-    let is_real_user = !crate::auth::current_username().is_empty();
+    // guest. The real-account sentinel is a non-zero signed-in user id
+    // (`CURRENT_USER_ID`, set on login/signup and on a restored session, and
+    // never set for a guest). This is read once, here in `app_shell` scope:
+    // `app_shell` is re-invoked on every `authed` flip (see the `switch` in
+    // `app`), so the value is always the signed-in one at build time (the
+    // `user_panel` idiom). NOTE: this used to key off `current_username()`
+    // instead, but a restored session (page refresh) only re-seeds
+    // `CURRENT_TOKEN`/`CURRENT_USER_ID` from localStorage — not the username —
+    // so that check was always false after a refresh, incorrectly treating a
+    // real, still-logged-in account as a guest and showing the mock demo
+    // servers again.
+    let is_real_user =
+        crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst) != 0;
     // [Feature 16] `active_server`/`active_channel` are the *mock* selection.
     // They keep their `SERVERS[0]` default (a demo server) but that default is
     // only ever rendered for guests: a real account either lands on its own
