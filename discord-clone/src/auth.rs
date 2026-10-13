@@ -41,8 +41,13 @@ pub async fn login(username: &str, password: &str) -> Result<i64, String> {
         Ok(result) => {
             CURRENT_USER_ID
                 .store(result.user_id, std::sync::atomic::Ordering::SeqCst);
-            *CURRENT_TOKEN.lock().unwrap_or_else(|p| p.into_inner()) = result.token;
+            *CURRENT_TOKEN.lock().unwrap_or_else(|p| p.into_inner()) = result.token.clone();
             *CURRENT_USERNAME.lock().unwrap_or_else(|p| p.into_inner()) = result.username;
+            // Persist the signed session so a page refresh (which wipes these
+            // statics and reloads the WASM module) can restore it without a
+            // re-login. `signup` funnels through `login`, so one call site
+            // covers both.
+            save_session(&result.token, result.user_id);
             Ok(result.user_id)
         }
         Err(error) => Err(error.to_string()),
@@ -157,3 +162,57 @@ pub fn configure_server() {
         })),
     );
 }
+
+// --- persisted session ------------------------------------------------------
+//
+// The WASM module reloads its process-wide statics from scratch on every page
+// refresh, wiping [`CURRENT_TOKEN`]/[`CURRENT_USER_ID`]. `window.localStorage`
+// survives that, so a successful login writes the signed session there and
+// `app()` reads it back before defaulting `authed` to false — a returning
+// visitor lands signed in without retyping credentials. The display name
+// needs no persistence: it is derived from the live `list_members` fetch the
+// app shell runs on mount.
+
+#[cfg(target_arch = "wasm32")]
+fn save_session(token: &str, user_id: i64) {
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        let _ = storage
+            .set_item("discord_session", &format!("{user_id}\u{0}{token}"));
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn save_session(_token: &str, _user_id: i64) {}
+
+/// A persisted session, or `None` when there is none to restore.
+pub(crate) fn load_session() -> Option<(String, i64)> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        // `local_storage()` and `get_item()` return `Result<_, JsValue>`; fold
+        // each into an `Option` so the `?` stays inside this `Option` fn.
+        let raw = web_sys::window()
+            .and_then(|w| w.local_storage().ok().flatten())?
+            .get_item("discord_session")
+            .ok()
+            .flatten()?;
+        match raw.find('\u{0}') {
+            Some(i) => Some((raw[i + 1..].to_string(), raw[..i].parse().ok()?)),
+            None => None,
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        None
+    }
+}
+
+/// Drop the persisted session (logout), so a refresh doesn't restore it.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn clear_session() {
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        let _ = storage.remove_item("discord_session");
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn clear_session() {}

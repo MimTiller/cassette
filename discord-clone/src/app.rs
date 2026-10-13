@@ -2172,6 +2172,14 @@ fn user_panel(
                 }
                 .on_touch(move |ev| {
                     if ev.phase == TouchPhase::Ended {
+                        // Drop the persisted session so a refresh after logout
+                        // doesn't silently restore it, and clear the one-shot
+                        // note so this (a real logout) shows a clean form — no
+                        // spurious "session expired".
+                        crate::auth::clear_session();
+                        *SESSION_NOTE
+                            .lock()
+                            .unwrap_or_else(|p| p.into_inner()) = None;
                         logout.set(false);
                     }
                     TouchResponse::CONSUMED
@@ -2443,6 +2451,17 @@ fn login_screen(authed: Signal<bool>) -> Element {
     let password: Signal<String> = signal(String::new());
     let error: Signal<String> = signal(String::new());
     let mode: Signal<bool> = signal(false);
+    // If a persisted session was just dropped as stale (the app shell cleared
+    // the note before flipping us back here), surface it immediately instead
+    // of a blank form. One-shot: it's `None` on a real logout or a first-time
+    // visit, so those render cleanly.
+    if let Some(note) = SESSION_NOTE
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .take()
+    {
+        error.set(note);
+    }
 
     // Card + text styles (static — built once, cloned into the render).
     let card_style = StyleRules {
@@ -2856,6 +2875,21 @@ fn login_screen(authed: Signal<bool>) -> Element {
 
 // --- the tree ----------------------------------------------------------------
 
+/// True for this process only when `app()` re-seeded the statics from a
+/// persisted (localStorage) session. Distinguishes a *stale restored* token —
+/// which must sign the user back out on the first failed call — from a
+/// transient blip on a *freshly issued* token (network drop, brief 500), which
+/// must NOT log a working session out. Set once in `app()`, read (and consumed)
+/// by the app shell's first authenticated fetch.
+static RESTORED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// One-shot note handed to the next login screen when a persisted session is
+/// dropped as stale. The app shell writes "Session expired, please log in
+/// again" here before flipping `authed` back to false; `login_screen` consumes
+/// it (taking `None`) when it mounts, so a fresh login or an explicit logout
+/// shows a clean form. `Mutex` (not atomic) because it carries a `String`.
+static SESSION_NOTE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
 pub fn app() -> Element {
     // Point the backend `#[server]` RPC stubs at a base URL and attach the
     // signed-in user id as the `x-user-id` header on every outgoing call.
@@ -2873,11 +2907,26 @@ pub fn app() -> Element {
         "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif"
             .to_string(),
     )));
-    // Mock auth gate: starts signed out (login screen). There's no backend, so
-    // "auth" is just a `bool` signal — the login screen sets it true on Sign In
-    // (or Continue as guest) and a Log Out in the user panel flips it back. A
-    // real build would replace this with a session/token and a network login.
-    let authed: Signal<bool> = signal(false);
+    // Restore a persisted session before defaulting `authed`: a refresh wipes
+    // the WASM statics, but `localStorage` still holds the token + user id a
+    // successful login saved. If present, re-seed them and start signed in —
+    // the login screen is skipped entirely. If the restored token turns out
+    // to be stale, the first authenticated backend call fails and the app
+    // shell routes the failure back here (see `live_servers` fetch), clearing
+    // the saved session and showing "session expired" on the login screen.
+    let restored = matches!(crate::auth::load_session(), Some((token, user_id))
+        if !token.is_empty() && user_id != 0);
+    if restored {
+        if let Some((token, user_id)) = crate::auth::load_session() {
+            crate::auth::CURRENT_USER_ID
+                .store(user_id, std::sync::atomic::Ordering::SeqCst);
+            *crate::auth::CURRENT_TOKEN
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()) = token;
+        }
+        RESTORED.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+    let authed: Signal<bool> = signal(restored);
     let authed_copy = authed; // `Signal` is `Copy`; the render closure only
                               // receives the current value, so pass the signal in.
     switch(
@@ -3655,8 +3704,34 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // rail for why these rows are not yet interactive.
     let live_servers: Signal<Vec<crate::servers::ServerSummary>> = signal(Vec::new());
     runtime_core::driver::spawn_async(async move {
-        if let Ok(servers) = crate::servers::list_servers().await {
-            live_servers.set(servers);
+        match crate::servers::list_servers().await {
+            Ok(servers) => {
+                live_servers.set(servers);
+            }
+            // The first authenticated backend call after a refresh. If the
+            // restored token is no longer valid, this fails: clear the saved
+            // session and sign the user back to the login screen with a "session
+            // expired" note. Guarded by `RESTORED` so a transient blip on a
+            // freshly issued token (network drop, brief 500) does NOT log a
+            // working session out.
+            Err(_) => {
+                if crate::app::RESTORED
+                    .compare_exchange(
+                        true,
+                        false,
+                        std::sync::atomic::Ordering::SeqCst,
+                        std::sync::atomic::Ordering::SeqCst,
+                    )
+                    .is_ok()
+                {
+                    crate::auth::clear_session();
+                    *SESSION_NOTE
+                        .lock()
+                        .unwrap_or_else(|p| p.into_inner()) =
+                        Some("Session expired, please log in again.".to_string());
+                    authed.set(false);
+                }
+            }
         }
     });
     // Live-mode selection, parallel to (and independent of) the mock
