@@ -198,6 +198,10 @@ pub struct Member {
     /// Hex tint for the avatar chip.
     pub color: &'static str,
     pub status: Status,
+    /// Per-server role surfaced as a badge in the member panel
+    /// (the mock seed assigns one per server; the live panel gets it
+    /// from the backend `MemberInfo` instead).
+    pub role: &'static str,
 }
 
 /// The signed-in user's static identity. The live presence status is NOT part
@@ -224,6 +228,8 @@ impl User {
             name: self.name,
             color: self.color,
             status,
+            // The signed-in user owns the mock servers — surfaced as "Owner".
+            role: "Owner",
         }
     }
 }
@@ -509,7 +515,7 @@ pub fn find_dm(id: u32) -> Option<&'static Dm> {
 pub static DMS: &[Dm] = &[
     Dm {
         id: 1,
-        user: Member { name: "miri", color: "#5865f2", status: Status::Online },
+        user: Member { name: "miri", color: "#5865f2", status: Status::Online, role: "Member" },
         messages: &[
             DmMessage {
                 author: "miri",
@@ -533,7 +539,7 @@ pub static DMS: &[Dm] = &[
     },
     Dm {
         id: 2,
-        user: Member { name: "dyno", color: "#57f287", status: Status::Online },
+        user: Member { name: "dyno", color: "#57f287", status: Status::Online, role: "Member" },
         messages: &[
             DmMessage {
                 author: "dyno",
@@ -563,7 +569,7 @@ pub static DMS: &[Dm] = &[
     },
     Dm {
         id: 3,
-        user: Member { name: "rio", color: "#3ba55c", status: Status::Idle },
+        user: Member { name: "rio", color: "#3ba55c", status: Status::Idle, role: "Member" },
         messages: &[
             DmMessage {
                 author: "rio",
@@ -581,7 +587,7 @@ pub static DMS: &[Dm] = &[
     },
     Dm {
         id: 4,
-        user: Member { name: "sol", color: "#ed4245", status: Status::Online },
+        user: Member { name: "sol", color: "#ed4245", status: Status::Online, role: "Member" },
         messages: &[
             DmMessage {
                 author: "sol",
@@ -605,7 +611,7 @@ pub static DMS: &[Dm] = &[
     },
     Dm {
         id: 5,
-        user: Member { name: "juno", color: "#fee75c", status: Status::Offline },
+        user: Member { name: "juno", color: "#fee75c", status: Status::Offline, role: "Member" },
         messages: &[
             DmMessage {
                 author: "juno",
@@ -719,8 +725,8 @@ pub static SERVERS: &[Server] = &[
                         id: 104,
                         name: "Lounge",
                         speakers: &[
-                            Member { name: "miri", color: "#5865f2", status: Status::Online },
-                            Member { name: "dyno", color: "#57f287", status: Status::Online },
+                            Member { name: "miri", color: "#5865f2", status: Status::Online, role: "Owner" },
+                            Member { name: "dyno", color: "#57f287", status: Status::Online, role: "Moderator" },
                         ],
                     },
                     VoiceChannel {
@@ -732,11 +738,11 @@ pub static SERVERS: &[Server] = &[
             },
         ],
         members: &[
-            Member { name: "miri", color: "#5865f2", status: Status::Online },
-            Member { name: "dyno", color: "#57f287", status: Status::Online },
-            Member { name: "nara", color: "#eb459e", status: Status::Idle },
-            Member { name: "wren", color: "#3ba55c", status: Status::DoNotDisturb },
-            Member { name: "juno", color: "#fee75c", status: Status::Offline },
+            Member { name: "miri", color: "#5865f2", status: Status::Online, role: "Owner" },
+            Member { name: "dyno", color: "#57f287", status: Status::Online, role: "Moderator" },
+            Member { name: "nara", color: "#eb459e", status: Status::Idle, role: "Admin" },
+            Member { name: "wren", color: "#3ba55c", status: Status::DoNotDisturb, role: "Member" },
+            Member { name: "juno", color: "#fee75c", status: Status::Offline, role: "Member" },
         ],
     },
     Server {
@@ -795,15 +801,15 @@ pub static SERVERS: &[Server] = &[
                 voice: &[VoiceChannel {
                     id: 203,
                     name: "Crit Room",
-                    speakers: &[Member { name: "kai", color: "#fee75c", status: Status::Online }],
+                    speakers: &[Member { name: "kai", color: "#fee75c", status: Status::Online, role: "Owner" }],
                 }],
             },
         ],
         members: &[
-            Member { name: "kai", color: "#fee75c", status: Status::Online },
-            Member { name: "sol", color: "#ed4245", status: Status::Online },
-            Member { name: "pix", color: "#eb459e", status: Status::DoNotDisturb },
-            Member { name: "ash", color: "#57f287", status: Status::Offline },
+            Member { name: "kai", color: "#fee75c", status: Status::Online, role: "Owner" },
+            Member { name: "sol", color: "#ed4245", status: Status::Online, role: "Moderator" },
+            Member { name: "pix", color: "#eb459e", status: Status::DoNotDisturb, role: "Admin" },
+            Member { name: "ash", color: "#57f287", status: Status::Offline, role: "Member" },
         ],
     },
     Server {
@@ -851,9 +857,9 @@ pub static SERVERS: &[Server] = &[
             },
         ],
         members: &[
-            Member { name: "rio", color: "#3ba55c", status: Status::Online },
-            Member { name: "sam", color: "#5865f2", status: Status::Idle },
-            Member { name: "lee", color: "#f0b232", status: Status::Offline },
+            Member { name: "rio", color: "#3ba55c", status: Status::Online, role: "Owner" },
+            Member { name: "sam", color: "#5865f2", status: Status::Idle, role: "Moderator" },
+            Member { name: "lee", color: "#f0b232", status: Status::Offline, role: "Member" },
         ],
     },
 ];

@@ -34,9 +34,9 @@ use std::rc::Rc;
 use runtime_core::{
     after_animation_frame, after_ms_detached, AlignItems, AlignSelf, Color, Cursor, Element,
     FlexDirection, FlexWrap, FontFamily, FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow,
-    PanEvent, PanRecognizer, Position, Ref, ScrollViewHandle, Signal, StyleRules, TextAlign,
-    TextTransform, Tokenized, TouchEvent, TouchPhase, TouchResponse, ViewHandle, memo, pan, signal,
-    switch, ui, viewport_size,
+    PanEvent, PanRecognizer, Position, Ref, ReadSignal, ScrollViewHandle, Signal, StyleRules,
+    TextAlign, TextTransform, Tokenized, TouchEvent, TouchPhase, TouchResponse, ViewHandle, memo,
+    pan, signal, switch, ui, viewport_size,
 };
 use runtime_core::icon;
 use icons_lucide::{
@@ -63,6 +63,7 @@ use crate::server_boost_badge::ServerBoostBadge;
 use crate::language_picker::LanguagePicker;
 use crate::user_bio_block::user_bio_block;
 use crate::dm_request_card::DmRequestCard;
+use crate::audit_log_row::AuditLogRow;
 use crate::blocked_user_row::BlockedUserRow;
 use crate::server_region_selector::ServerRegionSelector;
 use crate::server_icon_upload_placeholder::ServerIconUploadPlaceholder;
@@ -73,6 +74,8 @@ use crate::server_icon_fallback::ServerIconFallback;
 
 use crate::welcome_banner::WelcomeBanner;
 use crate::activity_card::ActivityCard;
+use crate::link_embed_preview::LinkEmbedPreview;
+use crate::code_block::code_block;
 use crate::screen_share_indicator::ScreenShareIndicator;
 use crate::two_factor_toggle::TwoFactorToggle;
 
@@ -1419,6 +1422,30 @@ fn member_row(m: &Member, selected: Signal<Option<&'static str>>) -> Element {
     let initial = m.name.chars().next().unwrap_or(' ').to_string();
     let sel = selected.clone();
     let name_key: &'static str = m.name;
+    // Per-server role badge: the member panel exists to show who holds which
+    // role, so each row carries its `m.role` as a small chip to the right of
+    // the name (the live panel surfaces the same data as a tappable
+    // cycle-button from the backend `MemberInfo`).
+    let role_chip_style = StyleRules {
+        margin_left: Some(px(4.0)),
+        padding_top: Some(px(1.0)),
+        padding_bottom: Some(px(1.0)),
+        padding_left: Some(px(6.0)),
+        padding_right: Some(px(6.0)),
+        background: Some(col(BG_HOVER)),
+        border_top_left_radius: Some(px(6.0)),
+        border_top_right_radius: Some(px(6.0)),
+        border_bottom_left_radius: Some(px(6.0)),
+        border_bottom_right_radius: Some(px(6.0)),
+        ..Default::default()
+    };
+    let role_chip_text_style = StyleRules {
+        font_size: Some(px(11.0)),
+        font_weight: Some(FontWeight::SemiBold),
+        color: Some(col(TEXT_MUTED)),
+        ..Default::default()
+    };
+    let role_label = m.role.to_string();
     ui! {
         view(style = row_style) {
             view(style = avatar_style) {
@@ -1426,6 +1453,9 @@ fn member_row(m: &Member, selected: Signal<Option<&'static str>>) -> Element {
                 view(style = dot_style) {}
             }
             text(style = name_style) { m.name.to_string() }
+            view(style = role_chip_style) {
+                text(style = role_chip_text_style) { role_label }
+            }
         }
         .on_touch(move |ev| {
             if ev.phase == TouchPhase::Ended {
@@ -1848,8 +1878,47 @@ fn member_panel(
     selected: Signal<Option<&'static str>>,
     width: Signal<f32>,
     sidebar: Signal<f32>,
+    search_corpus: ReadSignal<Vec<(String, String)>>,
 ) -> Element {
     let mut body: Vec<Element> = Vec::new();
+    // Header: "MEMBER COUNT — N" where N is the roster plus the signed-in
+    // user, who counts as a member like anyone else.
+    let header = format!("MEMBER COUNT — {}", server.members.len() + 1);
+    // Font slightly smaller than the group headers + a touch of negative
+    // letter-spacing so "MEMBER COUNT — N" stays on one line within the panel
+    // width (no white-space/nowrap property exists, so size is the lever).
+    // Left padding matches the group headers below (ONLINE, IDLE, …).
+    let header_style = StyleRules {
+        padding_top: Some(px(14.0)),
+        padding_bottom: Some(px(6.0)),
+        padding_left: Some(px(12.0)),
+        font_size: Some(px(10.0)),
+        letter_spacing: Some(Tokenized::Literal(-0.5)),
+        font_weight: Some(FontWeight::SemiBold),
+        color: Some(col(TEXT_MUTED)),
+        text_transform: Some(TextTransform::Uppercase),
+        ..Default::default()
+    };
+    // Message-search bar lives at the top of the right member panel (Discord's
+    // "far right" position) instead of in the channel header row. Wrap it in a
+    // 12px-padded `view` so it isn't flush against the panel's edges — the bar's
+    // own input is flex-sized to this width, so 240px − 24px padding (216px) fits
+    // comfortably (the bar's fixed 288px width used to overflow the header's
+    // 180px slot and would clip the 240px panel).
+    body.push(
+        ui! {
+            view(style = StyleRules {
+                padding_top: Some(px(12.0)),
+                padding_bottom: Some(px(12.0)),
+                padding_left: Some(px(12.0)),
+                padding_right: Some(px(12.0)),
+                ..Default::default()
+            }) {
+                MessageSearchBar(corpus = search_corpus)
+            }
+        },
+    );
+    body.push(ui! { text(style = header_style) { header } });
 
     // Status groups in Discord order: Online, Idle, DND, Offline. The
     // signed-in user is appended to their live-status group (last, Discord's
@@ -2419,6 +2488,8 @@ fn create_server(
         name: USER.name,
         color: USER.color,
         status: Status::Online,
+        // The creator owns the server they just made.
+        role: "Owner",
     }));
     let server = Box::leak(Box::new(Server {
         id,
@@ -6078,10 +6149,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // and search field sit at the far right.
                     view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
                     PinCountBadge()
-                    // Message-search field: a clean field on the right side of
-                    // the channel header row (Discord's layout) — no separate
-                    // label above it.
-                    MessageSearchBar()
                     // Gavel: opens the Server Moderation panel (a full-screen
                     // overlay, same idiom as the Profile Settings overlay).
                     view(style = moderation_style, test_id = "server-moderation") {
@@ -6974,6 +7041,39 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let live_member_error_panel = live_member_error.clone();
     let live_kick_panel = live_kick_confirm.clone();
     let live_presence_panel = live_presence.clone();
+    // The message-search corpus the mock member panel's `MessageSearchBar`
+    // filters over: the active channel's seed messages plus this session's
+    // sends, as `(author, text)` rows. A `memo` keyed on the same signals the
+    // message list uses (`active_server`/`active_channel` + the `revision`
+    // send-counter), so switching channels or sending a message rebuilds the
+    // corpus; the bar then live-filters it client-side. Live servers have no
+    // search box (their panel is `live_member_panel`), so the mock path only.
+    let search_corpus = memo(move || -> Vec<(String, String)> {
+        let (server_id, channel_id) = (active_server.get(), active_channel.get());
+        // Read `revision` (the per-send counter) so the memo subscribes to it:
+        // `sent` is an `Rc<RefCell<…>>`, invisible to the reactive graph, so
+        // without this read a send would not rebuild the corpus — the same
+        // counter the message list's `switch` is keyed on.
+        let _rev = revision.get();
+        let sent_snapshot = sent.borrow().clone();
+        let server = match SERVERS.iter().find(|x| x.id == server_id) {
+            Some(s) => s,
+            None => return Vec::new(),
+        };
+        let channel = match server.find_text_channel(channel_id) {
+            Some(c) => c,
+            None => return Vec::new(),
+        };
+        let mut corpus: Vec<(String, String)> = channel
+            .messages
+            .iter()
+            .map(|m| (m.author.to_string(), m.body.to_string()))
+            .collect();
+        for (_cid, author, body, _ts) in sent_snapshot.iter().filter(|(cid, _, _, _)| *cid == channel_id) {
+            corpus.push((author.to_string(), body.clone()));
+        }
+        corpus
+    });
     let members_switch = switch(
         move || {
             (
@@ -7011,7 +7111,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             } else {
                 // Mock server: the static grouped panel.
                 let server = SERVERS.iter().find(|x| x.id == *_server_id).unwrap();
-                member_panel(server, &USER.as_member(*user_status), selected_member.clone(), member_panel_width, sidebar_width)
+                member_panel(server, &USER.as_member(*user_status), selected_member.clone(), member_panel_width, sidebar_width, search_corpus.read_only())
             }
         },
     );
