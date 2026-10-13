@@ -381,6 +381,46 @@ impl Db {
         .ok()
     }
 
+    /// The stored password hash for user `id`, or `None` if there is no such
+    /// row. Used by the change-password flow to verify the current password
+    /// before replacing it (the hash is the PBKDF2 form from
+    /// [`hash_password`]).
+    pub fn password_hash_for_id(&self, user_id: i64) -> Option<String> {
+        let c = self.lock().ok()?;
+        c.query_row(
+            "SELECT COALESCE(password_hash, '') FROM users WHERE id = ?1",
+            rusqlite::params![user_id],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
+    }
+
+    /// Replace the stored password hash for user `id`. Returns the number of
+    /// rows updated (1 on success, 0 if there is no such row).
+    pub fn set_password_hash(
+        &self,
+        user_id: i64,
+        password_hash: &str,
+    ) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        c.execute(
+            "UPDATE users SET password_hash = ?2 WHERE id = ?1",
+            rusqlite::params![user_id, password_hash],
+        )
+    }
+
+    /// Rename user `id` to `new_username`. Returns the number of rows updated
+    /// (1 on success). The `users.username` `UNIQUE` (COLLATE NOCASE)
+    /// constraint fires a `UNIQUE` error when the handle is already claimed by
+    /// a different account — the caller maps that to a domain message.
+    pub fn rename_user(&self, user_id: i64, new_username: &str) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        c.execute(
+            "UPDATE users SET username = ?2 WHERE id = ?1",
+            rusqlite::params![user_id, new_username],
+        )
+    }
+
     // ── presence ───────────────────────────────────────────────────────────
     //
     // One status per user: 'online' / 'away' / 'offline', driven entirely by
@@ -564,6 +604,49 @@ impl Db {
                 Err(_) => return Vec::new(),
             };
             let rows = match stmt.query_map(rusqlite::params![channel_id, limit], |r| {
+                Ok(Message {
+                    id: r.get(0)?,
+                    channel_id: r.get(1)?,
+                    author_id: r.get(2)?,
+                    content: r.get(3)?,
+                    created_at: r.get(4)?,
+                    edited_at: r.get(5)?,
+                    mentioned_user_ids: Vec::new(),
+                })
+            }) {
+                Ok(rows) => rows,
+                Err(_) => return Vec::new(),
+            };
+            let mut out: Vec<Message> = rows.filter_map(Result::ok).collect();
+            out.reverse();
+            out
+        }; // drop the connection lock before re-locking in message_mentions
+        for m in &mut out {
+            m.mentioned_user_ids = self.message_mentions(m.id);
+        }
+        out
+    }
+
+    /// The `limit` messages strictly OLDER than `before_id` (id is a monotonic
+    /// AUTOINCREMENT cursor), in `channel_id`, oldest-first — the next page
+    /// back from a client that already holds everything from `before_id` on.
+    /// `before_id == None` returns the latest `limit` (same as
+    /// [`recent_messages`]). Each message carries its resolved `@mention` user
+    /// ids, like [`recent_messages`].
+    pub fn older_messages(&self, channel_id: i64, before_id: Option<i64>, limit: i64) -> Vec<Message> {
+        let mut out: Vec<Message> = {
+            let Ok(c) = self.lock() else {
+                return Vec::new();
+            };
+            let mut stmt = match c.prepare(
+                "SELECT id, channel_id, author_id, content, created_at, edited_at
+                 FROM messages WHERE channel_id = ?1 AND id < ?2
+                 ORDER BY created_at DESC, id DESC LIMIT ?3",
+            ) {
+                Ok(s) => s,
+                Err(_) => return Vec::new(),
+            };
+            let rows = match stmt.query_map(rusqlite::params![channel_id, before_id.unwrap_or(i64::MAX), limit], |r| {
                 Ok(Message {
                     id: r.get(0)?,
                     channel_id: r.get(1)?,

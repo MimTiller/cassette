@@ -40,8 +40,9 @@ use runtime_core::{
 };
 use runtime_core::icon;
 use icons_lucide::{
-    CHEVRON_DOWN, CIRCLE_HELP, COMPASS, GAVEL, GLOBE, HASH, HEADPHONES, MAIL, MESSAGE_CIRCLE, MIC,
-    MIC_OFF, PENCIL, PLUS, SETTINGS, SMILE, SMILE_PLUS, TRASH_2, USER_PLUS, USERS, VOLUME_2,
+    CHEVRON_DOWN, CHEVRON_UP, CIRCLE_HELP, COMPASS, GAVEL, GLOBE, HASH, HEADPHONES, MAIL,
+    MESSAGE_CIRCLE, MIC, MIC_OFF, PENCIL, PLUS, SETTINGS, SMILE, SMILE_PLUS, TRASH_2, USER_PLUS,
+    USERS, VOLUME_2,
 };
 use crate::idle_timer_badge::idle_timer_badge;
 use crate::server_settings_panel::ServerSettingsPanel;
@@ -89,7 +90,7 @@ use crate::voice_join_button::VoiceJoinButton;
 use crate::volume_slider::VolumeSlider;
 use crate::soundboard_button::SoundboardButton;
 use crate::edited_label::edited_label;
-use crate::notification_settings::NotificationSettings;
+use crate::settings_suite::UserSettings;
 use crate::keyboard_shortcuts_overlay::keyboard_shortcuts_overlay;
 use crate::profile_settings::profile_settings;
 use crate::dm_view::dm_screen;
@@ -203,6 +204,37 @@ pub(crate) fn same_group(prev_author: &str, prev_ts: i64, cur_author: &str, cur_
 /// what the per-row edit/delete affordance and the "(edited)" marker need on
 /// top of them (the mock path carries no wire id, so it renders `None`).
 type LiveMsg = (i64, i64, String, String, i64, Option<i64>);
+
+/// Insert a `LiveMsg` into a channel's buffer in (created_at_secs, message_id)
+/// ascending order, skipping a duplicate `message_id` if one is already present
+/// (dedup on absorption). Returns `true` if the message was added.
+///
+/// This keeps the buffer sorted oldest-first no matter which way a frame arrives:
+/// a live `new: true` frame (the newest message) sorts to the end, and a
+/// scrollback page — the server's `before_id` cursor returns strictly-older
+/// messages — stacks in at the front, all in one call. It is the single write
+/// path for `live_messages`, so the buffer's ordering invariant is maintained in
+/// one place rather than assumed by every call site.
+fn insert_live_msg(
+    buf: &mut Vec<LiveMsg>,
+    msg: (i64, i64, String, String, i64, Option<i64>),
+) -> bool {
+    let (id, ..) = msg;
+    // Dedup: a `message_id` already in the buffer is a re-delivery (the server
+    // may echo a History page that overlaps the live tail), so skip it.
+    if buf.iter().any(|(e, ..)| *e == id) {
+        return false;
+    }
+    // Binary-search the position by (created_at_secs, message_id), the same key
+    // the server's `ORDER BY created_at ASC, id ASC` uses for a page. Each buffer
+    // element's (created_at_secs, message_id) is compared as an owned tuple so the
+    // closure's two sides have the same type.
+    let pos = buf
+        .partition_point(|e| (e.4, e.0) < (msg.4, msg.0))
+        .min(buf.len());
+    buf.insert(pos, msg);
+    true
+}
 
 fn grow(v: f32) -> Tokenized<f32> {
     Tokenized::Literal(v)
@@ -3755,6 +3787,27 @@ mod responsive_width_tests {
 }
 
 fn app_shell(authed: Signal<bool>) -> Element {
+    // `app_shell` is only reached once `authed` is true, which a "Continue as
+    // guest" also flips — so `authed` alone can't tell a real account from a
+    // guest. The real-account sentinel is a non-empty signed-in username
+    // (`current_username` records it on login/signup and clears on logout).
+    // This is read once, here in `app_shell` scope: `app_shell` is re-invoked
+    // on every `authed` flip (see the `switch` in `app`), so the value is
+    // always the signed-in one at build time (the `user_panel` idiom).
+    let is_real_user = !crate::auth::current_username().is_empty();
+    // [Feature 16] `active_server`/`active_channel` are the *mock* selection.
+    // They keep their `SERVERS[0]` default (a demo server) but that default is
+    // only ever rendered for guests: a real account either lands on its own
+    // live server (the auto-enter effect below sets the live-mode signals) or
+    // sees the onboarding empty state, and the panes' mock fallback branches
+    // are suppressed for real users (see each pane's `is_real_user` gate).
+    // `app_shell` is only reached once `authed` is true, which a "Continue as
+    // guest" also flips — so `authed` alone can't tell a real account from a
+    // guest; the real-account sentinel is a non-empty signed-in username
+    // (`current_username` records it on login/signup and clears on logout).
+    // Read once here in `app_shell` scope: `app_shell` is re-invoked on every
+    // `authed` flip (see the `switch` in `app`), so this is the signed-in value
+    // at build time (the `user_panel` idiom).
     let active_server: Signal<u32> = signal(SERVERS[0].id);
     let active_channel: Signal<u32> = signal(SERVERS[0].first_text_channel().id);
     // Resizable column widths (CSS pixels), driven by the thin drag handles
@@ -3815,6 +3868,27 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let live_messages: Rc<RefCell<HashMap<i64, Vec<LiveMsg>>>> =
         Rc::new(RefCell::new(HashMap::new()));
     let live_revision: Signal<u32> = signal(0);
+    // Scroll-back state for the live message list:
+    // - `live_at_bottom` is `true` while the scroll view is at (or near) the
+    //   content bottom — the "follow the live tail" mode the list starts in.
+    //   Flipped to `false` the moment the user scrolls up away from the bottom
+    //   (the `on_scroll` max-offset heuristic) and back to `true` on
+    //   `on_end_reached`. Drives the floating "jump to bottom" button.
+    // - `live_scroll_handle` holds the `ScrollViewHandle` the scroll view hands
+    //   us in its `on_handle` callback, so the "load earlier" and "jump to
+    //   bottom" buttons can scroll the pane programmatically (and, when
+    //   prepending, restore the user's reading position).
+    let live_at_bottom: Signal<bool> = signal(true);
+    let live_scroll_handle: Rc<RefCell<Option<ScrollViewHandle>>> =
+        Rc::new(RefCell::new(None));
+    // The maximum scroll offset the live pane has reported, kept so the
+    // `on_scroll` max-offset heuristic can tell a scroll UP (away from the
+    // bottom) from a scroll DOWN (back to the live tail). An offset-only
+    // signal — `on_scroll` only reports the absolute `scrollTop`, never the
+    // content height (that is `on_end_reached`'s job), so "scrolled up from
+    // the bottom" is detected as `y < max_seen - threshold`, not as
+    // `y > content - viewport`.
+    let live_max_offset: Rc<RefCell<f32>> = Rc::new(RefCell::new(0.0));
     // Per-message edit mode: the wire `message_id` whose row currently shows
     // the inline edit input (None = none). One at a time — switching rows
     // just overwrites it, and the list rebuild (keyed on `live_revision` and
@@ -3979,6 +4053,59 @@ fn app_shell(authed: Signal<bool>) -> Element {
         Rc::new(RefCell::new(HashMap::new()));
     let live_presence_rev: Signal<u32> = signal(0);
 
+    // [Feature 16] A real account lands on its own live server, not the mock
+    // demo. When the list resolves and the user has at least one live server,
+    // auto-enter the first one (select it + pull its channels / roster /
+    // unread), mirroring the rail live-tile enter handler. Guests have no
+    // backend identity, so `list_servers` returns empty and this is a no-op —
+    // they keep the mock default. A real account with zero servers stays on
+    // the onboarding empty state (no live server to enter).
+    {
+        let ls = live_servers.clone();
+        let als = active_live_server.clone();
+        let alc = active_live_channel.clone();
+        let lch = live_channels.clone();
+        let lmbrs = live_members.clone();
+        let lmbr_err = live_member_error.clone();
+        let lkick = live_kick_confirm.clone();
+        let lunread = rail_unread.clone();
+        let lunread_rev = live_unread_rev.clone();
+        let is_real = is_real_user;
+        runtime_core::driver::spawn_async(async move {
+            let servers = ls.get();
+            let Some(sid) = servers.first().map(|s| s.id) else {
+                return; // guest or no live servers: nothing to auto-enter
+            };
+            if !is_real {
+                return;
+            }
+            // Already entered (e.g. a rail tap beat this) — don't clobber it.
+            if als.get().is_some() {
+                return;
+            }
+            lkick.set(None);
+            lmbr_err.set(String::new());
+            lmbrs.set(Vec::new());
+            if let Ok(channels) = crate::servers::list_channels(sid).await {
+                let first = channels.iter().find(|c| c.kind == "text").map(|c| c.id);
+                lch.set(channels);
+                if let Some(id) = first {
+                    alc.set(Some(id));
+                }
+            }
+            if let Ok(members) = crate::moderation::list_members(sid).await {
+                lmbrs.set(members);
+            }
+            if let Ok(counts) = crate::servers::unread_counts(sid).await {
+                let buf = lunread.clone();
+                buf.borrow_mut()
+                    .extend(counts.into_iter().map(|c| (c.channel_id, (c.count, c.unread_mentions))));
+                lunread_rev.set(lunread_rev.get() + 1);
+            }
+            als.set(Some(sid));
+        });
+    }
+
     // Realtime gateway: the signed session token authenticates the connect
     // (the backend verifies it). It rides the connect URL's `?args=` query —
     // a browser websocket cannot set request headers, so the token can't go on
@@ -4064,6 +4191,24 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let send_failed_sig = send_failed.clone();
     let presence_buf = live_presence.clone();
     let presence_rev = live_presence_rev.clone();
+    // [Feature 10] Notification wiring. `notif_level` (all/mentions/nothing) is
+    // the single source of truth shared with the `UserSettings` Notifications
+    // tab — seeded from localStorage (falling back to 0 = all) so a user who
+    // last picked "Nothing" isn't flooded before re-confirming their choice.
+    // The three transient signals drive the top-right in-app toast, read
+    // reactively by `notification_toast::notification_toast` (built once at the
+    // root). Declared HERE — before the gateway effect below captures them —
+    // because Rust requires a value in scope at the point a closure captures
+    // it (the effect reads them inside its `move |frame|` arm).
+    let notif_level: Signal<u32> =
+        signal(crate::notify::load_mode().unwrap_or(crate::notify::ALL_MESSAGES));
+    let notif_toast_visible: Signal<bool> = signal(false);
+    let notif_toast_title: Signal<String> = signal(String::new());
+    let notif_toast_body: Signal<String> = signal(String::new());
+    let notif_level_sig = notif_level.clone();
+    let notif_toast_sig = notif_toast_visible.clone();
+    let notif_toast_title_sig = notif_toast_title.clone();
+    let notif_toast_body_sig = notif_toast_body.clone();
     let gateway_incoming_effect = switch(
         move || gateway.incoming().get(),
         move |frame: &Option<discord_server::server_settings::WsServerMsg>| {
@@ -4091,19 +4236,33 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 // find the message later. History frames (`new: false`) may
                 // carry a non-None `edited_at` for messages already edited
                 // before this session, so store it as-is.
-                live_buf
-                    .borrow_mut()
-                    .entry(*channel_id)
-                    .or_default()
-                    .push((
-                        *message_id,
-                        *author_id,
-                        label,
-                        content.clone(),
-                        *created_at / 1000,
-                        edited_at.map(|ms| ms / 1000),
-                    ));
-                live_rev.set(live_rev.get() + 1);
+                //
+                // Sorted-insert (not a blind `.push`): the buffer is kept
+                // (created_at_secs, message_id) ascending so a scrollback page —
+                // strictly older than the loaded tail — stacks in at the front,
+                // while a live frame (the newest) sorts to the end, all through
+                // the same write path. Duplicate `message_id`s are skipped.
+                let mut changed = false;
+                {
+                    let mut buf = live_buf.borrow_mut();
+                    let v = buf.entry(*channel_id).or_default();
+                    changed = insert_live_msg(
+                        v,
+                        (
+                            *message_id,
+                            *author_id,
+                            label,
+                            content.clone(),
+                            *created_at / 1000,
+                            edited_at.map(|ms| ms / 1000),
+                        ),
+                    );
+                }
+                // Bump the revision only when a message actually landed — a pure
+                // dedup (re-delivery) is a no-op that must not force a rebuild.
+                if changed {
+                    live_rev.set(live_rev.get() + 1);
+                }
                 // Live @mention indicator: a freshly posted (`new: true`) message
                 // that names the signed-in user, on a channel that is NOT the one
                 // currently open, bumps that channel's unread-mention count.
@@ -4134,6 +4293,37 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     }
                     drop(map);
                     unread_live_rev.set(unread_live_rev.get() + 1);
+                }
+                // [Feature 10] Notification: a freshly posted (`new: true`)
+                // message that (a) matches the notification level (always for
+                // `ALL_MESSAGES`, only when it names me for `MENTIONS_ONLY`,
+                // never for `NOTHING`) and (b) lands on a channel that is NOT
+                // currently open fires an in-app toast (always, so the user
+                // sees it in the app) plus a browser `Notification` when the
+                // Notification API is granted. History frames (`new: false`)
+                // are the initial-load backlog and never notify. The toast
+                // carries the message content + author; the browser
+                // notification carries a short line. The channel name is not
+                // readily available in this scope (it lives in a separate
+                // map), so the toast uses the message content itself, which
+                // is the most useful part.
+                let is_mention = my_id != 0 && mentioned_user_ids.contains(&my_id);
+                let level = notif_level_sig.get();
+                let matches = match level {
+                    crate::notify::NOTHING => false,
+                    crate::notify::MENTIONS_ONLY => is_mention,
+                    _ => true, // ALL_MESSAGES (0) or any future value
+                };
+                if *new && matches && open_chan.get() != Some(*channel_id) {
+                    crate::notify::notify_message(
+                        author_username,
+                        content,
+                        is_mention,
+                        level,
+                        notif_toast_sig,
+                        notif_toast_title_sig,
+                        notif_toast_body_sig,
+                    );
                 }
             }
             // A channel message the signed-in user edited: replace the stored
@@ -4467,7 +4657,16 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // the rail `switch` below rebuilds on that signal so new rows appear.
     let server_rail: Signal<Vec<u32>> = signal(SERVERS.iter().map(|s| s.id).collect());
 
-    let server_rows: Vec<Element> = SERVERS.iter().map(|s| {
+    // [Feature 16] The mock demo servers are guest-only rail content. A real
+    // account sees only its own live servers (the live section below) plus the
+    // create / join affordances — the demo `SERVERS` are not theirs, so the
+    // mock rows are gated off for real users (empty here; the onboarding
+    // state is driven by the create affordance in the rail). Guests keep the
+    // full demo rail.
+    let server_rows: Vec<Element> = if is_real_user {
+        Vec::new()
+    } else {
+        SERVERS.iter().map(|s| {
         let active = active_server.clone();
         let channel = active_channel.clone();
         let voice = joined_voice.clone();
@@ -4597,7 +4796,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 TouchResponse::CONSUMED
             })
         }
-    }).collect();
+    }).collect()
+    };
 
     // --- "Create a Server" reactive plumbing -------------------------------
     // `dynamic_servers` holds the servers the user creates this session
@@ -5508,6 +5708,24 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // `switch`'s render is `Fn` — clone the captured styles so the
             // closure borrows them rather than moving them out (whiteboard idiom).
             let sidebar_style = sidebar_style.clone();
+            // [Feature 16] A real account with no live channel selected must
+            // never fall through to the mock render: its default `active_server`
+            // / `active_channel` point at the demo `SERVERS[0]`, and the mock
+            // branch below would render those demo identities (the "Nova"
+            // confusion). During the login -> server-fetch race (and for a real
+            // account with zero servers) there is no live channel, so show an
+            // onboarding hint instead — the live auto-enter effect settles the
+            // steady state once the first server resolves.
+            if is_real_user && _live_server.is_none() {
+                return ui! {
+                    view(style = sidebar_style.clone()) {
+                        text(style = cat_style.clone()) {
+                            "No server selected — create or join one to get started."
+                                .to_string()
+                        }
+                    }
+                };
+            }
             let sidebar_header_style = sidebar_header_style.clone();
             let sidebar_title_style = sidebar_title_style.clone();
             let chevron_style = chevron_style.clone();
@@ -5564,6 +5782,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     let live_sel = active_live_channel.clone();
                     let gw = gateway.clone();
                     let live_unread_map = live_unread.clone();
+                    // Scroll-back state for the live list, captured for the
+                    // channel-select handler: selecting a channel re-arms the
+                    // "follow the live tail" mode (the list starts at the
+                    // bottom) and clears the scroll handle the old pane had
+                    // captured, so the fresh pane's `on_handle` callback can
+                    // store its own.
+                    let live_at_bottom_row = live_at_bottom.clone();
+                    let live_scroll_handle_row = live_scroll_handle.clone();
                     // Shared style for the live channel row action icon buttons
                     // (rename pencil / delete trash) and the new-channel "+"
                     // header action. Defined here, inside the live arm of the
@@ -5709,6 +5935,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             let name = c.name.clone();
                             let is_text = c.kind == "text";
                             let cid = c.id;
+                            // `live_scroll_handle_row` is an `Rc` (not `Copy`); the
+                            // row's `on_touch(move …)` closure moves it, so each
+                            // row needs its own clone (the `nm: Rc<String>` idiom
+                            // a few lines up) — the first row would otherwise
+                            // move the single shared binding out of this `FnMut`
+                            // and the second row hits E0507.
+                            let live_scroll_handle_row = live_scroll_handle_row.clone();
                             // The REAL per-channel unread state from the backend
                             // `unread_counts` fetch (fetched when the live server
                             // was selected, bumped per new inbound frame, zeroed
@@ -5785,8 +6018,17 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                     .on_touch(move |ev| {
                                         if ev.phase == TouchPhase::Ended {
                                             live_sel.set(Some(cid));
+                                            // Re-arm the live list's scroll state for the
+                                            // freshly opened channel: start "following the
+                                            // live tail" (at the bottom) and drop the old
+                                            // pane's scroll handle so the new pane's
+                                            // `on_handle` callback can capture its own.
+                                            live_at_bottom_row.set(true);
+                                            *live_scroll_handle_row.borrow_mut() = None;
                                             gw.send(
                                                 discord_server::server_settings::WsClientMsg::History {
+                                                    // Initial load: the latest page (no
+                                                    // scrollback cursor yet).
                                                     channel_id: cid,
                                                     // `before_id: None` = fetch the
                                                     // latest page (no before-cursor) —
@@ -6184,6 +6426,21 @@ fn app_shell(authed: Signal<bool>) -> Element {
             let title_style = title_style.clone();
             let topic_style = topic_style.clone();
             let moderation_style = moderation_style.clone();
+            // [Feature 16] Real account with no live channel: don't fall
+            // through to the mock header (it would show the demo `SERVERS[0]`
+            // channel). Show a neutral onboarding title during the login ->
+            // server-fetch race / for a zero-server account.
+            if is_real_user && live_cid.is_none() {
+                return ui! {
+                    view(style = header_style) {
+                        text(style = StyleRules {
+                            color: Some(col(TEXT_MUTED)),
+                            ..hash_style
+                        }) { "#".to_string() }
+                        text(style = title_style) { "No channel selected".to_string() }
+                    }
+                };
+            }
             if let Some(live_id) = *live_cid {
                 let title = live_channels
                     .get()
@@ -6310,6 +6567,27 @@ fn app_shell(authed: Signal<bool>) -> Element {
             reaction_rev.get(),
         ),
         move |(server_id, channel_id, _revision, live_cid, _live_rev, _editing, _confirm, _react_rev): &(u32, u32, u32, Option<i64>, u32, Option<i64>, Option<i64>, u32)| {
+            // [Feature 16] Real account with no live channel: don't fall
+            // through to the mock message list (it would render the demo
+            // `SERVERS[0]` seed messages). Show a neutral onboarding hint
+            // during the login -> server-fetch race / for a zero-server account.
+            if is_real_user && live_cid.is_none() {
+                return ui! {
+                    view(style = StyleRules {
+                        flex_grow: Some(grow(1.0)),
+                        align_items: Some(AlignItems::Center),
+                        justify_content: Some(JustifyContent::Center),
+                        padding_top: Some(px(24.0)),
+                        ..Default::default()
+                    }) {
+                        text(style = StyleRules {
+                            font_size: Some(px(14.0)),
+                            color: Some(col(TEXT_MUTED)),
+                            ..Default::default()
+                        }) { "Create or join a server to start messaging.".to_string() }
+                    }
+                };
+            }
             // Live/real channel active: render the gateway-fed buffer instead of
             // the mock path. `None` falls through to the mock render unchanged.
             if let Some(live_id) = *live_cid {
@@ -6515,6 +6793,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
             (server, channel, live, typing_rev_for_key.get())
         },
         move |(server_id, channel_id, live_chan, _rev): &(u32, u32, Option<i64>, u32)| {
+            // [Feature 16] Real account with no live channel: render an empty
+            // spacer (no mock typing indicator) during the login ->
+            // server-fetch race / for a zero-server account.
+            if is_real_user && live_chan.is_none() {
+                return ui! {
+                    view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
+                };
+            }
             // Live mode: show the typer from the gateway, or the empty
             // spacer if nobody is typing right now.
             if let Some(live_id) = *live_chan {
@@ -7147,6 +7433,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // The key folds in every signal the live panel reads — roster, error,
     // kick-confirm, and the presence revision — so any of those changes (e.g.
     // a `Presence` frame arriving) rebuilds the panel and the dots update.
+    // [Feature 16] A real account with no live server yet renders an empty
+    // roster (not the mock `USER`/roster, which would leak demo identities
+    // like "Nova" into a real account's onboarding state) — the key folds in
+    // `is_real_user` so that transition re-renders the panel too. Guests
+    // (`is_real_user` false) always fall back to the mock panel.
     let live_members_panel = live_members.clone();
     let live_member_error_panel = live_member_error.clone();
     let live_kick_panel = live_kick_confirm.clone();
@@ -7194,9 +7485,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 live_member_error.get(),
                 live_kick_confirm.get(),
                 live_presence_rev.get(),
+                is_real_user,
             )
         },
-        move |(_server_id, user_status, live_active, _live_members, _live_err, _live_kick, _presence_rev): &(
+        move |(_server_id, user_status, live_active, _live_members, _live_err, _live_kick, _presence_rev, real_user): &(
             u32,
             Status,
             Option<i64>,
@@ -7204,25 +7496,55 @@ fn app_shell(authed: Signal<bool>) -> Element {
             String,
             Option<i64>,
             u32,
+            bool,
         )| {
             if let Some(ls) = *live_active {
                 // Live server: real roster + live presence dots. The panel owns
                 // its width internally (fixed 260px, same as the mock default
                 // before a user drags the handle).
-                live_member_panel(
+                return live_member_panel(
                     ls,
-                    live_members_panel,
-                    live_member_error_panel,
-                    live_kick_panel,
+                    live_members_panel.clone(),
+                    live_member_error_panel.clone(),
+                    live_kick_panel.clone(),
                     // `Rc` isn't `Copy`, and this is an `Fn` (re-entrant) closure —
                     // clone the handle each render.
                     live_presence_panel.clone(),
-                )
-            } else {
-                // Mock server: the static grouped panel.
-                let server = SERVERS.iter().find(|x| x.id == *_server_id).unwrap();
-                member_panel(server, &USER.as_member(*user_status), selected_member.clone(), member_panel_width, sidebar_width, search_corpus.read_only())
+                );
             }
+            if *real_user {
+                // Real account, no live server yet -> an empty member panel
+                // (not the mock `USER`/roster, which would leak demo identities
+                // like "Nova" into a real account's onboarding state).
+                return ui! {
+                    view(style = StyleRules {
+                        width: Some(px(240.0)),
+                        background: Some(col(BG_SIDEBAR)),
+                        border_left_width: Some(border_width(1.0)),
+                        border_left_color: Some(col(BORDER)),
+                        flex_direction: Some(FlexDirection::Column),
+                        overflow: Some(Overflow::Hidden),
+                        ..Default::default()
+                    }) {
+                        scroll_view(style = StyleRules {
+                            flex_grow: Some(grow(1.0)),
+                            ..Default::default()
+                        }) {
+                            text(style = StyleRules {
+                                padding_top: Some(px(14.0)),
+                                padding_left: Some(px(12.0)),
+                                padding_right: Some(px(12.0)),
+                                font_size: Some(px(13.0)),
+                                color: Some(col(TEXT_MUTED)),
+                                ..Default::default()
+                            }) { "No members yet — join a server to see its roster.".to_string() }
+                        }
+                    }
+                };
+            }
+            // Mock server (guests): the static grouped panel.
+            let server = SERVERS.iter().find(|x| x.id == *_server_id).unwrap();
+            member_panel(server, &USER.as_member(*user_status), selected_member.clone(), member_panel_width, sidebar_width, search_corpus.read_only())
         },
     );
 
@@ -7320,10 +7642,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
         }
     };
 
-    // Notification Settings screen (built once, same shape as the Profile
-    // overlay above): collapses to zero size when `notif_mode` is off, fills
-    // the window when on, with a "Done" pill to close it.
-    let notif_el = NotificationSettings();
+    // User Settings screen (built once, same shape as the Profile overlay
+    // above): collapses to zero size when `notif_mode` is off, fills the
+    // window when on, with a "Done" pill to close it. It is the tabbed
+    // `UserSettings` suite (Notifications / Account / Appearance) — the gear's
+    // target. The notification level it edits is the shared `notif_level`
+    // signal (also read by the gateway effect), passed as a `Signal` prop.
     let notif_close = notif_mode.clone();
     let notif_header = ui! {
         view(style = StyleRules {
@@ -7341,7 +7665,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 font_weight: Some(FontWeight::Bold),
                 color: Some(col(TEXT)),
                 ..Default::default()
-            }) { "Notifications".to_string() }
+            }) { "User Settings".to_string() }
             view(style = StyleRules {
                 height: Some(px(26.0)),
                 padding_left: Some(px(12.0)),
@@ -7382,10 +7706,17 @@ fn app_shell(authed: Signal<bool>) -> Element {
         overflow: Some(Overflow::Hidden),
         ..Default::default()
     };
+    // The `UserSettings` suite is a `#[component]`, so it's called by tag
+    // INSIDE `ui!` (`UserSettings(notif_mode = …)`) — the macro generates the
+    // `BuildElement` glue. It receives the shared `notif_level` signal (the
+    // Notifications tab writes it; the gateway effect reads it). `Signal` is
+    // `Copy`, so `notif_level.clone()` hands the same underlying signal.
     let notif_region = ui! {
         view(style = notif_wrap) {
             notif_header
-            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) { notif_el }
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
+                UserSettings(notif_mode = notif_level.clone())
+            }
         }
     };
 
@@ -8284,6 +8615,19 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // "Bug reports" overlay: same full-screen, paint-last idiom as
             // `moderation_region` above.
             bug_reports_region
+            // [Feature 10] New-message notification toast: floats top-right
+            // (a `Position::Absolute` child of the root `Relative` ancestor),
+            // exactly like the pin toast above. The gateway effect sets
+            // `notif_toast_visible` (and the title / body) when a matching
+            // message lands on a non-open channel; `notification_toast` reads
+            // all three reactively, so its copy updates in place on each new
+            // message and the banner auto-dismisses ~4.5 s later (or via its
+            // "x"). Collapses to nothing while hidden.
+            crate::notification_toast::notification_toast(
+                notif_toast_visible,
+                notif_toast_title,
+                notif_toast_body,
+            )
         }
     }
 }

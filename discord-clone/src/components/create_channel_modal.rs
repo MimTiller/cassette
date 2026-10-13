@@ -165,9 +165,16 @@ pub fn CreateChannelModal(
 
     // --- Create handler ------------------------------------------------------
     // `move` closure: every captured copy is `Copy`, so it stays `Fn` across
-    // taps. The only client-side gate is a non-empty name (and a live server);
-    // the backend's rejection is surfaced verbatim in `error`.
+    // taps. The client-side gates are: (1) the in-flight `busy` guard — without
+    // it a fast double-tap fires two `create_channel` RPCs and mints two
+    // duplicate channels (the backend has no unique-name constraint and never
+    // rejects "already taken", so the client guard is the only protection);
+    // the same guard the `create_server_modal` uses. (2) A non-empty name (and
+    // a live server). The backend's rejection is surfaced verbatim in `error`.
     let on_create = move || {
+        if b.get() {
+            return;
+        }
         let raw = n.get();
         let trimmed = raw.trim().to_string();
         let Some(sid0) = sid.get() else {

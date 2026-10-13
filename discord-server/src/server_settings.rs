@@ -63,8 +63,10 @@ use crate::session::acting_user;
 pub enum WsClientMsg {
     /// Send a message to the channel.
     Send { channel_id: i64, content: String },
-    /// Request the recent message history for a channel.
-    History { channel_id: i64 },
+    /// Request the recent message history for a channel. `before_id` is the
+    /// scrollback cursor: `None` for the initial load (latest `limit`), or the
+    /// oldest message id the client already holds to fetch the next page back.
+    History { channel_id: i64, before_id: Option<i64> },
     /// The client is typing in the channel.
     Typing { channel_id: i64 },
     /// Edit the content of one of the client's own messages.
@@ -209,7 +211,10 @@ pub async fn message_gateway(
                     let _ = ch.send(WsServerMsg::Error { reason }).await;
                 }
             }
-            WsClientMsg::History { channel_id } => match history_for(&db, user_id, channel_id, 50) {
+            WsClientMsg::History {
+                channel_id,
+                before_id,
+            } => match history_for(&db, user_id, channel_id, before_id, 50) {
                 Ok(messages) => {
                     let _ = ch.send(WsServerMsg::History { channel_id }).await;
                     for m in messages {

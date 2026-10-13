@@ -364,15 +364,18 @@ pub fn delete_channel_message(db: &Db, user_id: i64, message_id: i64) -> Result<
     Ok(())
 }
 
-/// The recent history of a channel, if `user_id` may read it.
+/// The recent history of a channel, if `user_id` may read it. With
+/// `before_id = None` the latest `limit` messages are returned (initial load);
+/// with `Some(id)` the next `limit` messages strictly OLDER than `id` (scrollback).
 pub fn history_for(
     db: &Db,
     user_id: i64,
     channel_id: i64,
+    before_id: Option<i64>,
     limit: i64,
 ) -> Result<Vec<Message>, &'static str> {
     authorize_text_channel(db, user_id, channel_id)?;
-    Ok(db.recent_messages(channel_id, limit))
+    Ok(db.older_messages(channel_id, before_id, limit))
 }
 
 #[cfg(test)]
@@ -447,8 +450,33 @@ mod tests {
         assert_eq!(authorize_text_channel(&db, 1, 3), Err("not a member of this server"));
         assert_eq!(authorize_text_channel(&db, 1, 2), Err("not a text channel"));
         assert_eq!(authorize_text_channel(&db, 1, 99), Err("channel not found"));
-        assert!(history_for(&db, 4, 1, 50).is_err());
-        assert!(history_for(&db, 1, 1, 50).is_ok());
+        assert!(history_for(&db, 4, 1, None, 50).is_err());
+        assert!(history_for(&db, 1, 1, None, 50).is_ok());
+    }
+
+    #[test]
+    fn history_pagination_walks_older_pages_by_id_cursor() {
+        let (_d, db) = setup();
+        // Five messages in channel 1 (ids are monotonic AUTOINCREMENT).
+        let ids: Vec<i64> = (0..5)
+            .map(|i| db.insert_message(1, 1, &format!("m{i}"), 100 + i).unwrap())
+            .collect();
+        assert!(ids.windows(2).all(|w| w[0] < w[1]), "ids must be ascending");
+
+        // Initial load (`before_id = None`): latest `limit`, oldest-first.
+        let first = db.older_messages(1, None, 3);
+        assert_eq!(first.iter().map(|m| m.id).collect::<Vec<_>>(), vec![ids[2], ids[3], ids[4]]);
+
+        // Scrollback: strictly older than the oldest held id, still oldest-first.
+        let second = db.older_messages(1, Some(ids[2]), 3);
+        assert_eq!(second.iter().map(|m| m.id).collect::<Vec<_>>(), vec![ids[0], ids[1]]);
+
+        // Exhausted: nothing older than the very first message.
+        assert!(db.older_messages(1, Some(ids[0]), 3).is_empty());
+
+        // The authorization guard rides along on the cursor path too.
+        assert!(history_for(&db, 1, 1, Some(ids[4]), 3).is_ok());
+        assert!(history_for(&db, 4, 1, Some(ids[4]), 3).is_err());
     }
 
     #[test]
@@ -801,7 +829,7 @@ mod tests {
         send(&mut dave, &WsClientMsg::Send { channel_id: 1, content: "sneaky".into() }).await;
         let err = next_matching(&mut dave, |m| matches!(m, WsServerMsg::Error { .. })).await;
         assert!(matches!(err, Some(WsServerMsg::Error { ref reason }) if reason.contains("not a member")));
-        send(&mut dave, &WsClientMsg::History { channel_id: 1 }).await;
+        send(&mut dave, &WsClientMsg::History { channel_id: 1, before_id: None }).await;
         let err = next_matching(&mut dave, |m| matches!(m, WsServerMsg::Error { .. })).await;
         assert!(matches!(err, Some(WsServerMsg::Error { ref reason }) if reason.contains("not a member")));
         send(&mut alice, &WsClientMsg::Send { channel_id: 2, content: "into voice".into() }).await;
@@ -811,7 +839,7 @@ mod tests {
         assert_eq!(db.recent_messages(1, 10).len(), 1, "only alice's valid post persisted");
 
         // 5. Members can read history; it replays the persisted message.
-        send(&mut bob, &WsClientMsg::History { channel_id: 1 }).await;
+        send(&mut bob, &WsClientMsg::History { channel_id: 1, before_id: None }).await;
         let h = next_matching(&mut bob, |m| matches!(m, WsServerMsg::Message { new: false, .. })).await;
         assert!(matches!(h, Some(WsServerMsg::Message { ref content, .. }) if content == "hello bob"));
 

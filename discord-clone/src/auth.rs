@@ -90,6 +90,64 @@ pub async fn signup(username: &str, password: &str) -> Result<i64, String> {
     }
 }
 
+/// Rename the signed-in account's handle on the backend, then refresh the
+/// process-wide [`CURRENT_USERNAME`] so the profile strip reflects the new
+/// name without a re-login.
+///
+/// Thin wrapper over the backend `#[server]` fn
+/// [`discord_server::auth::change_username`]: it packs the new handle into
+/// [`discord_server::auth::ChangeUsernameInput`], awaits the RPC stub (which
+/// authenticates as the bearer token from [`CURRENT_TOKEN`]), and flattens the
+/// result. On success the fresh name is recorded in [`CURRENT_USERNAME`]; on
+/// failure (e.g. a duplicate handle, or being unauthenticated) the
+/// `ServerError`'s message is returned as `Err`.
+///
+/// # Errors
+/// Returns `Err(message)` for any failure — a duplicate handle, a missing
+/// session (not logged in), or a transport-level `ServerError`. The message is
+/// the `ServerError`'s `Display` form.
+pub async fn change_username(new_username: &str) -> Result<String, String> {
+    let input = discord_server::auth::ChangeUsernameInput {
+        new_username: new_username.to_string(),
+    };
+
+    match discord_server::auth::change_username(input).await {
+        Ok(result) => {
+            *CURRENT_USERNAME.lock().unwrap_or_else(|p| p.into_inner()) =
+                result.username.clone();
+            Ok(result.username)
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// Change the signed-in account's password, after the backend verifies the
+/// current one. The current password is never sent anywhere but this call and
+/// is never stored client-side.
+///
+/// Thin wrapper over the backend `#[server]` fn
+/// [`discord_server::auth::change_password`]: it packs the old + new passwords
+/// into [`discord_server::auth::ChangePasswordInput`], awaits the RPC stub,
+/// and flattens the result. The session token is unchanged by a password
+/// change (the token is a signature over the user id, not the password), so
+/// the caller stays signed in.
+///
+/// # Errors
+/// Returns `Err(message)` for any failure — a wrong current password, a blank
+/// new password, being unauthenticated, or a transport-level `ServerError`.
+/// The message is the `ServerError`'s `Display` form.
+pub async fn change_password(current_password: &str, new_password: &str) -> Result<(), String> {
+    let input = discord_server::auth::ChangePasswordInput {
+        current_password: current_password.to_string(),
+        new_password: new_password.to_string(),
+    };
+
+    match discord_server::auth::change_password(input).await {
+        Ok(_) => Ok(()),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
 /// The signed-in account's numeric id, kept process-wide so it outlives the
 /// login screen (which unmounts the moment `authed` flips). `0` means "not
 /// logged in" — the sentinel the store starts at. It still rides the realtime

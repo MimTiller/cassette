@@ -15,6 +15,15 @@ mod invite;
 mod typing_indicator;
 mod notification_settings;
 mod keyboard_shortcuts_overlay;
+// The notification engine (in-app toast + browser Notification API + the
+// localStorage persistence for the picker level / accent color). Wired into
+// the gateway effect in `app.rs` and the `UserSettings` screen
+// (`settings_suite`).
+mod notify;
+// The full-screen, three-tab user-settings screen (Notifications / Account /
+// Appearance) opened by the settings gear; replaces the lone
+// `notification_settings` screen as the gear's target.
+mod settings_suite;
 mod profile_settings;
 mod dm_view;
 mod dms;
@@ -99,6 +108,8 @@ mod nickname_edit_field;
 mod pin_count_badge;
 #[path = "components/pin_confirm_toast.rs"]
 mod pin_confirm_toast;
+#[path = "components/notification_toast.rs"]
+mod notification_toast;
 #[path = "components/ban_reason_input.rs"]
 mod ban_reason_input;
 #[path = "components/template_gallery_grid.rs"]

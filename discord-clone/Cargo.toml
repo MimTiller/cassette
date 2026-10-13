@@ -99,9 +99,23 @@ web-sys = "=0.3.99"
 wasm-bindgen-futures = "=0.4.72"
 
 # Web-only: `auth::configure_server` reads `window.location.origin` so the
-# `#[server]` stubs call the API on the page's own origin.
+# `#[server]` stubs call the API on the page's own origin. `Storage` (the
+# `localStorage` persistence behind `crate::notify::load_mode` / `save_accent`)
+# and `Notification` (the browser `Notification` API behind
+# `crate::notify::request_permission` / the granted-notification half of
+# `notify_message`) are the same target, so they live in the same table. The
+# base `web-sys` (no features) in `[dependencies]` merges with this one on the
+# wasm target; on native targets this table is absent and `notify.rs` falls
+# back to its no-op (storage-less) native half.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-web-sys = { version = "0.3.99", features = ["Window", "Location", "Storage"] }
+web-sys = { version = "0.3.99", features = [
+    "Window",
+    "Location",
+    "Storage",
+    "Notification",
+    "NotificationOptions",
+    "NotificationPermission",
+] }
 
 # Idealyst project config. The CLI reads this on `idealyst build`,
 # `idealyst run`, `idealyst dev`, etc.

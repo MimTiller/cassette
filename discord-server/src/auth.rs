@@ -21,13 +21,21 @@
 use serde::{Deserialize, Serialize};
 use server::{server, ServerError};
 
+// The acting user is resolved from the verified bearer token (see
+// [`crate::session::acting_user`]). `session` is server-gated (the token
+// secret never ships to wasm), so this import — and the fn bodies that use it
+// — are server-only; the `#[server]` fns compile to client RPC stubs on the
+// default-features build (the same shape as `dms.rs`).
+#[cfg(feature = "server")]
+use crate::session::acting_user;
+
 // The `Db` handle + password KDF are server-only (native SQLite / crypto),
 // pulled in only under the `server` feature. The wire types (`LoginInput` /
 // `SignupInput` / `LoginResult` / `SignupResult`) and the `#[server]` fns are
 // shared: on the default-features wasm client build the fns compile to RPC
 // stubs, so this import is only needed for the server body.
 #[cfg(feature = "server")]
-use crate::db::{hash_password, Db};
+use crate::db::{hash_password, verify_password, Db};
 
 /// The wire input for [`signup`].
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -47,6 +55,34 @@ pub struct SignupResult {
     /// The username exactly as claimed.
     pub username: String,
 }
+
+/// The wire input for [`change_username`].
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ChangeUsernameInput {
+    /// The new @handle. Globally unique (case-insensitive), like at signup.
+    pub new_username: String,
+}
+
+/// The wire input for [`change_password`].
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ChangePasswordInput {
+    /// The account's current password. Verified (never stored) before the
+    /// new one is accepted — a wrong current password is rejected outright.
+    pub current_password: String,
+    /// The new plaintext password. Hashed (never stored) before persistence.
+    pub new_password: String,
+}
+
+/// The echo returned by [`change_username`], so the client can re-label the
+/// signed-in identity with the new name.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ChangeUsernameResult {
+    pub username: String,
+}
+
+/// The unit result of a successful [`change_password`].
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ChangePasswordResult {}
 
 // ── service ──────────────────────────────────────────────────────────────────
 //
@@ -87,6 +123,65 @@ impl AuthService {
             }
             Err(e) => Err(format!("failed to create user: {e}")),
         }
+    }
+
+    /// Rename the account `user_id` to `new_username`. The handle must be
+    /// globally unique (case-insensitive, the `users.username` `UNIQUE`
+    /// constraint), like at signup — a collision is rejected with the same
+    /// "already taken" message.
+    ///
+    /// # Errors
+    /// - `username '…' is already taken` — the handle is already claimed.
+    /// - `user not found` — no such account.
+    /// - `failed to rename user: …` — any other persistence failure.
+    pub fn change_username(&self, user_id: i64, new_username: &str) -> Result<String, String> {
+        match self.db.rename_user(user_id, new_username) {
+            Ok(_) => Ok(new_username.to_string()),
+            Err(e) if e.to_string().contains("UNIQUE") => {
+                Err(format!("username '{new_username}' is already taken"))
+            }
+            Err(e) => {
+                // `rename_user` surfaces a missing row as Err too; map it to a
+                // clear domain message rather than a raw rusqlite error.
+                if e.to_string().contains("no such row") || e.to_string().is_empty() {
+                    Err("user not found".to_string())
+                } else {
+                    Err(format!("failed to rename user: {e}"))
+                }
+            }
+        }
+    }
+
+    /// Change the password of account `user_id`, after verifying
+    /// `current_password` against the stored hash. The new password is hashed
+    /// (salted PBKDF2-HMAC-SHA256) and stored; the plaintext is never kept.
+    ///
+    /// # Errors
+    /// - `user not found` — no such account.
+    /// - `invalid current password` — the current password does not verify.
+    /// - `new password may not be empty` — the replacement is blank.
+    /// - `failed to change password: …` — any other persistence failure.
+    pub fn change_password(
+        &self,
+        user_id: i64,
+        current_password: &str,
+        new_password: &str,
+    ) -> Result<(), String> {
+        if new_password.trim().is_empty() {
+            return Err("new password may not be empty".to_string());
+        }
+        let stored_hash = self
+            .db
+            .password_hash_for_id(user_id)
+            .ok_or_else(|| "user not found".to_string())?;
+        if !verify_password(&stored_hash, current_password) {
+            return Err("invalid current password".to_string());
+        }
+        let hash = hash_password(new_password);
+        self.db
+            .set_password_hash(user_id, &hash)
+            .map_err(|e| format!("failed to change password: {e}"))?;
+        Ok(())
     }
 }
 
@@ -228,6 +323,38 @@ pub async fn login(input: LoginInput) -> Result<LoginResult, ServerError> {
         .map_err(ServerError::failed)
 }
 
+/// Rename the signed-in account's handle. The new handle must be globally
+/// unique (case-insensitive) — a collision is rejected with a clear error.
+///
+/// The acting user is resolved from the verified bearer token
+/// ([`crate::session::acting_user`]); there is no client-supplied user id.
+#[server]
+pub async fn change_username(input: ChangeUsernameInput) -> Result<ChangeUsernameResult, ServerError> {
+    let db = db_from_state()?;
+    let user = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    AuthService::new(db)
+        .change_username(user, &input.new_username)
+        .map(|username| ChangeUsernameResult { username })
+        .map_err(|e| ServerError::failed(e))
+}
+
+/// Change the signed-in account's password, after verifying the current one.
+/// The new password is hashed server-side and never stored in plaintext.
+///
+/// The acting user is resolved from the verified bearer token
+/// ([`crate::session::acting_user`]); there is no client-supplied user id.
+#[server]
+pub async fn change_password(
+    input: ChangePasswordInput,
+) -> Result<ChangePasswordResult, ServerError> {
+    let db = db_from_state()?;
+    let user = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    AuthService::new(db)
+        .change_password(user, &input.current_password, &input.new_password)
+        .map(|_| ChangePasswordResult {})
+        .map_err(|e| ServerError::failed(e))
+}
+
 /// Pull the shared `Db` out of server state (installed at startup by the
 /// server bin via `server::install_state(db)`). `Db` is cheap to clone.
 /// Server-only — the client RPC stub never executes a body.
@@ -285,6 +412,60 @@ mod tests {
         );
         // The stored hash verifies against the original password.
         assert!(crate::db::verify_password(&hash, "hunter2-secure"));
+    }
+
+    #[test]
+    fn change_username_renames_and_rejects_duplicates() {
+        let (_dir, db) = setup_db();
+        let svc = AuthService::new(db.clone());
+        let id = svc.signup("nova", "pw-one").expect("signup").user_id;
+
+        // A fresh handle renames cleanly.
+        let now = svc
+            .change_username(id, "renamed")
+            .expect("a fresh handle renames");
+        assert_eq!(now, "renamed");
+        assert_eq!(db.user_by_id(id).map(|(_, u)| u), Some("renamed".to_string()));
+
+        // A handle claimed by another account is rejected (UNIQUE).
+        assert!(svc.signup("other", "pw-two").is_ok());
+        let err = svc
+            .change_username(id, "other")
+            .expect_err("a claimed handle is rejected");
+        assert!(err.contains("already taken"), "got: {err}");
+    }
+
+    #[test]
+    fn change_password_requires_current_and_rehashes() {
+        let (_dir, db) = setup_db();
+        let svc = AuthService::new(db.clone());
+        let id = svc.signup("nova", "pw-one").expect("signup").user_id;
+
+        // A wrong current password is rejected and the hash is unchanged.
+        let before = db.password_hash_for_id(id).expect("hash stored");
+        let err = svc
+            .change_password(id, "wrong", "pw-two")
+            .expect_err("a wrong current password is rejected");
+        assert!(err.contains("invalid current password"), "got: {err}");
+        assert_eq!(
+            db.password_hash_for_id(id).expect("hash still stored"),
+            before,
+            "the hash is untouched on failure"
+        );
+
+        // A blank new password is rejected.
+        assert!(svc
+            .change_password(id, "pw-one", "   ")
+            .expect_err("a blank new password is rejected")
+            .contains("may not be empty"));
+
+        // The right current password swaps in a new hash that verifies.
+        svc.change_password(id, "pw-one", "pw-two")
+            .expect("a correct current password changes it");
+        let after = db.password_hash_for_id(id).expect("hash re-stored");
+        assert_ne!(before, after, "the hash was re-derived");
+        assert!(crate::db::verify_password(&after, "pw-two"));
+        assert!(!crate::db::verify_password(&after, "pw-one"));
     }
 
     #[test]
