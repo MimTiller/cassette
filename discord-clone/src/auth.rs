@@ -269,8 +269,43 @@ pub(crate) fn load_session() -> Option<(String, i64)> {
 pub(crate) fn clear_session() {
     if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
         let _ = storage.remove_item("discord_session");
+        let _ = storage.remove_item("discord_last_server");
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn clear_session() {}
+
+/// Remember the live server the user most recently entered, so a page
+/// refresh can land them back on it instead of the onboarding empty state
+/// (the auto-enter effect in `app_shell` falls back to the account's first
+/// live server when there's nothing saved, or the saved id is no longer in
+/// their server list).
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn save_last_server(server_id: i64) {
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        let _ = storage.set_item("discord_last_server", &server_id.to_string());
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn save_last_server(_server_id: i64) {}
+
+/// The persisted last-entered live server id, or `None` when there is none
+/// (first visit, guest, or logged out since).
+pub(crate) fn load_last_server() -> Option<i64> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        web_sys::window()
+            .and_then(|w| w.local_storage().ok().flatten())?
+            .get_item("discord_last_server")
+            .ok()
+            .flatten()?
+            .parse()
+            .ok()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        None
+    }
+}

@@ -4062,11 +4062,18 @@ fn app_shell(authed: Signal<bool>) -> Element {
 
     // [Feature 16] A real account lands on its own live server, not the mock
     // demo. When the list resolves and the user has at least one live server,
-    // auto-enter the first one (select it + pull its channels / roster /
+    // auto-enter one of them (select it + pull its channels / roster /
     // unread), mirroring the rail live-tile enter handler. Guests have no
     // backend identity, so `list_servers` returns empty and this is a no-op —
     // they keep the mock default. A real account with zero servers stays on
     // the onboarding empty state (no live server to enter).
+    //
+    // Which server: prefer the one `crate::auth::save_last_server` recorded
+    // the last time this account entered a live server (via a rail tap or
+    // just-created server) — so a refresh lands back where the user left
+    // off, not wherever `list_servers` happens to put first. Falls back to
+    // the first server when there's nothing saved, or the saved id is stale
+    // (e.g. they were removed from that server since).
     {
         let ls = live_servers.clone();
         let als = active_live_server.clone();
@@ -4079,13 +4086,26 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let lunread_rev = live_unread_rev.clone();
         let is_real = is_real_user;
         runtime_core::driver::spawn_async(async move {
-            let servers = ls.get();
-            let Some(sid) = servers.first().map(|s| s.id) else {
-                return; // guest or no live servers: nothing to auto-enter
-            };
             if !is_real {
                 return;
             }
+            // Fetch directly rather than reading `ls.get()`: `live_servers`
+            // is populated by a SEPARATE spawn_async'd fetch above with no
+            // ordering guarantee relative to this one, so reading the signal
+            // here raced it and (near-)always saw the pre-fetch empty `Vec`,
+            // silently no-op'ing this whole effect. Awaiting our own fetch
+            // makes the decision authoritative regardless of scheduling.
+            let Ok(servers) = crate::servers::list_servers().await else {
+                return;
+            };
+            ls.set(servers.clone());
+            let last = crate::auth::load_last_server();
+            let Some(sid) = last
+                .filter(|id| servers.iter().any(|s| s.id == *id))
+                .or_else(|| servers.first().map(|s| s.id))
+            else {
+                return; // no live servers: nothing to auto-enter
+            };
             // Already entered (e.g. a rail tap beat this) — don't clobber it.
             if als.get().is_some() {
                 return;
@@ -4109,6 +4129,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     .extend(counts.into_iter().map(|c| (c.channel_id, (c.count, c.unread_mentions))));
                 lunread_rev.set(lunread_rev.get() + 1);
             }
+            crate::auth::save_last_server(sid);
             als.set(Some(sid));
         });
     }
@@ -5026,6 +5047,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
                             active_live.set(Some(sid));
+                            // Remember this as "the server to land on" so a
+                            // refresh re-enters it instead of the account's
+                            // first live server.
+                            crate::auth::save_last_server(sid);
                             live_ch_sel.set(None);
                             // Clear any stale moderation state from a previous
                             // live server (kick confirm + error text).
@@ -5204,6 +5229,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         // handler: select it, reset any stale channel/moderation
                         // state, and pull its channels + roster + unread counts.
                         active_live_server.set(Some(summary.id));
+                        // Remember this as "the server to land on" so a
+                        // refresh re-enters it instead of the account's first
+                        // live server.
+                        crate::auth::save_last_server(summary.id);
                         active_live_channel.set(None);
                         live_kick_confirm.set(None);
                         live_member_error.set(String::new());
