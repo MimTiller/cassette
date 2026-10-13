@@ -3175,7 +3175,12 @@ fn next_role(current: &str) -> &'static str {
 /// The live-server member panel: the real membership of the active backend
 /// server (fetched from the `#[server]` `list_members` endpoint, owner-first)
 /// rendered as a right-side column — the live counterpart of the mock
-/// `member_panel`. Each row shows the member's name, their role (a tappable
+/// `member_panel`. A `MessageSearchBar` tops the panel (same position as the
+/// mock panel's): `search_corpus` is the active live channel's gateway
+/// message buffer as `(author, text)` rows (derived by the caller's
+/// `live_search_corpus` memo), so a live server's search actually searches
+/// real messages instead of the mock seed data. Each member row shows the
+/// member's name, their role (a tappable
 /// cycle-button member→moderator→admin→owner→member), and a `Kick` button that
 /// opens an inline two-step confirm before calling the backend `remove_member`.
 /// After a successful kick or role change the roster is re-fetched, so the
@@ -3201,6 +3206,7 @@ fn live_member_panel(
     error: Signal<String>,
     kick_confirm: Signal<Option<i64>>,
     presence: Rc<RefCell<HashMap<i64, String>>>,
+    search_corpus: ReadSignal<Vec<(String, String)>>,
 ) -> Element {
     // Snapshot of the current roster. The panel is rebuilt (by the caller's
     // `switch` keyed on this signal) whenever the roster changes — including
@@ -3229,6 +3235,21 @@ fn live_member_panel(
         padding_left: Some(px(12.0)),
         padding_right: Some(px(12.0)),
         ..section_label()
+    };
+    // The message-search bar, same position as the mock `member_panel`:
+    // 12px-padded at the top of the panel, above the member list. The corpus
+    // is the active live channel's gateway buffer (see the caller's
+    // `live_search_corpus` memo).
+    let search_block = ui! {
+        view(style = StyleRules {
+            padding_top: Some(px(12.0)),
+            padding_bottom: Some(px(12.0)),
+            padding_left: Some(px(12.0)),
+            padding_right: Some(px(12.0)),
+            ..Default::default()
+        }) {
+            MessageSearchBar(corpus = search_corpus)
+        }
     };
     let name_style = StyleRules {
         font_size: Some(px(14.0)),
@@ -3543,6 +3564,7 @@ fn live_member_panel(
             text(style = header_style) {
                 format!("MEMBERS — {}", roster.len())
             }
+            search_block
             scroll_view(style = StyleRules {
                 flex_grow: Some(grow(1.0)),
                 ..Default::default()
@@ -7491,8 +7513,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // sends, as `(author, text)` rows. A `memo` keyed on the same signals the
     // message list uses (`active_server`/`active_channel` + the `revision`
     // send-counter), so switching channels or sending a message rebuilds the
-    // corpus; the bar then live-filters it client-side. Live servers have no
-    // search box (their panel is `live_member_panel`), so the mock path only.
+    // corpus; the bar then live-filters it client-side.
     let search_corpus = memo(move || -> Vec<(String, String)> {
         let (server_id, channel_id) = (active_server.get(), active_channel.get());
         // Read `revision` (the per-send counter) so the memo subscribes to it:
@@ -7519,6 +7540,30 @@ fn app_shell(authed: Signal<bool>) -> Element {
         }
         corpus
     });
+    // The LIVE counterpart: the same `(author, text)` shape, but sourced from
+    // the gateway-fed `live_messages` buffer of the active live channel — the
+    // same data the live message list renders, so search hits what the user
+    // can see. `live_messages` is an `Rc<RefCell<…>>` (invisible to the
+    // reactive graph), so `live_revision` is read to subscribe: any gateway
+    // message or scrollback page bumps it (the message list's `switch` is
+    // keyed on the same pair). Switching live channels changes
+    // `active_live_channel` and re-derives over the new buffer.
+    let live_search_corpus = memo(move || -> Vec<(String, String)> {
+        let live_cid = active_live_channel.get();
+        let _rev = live_revision.get();
+        let cid = match live_cid {
+            Some(c) => c,
+            None => return Vec::new(),
+        };
+        live_messages
+            .borrow()
+            .get(&cid)
+            .map(|msgs| msgs.iter().map(|m| (m.2.clone(), m.3.clone())).collect())
+            .unwrap_or_default()
+    });
+    // Dedicated clone for the `members_switch` arm closure below (it moves its
+    // own copy; the `memo` itself is `Copy`).
+    let live_search_corpus_panel = live_search_corpus.clone();
     let members_switch = switch(
         move || {
             (
@@ -7554,6 +7599,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // `Rc` isn't `Copy`, and this is an `Fn` (re-entrant) closure —
                     // clone the handle each render.
                     live_presence_panel.clone(),
+                    live_search_corpus_panel.read_only(),
                 );
             }
             if *real_user {
