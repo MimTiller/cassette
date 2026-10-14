@@ -432,9 +432,10 @@ fn live_dm_conversation(
     // --- composer (built inside the `switch` render below) ----------------
     // Mirrors the channel composer in `app.rs` (a `Signal<String>`, a styled
     // `text_input`, and an Enter-to-send `on_key_down` handler), scoped to the
-    // currently-selected live DM. The Send button and the Enter key share one
-    // `Rc`'d send action. The send reads `active` at call time, so the same
-    // action works as the selection changes.
+    // currently-selected live DM. Like the channel composer there is NO
+    // visible Send button — Enter is the only submit affordance (Discord has
+    // none). The send reads `active` at call time, so the same action works
+    // as the selection changes.
     //
     // The `text` draft signal is created HERE (function scope) so the typed
     // value survives a `switch` rebuild — the composer *element* is rebuilt
@@ -470,20 +471,6 @@ fn live_dm_conversation(
         border_bottom_right_radius: Some(px(8.0)),
         ..borderless_input()
     };
-    let send_style = StyleRules {
-        height: Some(px(40.0)),
-        padding_left: Some(px(18.0)),
-        padding_right: Some(px(18.0)),
-        background: Some(col(BUTTON)),
-        color: Some(col(TEXT)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
-    };
 
     // --- message list ------------------------------------------------------
     // Rebuilds when `rev` bumps (a fetched history load or an inbound
@@ -498,7 +485,6 @@ fn live_dm_conversation(
             let pane_style = pane_style.clone();
             let composer_style = composer_style.clone();
             let input_style = input_style.clone();
-            let send_style = send_style.clone();
             let cid = _cid.unwrap_or(0);
 
             // --- composer (rebuilt in place, bound to the shared `text`) ----
@@ -527,10 +513,6 @@ fn live_dm_conversation(
                 });
             };
             let on_send = Rc::new(do_send);
-            let on_click = {
-                let send_btn = on_send.clone();
-                move || (send_btn)()
-            };
             let on_enter = {
                 let send_key = on_send.clone();
                 move |ev: &KeyEvent| {
@@ -545,7 +527,6 @@ fn live_dm_conversation(
             let composer_el = ui! {
                 view(style = composer_style) {
                     text_input(value = text, on_change = on_change, placeholder = "Message", style = input_style, test_id = "live-dm-composer").on_key_down(on_enter)
-                    button(label = "Send".to_string(), on_click = on_click, style = send_style, test_id = "live-dm-send")
                 }
             };
 

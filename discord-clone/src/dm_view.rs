@@ -520,7 +520,8 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
     // --- composer ----------------------------------------------------------
     // Mirrors the channel composer in `app.rs` (a `Signal<String>`, a styled
     // `text_input`, and an Enter-to-send `on_key_down` handler), scoped to this
-    // DM. The Send button and the Enter key share one `Rc`'d send action.
+    // DM. Like the channel composer there is NO visible Send button — Enter is
+    // the only submit affordance (Discord has none).
     let composer_style = StyleRules {
         padding_top: Some(px(12.0)),
         padding_bottom: Some(px(12.0)),
@@ -546,20 +547,6 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
         border_bottom_right_radius: Some(px(8.0)),
         ..borderless_input()
     };
-    let send_style = StyleRules {
-        height: Some(px(40.0)),
-        padding_left: Some(px(18.0)),
-        padding_right: Some(px(18.0)),
-        background: Some(col(BUTTON)),
-        color: Some(col(TEXT)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
-    };
 
     let text: Signal<String> = signal(String::new());
     let on_change = move |s: String| {
@@ -579,10 +566,6 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
         revision_bump.set(revision_bump.get() + 1);
     };
     let on_send = Rc::new(do_send);
-    let on_click = {
-        let send_btn = on_send.clone();
-        move || (send_btn)()
-    };
     let on_enter = {
         let send_key = on_send.clone();
         move |ev: &KeyEvent| {
@@ -617,7 +600,6 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
             scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { messages }
             view(style = composer_style) {
                 text_input(value = text, on_change = on_change, placeholder = "Message", style = input_style).on_key_down(on_enter)
-                button(label = "Send".to_string(), on_click = on_click, style = send_style)
             }
         }
     }
