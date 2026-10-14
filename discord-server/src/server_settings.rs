@@ -575,6 +575,11 @@ impl ServerSettings {
         if role >= Role::Admin {
             self.require(caller_id, server_id, Action::SetMemberRole)?;
         }
+        // A banned user can't be re-added even by an admin — the ban table is
+        // authoritative over a direct add (an unban must come first).
+        if self.db.is_banned(server_id, user_id) {
+            return Err("member is banned and cannot be re-added (unban first)".into());
+        }
         self.db
             .upsert_membership(server_id, user_id, role, Self::now_secs())
             .map_err(|e| format!("failed to add member: {e}"))?;
@@ -605,6 +610,48 @@ impl ServerSettings {
             .db
             .remove_membership(server_id, user_id)
             .map_err(|e| format!("failed to remove member: {e}"))?;
+        if removed == 0 {
+            return Err("member not found".into());
+        }
+        Ok(())
+    }
+
+    /// Ban a member from `server_id`: remove them AND bar rejoining. Admin+
+    /// (owner or admin) — a ban is more severe than a kick, so it clears a
+    /// higher bar than `remove_member` (moderator+). The owner can never be
+    /// banned through this path (ownership must be transferred first, and the
+    /// owner row is protected exactly as in `remove_member`).
+    ///
+    /// The membership removal and the ban record happen atomically (a single
+    /// DB transaction), so a failure can never leave the user kicked-but-not-
+    /// banned. Rejoining is blocked in both join paths (`redeem_invite` and
+    /// `add_member`) by consulting the ban table — see those functions.
+    ///
+    /// # Errors
+    /// - `not found` — the server id doesn't exist.
+    /// - `permission denied` — the caller's role is below admin.
+    /// - `cannot ban the server owner` — `user_id` is the owner.
+    /// - `member not found` — `user_id` has no membership row.
+    pub fn ban_member(
+        &self,
+        caller_id: i64,
+        server_id: i64,
+        user_id: i64,
+        reason: Option<&str>,
+    ) -> Result<(), String> {
+        let (_sid, _name, owner_id, _icon_url) = self
+            .db
+            .server_by_id(server_id)
+            .ok_or("server not found")?;
+        self.require(caller_id, server_id, Action::BanMember)?;
+        // The owner is protected: banning them would orphan the server.
+        if user_id == owner_id {
+            return Err("cannot ban the server owner (transfer ownership first)".into());
+        }
+        let removed = self
+            .db
+            .ban_and_remove(server_id, user_id, caller_id, reason, Self::now_secs())
+            .map_err(|e| format!("failed to ban member: {e}"))?;
         if removed == 0 {
             return Err("member not found".into());
         }
@@ -848,6 +895,20 @@ pub async fn remove_member(input: RemoveMemberInput) -> Result<MemberResult, Ser
     Ok(MemberResult { server_id: input.server_id, user_id: input.user_id, role: String::new() })
 }
 
+/// Ban a member from a server: remove them AND bar rejoining (invite
+/// redemption or a direct add). Owner or admin may call (a ban clears a
+/// higher bar than a kick). The server owner can't be banned. `reason` is an
+/// optional free-text note attached to the ban record.
+#[server]
+pub async fn ban_member(input: BanMemberInput) -> Result<MemberResult, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    ServerSettings::new(db)
+        .ban_member(caller, input.server_id, input.user_id, input.reason.as_deref())
+        .map_err(ServerError::failed)?;
+    Ok(MemberResult { server_id: input.server_id, user_id: input.user_id, role: String::new() })
+}
+
 /// Change an existing member's role. Owner or admin may call. The owner's
 /// role can't be changed and the owner role can't be assigned.
 #[server]
@@ -967,6 +1028,15 @@ pub struct AddMemberInput {
 pub struct RemoveMemberInput {
     pub server_id: i64,
     pub user_id: i64,
+}
+
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+pub struct BanMemberInput {
+    pub server_id: i64,
+    pub user_id: i64,
+    /// Optional free-text note stored on the ban record.
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]
@@ -1306,6 +1376,117 @@ mod tests {
         // User 999 has no membership in server 1.
         let err = svc.list_members(999, 1).unwrap_err();
         assert!(err.contains("not a member"), "got: {err}");
+    }
+
+    // ── member management: ban ───────────────────────────────────────────────
+    //
+    // A ban removes a member AND bars rejoining. It clears a higher bar than a
+    // kick (admin+ vs moderator+), and the rejoin block is asserted through
+    // `add_member` (the other rejoin path, `redeem_invite`, is covered by its
+    // own e2e test in `invites`).
+
+    /// Give user 3 the admin role in server 1 so we can exercise the
+    /// admin-can-ban path (the default fixture only has one member, bob).
+    fn promote_user_to_admin(db: &Db, user_id: i64) {
+        let c = db.lock().unwrap();
+        c.execute(
+            "UPDATE server_memberships SET role = 'admin' WHERE server_id = 1 AND user_id = ?1",
+            rusqlite::params![user_id],
+        )
+        .unwrap();
+        drop(c);
+    }
+
+    #[test]
+    fn owner_can_ban_member() {
+        let (_dir, db) = setup_db();
+        let svc = ServerSettings::new(db.clone());
+        // Owner (1) bans alice (2).
+        svc.ban_member(1, 1, 2, Some("spam")).unwrap();
+        // The membership row is gone (they're kicked out)…
+        assert_eq!(db.membership_role(1, 2), None, "banned member is removed");
+        // …and a ban row is recorded (rejoining is barred).
+        assert!(db.is_banned(1, 2), "a ban row must be recorded");
+    }
+
+    #[test]
+    fn admin_can_ban_member() {
+        let (_dir, db) = setup_db();
+        promote_user_to_admin(&db, 3);
+        let svc = ServerSettings::new(db.clone());
+        // An admin (3) may ban a fellow member (2).
+        svc.ban_member(3, 1, 2, None).unwrap();
+        assert!(db.is_banned(1, 2));
+    }
+
+    #[test]
+    fn moderator_cannot_ban() {
+        let (_dir, db) = setup_db();
+        // Give bob (3) the moderator role — a kick is allowed, a ban is not.
+        let c = db.lock().unwrap();
+        c.execute(
+            "UPDATE server_memberships SET role = 'moderator' WHERE server_id = 1 AND user_id = 3",
+            [],
+        )
+        .unwrap();
+        drop(c);
+        let svc = ServerSettings::new(db.clone());
+        let err = svc.ban_member(3, 1, 2, None).unwrap_err();
+        assert!(
+            err.contains("permission denied"),
+            "a moderator may kick but not ban; got: {err}"
+        );
+        // alice is untouched.
+        assert_eq!(db.membership_role(1, 2), Some("member".into()));
+        assert!(!db.is_banned(1, 2));
+    }
+
+    #[test]
+    fn cannot_ban_the_owner() {
+        let (_dir, db) = setup_db();
+        // Give user 3 the admin role so a ban would otherwise be permitted,
+        // then have them try to ban the owner (1): refused.
+        promote_user_to_admin(&db, 3);
+        let svc = ServerSettings::new(db);
+        let err = svc.ban_member(3, 1, 1, None).unwrap_err();
+        assert!(err.contains("cannot ban the server owner"), "got: {err}");
+    }
+
+    #[test]
+    fn banning_a_non_member_is_rejected() {
+        let (_dir, db) = setup_db();
+        let svc = ServerSettings::new(db.clone());
+        // User 999 has no membership row: a ban has nothing to remove, so it's
+        // a no-op rejection rather than a phantom ban row.
+        let err = svc.ban_member(1, 1, 999, None).unwrap_err();
+        assert!(err.contains("member not found"), "got: {err}");
+        assert!(!db.is_banned(1, 999), "no ban row is written for a non-member");
+    }
+
+    #[test]
+    fn banned_member_cannot_be_readded() {
+        let (_dir, db) = setup_db();
+        let svc = ServerSettings::new(db.clone());
+        // Ban alice (2), then the owner tries to re-add her directly.
+        svc.ban_member(1, 1, 2, Some("spam")).unwrap();
+        let err = svc.add_member(1, 1, 2, Role::Member).unwrap_err();
+        assert!(err.contains("banned"), "the ban blocks a direct re-add; got: {err}");
+        // Still not a member.
+        assert_eq!(db.membership_role(1, 2), None);
+    }
+
+    #[test]
+    fn unban_restores_rejoin() {
+        let (_dir, db) = setup_db();
+        let svc = ServerSettings::new(db.clone());
+        svc.ban_member(1, 1, 2, None).unwrap();
+        assert!(db.is_banned(1, 2));
+        // Unban, then the owner may re-add.
+        db.unban(1, 2).unwrap();
+        assert!(!db.is_banned(1, 2));
+        let role = svc.add_member(1, 1, 2, Role::Member).unwrap();
+        assert_eq!(role, "member");
+        assert_eq!(db.membership_role(1, 2), Some("member".into()));
     }
 
     // ── channel reads / unread counts ───────────────────────────────────────

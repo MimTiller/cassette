@@ -299,6 +299,13 @@ impl InviteService {
             });
         }
 
+        // Banned? A ban bars rejoining through any path — an invite can't
+        // bring a banned user back. Checked before spending a redemption so a
+        // rejected join doesn't burn a use.
+        if self.db.is_banned(server_id, user_id) {
+            return Err("you are banned from this server".into());
+        }
+
         // Spend a redemption. The DB layer only increments when budget
         // remains (unlimited, or `uses < max_uses`), so a fully-spent capped
         // code yields 0 and is rejected here — no use is lost.

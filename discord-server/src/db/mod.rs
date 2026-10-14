@@ -1237,6 +1237,97 @@ impl Db {
         .ok()
     }
 
+    // ── members: bans ──────────────────────────────────────────────────────
+
+    /// Whether `user_id` is banned from `server_id`. A banned user is barred
+    /// from rejoining (the rejoin paths consult this before granting
+    /// membership).
+    pub fn is_banned(&self, server_id: i64, user_id: i64) -> bool {
+        let c = match self.lock() {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        c.query_row(
+            "SELECT 1 FROM server_bans WHERE server_id = ?1 AND user_id = ?2",
+            rusqlite::params![server_id, user_id],
+            |_| Ok(()),
+        )
+        .is_ok()
+    }
+
+    /// Record that `user_id` is banned from `server_id` by `banned_by`, with an
+    /// optional `reason`. The `UNIQUE (server_id, user_id)` constraint makes a
+    /// re-ban a single upsert (a re-ban refreshes the row rather than
+    /// duplicating it). Returns the number of rows written (always 1).
+    pub fn ban(
+        &self,
+        server_id: i64,
+        user_id: i64,
+        banned_by: i64,
+        reason: Option<&str>,
+        banned_at: i64,
+    ) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        c.execute(
+            "INSERT INTO server_bans (server_id, user_id, banned_by, reason, banned_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT (server_id, user_id) DO UPDATE SET
+                 banned_by = excluded.banned_by,
+                 reason = excluded.reason,
+                 banned_at = excluded.banned_at",
+            rusqlite::params![server_id, user_id, banned_by, reason, banned_at],
+        )
+    }
+
+    /// Remove a ban (unban) for `user_id` in `server_id`. Returns the number of
+    /// rows deleted (0 if they were not banned).
+    pub fn unban(&self, server_id: i64, user_id: i64) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        Ok(c.execute(
+            "DELETE FROM server_bans WHERE server_id = ?1 AND user_id = ?2",
+            rusqlite::params![server_id, user_id],
+        )?)
+    }
+
+    /// Ban `user_id` from `server_id`: atomically remove their membership row
+    /// AND record the ban. This is the single transaction a `ban` goes through,
+    /// so a failure can never leave the user kicked-but-not-banned (or
+    /// banned-but-still-present). Returns the number of memberships removed —
+    /// `0` means the user was not a member and nothing was written (the ban
+    /// insert is skipped in that case, so a ban only ever records someone who
+    /// actually left).
+    pub fn ban_and_remove(
+        &self,
+        server_id: i64,
+        user_id: i64,
+        banned_by: i64,
+        reason: Option<&str>,
+        banned_at: i64,
+    ) -> Result<usize, rusqlite::Error> {
+        let mut c = self.lock()?;
+        let tx = c.transaction()?;
+        let removed = tx.execute(
+            "DELETE FROM server_memberships WHERE server_id = ?1 AND user_id = ?2",
+            rusqlite::params![server_id, user_id],
+        )?;
+        if removed == 0 {
+            // They were not a member: rolling back leaves nothing changed.
+            tx.rollback()?;
+            return Ok(0);
+        }
+        tx.execute(
+            "INSERT INTO server_bans (server_id, user_id, banned_by, reason, banned_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT (server_id, user_id) DO UPDATE SET
+                 banned_by = excluded.banned_by,
+                 reason = excluded.reason,
+                 banned_at = excluded.banned_at",
+            rusqlite::params![server_id, user_id, banned_by, reason, banned_at],
+        )?;
+        tx.commit()?;
+        Ok(removed)
+    }
+
     /// Rename the server with `id`. Returns the new name.
     pub fn rename_server(&self, id: i64, name: &str) -> Result<String, rusqlite::Error> {
         let c = self.lock()?;

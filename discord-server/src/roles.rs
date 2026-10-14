@@ -102,6 +102,10 @@ pub enum Action {
     AddMember,
     /// Remove a member from the server (kick).
     RemoveMember,
+    /// Ban a member from the server: remove them AND bar rejoining (via invite
+    /// redemption or direct add). More severe than a kick, so the minimum
+    /// role is higher (admin+ rather than moderator+).
+    BanMember,
     /// Change another member's role in the server.
     SetMemberRole,
 }
@@ -174,6 +178,7 @@ impl Action {
             Action::SetServerIcon
             | Action::CreateChannel
             | Action::DeleteChannel
+            | Action::BanMember
             | Action::SetMemberRole => Role::Admin,
             Action::RenameChannel | Action::AddMember | Action::RemoveMember => Role::Moderator,
         }
@@ -231,6 +236,7 @@ mod tests {
             Action::RenameChannel,
             Action::AddMember,
             Action::RemoveMember,
+            Action::BanMember,
             Action::SetMemberRole,
         ];
         for a in actions {
@@ -247,6 +253,7 @@ mod tests {
         assert!(Role::Admin.can(Action::RenameChannel));
         assert!(Role::Admin.can(Action::AddMember));
         assert!(Role::Admin.can(Action::RemoveMember));
+        assert!(Role::Admin.can(Action::BanMember));
         assert!(Role::Admin.can(Action::SetMemberRole));
         assert!(Role::Admin.can(Action::SetServerIcon));
         assert!(
@@ -266,6 +273,11 @@ mod tests {
         assert!(Role::Moderator.can(Action::RemoveMember));
         assert!(Role::Moderator.can(Action::AddMember));
         assert!(Role::Moderator.can(Action::RenameChannel));
+        // A kick (RemoveMember) is moderator+, but a ban (BanMember) is admin+.
+        assert!(
+            !Role::Moderator.can(Action::BanMember),
+            "moderator must not ban (ban is admin+)"
+        );
         assert!(
             !Role::Moderator.can(Action::CreateChannel),
             "moderator must not create channels"
@@ -295,6 +307,7 @@ mod tests {
             Action::RenameChannel,
             Action::AddMember,
             Action::RemoveMember,
+            Action::BanMember,
             Action::SetMemberRole,
         ];
         for a in actions {
@@ -315,5 +328,11 @@ mod tests {
         assert!(Role::Moderator.can(Action::RemoveMember));
         assert!(Role::Owner.can(Action::RemoveMember));
         assert!(!Role::Member.can(Action::RemoveMember));
+        // A ban is more severe than a kick: admin+ only (moderator may kick
+        // but not ban).
+        assert!(Role::Admin.can(Action::BanMember));
+        assert!(Role::Owner.can(Action::BanMember));
+        assert!(!Role::Moderator.can(Action::BanMember));
+        assert!(!Role::Member.can(Action::BanMember));
     }
 }

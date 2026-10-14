@@ -28,6 +28,24 @@ pub async fn kick_member(server_id: i64, user_id: i64) -> Result<(), String> {
     Ok(())
 }
 
+/// Ban a member from a server: remove them AND bar rejoining (an invite
+/// redeem or a direct re-add is refused until the ban is lifted). The backend
+/// enforces the real permission check (admin-or-above may call; the owner
+/// can't be banned) -- on a rejection the backend's message comes back as the
+/// `Err` string. `reason` is an optional free-text note stored on the ban
+/// record.
+pub async fn ban_member(server_id: i64, user_id: i64, reason: Option<&str>) -> Result<(), String> {
+    let input = discord_server::server_settings::BanMemberInput {
+        server_id,
+        user_id,
+        reason: reason.map(|s| s.to_string()),
+    };
+    discord_server::server_settings::ban_member(input)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Change a member's role. `role` is one of `'member'` / `'moderator'` /
 /// `'admin'` (the backend rejects assigning `'owner'` or changing the owner's
 /// role). The backend's rejection message comes back as the `Err` string.

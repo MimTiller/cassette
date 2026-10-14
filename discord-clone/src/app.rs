@@ -3249,6 +3249,7 @@ fn live_member_panel(
     members: Signal<Vec<crate::moderation::MemberInfo>>,
     error: Signal<String>,
     kick_confirm: Signal<Option<i64>>,
+    ban_confirm: Signal<Option<i64>>,
     presence: Rc<RefCell<HashMap<i64, String>>>,
     search_corpus: ReadSignal<Vec<(String, String)>>,
 ) -> Element {
@@ -3407,6 +3408,8 @@ fn live_member_panel(
         let role = member.role.clone();
         let confirming = kick_confirm.clone();
         let kick = kick_confirm.clone();
+        let banning = ban_confirm.clone();
+        let ban = ban_confirm.clone();
         let error = error.clone();
         // Fresh per-iteration clones of every style used below -- the whole
         // `ui! { ... }` row block compiles to one closure per iteration, and
@@ -3425,6 +3428,13 @@ fn live_member_panel(
         let kick_btn_style = kick_btn_style.clone();
         let kick_label_style = kick_label_style.clone();
         let error_style = error_style.clone();
+        // The kick-confirm / ban-confirm / idle arms below share the confirm +
+        // kick styles above. They render through ONE flat `match` (in the row
+        // below), not an `if / else if / else` chain: a chain lowers to nested
+        // `when` closures whose `else if`/`else` arms MOVE any non-`Copy` style
+        // they use out of the parent `Fn` (the ui! macro's "B5" capture bug),
+        // whereas a single `match` lowers to one `switch` dispatcher that every
+        // arm BORROWS via `.clone()` — so no per-branch style copies are needed.
         // name_style is used in two mutually-exclusive branches below, but
         // the ui! macro's own parser doesn't support a nested `let` inside a
         // branch (tried it -- breaks its DSL parsing), so each branch gets
@@ -3528,7 +3538,13 @@ fn live_member_panel(
                 // a second tap ("Confirm") calls `remove_member` and refreshes;
                 // "Cancel" (or tapping the row again) dismisses. The confirm
                 // branch replaces the role+kick controls for this row only.
-                if confirming.get() == Some(member_id) {
+                // Kick / Ban: a two-step inline confirm each. The row's three
+                // mutually-exclusive action states (kick confirm pending, ban
+                // confirm pending, idle buttons) are one flat `match` over the
+                // two confirm signals, not an `if / else if / else` chain — see
+                // the "B5" capture note above.
+                match (confirming.get(), banning.get()) {
+                    (Some(uid), _) if *uid == member_id => {
                     view(style = confirm_bg_style.clone()) {
                         text(style = StyleRules {
                             font_size: Some(px(12.0)),
@@ -3572,17 +3588,90 @@ fn live_member_panel(
                             TouchResponse::CONSUMED
                         })
                     }
-                } else if !is_self {
-                    view(style = kick_btn_style.clone()) {
-                        text(style = kick_label_style.clone()) { "Kick" }
-                    }
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            kick.set(Some(member_id));
+                } (Some(_), Some(uid)) if *uid == member_id && !is_self => {
+                    // Ban: same two-step shape as the kick confirm, but calls
+                    // `ban_member` (remove AND bar rejoining) and clears the ban
+                    // confirm on resolve. Takes priority over the kick confirm
+                    // when both are somehow pending for a row (they're set from
+                    // different buttons, so in practice never both at once).
+                    view(style = confirm_bg_style.clone()) {
+                        text(style = StyleRules {
+                            font_size: Some(px(12.0)),
+                            color: Some(col(TEXT)),
+                            flex_shrink: Some(grow(1.0)),
+                            ..Default::default()
+                        }) { "Ban?" }
+                        view(style = confirm_yes_style.clone()) {
+                            text(style = small_label_style.clone()) { "Yes" }
                         }
-                        TouchResponse::CONSUMED
-                    })
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                let sid = server_id;
+                                let uid = member_id;
+                                let err = error;
+                                let members = members;
+                                let ban = ban;
+                                runtime_core::driver::spawn_async(async move {
+                                    match crate::moderation::ban_member(sid, uid, None).await {
+                                        Ok(()) => {
+                                            ban.set(None);
+                                            if let Ok(fresh) = crate::moderation::list_members(sid).await {
+                                                members.set(fresh);
+                                            }
+                                        }
+                                        Err(msg) => {
+                                            ban.set(None);
+                                            err.set(msg);
+                                        }
+                                    }
+                                });
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                        view(style = confirm_no_style.clone()) {
+                            text(style = small_label_style.clone()) { "No" }
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                ban.set(None);
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                    }
+                } _ if !is_self => {
+                    // Idle: the row's action buttons. Kick (mild, remove-only)
+                    // and Ban (severe, remove AND bar rejoining) — each opens
+                    // its own two-step inline confirm above.
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Row),
+                        gap: Some(px(6.0)),
+                        flex_shrink: Some(grow(0.0)),
+                        ..Default::default()
+                    }) {
+                        view(style = kick_btn_style.clone()) {
+                            text(style = kick_label_style.clone()) { "Kick" }
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                kick.set(Some(member_id));
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                        view(style = kick_btn_style.clone()) {
+                            text(style = kick_label_style.clone()) { "Ban" }
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                ban.set(Some(member_id));
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                    }
                 }
+                // Catch-all: a self row (or no pending confirm) shows no action
+                // controls here — the role cycle above is the only affordance.
+                // Guards are not exhaustive, so the compiler requires this arm.
+                _ => {}
             }
 
             // Inline backend error for this row (the most recent one). Shown
@@ -3590,6 +3679,7 @@ fn live_member_panel(
             // message, no client-side permission logic.
             if !error.get().is_empty() {
                 text(style = error_style.clone()) { move || error.get().clone() }
+            }
             }
         };
         rows.push(row);
@@ -4108,6 +4198,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // inline text rather than a modal.
     let live_members: Signal<Vec<crate::moderation::MemberInfo>> = signal(Vec::new());
     let live_kick_confirm: Signal<Option<i64>> = signal(None);
+    // The two-step inline confirm for a ban (the ban is the more severe
+    // action, so it gets its own confirm rather than sharing the kick one —
+    // a mis-tap that confirms a ban is harder to undo than a mis-tap kick).
+    let live_ban_confirm: Signal<Option<i64>> = signal(None);
     let live_member_error: Signal<String> = signal(String::new());
     // Live presence: `user_id -> status string`. The backend broadcasts
     // `WsServerMsg::Presence` ('online' on socket auth + activity, 'away' after
@@ -4156,6 +4250,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let lmbrs = live_members.clone();
         let lmbr_err = live_member_error.clone();
         let lkick = live_kick_confirm.clone();
+        let lbcm = live_ban_confirm.clone();
         let lunread = rail_unread.clone();
         let lunread_rev = live_unread_rev.clone();
         let is_real = is_real_user;
@@ -4185,6 +4280,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 return;
             }
             lkick.set(None);
+            lbcm.set(None);
             lmbr_err.set(String::new());
             lmbrs.set(Vec::new());
             if let Ok(channels) = crate::servers::list_channels(sid).await {
@@ -5093,9 +5189,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 let live_mbrs = live_members.clone();
                 let live_mbr_err = live_member_error.clone();
                 let live_kick = live_kick_confirm.clone();
-                // Static base for the squircle. No white-invert on selection —
-                // the left-edge pill alone signals the active live server
-                // (matches the mock / created rows).
+                let live_ban = live_ban_confirm.clone();
                 let base = row_style.clone();
                 ui! {
                     view(style = base.clone()) {
@@ -5136,8 +5230,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             crate::auth::save_last_server(sid);
                             live_ch_sel.set(None);
                             // Clear any stale moderation state from a previous
-                            // live server (kick confirm + error text).
+                            // live server (kick + ban confirm and error text).
                             live_kick.set(None);
+                            live_ban.set(None);
                             live_mbr_err.set(String::new());
                             live_mbrs.set(Vec::new());
                             // Clone the `Rc` before handing it to the `async move`
@@ -7560,6 +7655,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let live_members_panel = live_members.clone();
     let live_member_error_panel = live_member_error.clone();
     let live_kick_panel = live_kick_confirm.clone();
+    let live_ban_panel = live_ban_confirm.clone();
     let live_presence_panel = live_presence.clone();
     // The message-search corpus the mock member panel's `MessageSearchBar`
     // filters over: the active channel's seed messages plus this session's
@@ -7626,16 +7722,18 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 live_members.get(),
                 live_member_error.get(),
                 live_kick_confirm.get(),
+                live_ban_confirm.get(),
                 live_presence_rev.get(),
                 is_real_user,
             )
         },
-        move |(_server_id, user_status, live_active, _live_members, _live_err, _live_kick, _presence_rev, real_user): &(
+        move |(_server_id, user_status, live_active, _live_members, _live_err, _live_kick, _live_ban, _presence_rev, real_user): &(
             u32,
             Status,
             Option<i64>,
             Vec<crate::moderation::MemberInfo>,
             String,
+            Option<i64>,
             Option<i64>,
             u32,
             bool,
@@ -7649,6 +7747,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     live_members_panel.clone(),
                     live_member_error_panel.clone(),
                     live_kick_panel.clone(),
+                    live_ban_panel.clone(),
                     // `Rc` isn't `Copy`, and this is an `Fn` (re-entrant) closure —
                     // clone the handle each render.
                     live_presence_panel.clone(),
