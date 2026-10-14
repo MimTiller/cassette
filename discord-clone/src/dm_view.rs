@@ -26,6 +26,7 @@
 //!   composer).
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use runtime_core::{
@@ -61,9 +62,11 @@ fn border_width(px: f32) -> Tokenized<f32> {
 }
 
 /// Mock "unread" badge counts per DM (the other participant's id). A real build
-/// would derive this from a read-cursor; here it is a static stub so the list
-/// shows the familiar red unread pill.
-fn mock_unread(dm_id: u32) -> u32 {
+/// would derive this from a read-cursor; here it is a static seed so the list
+/// shows the familiar red unread pill. `pub(crate)` so `app_shell` can seed the
+/// reactive per-DM unread map from it (the map is the single source of truth
+/// once the screen is up — a read DM maps to 0).
+pub(crate) fn mock_unread(dm_id: u32) -> u32 {
     match dm_id {
         1 => 1,
         2 => 2,
@@ -75,8 +78,16 @@ fn mock_unread(dm_id: u32) -> u32 {
 // --- DM list -----------------------------------------------------------------
 
 /// The recent-conversations list, newest first. `active` is the currently open
-/// DM id, used to highlight the selected row.
-pub fn dm_list(active: Signal<u32>) -> Element {
+/// DM id (used to highlight the selected row); `unread`/`unread_rev` are the
+/// reactive per-DM badge-count state (seeded from `mock_unread` in `app_shell`
+/// — the map is the single source of truth, a read DM maps to 0) and the
+/// rebuild counter the list `switch` folds into its key so a reset re-renders
+/// the rows.
+pub fn dm_list(
+    active: Signal<u32>,
+    unread: Rc<RefCell<HashMap<u32, u32>>>,
+    unread_rev: Signal<u32>,
+) -> Element {
     let column_style = StyleRules {
         width: Some(px(240.0)),
         background: Some(col(BG_SIDEBAR)),
@@ -106,34 +117,46 @@ pub fn dm_list(active: Signal<u32>) -> Element {
         (find_dm(*id).map(|d| d.last_age_secs()).unwrap_or(0), *id)
     });
 
-    // Build the rows outside the `switch` so each row's hover signal is owned
-    // by the row's own closures (the `switch` render is `Fn`).
-    let rows: Vec<Element> = ordered
-        .iter()
-        .filter_map(|id| find_dm(*id).map(|dm| dm_row(dm.id, active.clone())))
-        .collect();
-
-    let list = ui! {
-        view(style = column_style) {
-            text(style = section_style) { section_label }
-            view(style = StyleRules {
-                flex_grow: Some(grow(1.0)),
-                overflow: Some(Overflow::Hidden),
-                ..Default::default()
-            }) {
-                scroll_view(style = StyleRules {
-                    flex_grow: Some(grow(1.0)),
-                    ..Default::default()
-                }) { rows }
+    // The rows live inside a `switch` keyed on the unread-revision signal so a
+    // badge reset re-runs this loop and re-reads each row's count from the
+    // shared `unread` map — the channel sidebar's exact idiom (the rows rebuild
+    // on the key change, re-borrowing the map for the fresh counts). Each row's
+    // hover signal is still owned by the row's own closures.
+    let list = switch(
+        move || unread_rev.get(),
+        move |_rev: &u32| {
+            let rows: Vec<Element> = ordered
+                .iter()
+                .filter_map(|id| find_dm(*id).map(|dm| dm_row(dm.id, active, unread.clone())))
+                .collect();
+            ui! {
+                view(style = column_style.clone()) {
+                    text(style = section_style.clone()) { section_label.clone() }
+                    view(style = StyleRules {
+                        flex_grow: Some(grow(1.0)),
+                        overflow: Some(Overflow::Hidden),
+                        ..Default::default()
+                    }) {
+                        scroll_view(style = StyleRules {
+                            flex_grow: Some(grow(1.0)),
+                            ..Default::default()
+                        }) { rows }
+                    }
+                }
             }
-        }
-    };
+        },
+    );
     list
 }
 
 /// One DM row: avatar chip (with a status dot), the participant's name, a
-/// preview of their last message, the last-message time, and an unread badge.
-fn dm_row(dm_id: u32, active: Signal<u32>) -> Element {
+/// preview of their last message, the last-message time, and an unread badge
+/// (read from the shared reactive `unread` map).
+fn dm_row(
+    dm_id: u32,
+    active: Signal<u32>,
+    unread: Rc<RefCell<HashMap<u32, u32>>>,
+) -> Element {
     // `find_dm` is total over the `ordered` ids, so this is safe.
     let dm = find_dm(dm_id).expect("dm id came from DMS");
     let name = dm.user.name.to_string();
@@ -156,7 +179,10 @@ fn dm_row(dm_id: u32, active: Signal<u32>) -> Element {
         let now = now_secs();
         format_when(dm.messages.last().map(|m| m.ts_secs(now)).unwrap_or(now), now)
     };
-    let unread = mock_unread(dm_id);
+    // The badge count from the shared reactive map (seeded from `mock_unread`
+    // in `app_shell`; a DM maps to 0 once it's opened). `unwrap_or(0)` is
+    // defensive — every DM has a seeded entry.
+    let unread = unread.borrow().get(&dm_id).copied().unwrap_or(0);
 
     let hovered = signal(false);
     let row_style = move || {
@@ -602,20 +628,52 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
 /// The whole DM area: the recent-conversations list plus the active
 /// conversation. This is the surface a navigation entry would mount (e.g. a
 /// rail icon or a sidebar section). `active` selects the open conversation;
-/// `sent`/`revision` are the per-DM session log + rebuild counter.
+/// `sent`/`revision` are the per-DM session log + rebuild counter; `unread` /
+/// `unread_rev` are the reactive per-DM badge-count state (owned in `app_shell`
+/// so it survives a close/re-open).
 pub fn dm_screen(
     active: Signal<u32>,
-    sent: Rc<RefCell<Vec<(u32, &'static str, String, i64)>>> ,
+    sent: Rc<RefCell<Vec<(u32, &'static str, String, i64)>>>,
     revision: Signal<u32>,
+    unread: Rc<RefCell<HashMap<u32, u32>>>,
+    unread_rev: Signal<u32>,
 ) -> Element {
     // Default to the most recent conversation (the first entry of the list).
     let default_active: Signal<u32> = active;
-    let list = dm_list(default_active.clone());
+    let list = dm_list(default_active.clone(), unread.clone(), unread_rev);
 
     // The conversation view rebuilds when the selected DM changes.
     let conv = switch(
         move || active.get(),
         move |dm_id: &u32| dm_conversation(*dm_id, sent.clone(), revision.clone()),
+    );
+
+    // Clear a DM's unread badge the moment it's opened, so the red pill drops
+    // as soon as the user reads it. Side-effect `switch` keyed on the active DM
+    // (the channel `mention_reset_effect` idiom in `app.rs`): it fires when
+    // `active` changes value — the per-row click handler can't reach the shared
+    // `unread` map out of its own scope. Bumping `unread_rev` re-keys the list
+    // `switch`, which re-reads the now-zero count and drops the badge. The count
+    // is reset optimistically (no mark-read RPC exists for the mock DM path —
+    // the backend `mark_read` is channel-scoped), which is correct: opening a
+    // DM has read its messages by definition.
+    let dm_reset_active = active;
+    let dm_reset_buf = unread.clone();
+    let dm_reset_rev = unread_rev;
+    let dm_reset_effect = switch(
+        move || dm_reset_active.get(),
+        move |dm_id: &u32| {
+            if dm_reset_buf.borrow().get(dm_id).copied().unwrap_or(0) > 0 {
+                dm_reset_buf.borrow_mut().insert(*dm_id, 0);
+                dm_reset_rev.set(dm_reset_rev.get() + 1);
+            }
+            ui! {
+                view(style = StyleRules {
+                    height: Some(px(0.0)),
+                    ..Default::default()
+                }) {}
+            }
+        },
     );
 
     ui! {
@@ -627,6 +685,10 @@ pub fn dm_screen(
         }) {
             list
             conv
+            // Zero-height side-effect arm: mounted in the live tree so the reset
+            // `switch` fires when `active` changes (same placement as
+            // `mention_reset_effect` in the channel rail).
+            dm_reset_effect
         }
     }
 }

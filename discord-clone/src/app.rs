@@ -4625,6 +4625,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let dm_active: Signal<u32> = signal(DMS.first().map(|d| d.id).unwrap_or(0));
     let dm_sent: Rc<RefCell<Vec<(u32, &'static str, String, i64)>>> = Rc::new(RefCell::new(Vec::new()));
     let dm_revision: Signal<u32> = signal(0);
+    // Mock DM unread badges: the per-DM count map + the rebuild counter its
+    // list `switch` dedups on. Seeded from the static `mock_unread` counts and
+    // owned here (next to `dm_sent`/`dm_revision`) so a read state survives a
+    // close/re-open — `dm_screen` re-mounts its list on each open. `dm_view`'s
+    // reset `switch` zeroes a DM's count the moment `dm_active` opens it.
+    let dm_unread: Rc<RefCell<HashMap<u32, u32>>> = Rc::new(RefCell::new(
+        DMS.iter().map(|d| (d.id, crate::dm_view::mock_unread(d.id))).collect(),
+    ));
+    let dm_unread_rev: Signal<u32> = signal(0);
 
     // --- message reactions (mock, session-local) ---------------------------
     // Per-message reaction state for the MOCK message list: `reactions` is the
@@ -7886,7 +7895,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // in `app_shell` scope, so the open conversation and this session's sent
     // DMs survive a close/re-open. A "Done" pill in the header flips
     // `dm_mode` back off to close it.
-    let dm_el = dm_screen(dm_active, dm_sent, dm_revision);
+    let dm_el = dm_screen(dm_active, dm_sent, dm_revision, dm_unread, dm_unread_rev);
     let dm_close = dm_mode.clone();
     let dm_header = ui! {
         view(style = StyleRules {
