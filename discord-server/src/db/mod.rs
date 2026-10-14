@@ -789,6 +789,118 @@ impl Db {
         rows.filter_map(Result::ok).collect()
     }
 
+    // ── message pins ───────────────────────────────────────────────────────
+    //
+    // Per-message pin state (`message_pins`, migration
+    // `0014_message_pins.sql`). A row means "this message is pinned in its
+    // channel"; `pinned_by` + `pinned_at` record who and when (shown in the
+    // pinned view). The message's `channel_id` comes from the `messages` join,
+    // so pinning is always scoped to a real guild message.
+
+    /// Record that `message_id` is pinned in its channel by `pinned_by`.
+    /// `INSERT OR IGNORE` against the `message_id` UNIQUE key makes a
+    /// double-pin a no-op rather than an error. `pinned_at` is UTC epoch
+    /// milliseconds, supplied by the caller.
+    pub fn pin_message(
+        &self,
+        message_id: i64,
+        pinned_by: i64,
+        pinned_at: i64,
+    ) -> Result<(), rusqlite::Error> {
+        let c = self.lock()?;
+        c.execute(
+            "INSERT OR IGNORE INTO message_pins (message_id, pinned_by, pinned_at)
+             VALUES (?1, ?2, ?3)",
+            rusqlite::params![message_id, pinned_by, pinned_at],
+        )?;
+        Ok(())
+    }
+
+    /// Remove the pin on `message_id`. Returns the number of rows deleted
+    /// (0 if it was not pinned).
+    pub fn unpin_message(&self, message_id: i64) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        Ok(c.execute(
+            "DELETE FROM message_pins WHERE message_id = ?1",
+            rusqlite::params![message_id],
+        )?)
+    }
+
+    /// Whether `message_id` is pinned (a `message_pins` row exists).
+    pub fn message_is_pinned(&self, message_id: i64) -> bool {
+        let c = match self.lock() {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        c.query_row(
+            "SELECT 1 FROM message_pins WHERE message_id = ?1",
+            rusqlite::params![message_id],
+            |_| Ok(()),
+        )
+        .is_ok()
+    }
+
+    /// The number of pinned messages in `channel_id`.
+    pub fn pinned_count(&self, channel_id: i64) -> i64 {
+        let c = match self.lock() {
+            Ok(c) => c,
+            Err(_) => return 0,
+        };
+        c.query_row(
+            "SELECT COUNT(*) FROM message_pins p
+             JOIN messages m ON m.id = p.message_id
+             WHERE m.channel_id = ?1",
+            rusqlite::params![channel_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0)
+    }
+
+    /// Every pinned message in `channel_id`, in the order they were pinned
+    /// (oldest pin first — the ordering the pinned view uses). Each message
+    /// carries its resolved `@mention` ids (populated like
+    /// [`recent_messages`]) plus the `pinned_by` user id.
+    pub fn pinned_messages(&self, channel_id: i64) -> Vec<(Message, i64)> {
+        let mut out: Vec<(Message, i64)> = {
+            let Ok(c) = self.lock() else {
+                return Vec::new();
+            };
+            let mut stmt = match c.prepare(
+                "SELECT m.id, m.channel_id, m.author_id, m.content, m.created_at, m.edited_at, p.pinned_by
+                 FROM message_pins p
+                 JOIN messages m ON m.id = p.message_id
+                 WHERE m.channel_id = ?1
+                 ORDER BY p.pinned_at, p.id",
+            ) {
+                Ok(s) => s,
+                Err(_) => return Vec::new(),
+            };
+            let rows = match stmt.query_map(rusqlite::params![channel_id], |r| {
+                let pinned_by: i64 = r.get(6)?;
+                Ok((
+                    Message {
+                        id: r.get(0)?,
+                        channel_id: r.get(1)?,
+                        author_id: r.get(2)?,
+                        content: r.get(3)?,
+                        created_at: r.get(4)?,
+                        edited_at: r.get(5)?,
+                        mentioned_user_ids: Vec::new(),
+                    },
+                    pinned_by,
+                ))
+            }) {
+                Ok(rows) => rows,
+                Err(_) => return Vec::new(),
+            };
+            rows.filter_map(Result::ok).collect()
+        }; // drop the connection lock before re-locking in message_mentions
+        for (m, _) in &mut out {
+            m.mentioned_user_ids = self.message_mentions(m.id);
+        }
+        out
+    }
+
     // ── DM channels ────────────────────────────────────────────────────────
     //
     // Private 1:1 conversations (`dm_channels` + `dm_participants`, migration

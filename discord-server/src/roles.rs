@@ -108,6 +108,10 @@ pub enum Action {
     BanMember,
     /// Change another member's role in the server.
     SetMemberRole,
+    /// Pin or unpin a message in a channel. Moderator+ — Discord parity
+    /// ("Manage Messages"): any member can *read* the pinned view, but only
+    /// moderators and above can change what is pinned.
+    PinMessage,
 }
 
 impl Role {
@@ -171,7 +175,7 @@ impl Action {
     ///   * admin+ (owner/admin): set the icon, create/delete channels, change
     ///     a member's role.
     ///   * moderator+ (owner/admin/moderator): rename a channel, add/remove a
-    ///     member.
+    ///     member, pin/unpin a message.
     pub fn minimum_role(self) -> Role {
         match self {
             Action::RenameServer | Action::TransferOwnership => Role::Owner,
@@ -180,7 +184,7 @@ impl Action {
             | Action::DeleteChannel
             | Action::BanMember
             | Action::SetMemberRole => Role::Admin,
-            Action::RenameChannel | Action::AddMember | Action::RemoveMember => Role::Moderator,
+            Action::RenameChannel | Action::AddMember | Action::RemoveMember | Action::PinMessage => Role::Moderator,
         }
     }
 }
@@ -238,6 +242,7 @@ mod tests {
             Action::RemoveMember,
             Action::BanMember,
             Action::SetMemberRole,
+            Action::PinMessage,
         ];
         for a in actions {
             assert!(Role::Owner.can(a), "owner should do {a:?}");

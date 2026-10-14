@@ -12,6 +12,7 @@ mod servers;
 mod moderation;
 #[allow(dead_code)]
 mod invite;
+mod pins;
 mod typing_indicator;
 mod notification_settings;
 mod keyboard_shortcuts_overlay;
