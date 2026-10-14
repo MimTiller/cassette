@@ -171,6 +171,15 @@ pub fn CreateChannelModal(
     // rejects "already taken", so the client guard is the only protection);
     // the same guard the `create_server_modal` uses. (2) A non-empty name (and
     // a live server). The backend's rejection is surfaced verbatim in `error`.
+    // The `name` signal is the input's source of truth. `value = name` is the
+    // signal→widget leg only: keystrokes arrive via `on_change` (per the
+    // `input_with_submit.rs` recipe — "without this, the signal never updates
+    // and `get()` is always empty"). Without this callback the `name` signal
+    // stayed empty while the DOM field showed the typed text, so Create always
+    // hit the empty-name guard and silently did nothing. `Signal` is `Copy`,
+    // so this closure captures a copy of `n` and stays `Fn` on each keystroke.
+    let on_name_change = move |s: String| n.set(s);
+
     let on_create = move || {
         if b.get() {
             return;
@@ -269,6 +278,7 @@ pub fn CreateChannelModal(
                         text(style = sub_style.clone()) { "Add a channel to this server".to_string() }
                         text_input(
                             value = name.clone(),
+                            on_change = on_name_change.clone(),
                             placeholder = "Channel name",
                             style = input_style.clone(),
                             test_id = "create-channel-name-input",
@@ -288,6 +298,7 @@ pub fn CreateChannelModal(
                         text(style = sub_style.clone()) { "Add a channel to this server".to_string() }
                         text_input(
                             value = name.clone(),
+                            on_change = on_name_change.clone(),
                             placeholder = "Channel name",
                             style = input_style.clone(),
                             test_id = "create-channel-name-input",

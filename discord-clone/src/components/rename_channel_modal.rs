@@ -131,6 +131,15 @@ pub fn RenameChannelModal(
         ..Default::default()
     };
 
+    // The `name` signal is the input's source of truth. `value = name` is the
+    // signal→widget leg only: keystrokes arrive via `on_change` (per the
+    // `input_with_submit.rs` recipe — "without this, the signal never updates
+    // and `get()` is always empty"). Without this callback the `name` signal
+    // stayed empty while the DOM field showed the typed text, so Rename always
+    // hit the empty-name guard and silently did nothing. `Signal` is `Copy`,
+    // so this closure captures a copy of `n` and stays `Fn` on each keystroke.
+    let on_name_change = move |s: String| n.set(s);
+
     // --- Rename handler ------------------------------------------------------
     // `move` closure: every captured copy is `Copy`, so it stays `Fn` across
     // taps. The only client-side gate is a non-empty name (and a known
@@ -199,6 +208,7 @@ pub fn RenameChannelModal(
                         text(style = title_style.clone()) { "Rename Channel".to_string() }
                         text_input(
                             value = name.clone(),
+                            on_change = on_name_change.clone(),
                             placeholder = "Channel name",
                             style = input_style.clone(),
                             test_id = "rename-channel-name-input",
@@ -213,7 +223,7 @@ pub fn RenameChannelModal(
                         text(style = title_style.clone()) { "Rename Channel".to_string() }
                         text(style = sub_style.clone()) { "Give this channel a new name".to_string() }
                         view {
-                            text_input(value = name.clone(), placeholder = "Channel name", style = input_style.clone(), test_id = "rename-channel-name-input")
+                            text_input(value = name.clone(), on_change = on_name_change.clone(), placeholder = "Channel name", style = input_style.clone(), test_id = "rename-channel-name-input")
                         }
                         { rename_btn }
                     }
