@@ -1174,9 +1174,12 @@ fn reaction_picker_overlay(
 /// One LIVE (gateway-fed) message row: the `message_row_with_actions` content
 /// (the hover `MessageActionBar` + react / reply / pin / translate, exactly
 /// like a mock row), plus — for the signed-in user's own messages — a compact
-/// always-visible Edit / Delete affordance and the inline edit input, which
-/// coexist beneath the hover bar (Discord's own-message edit/delete home; the
-/// hover bar handles the shared react/reply/pin/translate actions).
+/// Edit / Delete affordance and the inline edit input. The IDLE Edit/Delete
+/// entry points are hover-gated (revealed only while the row is hovered,
+/// matching real Discord's per-row action affordance); once Edit mode or
+/// delete-confirm is actually triggered their Save/Cancel/Delete and Confirm/No
+/// rows stay always-visible. The hover bar handles the shared react/reply/pin/
+/// translate actions.
 ///
 /// `live_editing` / `live_delete_confirm` / `live_edit_text` are
 /// `app_shell`-scope signals that drive per-row edit/delete mode; `gateway` is
@@ -1241,6 +1244,13 @@ fn live_edit_row(
     let editing_sig = live_editing;
     let edit_text = live_edit_text;
     let confirm_sig = live_delete_confirm;
+    // The IDLE Edit/Delete affordance is hover-gated (like the hover action
+    // bar above): this row's own `on_hover` feeds it. Kept separate from
+    // `message_row_with_actions`' internal `hovered` (which drives react /
+    // reply / more) so the two bars stay independently owned, but the
+    // show/hide idiom is identical — a `switch` on a `Signal<bool>` that
+    // collapses to a zero-size view when not hovered.
+    let idle_hovered = signal(false);
     // --- inline edit input (reuses the composer's `text_input` idiom) -------
     // `text_input` takes a reactive `Signal<String>` for `value`, so the draft
     // binds straight to `live_edit_text`. Confirmation is the explicit Save
@@ -1287,7 +1297,8 @@ fn live_edit_row(
         Confirm,
         No,
     }
-    let small_btn = |action: MsgAction, label: &str, bg: &'static str, test_id: &'static str| -> Element {
+    let small_btn: Rc<dyn Fn(MsgAction, &str, &'static str, &'static str) -> Element> =
+        Rc::new(move |action: MsgAction, label: &str, bg: &'static str, test_id: &'static str| -> Element {
         let s = StyleRules {
             padding_top: Some(px(4.0)),
             padding_bottom: Some(px(4.0)),
@@ -1363,7 +1374,7 @@ fn live_edit_row(
             .on_touch(touch)
             .test_id(test_id)
         }
-    };
+    });
     // The three states are mutually exclusive (edit mode and delete-confirm
     // are gated by separate signals, and the UI never sets both for one row).
     // Render the matching control set beneath the base row — in the idle
@@ -1373,6 +1384,45 @@ fn live_edit_row(
     // row only).
     let edit_mode = editing_sig.get() == Some(mid);
     let delete_mode = confirm_sig.get() == Some(mid);
+    // The IDLE Edit/Delete entry points are hover-gated: a `switch` on
+    // `idle_hovered` that collapses to a zero-size view when the row isn't
+    // hovered — the same idiom the hover action bar uses (`message_action_bar`).
+    // `small_btn` is wrapped in `Rc` above so an owned clone can be moved into
+    // the `switch` branch (which is `Fn`, evaluated per hover). The edit-mode
+    // and delete-confirm buttons are precomputed into owned `Element` `let`s
+    // (like `base` and `idle_bar`) so the `ui!` branch closures capture owned
+    // values, not the `Rc` by move — and they stay always-visible once triggered.
+    let sb_idle = small_btn.clone();
+    let idle_bar = switch(
+        move || idle_hovered.get(),
+        move |show: &bool| {
+            if !show {
+                return ui! {
+                    view(style = StyleRules {
+                        width: Some(px(0.0)),
+                        height: Some(px(0.0)),
+                        ..Default::default()
+                    }) {}
+                };
+            }
+            let sb = sb_idle.clone();
+            ui! {
+                view(style = StyleRules {
+                    flex_direction: Some(FlexDirection::Row),
+                    gap: Some(px(6.0)),
+                    ..Default::default()
+                }) {
+                    { sb(MsgAction::Edit, "Edit", COMPOSER, "row-edit") }
+                    { sb(MsgAction::Delete, "Delete", COMPOSER, "row-delete-idle") }
+                }
+            }
+        },
+    );
+    let save_btn = small_btn(MsgAction::Save, "Save", BUTTON, "save-edit");
+    let cancel_btn = small_btn(MsgAction::Cancel, "Cancel", COMPOSER, "cancel-edit");
+    let edit_delete_btn = small_btn(MsgAction::Delete, "Delete", BADGE, "row-delete");
+    let confirm_btn = small_btn(MsgAction::Confirm, "Confirm", BADGE, "confirm-delete");
+    let no_btn = small_btn(MsgAction::No, "No", COMPOSER, "cancel-delete");
     ui! {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Column),
@@ -1392,9 +1442,9 @@ fn live_edit_row(
                         gap: Some(px(6.0)),
                         ..Default::default()
                     }) {
-                        { small_btn(MsgAction::Save, "Save", BUTTON, "save-edit") }
-                        { small_btn(MsgAction::Cancel, "Cancel", COMPOSER, "cancel-edit") }
-                        { small_btn(MsgAction::Delete, "Delete", BADGE, "row-delete") }
+                        { save_btn }
+                        { cancel_btn }
+                        { edit_delete_btn }
                     }
                 }
             } else if delete_mode {
@@ -1410,20 +1460,14 @@ fn live_edit_row(
                         flex_grow: Some(grow(1.0)),
                         ..Default::default()
                     }) { "Delete this message?".to_string() }
-                    { small_btn(MsgAction::Confirm, "Confirm", BADGE, "confirm-delete") }
-                    { small_btn(MsgAction::No, "No", COMPOSER, "cancel-delete") }
+                    { confirm_btn }
+                    { no_btn }
                 }
             } else {
-                view(style = StyleRules {
-                    flex_direction: Some(FlexDirection::Row),
-                    gap: Some(px(6.0)),
-                    ..Default::default()
-                }) {
-                    { small_btn(MsgAction::Edit, "Edit", COMPOSER, "row-edit") }
-                    { small_btn(MsgAction::Delete, "Delete", COMPOSER, "row-delete-idle") }
-                }
+                { idle_bar }
             }
         }
+        .on_hover(move |on| idle_hovered.set(on))
     }
 }
 
