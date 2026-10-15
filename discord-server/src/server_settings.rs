@@ -658,6 +658,55 @@ impl ServerSettings {
         Ok(())
     }
 
+    /// Time out a member of `server_id`: silence them from posting messages
+    /// for `duration_secs` without removing their membership (a kick/ban drop
+    /// the row; a timeout only sets a deadline). Admin+ (owner or admin), the
+    /// same bar as a ban — a timeout restrains a member more strongly than a
+    /// kick. The owner is protected exactly as in `ban_member` (timing them
+    /// out would orphan the server). Re-timing overwrites the existing
+    /// deadline in place (`db.set_timeout`), so a member can be extended.
+    ///
+    /// Enforcement is at the post boundary: [`crate::realtime::post_channel_message`]
+    /// consults `db.is_timed_out` before persisting, comparing `timeout_until`
+    /// against the current epoch.
+    ///
+    /// # Errors
+    /// - `not found` — the server id doesn't exist.
+    /// - `permission denied` — the caller's role is below admin.
+    /// - `cannot time out the server owner` — `user_id` is the owner.
+    /// - `member not found` — `user_id` has no membership row.
+    pub fn timeout_member(
+        &self,
+        caller_id: i64,
+        server_id: i64,
+        user_id: i64,
+        duration_secs: i64,
+    ) -> Result<(), String> {
+        let (_sid, _name, owner_id, _icon_url) = self
+            .db
+            .server_by_id(server_id)
+            .ok_or("server not found")?;
+        self.require(caller_id, server_id, Action::TimeoutMember)?;
+        // A timeout of zero or less would be instantly expired — reject it at
+        // the boundary rather than silently no-op.
+        if duration_secs <= 0 {
+            return Err("timeout duration must be positive".into());
+        }
+        // The owner is protected: timing them out would orphan the server.
+        if user_id == owner_id {
+            return Err("cannot time out the server owner (transfer ownership first)".into());
+        }
+        let timeout_until = Self::now_secs() + duration_secs;
+        let updated = self
+            .db
+            .set_timeout(server_id, user_id, timeout_until)
+            .map_err(|e| format!("failed to time out member: {e}"))?;
+        if updated == 0 {
+            return Err("member not found".into());
+        }
+        Ok(())
+    }
+
     /// Change an existing member's role in `server_id`. Admin+ (owner or
     /// admin). The owner's role can't be changed and the owner role can't be
     /// assigned — ownership moves only via `transfer_ownership`.
@@ -1037,6 +1086,21 @@ pub async fn ban_member(input: BanMemberInput) -> Result<MemberResult, ServerErr
     Ok(MemberResult { server_id: input.server_id, user_id: input.user_id, role: String::new() })
 }
 
+/// Time out a member of a server: silence them from posting messages for
+/// `duration_secs` without removing their membership (a kick/ban drop the row;
+/// a timeout only sets a deadline they can post again after). Owner or admin
+/// may call (the same admin+ bar as a ban). The server owner can't be timed
+/// out. A re-timeout overwrites the existing deadline in place.
+#[server]
+pub async fn timeout_member(input: TimeoutMemberInput) -> Result<MemberResult, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    ServerSettings::new(db)
+        .timeout_member(caller, input.server_id, input.user_id, input.duration_secs)
+        .map_err(ServerError::failed)?;
+    Ok(MemberResult { server_id: input.server_id, user_id: input.user_id, role: String::new() })
+}
+
 /// Change an existing member's role. Owner or admin may call. The owner's
 /// role can't be changed and the owner role can't be assigned.
 #[server]
@@ -1215,6 +1279,16 @@ pub struct BanMemberInput {
     /// Optional free-text note stored on the ban record.
     #[serde(default)]
     pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+pub struct TimeoutMemberInput {
+    pub server_id: i64,
+    pub user_id: i64,
+    /// How long to silence the member for, in seconds from the moment the
+    /// timeout is applied. Must be positive; the server rejects non-positive
+    /// values at the service boundary.
+    pub duration_secs: i64,
 }
 
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]

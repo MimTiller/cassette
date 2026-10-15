@@ -106,6 +106,11 @@ pub enum Action {
     /// redemption or direct add). More severe than a kick, so the minimum
     /// role is higher (admin+ rather than moderator+).
     BanMember,
+    /// Temporarily silence a member: block them from posting messages until a
+    /// duration elapses, without removing their membership (unlike a kick or
+    /// ban). Like a ban, this is a stronger restraint than a kick, so the
+    /// minimum role is admin+.
+    TimeoutMember,
     /// Change another member's role in the server.
     SetMemberRole,
     /// Pin or unpin a message in a channel. Moderator+ — Discord parity
@@ -172,8 +177,8 @@ impl Action {
     /// is the entire permission policy.
     ///
     ///   * owner-only: rename the server, transfer ownership.
-    ///   * admin+ (owner/admin): set the icon, create/delete channels, change
-    ///     a member's role.
+    ///   * admin+ (owner/admin): set the icon, create/delete channels, ban or
+    ///     time out a member, change a member's role.
     ///   * moderator+ (owner/admin/moderator): rename a channel, add/remove a
     ///     member, pin/unpin a message.
     pub fn minimum_role(self) -> Role {
@@ -183,6 +188,7 @@ impl Action {
             | Action::CreateChannel
             | Action::DeleteChannel
             | Action::BanMember
+            | Action::TimeoutMember
             | Action::SetMemberRole => Role::Admin,
             Action::RenameChannel | Action::AddMember | Action::RemoveMember | Action::PinMessage => Role::Moderator,
         }
@@ -241,6 +247,7 @@ mod tests {
             Action::AddMember,
             Action::RemoveMember,
             Action::BanMember,
+            Action::TimeoutMember,
             Action::SetMemberRole,
             Action::PinMessage,
         ];
@@ -259,6 +266,7 @@ mod tests {
         assert!(Role::Admin.can(Action::AddMember));
         assert!(Role::Admin.can(Action::RemoveMember));
         assert!(Role::Admin.can(Action::BanMember));
+        assert!(Role::Admin.can(Action::TimeoutMember));
         assert!(Role::Admin.can(Action::SetMemberRole));
         assert!(Role::Admin.can(Action::SetServerIcon));
         assert!(
@@ -282,6 +290,11 @@ mod tests {
         assert!(
             !Role::Moderator.can(Action::BanMember),
             "moderator must not ban (ban is admin+)"
+        );
+        // A timeout is also admin+ — a moderator may kick but not time out.
+        assert!(
+            !Role::Moderator.can(Action::TimeoutMember),
+            "moderator must not time out (timeout is admin+)"
         );
         assert!(
             !Role::Moderator.can(Action::CreateChannel),
@@ -313,6 +326,7 @@ mod tests {
             Action::AddMember,
             Action::RemoveMember,
             Action::BanMember,
+            Action::TimeoutMember,
             Action::SetMemberRole,
         ];
         for a in actions {
@@ -339,5 +353,11 @@ mod tests {
         assert!(Role::Owner.can(Action::BanMember));
         assert!(!Role::Moderator.can(Action::BanMember));
         assert!(!Role::Member.can(Action::BanMember));
+        // A timeout, like a ban, is admin+ only — it restrains a member more
+        // strongly than a kick.
+        assert!(Role::Admin.can(Action::TimeoutMember));
+        assert!(Role::Owner.can(Action::TimeoutMember));
+        assert!(!Role::Moderator.can(Action::TimeoutMember));
+        assert!(!Role::Member.can(Action::TimeoutMember));
     }
 }

@@ -4252,6 +4252,16 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // action, so it gets its own confirm rather than sharing the kick one —
     // a mis-tap that confirms a ban is harder to undo than a mis-tap kick).
     let live_ban_confirm: Signal<Option<i64>> = signal(None);
+    // The two-step inline confirm for a timeout: None = no pending timeout,
+    // Some(user_id) = "Timeout? [Yes/No]" is shown for that member's row. A
+    // timeout silences a member from posting for `live_timeout_duration`
+    // without removing their membership (the milder of the three severities).
+    let live_timeout_confirm: Signal<Option<i64>> = signal(None);
+    // The chosen timeout duration in seconds, shared with the duration picker
+    // the confirm branch renders. Defaults to 60s (the picker's first option)
+    // so a bare Timeout tap still has a sensible duration. The picker writes
+    // to this signal as the user taps an option; the confirm's "Yes" reads it.
+    let live_timeout_duration: Signal<i64> = signal(60);
     let live_member_error: Signal<String> = signal(String::new());
     // Live presence: `user_id -> status string`. The backend broadcasts
     // `WsServerMsg::Presence` ('online' on socket auth + activity, 'away' after
@@ -8311,6 +8321,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let invite_code = crate::invite::generate_invite_code(active_server.get());
     let invite_url = crate::invite::invite_link(&invite_code);
     let invite_expiry = signal(0usize);
+    // The picker's chosen duration (seconds) — local to this graveyard demo.
+    let timeout_duration = signal(60i64);
     let invite_panel = ui! {
         text(style = section_label_style.clone()) { "Invite People".to_string() }
         // `InviteLinkDisplay` formats `discord.gg/{code}` internally, so it
@@ -8333,7 +8345,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         BanListRow()
         BanReasonInput()
         text(style = section_label_style.clone()) { "Timeout duration".to_string() }
-        TimeoutDurationPicker()
+        TimeoutDurationPicker(duration = timeout_duration)
         text(style = section_label_style.clone()) { "Member roles".to_string() }
         MemberRoleList()
         MemberRoleList()

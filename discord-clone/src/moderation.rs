@@ -46,6 +46,25 @@ pub async fn ban_member(server_id: i64, user_id: i64, reason: Option<&str>) -> R
     Ok(())
 }
 
+/// Time out a member of a server: silence them from posting messages for
+/// `duration_secs` without removing their membership (a kick/ban drop the row;
+/// a timeout only sets a deadline they can post again after). The backend
+/// enforces the real permission check (admin-or-above may call; the owner
+/// can't be timed out; the duration must be positive) -- on a rejection the
+/// backend's message comes back as the `Err` string. A re-timeout overwrites
+/// the existing deadline in place.
+pub async fn timeout_member(server_id: i64, user_id: i64, duration_secs: i64) -> Result<(), String> {
+    let input = discord_server::server_settings::TimeoutMemberInput {
+        server_id,
+        user_id,
+        duration_secs,
+    };
+    discord_server::server_settings::timeout_member(input)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Change a member's role. `role` is one of `'member'` / `'moderator'` /
 /// `'admin'` (the backend rejects assigning `'owner'` or changing the owner's
 /// role). The backend's rejection message comes back as the `Err` string.

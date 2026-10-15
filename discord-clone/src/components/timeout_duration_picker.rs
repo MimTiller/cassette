@@ -1,39 +1,38 @@
 //! `timeout_duration_picker` — a Discord-style timeout-duration picker: a
 //! vertical radio group of exactly four hardcoded duration options ("60
-//! Seconds", "5 Minutes", "1 Hour", "1 Day"), one selectable at a time. Each
-//! row is a `view` whose `.on_touch(|ev| …)` chain (firing on
-//! `TouchPhase::Ended`) sets the local `selected` signal to that option's
-//! index; the selected row renders with a highlight and a filled radio dot
-//! while the others stay dimmed and hollow.
+//! Seconds", "5 Minutes", "1 Hour", "1 Day"), one selectable at a time.
 //!
-//! Everything is hardcoded local state — no backend call, no props, no wiring
-//! into any screen yet. Declared in `lib.rs` so it compiles as part of the
-//! crate, but referenced by nothing (the same shape `profile_settings` and the
-//! other `components/` files ship in).
+//! The chosen duration is owned by the CALLER as a `Signal<i64>` of seconds
+//! (two-way prop, the `TextInput`-style unified `Signal<T>` idiom used for
+//! `value`). Each row is a `view` whose `.on_touch(|ev| …)` chain (firing on
+//! `TouchPhase::Ended`) writes that option's seconds into the prop; the row
+//! whose seconds match the prop renders highlighted with a filled radio dot
+//! while the others stay dimmed and hollow. Because the prop is reactive, a
+//! row highlighted by an external write (e.g. the caller resetting the
+//! duration) re-renders automatically — no local state to sync.
 //!
-//! Idioms, each verified against this crate's `app.rs` / `profile_settings.rs`
-//! / `components/mic_selector.rs` / `components/server_folder_group.rs`:
+//! Idioms, each verified against this crate's `app.rs` / `components/`:
 //! - styles are plain `StyleRules` via the `style_helpers` `px` / `col`
 //!   constructors;
 //! - the options are authored with a `for (i, name) in …iter().enumerate()`
 //!   inside `ui!` (a `repeat` whose per-item builder is an `Fn` closure, with
-//!   the loop index as the compile-time key — the same shape `server_folder_group`
-//!   uses, tuple destructuring verified in `app.rs:1497`);
+//!   the loop index as the compile-time key — the same shape
+//!   `server_folder_group` uses, tuple destructuring verified in `app.rs`);
 //! - selection is REACTIVE, so every selection-dependent style is a
 //!   `style = move || StyleRules { … }` closure (the `IntoStyleProp for
-//!   Fn() -> StyleRules` dynamic path `app.rs` uses at `1345`/`1374`), reading
-//!   `selected` at re-evaluation time rather than being baked once;
+//!   Fn() -> StyleRules` dynamic path `app.rs` uses), reading `duration` at
+//!   re-evaluation time rather than being baked once;
 //! - because the per-row builder is a closure, styles are built fresh per
-//!   evaluation (never a shared `let` binding — `StyleRules` is not `Copy` and
-//!   a captured binding would be moved on the first iteration);
+//!   evaluation (never a shared `let` binding — `StyleRules` is not `Copy`
+//!   and a captured binding would be moved on the first iteration);
 //! - the radio indicator is a bordered circle `view` whose background fill is
-//!   the reactive selection signal (filled = selected, hollow = not), so no
-//!   text *content* is ever reactive — a `ui!` text child must be `TextContent`
+//!   the reactive selection (filled = selected, hollow = not), so no text
+//!   *content* is ever reactive — a `ui!` text child must be `TextContent`
 //!   (a bare `if` in the content slot yields an `Element`, which it is not).
 
 use crate::style_helpers::{col, px};
 use runtime_core::{
-    component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, StyleRules, Tokenized,
+    component, ui, AlignItems, Element, FlexDirection, FontWeight, Signal, StyleRules, Tokenized,
     TouchPhase, TouchResponse,
 };
 
@@ -43,8 +42,10 @@ const BG_SELECTED: &str = "#404249";
 const TEXT: &str = "#f2f3f5";
 const TEXT_MUTED: &str = "#949ba4";
 
-/// The four hardcoded timeout-duration options — exactly four, local only.
+/// The four hardcoded timeout-duration labels — exactly four, in ascending
+/// order. `SECS[i]` is the seconds behind `TIMEOUT_OPTIONS[i]`.
 const TIMEOUT_OPTIONS: [&str; 4] = ["60 Seconds", "5 Minutes", "1 Hour", "1 Day"];
+const TIMEOUT_SECS: [i64; 4] = [60, 300, 3600, 86400];
 
 /// A unitless `Tokenized<f32>` border width (the `border_*_width` style fields
 /// take a plain `f32` token, not a `Length`) — same shape `app.rs` uses.
@@ -52,15 +53,13 @@ fn border_width(px: f32) -> Tokenized<f32> {
     Tokenized::Literal(px)
 }
 
-/// A timeout-duration picker radio group. `selected` is local reactive state
-/// (an index into `TIMEOUT_OPTIONS`), starting on the first option. Tapping a
-/// row sets `selected` to that row's index; the matching row then renders
+/// A timeout-duration picker radio group. `duration` is the caller-owned
+/// chosen duration in seconds (a unified two-way `Signal<i64>`). Tapping a row
+/// writes that row's seconds into `duration`; the matching row renders
 /// highlighted with a filled dot and the others dimmed with a hollow one.
-/// No props, no backend.
+/// No local state — the prop IS the single source of truth.
 #[component]
-pub fn TimeoutDurationPicker() -> Element {
-    let selected = signal(0usize);
-
+pub fn TimeoutDurationPicker(duration: Signal<i64>) -> Element {
     ui! {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Column),
@@ -81,10 +80,10 @@ pub fn TimeoutDurationPicker() -> Element {
             }) { "TIMEOUT DURATION".to_string() }
             for (i, name) in TIMEOUT_OPTIONS.iter().enumerate() {
                 // `i` is the loop index (compile-time repeat key); the closure
-                // only *reads* `i` and `selected` (both `Copy`), so it stays
-                // `Fn` and the built `StyleRules` is a fresh value each time.
+                // only *reads* `i` and `duration` (`Copy`), so it stays `Fn`
+                // and the built `StyleRules` is a fresh value each time.
                 view(style = move || {
-                    let sel = i == selected.get();
+                    let sel = TIMEOUT_SECS[i] == duration.get();
                     StyleRules {
                         height: Some(px(44.0)),
                         margin_left: Some(px(12.0)),
@@ -116,27 +115,27 @@ pub fn TimeoutDurationPicker() -> Element {
                         border_bottom_width: Some(border_width(2.0)),
                         border_left_width: Some(border_width(2.0)),
                         border_right_width: Some(border_width(2.0)),
-                        border_top_color: Some(col(if i == selected.get() {
+                        border_top_color: Some(col(if TIMEOUT_SECS[i] == duration.get() {
                             TEXT
                         } else {
                             TEXT_MUTED
                         })),
-                        border_bottom_color: Some(col(if i == selected.get() {
+                        border_bottom_color: Some(col(if TIMEOUT_SECS[i] == duration.get() {
                             TEXT
                         } else {
                             TEXT_MUTED
                         })),
-                        border_left_color: Some(col(if i == selected.get() {
+                        border_left_color: Some(col(if TIMEOUT_SECS[i] == duration.get() {
                             TEXT
                         } else {
                             TEXT_MUTED
                         })),
-                        border_right_color: Some(col(if i == selected.get() {
+                        border_right_color: Some(col(if TIMEOUT_SECS[i] == duration.get() {
                             TEXT
                         } else {
                             TEXT_MUTED
                         })),
-                        background: Some(col(if i == selected.get() {
+                        background: Some(col(if TIMEOUT_SECS[i] == duration.get() {
                             TEXT
                         } else {
                             "transparent"
@@ -145,12 +144,12 @@ pub fn TimeoutDurationPicker() -> Element {
                     }) {}
                     text(style = move || StyleRules {
                         font_size: Some(px(15.0)),
-                        font_weight: Some(if i == selected.get() {
+                        font_weight: Some(if TIMEOUT_SECS[i] == duration.get() {
                             FontWeight::SemiBold
                         } else {
                             FontWeight::Normal
                         }),
-                        color: Some(col(if i == selected.get() {
+                        color: Some(col(if TIMEOUT_SECS[i] == duration.get() {
                             TEXT
                         } else {
                             TEXT_MUTED
@@ -159,7 +158,7 @@ pub fn TimeoutDurationPicker() -> Element {
                     }) { name.to_string() }
                 }.on_touch(move |ev| {
                     if ev.phase == TouchPhase::Ended {
-                        selected.set(i);
+                        duration.set(TIMEOUT_SECS[i]);
                     }
                     TouchResponse::CONSUMED
                 })

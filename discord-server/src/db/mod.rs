@@ -1456,6 +1456,67 @@ impl Db {
         .is_ok()
     }
 
+    // ── members: timeouts ──────────────────────────────────────────────────
+
+    /// `user_id`'s current timeout deadline in `server_id` (UTC epoch seconds),
+    /// or `None` when they are not timed out. The membership is *not* removed
+    /// on a timeout (unlike a kick or ban) — this is just the instant after
+    /// which the member may post again.
+    pub fn timeout_until(&self, server_id: i64, user_id: i64) -> Option<i64> {
+        let c = self.lock().ok()?;
+        c.query_row(
+            "SELECT timeout_until FROM server_memberships
+             WHERE server_id = ?1 AND user_id = ?2",
+            rusqlite::params![server_id, user_id],
+            |r| r.get(0),
+        )
+        .ok()
+        .flatten()
+    }
+
+    /// Whether `user_id` is currently timed out in `server_id`: true when they
+    /// have a `timeout_until` that is still in the future relative to `now`
+    /// (UTC epoch seconds). The enforcement point (`post_channel_message`)
+    /// consults this before persisting a message. A `NULL` deadline (never
+    /// timed out) and a past deadline (expired) both return false.
+    pub fn is_timed_out(&self, server_id: i64, user_id: i64, now: i64) -> bool {
+        matches!(
+            self.timeout_until(server_id, user_id),
+            Some(deadline) if deadline > now
+        )
+    }
+
+    /// Set (or refresh) `user_id`'s timeout in `server_id` to expire at
+    /// `timeout_until` (UTC epoch seconds). A re-timeout overwrites the column
+    /// in place — the membership row is untouched. Returns the number of rows
+    /// updated (`0` when the user is not a member, in which case nothing is
+    /// changed).
+    pub fn set_timeout(
+        &self,
+        server_id: i64,
+        user_id: i64,
+        timeout_until: i64,
+    ) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        Ok(c.execute(
+            "UPDATE server_memberships SET timeout_until = ?3
+             WHERE server_id = ?1 AND user_id = ?2",
+            rusqlite::params![server_id, user_id, timeout_until],
+        )?)
+    }
+
+    /// Clear `user_id`'s timeout in `server_id` (set the column back to `NULL`)
+    /// — the manual "release early" a moderator may want. Returns the number of
+    /// rows updated (`0` when they were not a member or not timed out).
+    pub fn clear_timeout(&self, server_id: i64, user_id: i64) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        Ok(c.execute(
+            "UPDATE server_memberships SET timeout_until = NULL
+             WHERE server_id = ?1 AND user_id = ?2",
+            rusqlite::params![server_id, user_id],
+        )?)
+    }
+
     /// Record that `user_id` is banned from `server_id` by `banned_by`, with an
     /// optional `reason`. The `UNIQUE (server_id, user_id)` constraint makes a
     /// re-ban a single upsert (a re-ban refreshes the row rather than

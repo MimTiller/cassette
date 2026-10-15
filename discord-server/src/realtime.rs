@@ -256,6 +256,14 @@ pub fn post_channel_message(
         return Err(format!("rate limited: retry in {}s", retry.as_secs() + 1));
     }
     let server_id = authorize_text_channel(db, user_id, channel_id).map_err(String::from)?;
+    // A timed-out member is blocked from posting (their membership still
+    // exists — the timeout is a deadline, not a removal). `authorize_text_channel`
+    // already confirmed membership; here we check the `timeout_until` deadline
+    // against the current epoch. `now_millis()/1000` keeps this on the same UTC
+    // epoch-seconds convention as `timeout_until`.
+    if db.is_timed_out(server_id, user_id, now_millis() / 1000) {
+        return Err("you are timed out and cannot post messages".into());
+    }
     let created_at = now_millis();
     let message_id = db
         .insert_message(channel_id, user_id, content, created_at)
