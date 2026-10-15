@@ -977,6 +977,7 @@ impl Db {
                         content: r.get(3)?,
                         created_at: r.get(4)?,
                         edited_at: r.get(5)?,
+                        reply_to_message_id: None,
                         mentioned_user_ids: Vec::new(),
                     },
                     pinned_by,
