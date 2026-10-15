@@ -8,6 +8,7 @@
 //!
 //! Timestamps are UTC epoch **milliseconds** (INTEGER) throughout, matching
 //! the schema convention and the client's `epoch_millis` wire format.
+use std::collections::HashMap;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -688,6 +689,94 @@ impl Db {
             Err(_) => return Vec::new(),
         };
         rows.filter_map(Result::ok).collect()
+    }
+
+    // ── message reactions ──────────────────────────────────────────────────
+    //
+    // Emoji reactions per channel message (`message_reactions`): one row per
+    // (message, user, emoji). Written by the live gateway when a client sends a
+    // `ReactionAdd` / `ReactionRemove` frame; read back into `Message.reactions`
+    // on history loads. See migration `0013_message_reactions.sql`.
+
+    /// Record that `user_id` reacted with `emoji` to `message_id`. Upsert: a
+    /// re-add of the same (message, user, emoji) is a no-op (the UNIQUE key
+    /// guards it). `created_at` is UTC epoch ms supplied by the caller.
+    ///
+    /// # Errors
+    /// - the message or user does not exist (FK violation), or the write fails.
+    pub fn add_reaction(
+        &self,
+        message_id: i64,
+        user_id: i64,
+        emoji: &str,
+        created_at: i64,
+    ) -> Result<(), rusqlite::Error> {
+        let c = self.lock()?;
+        c.execute(
+            "INSERT OR IGNORE INTO message_reactions
+             (message_id, user_id, emoji, created_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![message_id, user_id, emoji, created_at],
+        )?;
+        Ok(())
+    }
+
+    /// Remove `user_id`'s `emoji` reaction from `message_id`. Returns the
+    /// number of rows removed (0 if the reaction did not exist) — mirroring the
+    /// other helpers' "0 rows" convention rather than erroring on a no-op.
+    ///
+    /// # Errors
+    /// - the write fails.
+    pub fn remove_reaction(
+        &self,
+        message_id: i64,
+        user_id: i64,
+        emoji: &str,
+    ) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        Ok(c.execute(
+            "DELETE FROM message_reactions
+             WHERE message_id = ?1 AND user_id = ?2 AND emoji = ?3",
+            rusqlite::params![message_id, user_id, emoji],
+        )?)
+    }
+
+    /// The reactions stored for `message_id`, grouped by emoji: one
+    /// `(emoji, count, reacted_by_me)` tuple per distinct emoji, where
+    /// `count` is the number of users who reacted with that emoji and
+    /// `reacted_by_me` is whether `user_id` is among them. Ordered by count
+    /// (desc) then emoji so the busiest reactions lead, like Discord. Empty
+    /// when the message has no reactions (or the id is unknown).
+    pub fn reactions_for_message(&self, message_id: i64, user_id: i64) -> Vec<(String, u32, bool)> {
+        let Ok(c) = self.lock() else {
+            return Vec::new();
+        };
+        let mut stmt = match c.prepare(
+            "SELECT emoji, user_id FROM message_reactions WHERE message_id = ?1",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = match stmt.query_map(rusqlite::params![message_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+        }) {
+            Ok(rows) => rows,
+            Err(_) => return Vec::new(),
+        };
+        // Group by emoji, tracking count and whether `user_id` reacted.
+        let mut by_emoji: HashMap<String, (u32, bool)> = HashMap::new();
+        for (emoji, uid) in rows.filter_map(Result::ok) {
+            let e = by_emoji.entry(emoji).or_insert((0, false));
+            e.0 += 1;
+            if uid == user_id {
+                e.1 = true;
+            }
+        }
+        let mut out: Vec<(String, u32, bool)> =
+            by_emoji.into_iter().map(|(e, (c, m))| (e, c, m)).collect();
+        // Busiest first; ties broken by emoji for a stable order.
+        out.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        out
     }
 
     // ── channel reads ──────────────────────────────────────────────────────

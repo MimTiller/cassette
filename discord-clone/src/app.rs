@@ -2638,7 +2638,8 @@ fn create_server(
 /// `authed` flips and this screen unmounts. "Continue as guest" skips the
 /// fields entirely. State is local to this function — it unmounts the moment
 /// `authed` flips, so no session survives a reload.
-fn login_screen(authed: Signal<bool>) -> Element {
+fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element {
+    let _ = &busy; // threaded for the submit button + handlers' guard (below).
     // "you" is the only identity in this mock build; authing in just flips
     // the shared signal the app tree is keyed on.
     // `mode` flips the form between sign-in (false, the default) and sign-up
@@ -2769,6 +2770,7 @@ fn login_screen(authed: Signal<bool>) -> Element {
     // `app()` re-evaluates on it). Every captured signal is `Copy`.
     let do_login = {
         let authed = authed.clone();
+        let busy = busy.clone();
         move || {
             let em = username.get();
             let pw = password.get();
@@ -2776,20 +2778,30 @@ fn login_screen(authed: Signal<bool>) -> Element {
                 error.set("Username and password are required.".to_string());
                 return;
             }
+            // Double-submit guard: a login is already in flight (covers the
+            // Enter-key path, which bypasses the button's own press blocking).
+            if busy.get() {
+                return;
+            }
             // Real login: spawn the backend `#[server]` login call and resolve
             // the session before flipping `authed`. On success `auth::login`
             // records the numeric id and the signed session token
             // process-wide; the client threads the token back as
-            // `Authorization: Bearer <token>` on backend calls. On failure the
+            // `Authorization: Bearer *** on backend calls. On failure the
             // server's message is shown inline.
             error.set(String::new());
+            // In-flight flag: disables the submit button (and flips its label)
+            // until the login call lands.
+            busy.set(true);
             runtime_core::driver::spawn_async(async move {
                 match crate::auth::login(&em, &pw).await {
                     Ok(_) => {
                         authed.set(true);
+                        busy.set(false);
                     }
                     Err(message) => {
                         error.set(message);
+                        busy.set(false);
                     }
                 }
             });
@@ -2801,6 +2813,7 @@ fn login_screen(authed: Signal<bool>) -> Element {
     // inline the same way a failed login does.
     let do_signup = {
         let authed = authed.clone();
+        let busy = busy.clone();
         move || {
             let em = username.get();
             let pw = password.get();
@@ -2808,14 +2821,23 @@ fn login_screen(authed: Signal<bool>) -> Element {
                 error.set("Username and password are required.".to_string());
                 return;
             }
+            // Double-submit guard (covers the Enter-key path).
+            if busy.get() {
+                return;
+            }
             error.set(String::new());
+            // In-flight flag: disables the submit button (and flips its label)
+            // until the sign-up call lands.
+            busy.set(true);
             runtime_core::driver::spawn_async(async move {
                 match crate::auth::signup(&em, &pw).await {
                     Ok(_) => {
                         authed.set(true);
+                        busy.set(false);
                     }
                     Err(message) => {
                         error.set(message);
+                        busy.set(false);
                     }
                 }
             });
@@ -2887,15 +2909,18 @@ fn login_screen(authed: Signal<bool>) -> Element {
         ..Default::default()
     };
     let form = switch(
-        // Keyed on `(error, mode)` so the form rebuilds both when a failed
-        // submit sets `error` and when the mode toggles between sign-in and
-        // sign-up (the same `switch(key, render)` pattern the sidebar/message
-        // list use — `ui!` doesn't re-read signal state on its own, only on
-        // rebuild).
-        move || (error.get(), mode.get()),
-        move |state: &(String, bool)| {
+        // Keyed on `(error, mode, busy)` so the form rebuilds when a failed
+        // submit sets `error`, when the mode toggles, AND when a submit flips
+        // `busy` (which drives the submit button's `disabled` state and label
+        // — the inert/dimmed button and in-flight wording must re-render as the
+        // flag turns on and off).
+        // Same `switch(key, render)` pattern the sidebar/message list use —
+        // `ui!` doesn't re-read signal state on its own, only on rebuild.
+        move || (error.get(), mode.get(), busy.get()),
+        move |state: &(String, bool, bool)| {
             let err = state.0.clone();
             let is_signup = state.1;
+            let in_flight = state.2;
             // The inline error, shown only while non-empty (a failed submit
             // sets it; a successful sign-in clears it and unmounts the screen).
             // Reused verbatim for both sign-in and sign-up failures.
@@ -2982,8 +3007,17 @@ fn login_screen(authed: Signal<bool>) -> Element {
                 })
             };
             // The submit button label flips with the mode; the handler
-            // (`on_submit_click`) routes on `mode` internally.
-            let submit_label = if is_signup {
+            // (`on_submit_click`) routes on `mode` internally. While a submit
+            // is in flight (`busy`), the label shows the in-flight wording
+            // ("Signing in…" / "Creating account…") and the button is disabled
+            // (inert) — so the user gets clear feedback and can't double-submit.
+            let submit_label = if in_flight {
+                if is_signup {
+                    "Creating account…".to_string()
+                } else {
+                    "Signing in…".to_string()
+                }
+            } else if is_signup {
                 "Sign Up".to_string()
             } else {
                 "Sign In".to_string()
@@ -3037,6 +3071,15 @@ fn login_screen(authed: Signal<bool>) -> Element {
                         label = submit_label,
                         test_id = "login-submit",
                         on_click = on_submit_click,
+                        // Live `disabled` state (the proven in-repo idiom, cf.
+                        // rules_accept_checkbox.rs): while a submit is in flight
+                        // this reads `busy.get()` inside a closure, so the prop
+                        // re-evaluates reactively as `busy` flips — muting the
+                        // button (inert + visually dimmed) and blocking the
+                        // press against double-taps. The Enter-key path is
+                        // separately guarded by the `busy.get()` early-return at
+                        // the top of `do_login`/`do_signup`.
+                        disabled = move || busy.get(),
                         style = submit_style.clone(),
                     )
                     toggle_btn
@@ -3134,13 +3177,20 @@ pub fn app() -> Element {
     let authed: Signal<bool> = signal(restored);
     let authed_copy = authed; // `Signal` is `Copy`; the render closure only
                               // receives the current value, so pass the signal in.
+    // The login screen's in-flight flag: `true` between a submit and the
+    // backend call landing (login or signup). Root-scoped so it outlives the
+    // screen; threaded in and consumed by the form's submit button (its
+    // `disabled` state + in-flight label) and the handlers' double-submit
+    // guard. See `login_screen`.
+    let busy: Signal<bool> = signal(false);
+    let busy_copy = busy;
     switch(
         move || authed.get(),
         move |authed: &bool| {
             if *authed {
                 app_shell(authed_copy)
             } else {
-                login_screen(authed_copy)
+                login_screen(authed_copy, busy_copy)
             }
         },
     )

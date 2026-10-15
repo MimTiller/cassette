@@ -192,6 +192,9 @@ impl AuthService {
 /// is rejected with a clear error.
 #[server]
 pub async fn signup(input: SignupInput) -> Result<SignupResult, ServerError> {
+    // TEMP-TEST-SLOWDOWN: widen the client busy window so the in-flight
+    // button state is observable in live UI tests. REVERT BEFORE COMMIT.
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     let db = db_from_state()?;
     AuthService::new(db)
         .signup(&input.username, &input.password)
@@ -317,6 +320,9 @@ impl AuthService {
 /// clears the account's failure log.
 #[server]
 pub async fn login(input: LoginInput) -> Result<LoginResult, ServerError> {
+    // TEMP-TEST-SLOWDOWN: widen the client busy window so the in-flight
+    // button state is observable in live UI tests. REVERT BEFORE COMMIT.
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     let db = db_from_state()?;
     AuthService::new(db)
         .login(&input.username, &input.password)
