@@ -490,12 +490,13 @@ impl Db {
         author_id: i64,
         content: &str,
         created_at: i64,
+        reply_to_message_id: Option<i64>,
     ) -> Result<i64, rusqlite::Error> {
         let c = self.lock()?;
         c.execute(
-            "INSERT INTO messages (channel_id, author_id, content, created_at)
-             VALUES (?1, ?2, ?3, ?4)",
-            rusqlite::params![channel_id, author_id, content, created_at],
+            "INSERT INTO messages (channel_id, author_id, content, created_at, reply_to_message_id)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![channel_id, author_id, content, created_at, reply_to_message_id],
         )?;
         Ok(c.last_insert_rowid())
     }
@@ -598,7 +599,7 @@ impl Db {
                 return Vec::new();
             };
             let mut stmt = match c.prepare(
-                "SELECT id, channel_id, author_id, content, created_at, edited_at
+                "SELECT id, channel_id, author_id, content, created_at, edited_at, reply_to_message_id
                  FROM messages WHERE channel_id = ?1 ORDER BY created_at DESC, id DESC LIMIT ?2",
             ) {
                 Ok(s) => s,
@@ -612,6 +613,7 @@ impl Db {
                     content: r.get(3)?,
                     created_at: r.get(4)?,
                     edited_at: r.get(5)?,
+                    reply_to_message_id: r.get(6)?,
                     mentioned_user_ids: Vec::new(),
                 })
             }) {
@@ -640,7 +642,7 @@ impl Db {
                 return Vec::new();
             };
             let mut stmt = match c.prepare(
-                "SELECT id, channel_id, author_id, content, created_at, edited_at
+                "SELECT id, channel_id, author_id, content, created_at, edited_at, reply_to_message_id
                  FROM messages WHERE channel_id = ?1 AND id < ?2
                  ORDER BY created_at DESC, id DESC LIMIT ?3",
             ) {
@@ -655,6 +657,7 @@ impl Db {
                     content: r.get(3)?,
                     created_at: r.get(4)?,
                     edited_at: r.get(5)?,
+                    reply_to_message_id: r.get(6)?,
                     mentioned_user_ids: Vec::new(),
                 })
             }) {
@@ -1166,6 +1169,7 @@ impl Db {
                 content: r.get(3)?,
                 created_at: r.get(4)?,
                 edited_at: r.get(5)?,
+                reply_to_message_id: None,
                 mentioned_user_ids: Vec::new(),
             })
         }) {
@@ -1842,6 +1846,12 @@ pub struct Message {
     pub created_at: i64,
     /// UTC epoch milliseconds, or `None` until the first edit.
     pub edited_at: Option<i64>,
+    /// The id of the message this one replies to (`None` for a normal post).
+    /// Column is `ON DELETE SET NULL`: if the target message is deleted the
+    /// reference is dropped, not the reply. Absent from `dm_messages` (DM
+    /// reply threads are a later layer) — DM history rows come back `None`.
+    #[serde(default)]
+    pub reply_to_message_id: Option<i64>,
     /// Resolved `@username` mentions: the user ids the message text mentions
     /// (see migration `0012_message_mentions.sql`). Empty when the message
     /// contains no `@` token that resolves to a member of the message's

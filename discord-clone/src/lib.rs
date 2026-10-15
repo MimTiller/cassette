@@ -133,6 +133,8 @@ mod spoiler_image_placeholder;
 mod attachment_preview_card;
 #[path = "components/reply_preview_bar.rs"]
 mod reply_preview_bar;
+#[path = "components/reply_reference_strip.rs"]
+mod reply_reference_strip;
 #[path = "components/mute_channel_toggle.rs"]
 mod mute_channel_toggle;
 #[path = "components/friend_request_card.rs"]

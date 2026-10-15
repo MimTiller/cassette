@@ -61,8 +61,15 @@ use crate::session::acting_user;
 /// Inbound frames the client sends.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum WsClientMsg {
-    /// Send a message to the channel.
-    Send { channel_id: i64, content: String },
+    /// Send a message to the channel. `reply_to_message_id` is the id of the
+    /// message being replied to (`None` for a normal post); the server records
+    /// it on the new row and echoes the resolved reference back on the frame.
+    Send {
+        channel_id: i64,
+        content: String,
+        #[serde(default)]
+        reply_to_message_id: Option<i64>,
+    },
     /// Request the recent message history for a channel. `before_id` is the
     /// scrollback cursor: `None` for the initial load (latest `limit`), or the
     /// oldest message id the client already holds to fetch the next page back.
@@ -101,6 +108,11 @@ pub enum WsServerMsg {
         new: bool,
         #[serde(default)]
         mentioned_user_ids: Vec<i64>,
+        /// The id of the message this one replies to (`None` for a normal
+        /// post). Clients resolve the replied-to author + snippet from their
+        /// loaded buffer to render the reply-reference strip.
+        #[serde(default)]
+        reply_to_message_id: Option<i64>,
     },
     /// The most recent `Message { new: false }` frames for `History`.
     History { channel_id: i64 },
@@ -204,10 +216,13 @@ pub async fn message_gateway(
             WsClientMsg::Send {
                 channel_id,
                 content,
+                reply_to_message_id,
             } => {
                 // Success fans out through the hub (the sender's own echo
                 // included); only failures are answered on this socket.
-                if let Err(reason) = post_channel_message(&db, user_id, channel_id, &content) {
+                if let Err(reason) =
+                    post_channel_message(&db, user_id, channel_id, &content, reply_to_message_id)
+                {
                     let _ = ch.send(WsServerMsg::Error { reason }).await;
                 }
             }
@@ -233,6 +248,7 @@ pub async fn message_gateway(
                                 edited_at: m.edited_at,
                                 new: false,
                                 mentioned_user_ids: m.mentioned_user_ids,
+                                reply_to_message_id: m.reply_to_message_id,
                             })
                             .await;
                     }
@@ -1494,7 +1510,7 @@ mod tests {
         let mut last = 0i64;
         for i in 0..count {
             last = db
-                .insert_message(channel_id, author_id, &format!("msg {i}"), 1000 + i)
+                .insert_message(channel_id, author_id, &format!("msg {i}"), 1000 + i, None)
                 .unwrap();
         }
         last
@@ -1941,9 +1957,9 @@ mod tests {
         // Three messages in channel 1 authored by user 1 (the owner); two of
         // them @mention user 2 (alice). The mention rows land via the live
         // gateway's resolver, exactly as the production path writes them.
-        crate::realtime::post_channel_message(&db, 1, 1, "hello @alice and @bob").unwrap();
-        crate::realtime::post_channel_message(&db, 1, 1, "no mention here").unwrap();
-        crate::realtime::post_channel_message(&db, 1, 1, "again @alice").unwrap();
+        crate::realtime::post_channel_message(&db, 1, 1, "hello @alice and @bob", None).unwrap();
+        crate::realtime::post_channel_message(&db, 1, 1, "no mention here", None).unwrap();
+        crate::realtime::post_channel_message(&db, 1, 1, "again @alice", None).unwrap();
 
         // User 2 (alice) has read nothing. The channel has 3 unread messages,
         // and 2 of them mention alice (the "hello" and "again" lines). The

@@ -203,7 +203,7 @@ pub(crate) fn same_group(prev_author: &str, prev_ts: i64, cur_author: &str, cur_
 /// The display fields mirror the old 4-tuple; `message_id` + `edited_at` are
 /// what the per-row edit/delete affordance and the "(edited)" marker need on
 /// top of them (the mock path carries no wire id, so it renders `None`).
-type LiveMsg = (i64, i64, String, String, i64, Option<i64>);
+type LiveMsg = (i64, i64, String, String, i64, Option<i64>, Option<i64>);
 
 /// Insert a `LiveMsg` into a channel's buffer in (created_at_secs, message_id)
 /// ascending order, skipping a duplicate `message_id` if one is already present
@@ -217,7 +217,7 @@ type LiveMsg = (i64, i64, String, String, i64, Option<i64>);
 /// one place rather than assumed by every call site.
 fn insert_live_msg(
     buf: &mut Vec<LiveMsg>,
-    msg: (i64, i64, String, String, i64, Option<i64>),
+    msg: (i64, i64, String, String, i64, Option<i64>, Option<i64>),
 ) -> bool {
     let (id, ..) = msg;
     // Dedup: a `message_id` already in the buffer is a re-delivery (the server
@@ -759,6 +759,12 @@ fn message_row_with_actions(
     key: MessageKey,
     picker: Signal<Option<MessageKey>>,
     reply_ctx: Signal<Option<(String, String)>>,
+    // The wire id of the message being replied to. `on_reply` (below) sets it
+    // from this row's `key` (a live row carries its real id; a mock row has
+    // none), so the composer can attach it to the outbound `Send` frame. The
+    // display half (author + snippet) lives in `reply_ctx`, read by the
+    // preview bar; this carries only the id the server needs.
+    reply_target: Signal<Option<i64>>,
     pin_visible: Signal<bool>,
     translate_key: Signal<Option<MessageKey>>,
 ) -> Element {
@@ -781,8 +787,19 @@ fn message_row_with_actions(
     let reply_c = reply_ctx;
     let author_r = author_owned.clone();
     let snippet_r = snippet.clone();
+    // The reply target's wire id, derived from this row's `key`: a live row
+    // carries its real id, a mock row has none. Recorded so the composer's
+    // outbound `Send` frame can attach it. `key` is `Copy`, so the handler
+    // captures its own copy.
+    let reply_t = reply_target;
+    let key_r = key;
     let on_reply = Rc::new(move || {
         reply_c.set(Some((author_r.clone(), snippet_r.clone())));
+        let id = match key_r {
+            MessageKey::Live { id } => id,
+            MessageKey::Mock { .. } => return,
+        };
+        reply_t.set(Some(id));
     });
 
     // React: point the shared picker at this row's `MessageKey` — the exact
@@ -854,14 +871,19 @@ fn message_row_with_actions(
 }
 
 /// The composer's "Replying to …" strip: wraps `reply_preview_bar` and backs
-/// its "×" cancel with a callback that clears the shared `reply_ctx` signal
-/// (the same signal each message's Reply action sets). `reply_ctx` is `Copy`,
-/// so the `on_cancel` closure captures its own handle; the bar itself reads a
-/// separate copy (both are the same underlying signal).
-fn reply_preview(reply_ctx: Signal<Option<(String, String)>>) -> Element {
+/// its "×" cancel with a callback that clears BOTH the shared `reply_ctx`
+/// signal (the display author + snippet) and the `reply_target` signal (the
+/// wire id). Each is `Copy`, so the `on_cancel` closure captures its own
+/// handle; the bar itself reads a separate copy of `reply_ctx` (same signal).
+fn reply_preview(
+    reply_ctx: Signal<Option<(String, String)>>,
+    reply_target: Signal<Option<i64>>,
+) -> Element {
     let clear = reply_ctx;
+    let clear_t = reply_target;
     let on_cancel = Rc::new(move || {
         clear.set(None);
+        clear_t.set(None);
     });
     crate::reply_preview_bar::reply_preview_bar(reply_ctx, on_cancel)
 }
@@ -1213,6 +1235,7 @@ fn live_edit_row(
     key: MessageKey,
     picker: Signal<Option<MessageKey>>,
     reply_ctx: Signal<Option<(String, String)>>,
+    reply_target: Signal<Option<i64>>,
     pin_visible: Signal<bool>,
     translate_key: Signal<Option<MessageKey>>,
 ) -> Element {
@@ -1232,6 +1255,7 @@ fn live_edit_row(
         key,
         picker,
         reply_ctx,
+        reply_target,
         pin_visible,
         translate_key,
     );
@@ -3233,7 +3257,7 @@ fn live_member_roster(
     let mut names: Vec<String> = Vec::new();
     for c in live_channels {
         if let Some(msgs) = live_messages.get(&c.id) {
-            for (_mid, _aid, author, _body, _ts, _edited) in msgs {
+            for (_mid, _aid, author, _body, _ts, _edited, _reply_to) in msgs {
                 if !names.contains(author) {
                     names.push(author.clone());
                 }
@@ -4480,7 +4504,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 edited_at,
                 new,
                 mentioned_user_ids,
-                ..
+                reply_to_message_id,
             }) = frame
             {
                 // The server resolved the author's username for the frame
@@ -4513,6 +4537,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             content.clone(),
                             *created_at / 1000,
                             edited_at.map(|ms| ms / 1000),
+                            *reply_to_message_id,
                         ),
                     );
                 }
@@ -4852,6 +4877,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // `ReplyPreviewBar` strip reads it); `None` while not. `PinConfirmToast`'s
     // `visible` flag, flashed by the "Pin message" overflow-menu entry.
     let reply_ctx: Signal<Option<(String, String)>> = signal(None);
+    // The wire id of the message the composer is replying to. Set by a row's
+    // Reply action (from its `MessageKey`) and read by `do_send` (below) to
+    // attach it to the outbound `Send` frame; cleared after a successful send
+    // and by the preview bar's "×". Kept separate from `reply_ctx` (the display
+    // author + snippet) so the server needs only the id, not the display text.
+    let reply_target: Signal<Option<i64>> = signal(None);
     let pin_visible: Signal<bool> = signal(false);
     // The per-message "Translate message" overflow-menu entry reveals a
     // `TranslateToggle` on ONE row at a time (a deliberate single instance, not
@@ -6827,6 +6858,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // Shared reply/pin handles cloned so the `sent_messages` closure can move
     // its own copies (the action-bar wiring in `message_row_with_actions`).
     let reply_ctx_k = reply_ctx.clone();
+    let reply_target_k = reply_target.clone();
     let pin_visible_k = pin_visible.clone();
     let translate_key_k = translate_key.clone();
     let sent_messages = switch(
@@ -6906,7 +6938,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 // timestamp, for the `same_group` test below.
                 let mut prev: Option<(String, i64)> = None;
                 for m in mine.iter() {
-                    let (mid, aid, author, body, ts, edited_at) = m;
+                    let (mid, aid, author, body, ts, edited_at, reply_to) = m;
                     let when = format_when(*ts, now);
                     let full = format_full_when(*ts);
                     let is_mine = self_id != 0 && *aid == self_id;
@@ -6937,6 +6969,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         lkey,
                         picker_l,
                         reply_l,
+                        reply_target_k,
                         pin_l,
                         trans_l,
                     ));
@@ -6987,6 +7020,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     MessageKey::Mock { cid, idx: i },
                     picker,
                     reply_ctx_k,
+                    reply_target_k,
                     pin_visible_k,
                     translate_key_k,
                 ));
@@ -7023,6 +7057,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     MessageKey::Mock { cid, idx: channel.messages.len() + i },
                     picker,
                     reply_ctx_k,
+                    reply_target_k,
                     pin_visible_k,
                     translate_key_k,
                 ));
@@ -7209,8 +7244,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
             gateway_send.send(discord_server::server_settings::WsClientMsg::Send {
                 channel_id: live_cid,
                 content: out_body.clone(),
+                reply_to_message_id: reply_target.get(),
             });
             send_composer.set(String::new());
+            reply_ctx.set(None);
+            reply_target.set(None);
             return;
         }
         let cid = active_channel.get();
@@ -8813,7 +8851,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // sets `reply_ctx`), directly above the composer. Its "×"
                     // clears the same signal the bar reads. Zero-size (nothing
                     // rendered) while no reply is active.
-                    reply_preview(reply_ctx)
+                    reply_preview(reply_ctx, reply_target)
                     attach_chip
                     emoji_popover
                     ac_el

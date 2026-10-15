@@ -245,6 +245,7 @@ pub fn post_channel_message(
     user_id: i64,
     channel_id: i64,
     content: &str,
+    reply_to_message_id: Option<i64>,
 ) -> Result<(), String> {
     if content.trim().is_empty() {
         return Err("empty message".into());
@@ -266,7 +267,7 @@ pub fn post_channel_message(
     }
     let created_at = now_millis();
     let message_id = db
-        .insert_message(channel_id, user_id, content, created_at)
+        .insert_message(channel_id, user_id, content, created_at, reply_to_message_id)
         .map_err(|e| e.to_string())?;
     let mentioned_user_ids = resolve_mentions(db, server_id, content);
     if let Err(e) = db.insert_message_mentions(message_id, &mentioned_user_ids) {
@@ -291,6 +292,7 @@ pub fn post_channel_message(
             edited_at: None,
             new: true,
             mentioned_user_ids,
+            reply_to_message_id,
         },
     );
     Ok(())
@@ -467,7 +469,7 @@ mod tests {
         let (_d, db) = setup();
         // Five messages in channel 1 (ids are monotonic AUTOINCREMENT).
         let ids: Vec<i64> = (0..5)
-            .map(|i| db.insert_message(1, 1, &format!("m{i}"), 100 + i).unwrap())
+            .map(|i| db.insert_message(1, 1, &format!("m{i}"), 100 + i, None).unwrap())
             .collect();
         assert!(ids.windows(2).all(|w| w[0] < w[1]), "ids must be ascending");
 
@@ -490,12 +492,12 @@ mod tests {
     #[test]
     fn posting_validates_size_emptiness_and_membership() {
         let (_d, db) = setup();
-        assert_eq!(post_channel_message(&db, 1, 1, "   ").unwrap_err(), "empty message");
+        assert_eq!(post_channel_message(&db, 1, 1, "   ", None).unwrap_err(), "empty message");
         let long = "x".repeat(MAX_MESSAGE_CHARS + 1);
-        assert!(post_channel_message(&db, 1, 1, &long).unwrap_err().contains("too long"));
-        assert!(post_channel_message(&db, 4, 1, "hi").unwrap_err().contains("not a member"));
-        assert!(post_channel_message(&db, 1, 2, "hi").unwrap_err().contains("not a text"));
-        assert!(post_channel_message(&db, 1, 1, "ok").is_ok());
+        assert!(post_channel_message(&db, 1, 1, &long, None).unwrap_err().contains("too long"));
+        assert!(post_channel_message(&db, 4, 1, "hi", None).unwrap_err().contains("not a member"));
+        assert!(post_channel_message(&db, 1, 2, "hi", None).unwrap_err().contains("not a text"));
+        assert!(post_channel_message(&db, 1, 1, "ok", None).is_ok());
         assert_eq!(db.recent_messages(1, 10).len(), 1, "only the valid post persisted");
     }
 
@@ -545,7 +547,7 @@ mod tests {
         hub.reset();
         let (_id, mut rx) = hub.register(1); // alice's (sender) socket
 
-        assert!(post_channel_message(&db, 1, 1, "@bob @alice and @nobody").is_ok());
+        assert!(post_channel_message(&db, 1, 1, "@bob @alice and @nobody", None).is_ok());
         // The echo frame carries the resolved mentions (bob=2, alice=1; nobody dropped).
         let frame = rx.try_recv().expect("sender receives the echo");
         match frame {
@@ -570,7 +572,7 @@ mod tests {
         let (_id2, mut rx2) = hub.register(2); // bob — co-member, not the author
 
         // Alice posts a mention-free message to channel 1.
-        let mid = db.insert_message(1, 1, "original", 100).unwrap();
+        let mid = db.insert_message(1, 1, "original", 100, None).unwrap();
 
         // A co-member who is not the author is refused; an unknown id is too;
         // empty and oversized edits are refused like a post.
@@ -628,8 +630,8 @@ mod tests {
         let (_id, mut rx) = hub.register(1); // alice — the author
         let (_id2, mut rx2) = hub.register(2); // bob — co-member
 
-        let mid = db.insert_message(1, 1, "doomed", 100).unwrap();
-        db.insert_message(1, 1, "keeper", 101).unwrap(); // a sibling that survives
+        let mid = db.insert_message(1, 1, "doomed", 100, None).unwrap();
+        db.insert_message(1, 1, "keeper", 101, None).unwrap(); // a sibling that survives
 
         // A co-member who is not the author is refused; an unknown id is too.
         assert_eq!(
@@ -826,7 +828,7 @@ mod tests {
         );
 
         // 3. Fan-out: Alice posts; Alice (echo) and Bob receive it.
-        send(&mut alice, &WsClientMsg::Send { channel_id: 1, content: "hello bob".into() }).await;
+        send(&mut alice, &WsClientMsg::Send { channel_id: 1, content: "hello bob".into(), reply_to_message_id: None }).await;
         assert!(next_matching(&mut alice, is_msg("hello bob")).await.is_some(), "echo to sender");
         assert!(next_matching(&mut bob, is_msg("hello bob")).await.is_some(), "bob receives");
         // ...but users outside server 1 hear nothing.
@@ -834,13 +836,13 @@ mod tests {
         assert!(hears_nothing(&mut dave, is_msg("hello bob")).await, "dave is in no server");
 
         // 4. Authorization: a non-member cannot post or read; voice is not text.
-        send(&mut dave, &WsClientMsg::Send { channel_id: 1, content: "sneaky".into() }).await;
+        send(&mut dave, &WsClientMsg::Send { channel_id: 1, content: "sneaky".into(), reply_to_message_id: None }).await;
         let err = next_matching(&mut dave, |m| matches!(m, WsServerMsg::Error { .. })).await;
         assert!(matches!(err, Some(WsServerMsg::Error { ref reason }) if reason.contains("not a member")));
         send(&mut dave, &WsClientMsg::History { channel_id: 1, before_id: None }).await;
         let err = next_matching(&mut dave, |m| matches!(m, WsServerMsg::Error { .. })).await;
         assert!(matches!(err, Some(WsServerMsg::Error { ref reason }) if reason.contains("not a member")));
-        send(&mut alice, &WsClientMsg::Send { channel_id: 2, content: "into voice".into() }).await;
+        send(&mut alice, &WsClientMsg::Send { channel_id: 2, content: "into voice".into(), reply_to_message_id: None }).await;
         let err = next_matching(&mut alice, |m| matches!(m, WsServerMsg::Error { .. })).await;
         assert!(matches!(err, Some(WsServerMsg::Error { ref reason }) if reason.contains("not a text")));
         assert!(hears_nothing(&mut bob, is_msg("sneaky")).await);
