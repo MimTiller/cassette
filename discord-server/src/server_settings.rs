@@ -129,6 +129,13 @@ pub enum WsServerMsg {
     /// A channel message was deleted. The client drops its stored entry for
     /// `message_id`.
     MessageDeleted { message_id: i64, channel_id: i64 },
+    /// A member joined (`joined: true`) or left (`joined: false`) the server.
+    /// Fired by the join (invite redemption) and leave (kick/ban) paths so the
+    /// server's *other* members see the roster change live — the client
+    /// re-fetches `list_members` for the active server on receipt (the same
+    /// re-fetch the local kick path already triggers). No roster data rides on
+    /// the frame; the re-fetch supplies it.
+    MemberChanged { server_id: i64, user_id: i64, joined: bool },
     /// A gateway error for a specific operation.
     Error { reason: String },
 }
@@ -596,9 +603,15 @@ impl ServerSettings {
         if self.db.is_banned(server_id, user_id) {
             return Err("member is banned and cannot be re-added (unban first)".into());
         }
+        // The upsert can re-role an existing member; only announce a *join*
+        // when this is a brand-new membership (a re-role is a count no-op).
+        let was_member = self.db.membership_role(server_id, user_id).is_some();
         self.db
             .upsert_membership(server_id, user_id, role, Self::now_secs())
             .map_err(|e| format!("failed to add member: {e}"))?;
+        if !was_member {
+            crate::realtime::announce_membership(&self.db, server_id, user_id, true);
+        }
         Ok(role.db_str().to_string())
     }
 
@@ -629,6 +642,9 @@ impl ServerSettings {
         if removed == 0 {
             return Err("member not found".into());
         }
+        // Tell the server's remaining members a member just left so their
+        // live roster (and `MEMBERS — N`) updates without a reload.
+        crate::realtime::announce_membership(&self.db, server_id, user_id, false);
         Ok(())
     }
 
@@ -671,6 +687,8 @@ impl ServerSettings {
         if removed == 0 {
             return Err("member not found".into());
         }
+        // A ban is a leave too: tell the remaining members the roster shrank.
+        crate::realtime::announce_membership(&self.db, server_id, user_id, false);
         Ok(())
     }
 

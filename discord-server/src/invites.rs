@@ -323,6 +323,10 @@ impl InviteService {
             .upsert_membership(server_id, user_id, Role::Member, now)
             .map_err(|e| format!("failed to add member: {e}"))?;
 
+        // Tell the server's other members a member just joined so their live
+        // roster (and `MEMBERS — N`) updates without a reload.
+        crate::realtime::announce_membership(&self.db, server_id, user_id, true);
+
         Ok(RedeemResult {
             server_id,
             user_id,

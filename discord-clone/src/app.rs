@@ -4299,18 +4299,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let live_presence: Rc<RefCell<HashMap<i64, String>>> =
         Rc::new(RefCell::new(HashMap::new()));
     let live_presence_rev: Signal<u32> = signal(0);
-    // Live presence: `user_id -> status string`. The backend broadcasts
-    // `WsServerMsg::Presence` ('online' on socket auth + activity, 'away' after
-    // `PRESENCE_IDLE_SECS` of no inbound frames, 'offline' on the user's last
-    // socket disconnect) over the gateway, so the member panel can show a
-    // per-row status dot. Mutating the `Rc` does not trigger reactivity, so
-    // `live_presence_rev` is bumped on every frame and folded into the member
-    // panel's `switch` key (the `live_revision` / `live_typing_rev` idiom). A
-    // member with no frame yet (just after the roster loads) reads as absent
-    // and is rendered as a grey "offline" dot.
-    let live_presence: Rc<RefCell<HashMap<i64, String>>> =
-        Rc::new(RefCell::new(HashMap::new()));
-    let live_presence_rev: Signal<u32> = signal(0);
 
     // [Feature 16] A real account lands on its own live server, not the mock
     // demo. When the list resolves and the user has at least one live server,
@@ -4473,6 +4461,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let send_failed_sig = send_failed.clone();
     let presence_buf = live_presence.clone();
     let presence_rev = live_presence_rev.clone();
+    // [Feature 14] A `MemberChanged` frame (another account joined or was
+    // kicked/banned) re-fetches the active server's roster — the same
+    // `list_members` call the kick/ban/role-change callbacks use — so the
+    // live member panel's rows AND its "MEMBERS — N" header update for a
+    // remote change (the pre-fix gap: those only ever re-fetched on the
+    // local user's own action). Captured as clones so the `move` render
+    // closure owns them, mirroring `presence_buf` / `presence_rev` above.
+    let member_server = active_live_server.clone();
+    let member_roster = live_members.clone();
     // [Feature 10] Notification wiring. `notif_level` (all/mentions/nothing) is
     // the single source of truth shared with the `UserSettings` Notifications
     // tab — seeded from localStorage (falling back to 0 = all) so a user who
@@ -4746,6 +4743,33 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         clear_rev.set(clear_rev.get() + 1);
                     }
                 });
+            }
+            // A member joined or left the server (another account redeemed an
+            // invite, or was kicked/banned by someone else). Re-fetch the
+            // active server's roster when the frame names it — the SAME
+            // `list_members` call the kick/ban/role-change callbacks use — so
+            // the live member panel's rows AND its "MEMBERS — N" header
+            // reflect the change (the pre-fix gap: the roster only ever
+            // re-fetched on the local user's own action). `user_id` /
+            // `joined` are carried for completeness (a future
+            // "just joined" / "just left" transition could use them), but the
+            // re-fetch is the single source of truth, so it's the whole of the
+            // handling here. `frame` is a `&WsServerMsg`, so copy the id out.
+            if let Some(discord_server::server_settings::WsServerMsg::MemberChanged {
+                server_id,
+                ..
+            }) = frame
+            {
+                let server_id = *server_id;
+                if member_server.get() == Some(server_id) {
+                    let sid = server_id;
+                    let roster = member_roster.clone();
+                    runtime_core::driver::spawn_async(async move {
+                        if let Ok(fresh) = crate::moderation::list_members(sid).await {
+                            roster.set(fresh);
+                        }
+                    });
+                }
             }
             // A backend error (a rejected `Send` / `EditMessage` / `DeleteMessage`
             // — see `message_gateway`, which answers failures on this socket):

@@ -183,6 +183,24 @@ pub fn announce_presence(db: &Db, user_id: i64, status: &str) {
     );
 }
 
+/// Tell the other members of `server_id` that `user_id` joined (`joined:
+/// true`) or left (`joined: false`). Called by the join (invite redemption)
+/// and leave (kick/ban) paths so the roster — and the `MEMBERS — N` count —
+/// updates live on the members' open clients. The audience is recomputed from
+/// the (already-persisted) membership after the change, so a join reaches the
+/// existing members and a leave reaches the remaining ones. No roster data
+/// rides on the frame; the client re-fetches `list_members`.
+pub fn announce_membership(db: &Db, server_id: i64, user_id: i64, joined: bool) {
+    hub().publish(
+        &server_audience(db, server_id),
+        &WsServerMsg::MemberChanged {
+            server_id,
+            user_id,
+            joined,
+        },
+    );
+}
+
 /// Check that `user_id` may use text channel `channel_id`: the channel must
 /// exist, be a text channel, and belong to a server the user is a member of.
 /// Returns the channel's server id.

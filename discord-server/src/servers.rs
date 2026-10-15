@@ -106,6 +106,9 @@ pub async fn join_server(input: JoinServerInput) -> Result<(), ServerError> {
     let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
     db.insert_membership(input.server_id, caller)
         .map_err(|e| ServerError::failed(e.to_string()))?;
+    // A successful insert is a brand-new membership (duplicates error above),
+    // so tell the other members the roster grew.
+    crate::realtime::announce_membership(&db, input.server_id, caller, true);
     Ok(())
 }
 
