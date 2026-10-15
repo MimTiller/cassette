@@ -41,8 +41,8 @@ use runtime_core::{
 use runtime_core::icon;
 use icons_lucide::{
     CHEVRON_DOWN, CHEVRON_UP, CIRCLE_HELP, COMPASS, GAVEL, GLOBE, HASH, HEADPHONES, MAIL,
-    MESSAGE_CIRCLE, MIC, MIC_OFF, PENCIL, PLUS, SETTINGS, SMILE, SMILE_PLUS, TRASH_2, USER_PLUS,
-    USERS, VOLUME_2,
+    MESSAGE_CIRCLE, MIC, MIC_OFF, PENCIL, PIN, PLUS, SETTINGS, SMILE, SMILE_PLUS, TRASH_2,
+    USER_PLUS, USERS, VOLUME_2,
 };
 use crate::idle_timer_badge::idle_timer_badge;
 use crate::server_settings_panel::ServerSettingsPanel;
@@ -767,6 +767,7 @@ fn message_row_with_actions(
     reply_target: Signal<Option<i64>>,
     pin_visible: Signal<bool>,
     translate_key: Signal<Option<MessageKey>>,
+    on_pin: Rc<dyn Fn()>,
 ) -> Element {
     let hovered = signal(false);
     let menu_open = signal(false);
@@ -815,14 +816,11 @@ fn message_row_with_actions(
         menu_c.set(!menu_c.get());
     });
 
-    // "Pin message" (from the overflow menu): flash the toast, then auto-dismiss
-    // after a beat. The toast's own "x" is the manual dismiss.
-    let pin_c = pin_visible;
-    let on_pin = Rc::new(move || {
-        pin_c.set(true);
-        let pin_d = pin_c;
-        after_ms_detached(2_500, move || pin_d.set(false));
-    });
+    // "Pin message" (from the overflow menu): the caller supplies `on_pin`. The
+    // MOCK rows flash the "Message pinned!" toast (and auto-dismiss it); the
+    // LIVE rows call the backend's real `pin_message` RPC (see the live row
+    // builder, which also updates the header pin count). The toast's own "x" is
+    // the manual dismiss on the mock path.
 
     // "Translate message" (from the overflow menu): reveal this row's
     // `TranslateToggle` below the message. Content-agnostic — any message can
@@ -1237,6 +1235,7 @@ fn live_edit_row(
     reply_ctx: Signal<Option<(String, String)>>,
     reply_target: Signal<Option<i64>>,
     pin_visible: Signal<bool>,
+    on_pin: Rc<dyn Fn()>,
     translate_key: Signal<Option<MessageKey>>,
 ) -> Element {
     // The base row now carries the hover `MessageActionBar` + overflow menu
@@ -1258,6 +1257,7 @@ fn live_edit_row(
         reply_target,
         pin_visible,
         translate_key,
+        on_pin,
     );
     // Only one's own messages are editable/deletable — the backend enforces the
     // same, but the affordance is hidden for other authors' rows.
@@ -4908,6 +4908,18 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // author + snippet) so the server needs only the id, not the display text.
     let reply_target: Signal<Option<i64>> = signal(None);
     let pin_visible: Signal<bool> = signal(false);
+    // Pinned-messages panel state (LIVE / backend). `pinned_panel_open` is the
+    // full-screen overlay's show flag; `pinned_messages` the fetched list;
+    // `pinned_count` the header badge value; `pinned_revision` the rebuild
+    // trigger (bumped after every list/count mutation); `pinned_error` a
+    // rejection surfaced in the panel body. The header pin icon opens the
+    // panel and fetches the list; each row's Unpin button updates the count
+    // and list (and bumps `pinned_revision`) after a backend round trip.
+    let pinned_panel_open: Signal<bool> = signal(false);
+    let pinned_messages: Signal<Vec<crate::pins::PinnedMessage>> = signal(Vec::new());
+    let pinned_count: Signal<i64> = signal(0);
+    let pinned_revision: Signal<u32> = signal(0);
+    let pinned_error: Signal<String> = signal(String::new());
     // The per-message "Translate message" overflow-menu entry reveals a
     // `TranslateToggle` on ONE row at a time (a deliberate single instance, not
     // a per-row widget). This shared signal names the active row's
@@ -6748,8 +6760,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // no real server to mint against.
     let live_invite_open = live_invite_mode.clone();
     let header = switch(
-        move || (active_server.get(), active_channel.get(), active_live_channel.get()),
-        move |(server_id, channel_id, live_cid): &(u32, u32, Option<i64>)| {
+        move || {
+            (
+                active_server.get(),
+                active_channel.get(),
+                active_live_channel.get(),
+                pinned_count.get(),
+            )
+        },
+        move |(server_id, channel_id, live_cid, pinned_cnt): &(u32, u32, Option<i64>, i64)| {
             let header_style = header_style.clone();
             let hash_style = hash_style.clone();
             let title_style = title_style.clone();
@@ -6778,6 +6797,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     .map(|c| c.name.clone())
                     .unwrap_or_default();
                 let topic = "No topic set yet".to_string();
+                // Hoisted before `ui!` (the macro has no `let`-child form):
+                // `pin_live` feeds the pin icon's open handler; `pin_count_label`
+                // is the badge's count text (read from the `switch` key's tuple).
+                let pin_live = live_id;
+                let pin_count_label = pinned_cnt.to_string();
                 // The live header early-returns here (before the mock server
                 // lookup at the bottom of this `switch` render, which would
                 // `unwrap()` a non-mock id and panic in live mode).
@@ -6786,10 +6810,80 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         text(style = hash_style) { "#".to_string() }
                         text(style = title_style) { title }
                         text(style = topic_style) { topic }
-                        // Spacer: eats the row's remaining width so the invite
-                        // action sits at the far right (same idiom as the mock
-                        // header's member-count spacer).
+                        // Spacer: eats the row's remaining width so the pin /
+                        // invite actions sit at the far right.
                         view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
+                        // Pin: opens the "Pinned messages" panel and fetches this
+                        // channel's REAL pinned list (the panel's Unpin buttons
+                        // and the badge below both read the same signals the
+                        // backend round trips update). `pinned_count > 0` is
+                        // folded into the `switch` key so the badge count
+                        // re-renders when an Unpin lands.
+                        view(style = moderation_style.clone(), test_id = "pin-live") {
+                            icon(PIN).color(|| Color::from(TEXT_MUTED)).size(15.0)
+                        }
+                        .on_touch(move |_ev| {
+                            let open_p = pinned_panel_open;
+                            let msgs_p = pinned_messages;
+                            let err_p = pinned_error;
+                            let rev_p = pinned_revision;
+                            let cnt_p = pinned_count;
+                            open_p.set(true);
+                            err_p.set(String::new());
+                            runtime_core::driver::spawn_async(async move {
+                                match crate::pins::list_pinned(pin_live).await {
+                                    Ok(list) => {
+                                        msgs_p.set(list);
+                                        rev_p.set(rev_p.get() + 1);
+                                    }
+                                    Err(e) => {
+                                        err_p.set(e);
+                                        rev_p.set(rev_p.get() + 1);
+                                    }
+                                }
+                                // Refresh the badge count in the same round trip
+                                // (the backend also returns it on Unpin, but on
+                                // open we pull it once so the badge is fresh).
+                                if let Ok(c) = crate::pins::pinned_count(pin_live).await {
+                                    cnt_p.set(c);
+                                }
+                            });
+                            TouchResponse::CONSUMED
+                        })
+                        // Real pin count badge (replaces the static mock `3`).
+                        // `pinned_cnt` comes from the `switch` key above; a
+                        // zero count mounts no node (the runtime `if` lowers to
+                        // the `when` primitive). Same pill style as the mock
+                        // `PinCountBadge`.
+                        if *pinned_cnt > 0 {
+                            view(style = StyleRules {
+                                flex_direction: Some(FlexDirection::Row),
+                                align_items: Some(AlignItems::Center),
+                                gap: Some(px(4.0)),
+                                padding_left: Some(px(7.0)),
+                                padding_right: Some(px(7.0)),
+                                padding_top: Some(px(3.0)),
+                                padding_bottom: Some(px(3.0)),
+                                background: Some(col("#3a3c41")),
+                                border_top_left_radius: Some(px(8.0)),
+                                border_top_right_radius: Some(px(8.0)),
+                                border_bottom_left_radius: Some(px(8.0)),
+                                border_bottom_right_radius: Some(px(8.0)),
+                                ..Default::default()
+                            }) {
+                                text(style = StyleRules {
+                                    font_size: Some(px(13.0)),
+                                    color: Some(col("#f2f3f5")),
+                                    ..Default::default()
+                                }) { "📌".to_string() }
+                                text(style = StyleRules {
+                                    font_size: Some(px(12.0)),
+                                    font_weight: Some(FontWeight::SemiBold),
+                                    color: Some(col("#f2f3f5")),
+                                    ..Default::default()
+                                }) { pin_count_label }
+                            }
+                        }
                         // Invite: opens the live "Invite People" overlay, which
                         // mints a real invite for this live server.
                         view(style = moderation_style, test_id = "invite-live") {
@@ -6885,6 +6979,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let reply_target_k = reply_target.clone();
     let pin_visible_k = pin_visible.clone();
     let translate_key_k = translate_key.clone();
+    // LIVE pin state cloned so the `sent_messages` closure can move its own
+    // copies into each live row's real "Pin message" handler (the mock rows
+    // instead flash the `pin_visible_k` toast).
+    let pinned_msgs_k = pinned_messages.clone();
+    let pinned_count_k = pinned_count.clone();
+    let pinned_rev_k = pinned_revision.clone();
+    let pinned_err_k = pinned_error.clone();
     let sent_messages = switch(
         move || (
             active_server.get(),
@@ -6954,7 +7055,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 let gw = gateway;
                 let picker_l = picker;
                 let reply_l = reply_ctx_k;
-                let pin_l = pin_visible_k;
                 let trans_l = translate_key_k;
                 let mut rows: Vec<Element> = Vec::with_capacity(mine.len() * 2);
                 // Message-grouping state carried across iterations (the
@@ -6976,6 +7076,36 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         .map(|(pa, pts)| same_group(pa, *pts, author.as_str(), *ts))
                         .unwrap_or(false)
                         && edited_at.is_none();
+                    // Real "Pin message": persist via the backend `pin_message`
+                    // RPC (moderator+), then update the header badge from the
+                    // result's fresh `pinned_count` and refresh the panel's
+                    // list (the result carries `channel_id`, so no extra id is
+                    // needed). A rejection (e.g. a plain member) lands in
+                    // `pinned_error` and bumps `pinned_revision` so the panel
+                    // body surfaces it. `mid2` + the `Copy` pin signals are
+                    // captured by the `move` handler so it owns them.
+                    let mid2 = *mid;
+                    let pin_msgs = pinned_msgs_k;
+                    let pin_cnt = pinned_count_k;
+                    let pin_rev = pinned_rev_k;
+                    let pin_err = pinned_err_k;
+                    let pin_c = Rc::new(move || {
+                        runtime_core::driver::spawn_async(async move {
+                            match crate::pins::pin_message(mid2).await {
+                                Ok(res) => {
+                                    pin_cnt.set(res.pinned_count);
+                                    if let Ok(list) = crate::pins::list_pinned(res.channel_id).await {
+                                        pin_msgs.set(list);
+                                    }
+                                    pin_rev.set(pin_rev.get() + 1);
+                                }
+                                Err(e) => {
+                                    pin_err.set(e);
+                                    pin_rev.set(pin_rev.get() + 1);
+                                }
+                            }
+                        });
+                    });
                     rows.push(live_edit_row(
                         *mid,
                         author.as_str(),
@@ -6994,7 +7124,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         picker_l,
                         reply_l,
                         reply_target_k,
-                        pin_l,
+                        pin_visible_k,
+                        pin_c,
                         trans_l,
                     ));
                     // Reaction strip under each live row, keyed by the real wire
@@ -7033,6 +7164,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 let grouped = prev
                     .map(|(pa, pts)| same_group(pa, pts, m.author, ts))
                     .unwrap_or(false);
+                // MOCK pin: flash the "Message pinned!" toast and auto-dismiss
+                // it after a beat (the pre-backend idiom, now caller-supplied
+                // since `message_row_with_actions` takes `on_pin` as a `Rc`).
+                let pv = pin_visible_k;
+                let on_pin = Rc::new(move || {
+                    pv.set(true);
+                    let pv_d = pv;
+                    after_ms_detached(2_500, move || pv_d.set(false));
+                });
                 rows.push(message_row_with_actions(
                     m.author,
                     m.color,
@@ -7047,6 +7187,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     reply_target_k,
                     pin_visible_k,
                     translate_key_k,
+                    on_pin,
                 ));
                 // Reaction strip under each mock row, keyed by this row's
                 // rendered-list position (seed messages first, so index `i`).
@@ -7070,6 +7211,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 let grouped = prev
                     .map(|(pa, pts)| same_group(pa, pts, author, *ts))
                     .unwrap_or(false);
+                // MOCK pin: flash the toast + auto-dismiss (see the seed loop
+                // above — the same caller-supplied `on_pin` idiom).
+                let pv = pin_visible_k;
+                let on_pin = Rc::new(move || {
+                    pv.set(true);
+                    let pv_d = pv;
+                    after_ms_detached(2_500, move || pv_d.set(false));
+                });
                 rows.push(message_row_with_actions(
                     author,
                     BUTTON,
@@ -7084,6 +7233,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     reply_target_k,
                     pin_visible_k,
                     translate_key_k,
+                    on_pin,
                 ));
                 // Sent rows continue the list position after the seed rows, so
                 // their key is `seed_len + i` (see `ReactionMap` doc).
@@ -8978,6 +9128,18 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // header's invite action; inert outside live mode (no entry point +
             // `active_live_server` is None on a mock server).
             live_invite_region
+            // "Pinned messages" panel (LIVE / backend): full-screen, paint-last
+            // (same idiom as `moderation_region` / `live_invite_region`).
+            // `pinned_panel_open` is set by the live header's pin icon; the
+            // panel lists the channel's real pinned rows (each with an Unpin
+            // button) and collapses to zero size while closed.
+            crate::pinned_messages_panel::pinned_messages_panel(
+                pinned_panel_open,
+                pinned_messages,
+                pinned_error,
+                pinned_count,
+                pinned_revision,
+            )
             // "Bug reports" overlay: same full-screen, paint-last idiom as
             // `moderation_region` above.
             bug_reports_region

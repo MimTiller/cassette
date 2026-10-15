@@ -109,6 +109,8 @@ mod nickname_edit_field;
 mod pin_count_badge;
 #[path = "components/pin_confirm_toast.rs"]
 mod pin_confirm_toast;
+#[path = "components/pinned_messages_panel.rs"]
+mod pinned_messages_panel;
 #[path = "components/notification_toast.rs"]
 mod notification_toast;
 #[path = "components/ban_reason_input.rs"]
