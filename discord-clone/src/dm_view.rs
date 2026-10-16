@@ -30,10 +30,12 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use runtime_core::{
-    AlignItems, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent, KeyOutcome,
-    Overflow, Signal, StyleRules, Tokenized, TouchPhase, TouchResponse,
-    signal, switch, ui,
+    AlignItems, Color, Element, FlexDirection, FlexWrap, FontWeight, JustifyContent,
+    KeyEvent, KeyOutcome, Overflow, Position, Signal, StyleRules, Tokenized, TouchPhase,
+    TouchResponse, signal, switch, ui,
 };
+use runtime_core::icon;
+use icons_lucide::{PLUS, SMILE};
 
 use crate::app::{format_when, message_row, same_group};
 use crate::data::{DMS, USER, find_dm, now_secs};
@@ -52,6 +54,8 @@ const TEXT_MUTED: &str = "#949ba4";
 const BORDER: &str = "#26272b";
 const COMPOSER: &str = "#383a40";
 const BUTTON: &str = "#5865f2";
+
+
 
 fn grow(v: f32) -> Tokenized<f32> {
     Tokenized::Literal(v)
@@ -547,8 +551,224 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
         border_bottom_right_radius: Some(px(8.0)),
         ..borderless_input()
     };
+    // Circular muted-grey icon buttons flanking the composer input — the '+'
+    // attachment affordance on the left (stages/unstages a mock attachment),
+    // the smile emoji affordance on the right (toggles the emoji popover).
+    // Mirrors the channel composer's `icon_button_style` in `app.rs`.
+    let icon_button_style = StyleRules {
+        width: Some(px(28.0)),
+        height: Some(px(28.0)),
+        align_items: Some(AlignItems::Center),
+        justify_content: Some(JustifyContent::Center),
+        background: Some(col(COMPOSER)),
+        border_top_left_radius: Some(px(14.0)),
+        border_top_right_radius: Some(px(14.0)),
+        border_bottom_left_radius: Some(px(14.0)),
+        border_bottom_right_radius: Some(px(14.0)),
+        ..Default::default()
+    };
 
+    // --- staged-attachment chip + emoji popover (mirror the channel composer) ---
+    // Both are pure-local-UI affordances for the two composer icon buttons
+    // (`+` = stage/unstage a mock attachment, smile = toggle the emoji grid).
+    // They are positioned siblings of the composer inside the same
+    // `Position::Relative` ancestor: the chip is a normal (in-flow) row just
+    // above the input and collapses to zero height when nothing is staged,
+    // while the emoji popover is `Position::Absolute` floating just above the
+    // composer.
     let text: Signal<String> = signal(String::new());
+    let pending_attachment: Signal<Option<String>> = signal(None);
+    let emoji_open: Signal<bool> = signal(false);
+    // The mock emoji set: 12 common glyphs as a wrapped grid. A local `let`
+    // (not a module const) so the popover stays self-contained in the DM
+    // conversation (same idiom as the channel composer).
+    let EMOJIS: [&str; 12] = [
+        "\u{1F600}", "\u{1F60A}", "\u{1F602}", "\u{1F60D}", "\u{1F60E}", "\u{1F914}",
+        "\u{1F44D}", "\u{1F389}", "\u{1F680}", "\u{2764}\u{FE0F}", "\u{1F64C}", "\u{1F355}",
+    ];
+
+    // Staged-attachment chip: `switch` on `pending_attachment` so the chip
+    // only renders while a mock attachment is staged. The 'x' clears it.
+    // `chip_clear` is a `Copy` handle on `pending_attachment`; the nested
+    // `on_touch` `move` closure gets a fresh per-render copy (`cc`) so it
+    // never tries to move the outer closure's captured handle (E0507).
+    let chip_clear = pending_attachment;
+    let attach_chip = switch(
+        move || pending_attachment.get(),
+        move |att: &Option<String>| {
+            match att {
+                None => ui! {
+                    view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
+                },
+                Some(name) => ui! {
+                    // A thin row just above the composer holding the pill; the
+                    // row's own margins give the pill breathing room.
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Row),
+                        align_items: Some(AlignItems::Center),
+                        margin_top: Some(px(8.0)),
+                        margin_bottom: Some(px(8.0)),
+                        margin_left: Some(px(16.0)),
+                        margin_right: Some(px(16.0)),
+                        ..Default::default()
+                    }) {
+                        // The pill itself: fully-rounded (radius = half height)
+                        // — the app's standard chip/lozenge shape (see
+                        // `server_tag_chips` / the rail unread pill).
+                        view(style = StyleRules {
+                            height: Some(px(26.0)),
+                            padding_left: Some(px(12.0)),
+                            padding_right: Some(px(8.0)),
+                            flex_direction: Some(FlexDirection::Row),
+                            align_items: Some(AlignItems::Center),
+                            gap: Some(px(8.0)),
+                            background: Some(col(COMPOSER)),
+                            border_top_width: Some(border_width(1.0)),
+                            border_right_width: Some(border_width(1.0)),
+                            border_bottom_width: Some(border_width(1.0)),
+                            border_left_width: Some(border_width(1.0)),
+                            border_top_color: Some(col(BORDER)),
+                            border_right_color: Some(col(BORDER)),
+                            border_bottom_color: Some(col(BORDER)),
+                            border_left_color: Some(col(BORDER)),
+                            border_top_left_radius: Some(px(13.0)),
+                            border_top_right_radius: Some(px(13.0)),
+                            border_bottom_left_radius: Some(px(13.0)),
+                            border_bottom_right_radius: Some(px(13.0)),
+                            ..Default::default()
+                        }) {
+                            text(style = StyleRules {
+                                font_size: Some(px(12.0)),
+                                color: Some(col(TEXT)),
+                                ..Default::default()
+                            }) { format!("\u{1F4CE} {name}") }
+                            // The 'x' to clear the staged attachment: a tiny
+                            // circular hit target (a `view` + glyph, the same
+                            // shape as the composer's icon buttons).
+                            view(style = StyleRules {
+                                width: Some(px(16.0)),
+                                height: Some(px(16.0)),
+                                align_items: Some(AlignItems::Center),
+                                justify_content: Some(JustifyContent::Center),
+                                border_top_left_radius: Some(px(8.0)),
+                                border_top_right_radius: Some(px(8.0)),
+                                border_bottom_left_radius: Some(px(8.0)),
+                                border_bottom_right_radius: Some(px(8.0)),
+                                ..Default::default()
+                            }) {
+                                text(style = StyleRules {
+                                    font_size: Some(px(12.0)),
+                                    color: Some(col(TEXT_MUTED)),
+                                    ..Default::default()
+                                }) { "\u{2715}".to_string() }
+                            }
+                            .on_touch(move |_ev| {
+                                let cc = chip_clear;
+                                cc.set(None);
+                                TouchResponse::CONSUMED
+                            })
+                        }
+                    }
+                }
+            }
+        },
+    );
+
+    // Emoji popover: `switch` on `emoji_open`. Closed = a zero-height spacer
+    // (so it never occupies layout); open = a dark rounded panel floating just
+    // above the composer, holding a wrapped grid of clickable glyph cells.
+    // Clicking a glyph appends it to the composer text and closes the popover.
+    let emoji_open_sig = emoji_open;
+    let composer_e = text;
+    let emoji_popover = switch(
+        move || emoji_open.get(),
+        move |open: &bool| {
+            if !open {
+                return ui! {
+                    view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
+                };
+            }
+            // One clickable glyph cell per emoji. Built as a `Vec<Element>`
+            // and splatted below; each cell's `on_touch` gets fresh `Copy`
+            // handles (`c`/`eo`) per iteration so it never moves the outer
+            // closure's captured signals.
+            let cells: Vec<Element> = EMOJIS.iter().enumerate().map(|(_, g)| {
+                let glyph = g.to_string();
+                let glyph_close = glyph.clone();
+                let c = composer_e;
+                let eo = emoji_open_sig;
+                ui! {
+                    view(style = StyleRules {
+                        width: Some(px(34.0)),
+                        height: Some(px(34.0)),
+                        align_items: Some(AlignItems::Center),
+                        justify_content: Some(JustifyContent::Center),
+                        border_top_left_radius: Some(px(6.0)),
+                        border_top_right_radius: Some(px(6.0)),
+                        border_bottom_left_radius: Some(px(6.0)),
+                        border_bottom_right_radius: Some(px(6.0)),
+                        ..Default::default()
+                    }) {
+                        text(style = StyleRules {
+                            font_size: Some(px(20.0)),
+                            ..Default::default()
+                        }) { glyph }
+                    }
+                    .on_touch(move |_ev| {
+                        let mut t = c.get();
+                        t.push_str(&glyph_close);
+                        c.set(t);
+                        eo.set(false);
+                        TouchResponse::CONSUMED
+                    })
+                }
+            }).collect();
+            // The floating panel: absolutely positioned just above the
+            // composer, dark `COMPOSER` fill with a wrapping row of cells
+            // inside (the channel popover floats over the message list, so
+            // this sits in the composer's own padding band).
+            ui! {
+                view(style = StyleRules {
+                    margin_top: Some(px(12.0)),
+                    ..Default::default()
+                }) {
+                    view(style = StyleRules {
+                        position: Some(Position::Absolute),
+                        left: Some(px(16.0)),
+                        right: Some(px(16.0)),
+                        bottom: Some(px(12.0)),
+                        background: Some(col(COMPOSER)),
+                        border_top_width: Some(border_width(1.0)),
+                        border_right_width: Some(border_width(1.0)),
+                        border_bottom_width: Some(border_width(1.0)),
+                        border_left_width: Some(border_width(1.0)),
+                        border_top_color: Some(col(BORDER)),
+                        border_right_color: Some(col(BORDER)),
+                        border_bottom_color: Some(col(BORDER)),
+                        border_left_color: Some(col(BORDER)),
+                        padding_top: Some(px(10.0)),
+                        padding_bottom: Some(px(10.0)),
+                        padding_left: Some(px(10.0)),
+                        padding_right: Some(px(10.0)),
+                        border_top_left_radius: Some(px(8.0)),
+                        border_top_right_radius: Some(px(8.0)),
+                        border_bottom_left_radius: Some(px(8.0)),
+                        border_bottom_right_radius: Some(px(8.0)),
+                        overflow: Some(Overflow::Hidden),
+                        ..Default::default()
+                    }) {
+                        // The wrapping grid of emoji cells.
+                        view(style = StyleRules {
+                            flex_direction: Some(FlexDirection::Row),
+                            flex_wrap: Some(FlexWrap::Wrap),
+                            gap: Some(px(4.0)),
+                            ..Default::default()
+                        }) { cells }
+                    }
+                }
+            }
+        },
+    );
     let on_change = move |s: String| {
         text.set(s);
     };
@@ -598,8 +818,43 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
                 }
             }
             scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { messages }
-            view(style = composer_style) {
-                text_input(value = text, on_change = on_change, placeholder = "Message", style = input_style).on_key_down(on_enter)
+            // Positioning ancestor for the emoji popover (anchors above the
+            // input via `Position::Absolute`). A Column so the in-flow
+            // staged-attachment chip stacks directly above the composer row.
+            // Mirrors the channel composer's wrapper in `app.rs`.
+            view(style = StyleRules {
+                position: Some(Position::Relative),
+                flex_direction: Some(FlexDirection::Column),
+                ..Default::default()
+            }) {
+                attach_chip
+                emoji_popover
+                view(style = composer_style) {
+                    view(style = icon_button_style.clone()) {
+                        icon(PLUS).color(|| Color::from(TEXT_MUTED)).size(16.0)
+                    }
+                    // `+` = stage/unstage the mock attachment. `Signal` is
+                    // `Copy`, so each `move` closure captures its own handle;
+                    // the chip above the composer mirrors this state.
+                    .on_touch(move |_ev| {
+                        pending_attachment.set(if pending_attachment.get().is_some() {
+                            None
+                        } else {
+                            Some("mock-attachment.png".to_string())
+                        });
+                        TouchResponse::CONSUMED
+                    })
+                    text_input(value = text, on_change = on_change, placeholder = "Message", style = input_style).on_key_down(on_enter)
+                    view(style = icon_button_style) {
+                        icon(SMILE).color(|| Color::from(TEXT_MUTED)).size(16.0)
+                    }
+                    // Smile = open/close the emoji popover (a `Copy` handle on
+                    // `emoji_open`, mirroring the attachment button).
+                    .on_touch(move |_ev| {
+                        emoji_open.set(!emoji_open.get());
+                        TouchResponse::CONSUMED
+                    })
+                }
             }
         }
     }
