@@ -6216,12 +6216,30 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // onboarding hint instead — the live auto-enter effect settles the
             // steady state once the first server resolves.
             if is_real_user && _live_server.is_none() {
+                // The profile bar still shows here — a real (authed) user's
+                // bottom-left sidebar bar is present for the login -> fetch
+                // race and the zero-server state, not just once a live server
+                // is entered. Without it this onboarding hint is the only thing
+                // in the sidebar, leaving the same "missing profile bar" the
+                // live branch used to have. `user_panel` renders the presence
+                // status dot ON the avatar, coexisting with the gateway badge.
+                let user = user_panel(
+                    user_status,
+                    joined_voice,
+                    authed,
+                    user_profile_mode,
+                    user_notif_mode,
+                    user_shortcuts_mode,
+                    muted,
+                    deafened,
+                );
                 return ui! {
                     view(style = sidebar_style.clone()) {
                         text(style = cat_style.clone()) {
                             "No server selected — create or join one to get started."
                                 .to_string()
                         }
+                        user
                     }
                 };
             }
@@ -6642,6 +6660,27 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             TouchResponse::CONSUMED
                         })
                     };
+                    // The user profile bar is the bottom-left of the sidebar in
+                    // BOTH branches (Discord convention). The mock branch builds
+                    // it as `user` below; the live branch must do the same. Real
+                    // logged-in users always take the live branch (they have a
+                    // backend server), so omitting it here is the "missing
+                    // bottom-left profile bar" bug: the header shows a live
+                    // channel but the sidebar never renders the profile.
+                    // `user_panel` renders the presence status dot ON the avatar
+                    // (like real Discord), so it coexists with the gateway
+                    // "Open/Closed" badge in the 72px rail — no separate text
+                    // badge is needed in the sidebar slot.
+                    let user = user_panel(
+                        user_status,
+                        joined_voice,
+                        authed,
+                        user_profile_mode,
+                        user_notif_mode,
+                        user_shortcuts_mode,
+                        muted,
+                        deafened,
+                    );
                     ui! {
                         view(style = sidebar_style.clone()) {
                             view(style = sidebar_header_style.clone()) {
@@ -6661,7 +6700,22 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                 { gear_btn }
                                 { add_btn }
                             }
-                            live_content
+                            // Channel list fills the available vertical space
+                            // (flex_grow:1), pinning the user profile bar to
+                            // the bottom of the sidebar — Discord convention,
+                            // and the same layout the mock branch below uses
+                            // (its `view(flex_grow){ scroll_view }` wraps `rows`
+                            // before `user`). Without the grow, a short live
+                            // channel list leaves the profile bar floating
+                            // mid-sidebar instead of bottom-left.
+                            view(style = StyleRules {
+                                flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
+                                overflow: Some(runtime_core::Overflow::Hidden),
+                                ..Default::default()
+                            }) {
+                                live_content
+                            }
+                            user
                         }
                     }
                 } else {
