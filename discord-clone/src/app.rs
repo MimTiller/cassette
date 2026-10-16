@@ -7259,6 +7259,19 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         .map(|(pa, pts)| same_group(pa, *pts, author.as_str(), *ts))
                         .unwrap_or(false)
                         && edited_at.is_none();
+                    // Feature 5: a row with a `reply_to_message_id` gets the
+                    // quoted reference strip rendered above it. The original's
+                    // author + body are resolved from the already-loaded buffer
+                    // (`mine`); if it isn't there yet (not loaded / deleted)
+                    // there is nothing to quote, so no strip.
+                    if let Some(orig_id) = *reply_to {
+                        if let Some(orig) = mine.iter().find(|o| o.0 == orig_id) {
+                            rows.push(crate::reply_reference_strip::reply_reference_strip(
+                                orig.2.clone(),
+                                crate::reply_reference_strip::reply_snippet(&orig.3),
+                            ));
+                        }
+                    }
                     // Real "Pin message": persist via the backend `pin_message`
                     // RPC (moderator+), then update the header badge from the
                     // result's fresh `pinned_count` and refresh the panel's
