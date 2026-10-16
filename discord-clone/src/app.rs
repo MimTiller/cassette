@@ -702,6 +702,7 @@ pub(crate) fn message_row(
 /// closes the menu on tap.
 fn message_overflow_menu(
     open: Signal<bool>,
+    on_copy: Rc<dyn Fn()>,
     on_pin: Rc<dyn Fn()>,
     on_translate: Rc<dyn Fn()>,
     // Optional owner-only entries (Edit / Delete) — the caller passes them only
@@ -789,7 +790,7 @@ fn message_overflow_menu(
                     border_left_color: Some(col(BORDER)),
                     ..Default::default()
                 }) {
-                    { menu_row("Copy text", Rc::new(|| {}), open) }
+                    { menu_row("Copy text", on_copy.clone(), open) }
                     { menu_row("Pin message", pin.clone(), open) }
                     { menu_row("Translate message", translate, open) }
                     // Owner-only entries: present only when the caller supplied
@@ -931,8 +932,24 @@ fn message_row_with_actions(
         k.set(if k.get() == Some(my_key) { None } else { Some(my_key) });
     });
 
+    // "Copy text" (from the overflow menu): write this row's message body to
+    // the system clipboard. The clipboard SDK (`clipboard::set_text`) is async
+    // and per-backend (navigator.clipboard on web, UIPasteboard on Apple,
+    // ClipboardManager on Android, arboard on Linux) — the same idiom the
+    // `InviteLinkDisplay` Copy button uses — so the work is spawned via
+    // `runtime_core::driver::spawn_async` and the menu closes regardless
+    // (a failed write is silent, matching the invite-card's no-lie behavior).
+    // `body` is an owned clone so the handler is `Fn` across presses.
+    let body_owned = body.to_string();
+    let on_copy = Rc::new(move || {
+        let text = body_owned.clone();
+        runtime_core::driver::spawn_async(async move {
+            let _ = clipboard::set_text(&text).await;
+        });
+    });
+
     let bar = crate::message_action_bar::message_action_bar(hovered, on_react, on_reply, on_more);
-    let menu = message_overflow_menu(menu_open, on_pin, on_translate, on_edit, on_delete);
+    let menu = message_overflow_menu(menu_open, on_copy, on_pin, on_translate, on_edit, on_delete);
 
     // The translate control: `original` is the message body; `translated` is a
     // mock rendering (this clone has no translation backend — the toggle
