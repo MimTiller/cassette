@@ -85,20 +85,18 @@ dependencies = [
 
 [[package]]
 name = "backend-web"
-version = "1.7.2"
+version = "3.1.0"
 dependencies = [
  "css",
  "inventory",
- "js-sys",
+ "js-min",
  "raw-window-handle",
  "runtime-scene",
  "runtime-shared",
  "runtime-vocabulary",
  "runtime-world",
  "serde_json",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
+ "web-glue",
 ]
 
 [[package]]
@@ -211,16 +209,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "console_error_panic_hook"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
-dependencies = [
- "cfg-if",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -250,7 +238,7 @@ dependencies = [
 
 [[package]]
 name = "css"
-version = "1.5.5"
+version = "2.0.0"
 dependencies = [
  "runtime-shared",
 ]
@@ -460,40 +448,6 @@ dependencies = [
  "r-efi",
  "rand_core 0.10.1",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "gloo-net"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c06f627b1a58ca3d42b45d6104bf1e1a03799df472df00988b6ba21accc10580"
-dependencies = [
- "futures-channel",
- "futures-core",
- "futures-sink",
- "gloo-utils",
- "http",
- "js-sys",
- "pin-project",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
-name = "gloo-utils"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b5555354113b18c547c1d3a98fbf7fb32a9ff4f6fa112ce823a21641a0ba3aa"
-dependencies = [
- "js-sys",
- "serde",
- "serde_json",
- "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]
@@ -749,17 +703,16 @@ dependencies = [
 
 [[package]]
 name = "idealyst"
-version = "1.6.0"
+version = "2.1.1"
 dependencies = [
  "backend-web",
- "console_error_panic_hook",
  "idealyst-macros",
- "js-sys",
  "lol_alloc",
  "runtime-core",
  "runtime-scene",
+ "runtime-tls",
  "runtime-vocabulary",
- "web-sys",
+ "web-glue",
 ]
 
 [[package]]
@@ -867,6 +820,10 @@ dependencies = [
  "quote",
  "syn 2.0.119",
 ]
+
+[[package]]
+name = "js-min"
+version = "1.0.0"
 
 [[package]]
 name = "js-sys"
@@ -980,14 +937,12 @@ checksum = "27b02d87554356db9e9a873add8782d4ea6e3e58ea071a9adb9a2e8ddb884a8b"
 
 [[package]]
 name = "net"
-version = "1.5.3"
+version = "1.7.3"
 dependencies = [
  "block2",
  "futures-channel",
  "futures-util",
- "gloo-net",
  "jni",
- "js-sys",
  "ndk-context",
  "objc2",
  "objc2-foundation",
@@ -996,9 +951,9 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "thiserror 2.0.21",
+ "tokio",
  "tungstenite 0.21.0",
- "wasm-bindgen",
- "web-sys",
+ "web-glue",
 ]
 
 [[package]]
@@ -1046,26 +1001,6 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
-
-[[package]]
-name = "pin-project"
-version = "1.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2466b2336ed02bcdca6b294417127b90ec92038d1d5c4fbeac971a922e0e0924"
-dependencies = [
- "pin-project-internal",
-]
-
-[[package]]
-name = "pin-project-internal"
-version = "1.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c96395f0a926bc13b1c17622aaddda1ecb55d49c8f1bf9777e4d877800a43f8b"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
 
 [[package]]
 name = "pin-project-lite"
@@ -1314,7 +1249,7 @@ dependencies = [
 
 [[package]]
 name = "runtime-core"
-version = "1.7.0"
+version = "2.1.0"
 dependencies = [
  "runtime-macros",
  "runtime-shared",
@@ -1323,7 +1258,14 @@ dependencies = [
 
 [[package]]
 name = "runtime-macros"
-version = "1.11.0"
+version = "1.19.0"
+dependencies = [
+ "runtime-macros-expand",
+]
+
+[[package]]
+name = "runtime-macros-expand"
+version = "1.2.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1334,7 +1276,7 @@ dependencies = [
 
 [[package]]
 name = "runtime-macros-parse"
-version = "1.9.0"
+version = "1.12.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1344,24 +1286,27 @@ dependencies = [
 
 [[package]]
 name = "runtime-scene"
-version = "1.7.0"
+version = "1.10.1"
 dependencies = [
+ "runtime-tls",
  "runtime-world",
  "rustc-hash",
 ]
 
 [[package]]
 name = "runtime-shared"
-version = "1.11.0"
+version = "2.0.1"
 dependencies = [
  "bitflags",
  "log",
  "pollster",
  "raw-window-handle",
+ "runtime-tls",
  "rustc-hash",
  "serde",
  "serde_json",
  "wasm-splitter",
+ "zone-offset",
 ]
 
 [[package]]
@@ -1372,19 +1317,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "runtime-tls"
+version = "0.1.0"
+
+[[package]]
 name = "runtime-vocabulary"
-version = "1.16.0"
+version = "3.2.0"
 dependencies = [
  "runtime-scene",
  "runtime-shared",
  "runtime-template",
+ "runtime-tls",
  "runtime-world",
 ]
 
 [[package]]
 name = "runtime-world"
-version = "1.7.1"
+version = "1.8.2"
 dependencies = [
+ "runtime-tls",
  "rustc-hash",
 ]
 
@@ -1573,12 +1524,14 @@ dependencies = [
 
 [[package]]
 name = "server"
-version = "1.8.0"
+version = "2.0.0"
 dependencies = [
  "axum",
  "futures-channel",
  "futures-util",
  "http-body-util",
+ "hyper",
+ "hyper-util",
  "inventory",
  "net",
  "runtime-core",
@@ -2178,6 +2131,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "web-glue"
+version = "2.1.0"
+
+[[package]]
 name = "web-sys"
 version = "0.3.99"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2244,6 +2201,15 @@ name = "windows-sys"
 version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "282be5f36a8ce781fad8c8ae18fa3f9beff57ec1b52cb3de0789201425d9a33d"
+dependencies = [
+ "windows-targets 0.52.6",
+]
+
+[[package]]
+name = "windows-sys"
+version = "0.59.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e38bc4d79ed67fd075bcc251a1c39b32a1776bbe92e5bef1f0bf1f8c531853b"
 dependencies = [
  "windows-targets 0.52.6",
 ]
@@ -2501,3 +2467,11 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+
+[[package]]
+name = "zone-offset"
+version = "1.6.0"
+dependencies = [
+ "libc",
+ "windows-sys 0.59.0",
+]

@@ -93,7 +93,7 @@ pub fn FriendRequestCard(#[prop(default = "Fen")] sender: String) -> Element {
                     color: Some(col(TEXT)),
                     margin_top: Some(px(4.0)),
                     ..Default::default()
-                }) { s }
+                }) { s.clone() }
             } else {
                 view(style = StyleRules {
                     flex_direction: Some(FlexDirection::Row),

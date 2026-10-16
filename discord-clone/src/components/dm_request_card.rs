@@ -101,7 +101,7 @@ pub fn DmRequestCard() -> Element {
                     color: Some(col(TEXT)),
                     margin_top: Some(px(4.0)),
                     ..Default::default()
-                }) { r }
+                }) { r.clone() }
             } else {
                 view(style = StyleRules {
                     flex_direction: Some(FlexDirection::Row),

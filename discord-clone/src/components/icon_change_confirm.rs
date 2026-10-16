@@ -87,7 +87,7 @@ pub fn IconChangeConfirm() -> Element {
                     font_size: Some(px(16.0)),
                     color: Some(col(TEXT)),
                     ..Default::default()
-                }) { r }
+                }) { r.clone() }
             } else {
                 view(style = StyleRules {
                     flex_direction: Some(FlexDirection::Row),
