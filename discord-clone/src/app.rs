@@ -84,6 +84,7 @@ use crate::send_failed_indicator::SendFailedIndicator;
 use crate::slowmode_indicator::SlowmodeIndicator;
 use crate::latency_badge::LatencyBadge;
 use crate::jump_to_bottom_button::JumpToBottomButton;
+use crate::load_earlier_button::load_earlier_button;
 use crate::afk_timer_display::AfkTimerDisplay;
 use crate::connection_quality_indicator::ConnectionQualityIndicator;
 use crate::voice_join_button::VoiceJoinButton;
@@ -162,6 +163,10 @@ const BG_MAIN: &str = "#313338";
 const BG_ACTIVE: &str = "#404249";
 /// Discord's row hover colour (lighter than `#2b2d31`, darker than active).
 const BG_HOVER: &str = "#35373c";
+/// Discord's elevated surface — one step above `BG_MAIN`, for the channel
+/// anchor chip and other small raised elements that should sit visually above
+/// the message pane background.
+const BG_ELEVATED: &str = "#383a40";
 const TEXT: &str = "#f2f3f5";
 const TEXT_MUTED: &str = "#949ba4";
 const TEXT_CHANNEL: &str = "#c8cacf";
@@ -235,6 +240,56 @@ fn insert_live_msg(
     buf.insert(pos, msg);
     true
 }
+
+/// The "start of conversation" anchor for a live channel — a centered, muted
+/// line (e.g. "Jump to the start of the #general conversation") shown ABOVE the
+/// earliest loaded message. It is the empty-state's sibling for channels that
+/// have content: where a zero-message channel shows a centered "No messages
+/// yet -- say hi!", a one-message channel (or any freshly opened one) shows this
+/// anchor as the first row so the pane reads as "you're at the top of a real
+/// conversation" rather than a single orphaned message floating in a void.
+///
+/// It is a plain `fn -> Element` (not `#[component]`) like `live_edit_row` — it
+/// takes only a channel name and a static style, so there is no props struct to
+/// generate. `channel_name` is looked up by the caller from `live_channels`.
+#[allow(non_snake_case)]
+fn channel_anchor(channel_name: &str) -> Element {
+    ui! {
+        view(style = StyleRules {
+            align_items: Some(AlignItems::Center),
+            padding_top: Some(px(16.0)),
+            padding_bottom: Some(px(8.0)),
+            ..Default::default()
+        }) {
+            view(style = StyleRules {
+                width: Some(px(16.0)),
+                height: Some(px(16.0)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                background: Some(col(BG_ELEVATED)),
+                border_top_left_radius: Some(px(8.0)),
+                border_top_right_radius: Some(px(8.0)),
+                border_bottom_left_radius: Some(px(8.0)),
+                border_bottom_right_radius: Some(px(8.0)),
+                ..Default::default()
+            }) {
+                text(style = StyleRules {
+                    font_size: Some(px(12.0)),
+                    color: Some(col(TEXT_MUTED)),
+                    ..Default::default()
+                }) { "#".to_string() }
+            }
+            text(style = StyleRules {
+                margin_left: Some(px(8.0)),
+                font_size: Some(px(13.0)),
+                font_weight: Some(FontWeight::SemiBold),
+                color: Some(col(TEXT_MUTED)),
+                ..Default::default()
+            }) { format!("You're looking at the beginning of the #{} conversation.", channel_name) }
+        }
+    }
+}
+
 
 fn grow(v: f32) -> Tokenized<f32> {
     Tokenized::Literal(v)
@@ -4216,6 +4271,19 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // None whenever `active_live_server` changes (new live server selected, or
     // mock mode re-entered) — a channel id from a different server is stale.
     let active_live_channel: Signal<Option<i64>> = signal(None);
+    // Scrollback paging for the live message list. `load_busy` is `true` while a
+    // `History { before_id }` request is in flight (gates the "Load earlier"
+    // pill's tap so a double-tap can't fire a second page; the pill's label
+    // goes muted while `true`). The gateway effect clears it on the
+    // `WsServerMsg::History` marker frame (which arrives before the page's
+    // `Message { new: false }` frames). `has_more_earlier` is set by the same
+    // marker frame from the server's `has_more` field (a full page = more
+    // older messages exist). Both signals are declared HERE — before the
+    // gateway effect below captures them — because Rust requires a value in
+    // scope at the point a closure captures it (same pattern as `notif_level`
+    // etc. above).
+    let load_busy: Signal<bool> = signal(false);
+    let has_more_earlier: Signal<bool> = signal(true);
     // Live @mention indicator state, driven by the real backend data (the
     // mock path's `c.mentions`/`total_mentions` is its own, untouched copy).
     // `live_mentioned` maps a live channel id -> count of UNREAD messages that
@@ -4434,8 +4502,51 @@ fn app_shell(authed: Signal<bool>) -> Element {
         },
     );
 
+    // Connection-lost banner for the message column. Keyed on the same reactive
+    // status string as `gateway_status` above, but rendered as a full-width red
+    // bar at the top of the message pane (NOT the rail dot). It shows only when
+    // the socket is `Closed` or `Error`; while `Open` / `Connecting` it renders
+    // a 0-height view (nothing), so the layout is unchanged in the healthy
+    // state. The socket auto-reconnects (`message_gateway` owns the loop), so
+    // this is a passive "you're disconnected" indicator, not a retry button.
+    let conn_lost_banner = switch(
+        move || format!("{:?}", gateway.status()),
+        move |status: &String| {
+            let lost = status == "Closed" || status == "Error";
+            if !lost {
+                // Healthy: render an inert 0-height view (the no-op-render
+                // idiom) so the switch's value is a valid `Element` and the
+                // layout is unchanged.
+                return ui! {
+                    view(style = StyleRules {
+                        height: Some(px(0.0)),
+                        ..Default::default()
+                    }) {}
+                };
+            }
+            ui! {
+                view(style = StyleRules {
+                    flex_direction: Some(FlexDirection::Row),
+                    align_items: Some(AlignItems::Center),
+                    justify_content: Some(JustifyContent::Center),
+                    gap: Some(px(8.0)),
+                    padding_top: Some(px(8.0)),
+                    padding_bottom: Some(px(8.0)),
+                    background: Some(col("#f23f43")),
+                    ..Default::default()
+                }) {
+                    text(style = StyleRules {
+                        font_size: Some(px(13.0)),
+                        font_weight: Some(FontWeight::SemiBold),
+                        color: Some(col("#ffffff")),
+                        ..Default::default()
+                    }) { "Connection lost — reconnecting…".to_string() }
+                }
+            }
+        },
+    );
+
     // Reactive "watch every frame" effect: `switch` re-runs its arm whenever
-    // `gateway.incoming()`'s value changes, so the arm fires once per inbound
     // frame. This one runs a SIDE EFFECT (absorb the message into `live_messages`
     // and bump `live_revision`), not a render — so it returns an inert 0-height
     // `view` (the no-op-render idiom; the element itself is never seen, mounted
@@ -4459,6 +4570,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // appears. A successful send is echoed as a `Message` frame instead, which
     // is handled above — so only a genuine failure flips this.
     let send_failed_sig = send_failed.clone();
+    // Scrollback markers: cleared/set by the `WsServerMsg::History` marker frame
+    // the server sends before each page (see the `History` arm below). Cloned so
+    // the `move` closure owns them (same idiom as `send_failed_sig`).
+    let load_busy_sig = load_busy.clone();
+    let has_more_sig = has_more_earlier.clone();
     let presence_buf = live_presence.clone();
     let presence_rev = live_presence_rev.clone();
     // [Feature 14] A `MemberChanged` frame (another account joined or was
@@ -4769,6 +4885,28 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             roster.set(fresh);
                         }
                     });
+                }
+            }
+            // Scrollback marker: the server sends a `History { channel_id,
+            // has_more }` frame BEFORE the `Message { new: false }` frames of a
+            // page. `has_more` is `true` when the page was a full `limit` (50),
+            // meaning more older messages exist. Use it to clear the in-flight
+            // guard and update the "Load earlier" pill's visibility. This arm
+            // must run before the `Message` frames land (it arrives first on the
+            // wire), so it sets state before the list rebuilds.
+            if let Some(discord_server::server_settings::WsServerMsg::History {
+                channel_id,
+                has_more,
+            }) = frame
+            {
+                let cid = *channel_id;
+                let active = open_chan.get();
+                // Only update scrollback state for the currently open channel —
+                // a stale page for a previously open channel must not clobber
+                // the new channel's state.
+                if active == Some(cid) {
+                    load_busy_sig.set(false);
+                    has_more_sig.set(*has_more);
                 }
             }
             // A backend error (a rejected `Send` / `EditMessage` / `DeleteMessage`
@@ -6996,8 +7134,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
             live_editing_k.get(),
             live_delete_k.get(),
             reaction_rev.get(),
+            load_busy.get(),
+            live_at_bottom.get(),
+            has_more_earlier.get(),
         ),
-        move |(server_id, channel_id, _revision, live_cid, _live_rev, _editing, _confirm, _react_rev): &(u32, u32, u32, Option<i64>, u32, Option<i64>, Option<i64>, u32)| {
+        move |(server_id, channel_id, _revision, live_cid, _live_rev, _editing, _confirm, _react_rev, _load_busy, _at_bottom, _has_more): &(u32, u32, u32, Option<i64>, u32, Option<i64>, Option<i64>, u32, bool, bool, bool)| {
             // [Feature 16] Real account with no live channel: don't fall
             // through to the mock message list (it would render the demo
             // `SERVERS[0]` seed messages). Show a neutral onboarding hint
@@ -7057,6 +7198,45 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 let reply_l = reply_ctx_k;
                 let trans_l = translate_key_k;
                 let mut rows: Vec<Element> = Vec::with_capacity(mine.len() * 2);
+                // Top-of-list scrollback affordance: a "Load earlier messages"
+                // pill while more older history exists (`has_more_earlier`), or
+                // a "beginning of channel" anchor once the reader has reached
+                // the start (nothing older left to load). Both sit in-flow
+                // above the oldest row — the reader scrolls up to find them
+                // (NOT a floating pill, so no `live_at_bottom` gating). The
+                // channel name resolves from `live_channels` (the same lookup
+                // the header title uses). `mine` is oldest-first, so `mine[0]`
+                // is the scrollback cursor for the next `History` page.
+                let oldest_id = mine.first().map(|m| m.0);
+                let chan_name: String = live_channels
+                    .get()
+                    .iter()
+                    .find(|c| c.id == live_id)
+                    .map(|c| c.name.clone())
+                    .unwrap_or_default();
+                if has_more_earlier.get() {
+                    // `on_load` sets `load_busy` (gates the pill's tap + mutes
+                    // its label) and fires the scrollback page. `load_busy` is
+                    // cleared by the gateway effect on the `History` marker
+                    // frame, which arrives before the page's `Message` frames.
+                    let on_load = Rc::new({
+                        let busy = load_busy.clone();
+                        let cid2 = live_id;
+                        let oldest = oldest_id;
+                        move || {
+                            busy.set(true);
+                            if let Some(before) = oldest {
+                                gw.send(discord_server::server_settings::WsClientMsg::History {
+                                    channel_id: cid2,
+                                    before_id: Some(before),
+                                });
+                            }
+                        }
+                    });
+                    rows.push(load_earlier_button(load_busy.clone(), on_load));
+                } else {
+                    rows.push(channel_anchor(&chan_name));
+                }
                 // Message-grouping state carried across iterations (the
                 // buffer is oldest-first): the previous row's author label +
                 // timestamp, for the `same_group` test below.

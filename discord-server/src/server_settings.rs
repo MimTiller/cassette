@@ -115,7 +115,16 @@ pub enum WsServerMsg {
         reply_to_message_id: Option<i64>,
     },
     /// The most recent `Message { new: false }` frames for `History`.
-    History { channel_id: i64 },
+    ///
+    /// `has_more` is the client's scrollback-exhausted signal: it is `true`
+    /// when this page was a full `limit` (more older messages exist, so the
+    /// "Load earlier messages" pill should stay available) and `false` when the
+    /// page is shorter than `limit` (the reader reached the start of the
+    /// conversation). It is the server's authoritative word on whether another
+    /// `History { before_id }` page would return anything — the client compares
+    /// the marker's `has_more` to decide whether to keep the pill mounted,
+    /// rather than re-deriving it from the page's own length.
+    History { channel_id: i64, has_more: bool },
     /// A direct message pushed to a participant of the DM (always `new`).
     DmMessage { message_id: i64, dm_id: i64, author_id: i64, author_username: String, content: String, created_at: i64 },
     /// A presence status change for a user: 'online' / 'away' / 'offline'.
@@ -238,7 +247,21 @@ pub async fn message_gateway(
                 before_id,
             } => match history_for(&db, user_id, channel_id, before_id, 50) {
                 Ok(messages) => {
-                    let _ = ch.send(WsServerMsg::History { channel_id }).await;
+                    // The marker's `has_more` is the client's scrollback-exhausted
+                    // signal: a full page (50, the `limit` just passed) means more
+                    // older messages exist; a short page means the reader hit the
+                    // start. It is captured BEFORE the `for` loop consumes
+                    // `messages` (the iterator moves the Vec by value), and it
+                    // rides the marker frame that precedes the page so the client
+                    // learns the answer before the `Message { new: false }` frames
+                    // land and the list rebuilds.
+                    let has_more = messages.len() == 50;
+                    let _ = ch
+                        .send(WsServerMsg::History {
+                            channel_id,
+                            has_more,
+                        })
+                        .await;
                     for m in messages {
                         let author_username = db
                             .user_by_id(m.author_id)
