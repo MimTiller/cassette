@@ -695,16 +695,6 @@ pub(crate) fn message_row(
 // call `message_row` directly and never reach this, so they keep rendering
 // exactly as before (no per-row controls added to a loop that shouldn't have them).
 
-/// One entry of the "more" overflow menu (a tap row). The real Discord
-/// entries: "Copy text" (a harmless no-op that just closes the menu),
-/// "Pin message" (shows the `PinConfirmToast`), and "Translate message"
-/// (reveals that message's `TranslateToggle`). Kept deliberately minimal.
-enum MoreMenuAction {
-    Pin,
-    Copy,
-    Translate,
-}
-
 /// The small overflow menu that the action bar's "more" button opens. Rendered
 /// only while `open` is true (the `switch` primitive, same show/hide idiom as
 /// `MessageActionBar`); it drops just below the bar. `on_pin` shows the pin
@@ -714,6 +704,14 @@ fn message_overflow_menu(
     open: Signal<bool>,
     on_pin: Rc<dyn Fn()>,
     on_translate: Rc<dyn Fn()>,
+    // Optional owner-only entries (Edit / Delete) — the caller passes them only
+    // for the current user's own messages (live rows, `is_mine`); mock rows
+    // pass `None` and the menu keeps its two shared entries. When present they
+    // render as the menu's last two rows, so the whole message-action set
+    // (react / reply / copy / pin / translate / edit / delete) lives in this one
+    // hover-gated surface instead of a separate always-visible inline bar.
+    on_edit: Option<Rc<dyn Fn()>>,
+    on_delete: Option<Rc<dyn Fn()>>,
 ) -> Element {
     switch(
         move || open.get(),
@@ -729,7 +727,13 @@ fn message_overflow_menu(
             }
             let pin = on_pin.clone();
             let translate = on_translate.clone();
-            let menu_row = |label: &'static str, action: MoreMenuAction, pin: Rc<dyn Fn()>, translate: Rc<dyn Fn()>| -> Element {
+            let edit = on_edit.clone();
+            let delete = on_delete.clone();
+            // A generic tap row: one `Rc<dyn Fn()>` per entry, fired on touch
+            // end, then the menu closes. (The earlier `MoreMenuAction` enum
+            // hard-coded the two shared actions; Edit/Delete arrived after, so
+            // the row now takes its handler directly.)
+            let menu_row = |label: &'static str, action: Rc<dyn Fn()>, open: Signal<bool>| -> Element {
                 let row_style = StyleRules {
                     padding_top: Some(px(8.0)),
                     padding_bottom: Some(px(8.0)),
@@ -745,15 +749,9 @@ fn message_overflow_menu(
                     ..Default::default()
                 };
                 let open_c = open;
-                // Each action owns its own handles so the `move` handler can own
-                // them (branch-local `pin`/`translate` clones + a `Copy` `open`).
                 let touch = move |ev: &runtime_shared::TouchEvent| {
                     if ev.phase == TouchPhase::Ended {
-                        match action {
-                            MoreMenuAction::Pin => pin(),
-                            MoreMenuAction::Translate => translate(),
-                            MoreMenuAction::Copy => {}
-                        }
+                        action();
                         open_c.set(false);
                     }
                     TouchResponse::CONSUMED
@@ -772,6 +770,10 @@ fn message_overflow_menu(
                     right: Some(px(12.0)),
                     width: Some(px(190.0)),
                     flex_direction: Some(FlexDirection::Column),
+                    // Clip, don't scroll: this is a short fixed list (3–5 rows)
+                    // that must never scroll; `hidden` keeps the surface from
+                    // showing a scrollbar if a row ever wraps past the box.
+                    overflow: Some(Overflow::Hidden),
                     background: Some(col("#111214")),
                     border_top_left_radius: Some(px(8.0)),
                     border_top_right_radius: Some(px(8.0)),
@@ -787,9 +789,39 @@ fn message_overflow_menu(
                     border_left_color: Some(col(BORDER)),
                     ..Default::default()
                 }) {
-                    { menu_row("Copy text", MoreMenuAction::Copy, pin.clone(), translate.clone()) }
-                    { menu_row("Pin message", MoreMenuAction::Pin, pin.clone(), translate.clone()) }
-                    { menu_row("Translate message", MoreMenuAction::Translate, pin, translate) }
+                    { menu_row("Copy text", Rc::new(|| {}), open) }
+                    { menu_row("Pin message", pin.clone(), open) }
+                    { menu_row("Translate message", translate, open) }
+                    // Owner-only entries: present only when the caller supplied
+                    // handlers (live rows the current user owns). Each renders a
+                    // zero-size placeholder otherwise so the branch still yields
+                    // an `Element` for the `ui!` child slot.
+                    {
+                        if let Some(edit) = edit {
+                            menu_row("Edit", edit, open)
+                        } else {
+                            ui! {
+                                view(style = StyleRules {
+                                    width: Some(px(0.0)),
+                                    height: Some(px(0.0)),
+                                    ..Default::default()
+                                }) {}
+                            }
+                        }
+                    }
+                    {
+                        if let Some(delete) = delete {
+                            menu_row("Delete", delete, open)
+                        } else {
+                            ui! {
+                                view(style = StyleRules {
+                                    width: Some(px(0.0)),
+                                    height: Some(px(0.0)),
+                                    ..Default::default()
+                                }) {}
+                            }
+                        }
+                    }
                 }
             }
         },
@@ -823,6 +855,13 @@ fn message_row_with_actions(
     pin_visible: Signal<bool>,
     translate_key: Signal<Option<MessageKey>>,
     on_pin: Rc<dyn Fn()>,
+    // Optional owner-only menu entries (Edit / Delete). The caller passes them
+    // only for the current user's own messages (live rows, `is_mine`); mock
+    // rows pass `None` and the menu keeps its three shared entries. When
+    // present they render as the menu's last two rows, so the whole
+    // message-action set lives in this one hover-gated surface.
+    on_edit: Option<Rc<dyn Fn()>>,
+    on_delete: Option<Rc<dyn Fn()>>,
 ) -> Element {
     let hovered = signal(false);
     let menu_open = signal(false);
@@ -893,7 +932,7 @@ fn message_row_with_actions(
     });
 
     let bar = crate::message_action_bar::message_action_bar(hovered, on_react, on_reply, on_more);
-    let menu = message_overflow_menu(menu_open, on_pin, on_translate);
+    let menu = message_overflow_menu(menu_open, on_pin, on_translate, on_edit, on_delete);
 
     // The translate control: `original` is the message body; `translated` is a
     // mock rendering (this clone has no translation backend — the toggle
@@ -1248,13 +1287,12 @@ fn reaction_picker_overlay(
 
 /// One LIVE (gateway-fed) message row: the `message_row_with_actions` content
 /// (the hover `MessageActionBar` + react / reply / pin / translate, exactly
-/// like a mock row), plus — for the signed-in user's own messages — a compact
-/// Edit / Delete affordance and the inline edit input. The IDLE Edit/Delete
-/// entry points are hover-gated (revealed only while the row is hovered,
-/// matching real Discord's per-row action affordance); once Edit mode or
-/// delete-confirm is actually triggered their Save/Cancel/Delete and Confirm/No
-/// rows stay always-visible. The hover bar handles the shared react/reply/pin/
-/// translate actions.
+/// like a mock row), plus — for the signed-in user's own messages — the
+/// Edit / Delete affordance (inside the overflow menu, hover-gated with the
+/// rest) and the inline edit input. Once Edit mode or delete-confirm is
+/// actually triggered their Save/Cancel/Delete and Confirm/No rows stay
+/// always-visible. The hover bar handles the shared react/reply/pin/translate
+/// actions.
 ///
 /// `live_editing` / `live_delete_confirm` / `live_edit_text` are
 /// `app_shell`-scope signals that drive per-row edit/delete mode; `gateway` is
@@ -1293,11 +1331,41 @@ fn live_edit_row(
     on_pin: Rc<dyn Fn()>,
     translate_key: Signal<Option<MessageKey>>,
 ) -> Element {
-    // The base row now carries the hover `MessageActionBar` + overflow menu
-    // exactly like the mock path (react / reply / pin / translate). The only
-    // differences are the real `(edited)` marker (gated on the message's
-    // `edited_at` state), the live `MessageKey`, and — when `grouped` — the
-    // headerless condensed form (see `message_row`).
+    // Owner-only overflow-menu entries (Edit / Delete) — the same actions the
+    // old always-visible inline Edit/Delete buttons did, now living inside the
+    // one hover-gated overflow menu (`message_overflow_menu` renders them as
+    // its last two rows when present). Built before the base row so the menu
+    // can carry them; `None` for other authors' rows, whose menu keeps only
+    // the shared entries. The backend enforces the same ownership — this is
+    // the affordance gate (the previous inline buttons used the identical
+    // `is_mine` check).
+    let (menu_edit, menu_delete): (Option<Rc<dyn Fn()>>, Option<Rc<dyn Fn()>>) = if is_mine {
+        let seed = body.to_string();
+        let editing_sig = live_editing;
+        let edit_text = live_edit_text;
+        let confirm_sig = live_delete_confirm;
+        let mid = message_id;
+        (
+            Some(Rc::new(move || {
+                // Enter edit mode: seed the draft with the current content and
+                // flag this message id; the list rebuild (keyed on
+                // `live_editing`) mounts the input for this row.
+                editing_sig.set(Some(mid));
+                edit_text.set(seed.clone());
+            })),
+            Some(Rc::new(move || {
+                confirm_sig.set(Some(mid));
+            })),
+        )
+    } else {
+        (None, None)
+    };
+    // The base row carries the hover `MessageActionBar` + overflow menu
+    // (react / reply / pin / translate — plus Edit / Delete above when
+    // `is_mine`) exactly like the mock path. The only differences are the
+    // real `(edited)` marker (gated on the message's `edited_at` state) and
+    // the live `MessageKey`; when `grouped` it is the headerless condensed
+    // form (see `message_row`).
     let base = message_row_with_actions(
         author,
         color,
@@ -1313,9 +1381,9 @@ fn live_edit_row(
         pin_visible,
         translate_key,
         on_pin,
+        menu_edit,
+        menu_delete,
     );
-    // Only one's own messages are editable/deletable — the backend enforces the
-    // same, but the affordance is hidden for other authors' rows.
     if !is_mine {
         return base;
     }
@@ -1323,13 +1391,6 @@ fn live_edit_row(
     let editing_sig = live_editing;
     let edit_text = live_edit_text;
     let confirm_sig = live_delete_confirm;
-    // The IDLE Edit/Delete affordance is hover-gated (like the hover action
-    // bar above): this row's own `on_hover` feeds it. Kept separate from
-    // `message_row_with_actions`' internal `hovered` (which drives react /
-    // reply / more) so the two bars stay independently owned, but the
-    // show/hide idiom is identical — a `switch` on a `Signal<bool>` that
-    // collapses to a zero-size view when not hovered.
-    let idle_hovered = signal(false);
     // --- inline edit input (reuses the composer's `text_input` idiom) -------
     // `text_input` takes a reactive `Signal<String>` for `value`, so the draft
     // binds straight to `live_edit_text`. Confirmation is the explicit Save
@@ -1356,20 +1417,14 @@ fn live_edit_row(
             text_input(value = live_edit_text, placeholder = "Edit message", style = input_style, test_id = "edit-input")
         }
     };
-    // The current message content, captured at row-build time so the Edit
-    // button can seed the draft with what the row currently shows. Defined
-    // before `small_btn` so the closure can clone it (a per-call clone, not a
-    // move — `small_btn` is invoked once per button).
-    let edit_seed = body.to_string();
     // --- per-row control buttons ------------------------------------------
-    // Compact text pills matching the moderation feature's inline control set
-    // (role / kick buttons). Each button carries a `MsgAction` the shared
-    // `on_touch` handler matches on — the action is owned per-button so the
-    // closure captures nothing borrowed (avoids the `&str`-lifetime trap of a
-    // label-matching closure).
+    // Compact text pills for the inline edit/confirm controls. Each button
+    // carries a `MsgAction` the shared `on_touch` handler matches on — the
+    // action is owned per-button so the closure captures nothing borrowed
+    // (avoids the `&str`-lifetime trap of a label-matching closure). Edit and
+    // Delete live in the '...' overflow menu, not here.
     #[derive(Clone, Copy, PartialEq)]
     enum MsgAction {
-        Edit,
         Delete,
         Save,
         Cancel,
@@ -1400,24 +1455,11 @@ fn live_edit_row(
             color: Some(col(TEXT)),
             ..Default::default()
         };
-        // Per-button copy of the seed: `touch` is `move`, so it owns the value
-        // it captures. Cloning here (inside `small_btn`) rather than letting
-        // `touch` move the single `edit_seed` keeps `edit_seed` borrowable
-        // across the multiple `small_btn` calls. Only the Edit button reads it;
-        // the clone is cheap (a short message body).
-        let seed = edit_seed.clone();
         let touch = move |ev: &runtime_shared::TouchEvent| {
             if ev.phase != TouchPhase::Ended {
                 return TouchResponse::CONSUMED;
             }
             match action {
-                MsgAction::Edit => {
-                    // Enter edit mode: seed the draft with the current content
-                    // and flag this message id. The list rebuild (keyed on
-                    // `live_editing`) then mounts the input for this row.
-                    editing_sig.set(Some(mid));
-                    edit_text.set(seed.clone());
-                }
                 MsgAction::Delete => confirm_sig.set(Some(mid)),
                 MsgAction::Save => {
                     let content = edit_text.get();
@@ -1454,49 +1496,13 @@ fn live_edit_row(
             .test_id(test_id)
         }
     });
-    // The three states are mutually exclusive (edit mode and delete-confirm
-    // are gated by separate signals, and the UI never sets both for one row).
-    // Render the matching control set beneath the base row — in the idle
-    // case this IS the Edit/Delete affordance, in the other two it is the
-    // edit input or the delete-confirm UI. This one-slot replacement is the
-    // moderation-feature precedent (inline control set swapped in for that
-    // row only).
+    // Two mutually-exclusive per-row control states, each rendered beneath the
+    // base row in place of nothing else: the edit input (Save / Cancel / Delete)
+    // and the delete-confirm strip (Delete this message? / Confirm / No). Edit
+    // and Delete are entered from the '...' overflow menu, not inline — see
+    // `message_overflow_menu`. The idle row has no inline controls.
     let edit_mode = editing_sig.get() == Some(mid);
     let delete_mode = confirm_sig.get() == Some(mid);
-    // The IDLE Edit/Delete entry points are hover-gated: a `switch` on
-    // `idle_hovered` that collapses to a zero-size view when the row isn't
-    // hovered — the same idiom the hover action bar uses (`message_action_bar`).
-    // `small_btn` is wrapped in `Rc` above so an owned clone can be moved into
-    // the `switch` branch (which is `Fn`, evaluated per hover). The edit-mode
-    // and delete-confirm buttons are precomputed into owned `Element` `let`s
-    // (like `base` and `idle_bar`) so the `ui!` branch closures capture owned
-    // values, not the `Rc` by move — and they stay always-visible once triggered.
-    let sb_idle = small_btn.clone();
-    let idle_bar = switch(
-        move || idle_hovered.get(),
-        move |show: &bool| {
-            if !show {
-                return ui! {
-                    view(style = StyleRules {
-                        width: Some(px(0.0)),
-                        height: Some(px(0.0)),
-                        ..Default::default()
-                    }) {}
-                };
-            }
-            let sb = sb_idle.clone();
-            ui! {
-                view(style = StyleRules {
-                    flex_direction: Some(FlexDirection::Row),
-                    gap: Some(px(6.0)),
-                    ..Default::default()
-                }) {
-                    { sb(MsgAction::Edit, "Edit", COMPOSER, "row-edit") }
-                    { sb(MsgAction::Delete, "Delete", COMPOSER, "row-delete-idle") }
-                }
-            }
-        },
-    );
     let save_btn = small_btn(MsgAction::Save, "Save", BUTTON, "save-edit");
     let cancel_btn = small_btn(MsgAction::Cancel, "Cancel", COMPOSER, "cancel-edit");
     let edit_delete_btn = small_btn(MsgAction::Delete, "Delete", BADGE, "row-delete");
@@ -1542,11 +1548,8 @@ fn live_edit_row(
                     { confirm_btn }
                     { no_btn }
                 }
-            } else {
-                { idle_bar }
             }
         }
-        .on_hover(move |on| idle_hovered.set(on))
     }
 }
 
@@ -7368,6 +7371,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     pin_visible_k,
                     translate_key_k,
                     on_pin,
+                    None,
+                    None,
                 ));
                 // Reaction strip under each mock row, keyed by this row's
                 // rendered-list position (seed messages first, so index `i`).
@@ -7414,6 +7419,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     pin_visible_k,
                     translate_key_k,
                     on_pin,
+                    None,
+                    None,
                 ));
                 // Sent rows continue the list position after the seed rows, so
                 // their key is `seed_len + i` (see `ReactionMap` doc).
