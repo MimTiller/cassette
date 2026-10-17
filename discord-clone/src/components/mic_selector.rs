@@ -82,7 +82,7 @@ pub fn MicSelector() -> Element {
                 ..Default::default()
             }) { "INPUT VOICE DEVICE".to_string() }
 
-            for (i, name) in MIC_OPTIONS.iter().enumerate() {
+            for (i, name) in MIC_OPTIONS.iter().enumerate(), key = i {
                 // `i` is the loop index (compile-time repeat key); the closure
                 // only *reads* `i` and `selected` (both `Copy`), so it stays
                 // `Fn` and the built `StyleRules` is a fresh value each time.

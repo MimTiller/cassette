@@ -93,7 +93,7 @@ pub fn PermissionOverrideRow() -> Element {
                 ..Default::default()
             }) { PERMISSION.to_string() }
 
-            for (i, name) in OVERRIDES.iter().enumerate() {
+            for (i, name) in OVERRIDES.iter().enumerate(), key = i {
                 // `i` is the loop index (compile-time repeat key). Both the
                 // `on_click` and the reactive `style` closure only *read* `i`
                 // and *write/read* `state` (both `Copy`), so each stays `Fn`
