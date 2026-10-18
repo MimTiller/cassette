@@ -8409,20 +8409,19 @@ fn app_shell(authed: Signal<bool>) -> Element {
         view(style = profile_wrap) {
             profile_header
             view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
-                profile_el
-                NicknameEditField()
-                CustomStatusInput()
-                CharCounter()
-                TwoFactorToggle()
-                DeleteAccountWarning()
-                // Account-security setting, living with the other account
-                // settings in this overlay (it is NOT a composer element).
-                TwoFactorToggle()
-                IconChangeConfirm()
-                SettingsTabBar()
-                SetupChecklistDemo()
-                EmojiUploadSlot()
-                rules_accept_checkbox()
+                scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {
+                    profile_el
+                    NicknameEditField()
+                    CustomStatusInput()
+                    CharCounter()
+                    TwoFactorToggle()
+                    DeleteAccountWarning()
+                    IconChangeConfirm()
+                    SettingsTabBar()
+                    SetupChecklistDemo()
+                    EmojiUploadSlot()
+                    rules_accept_checkbox()
+                }
             }
         }
     };
@@ -8500,7 +8499,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         view(style = notif_wrap) {
             notif_header
             view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
-                UserSettings(notif_mode = notif_level.clone())
+                scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { UserSettings(notif_mode = notif_level.clone()) }
             }
         }
     };
@@ -8572,7 +8571,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let shortcuts_region = ui! {
         view(style = shortcuts_wrap) {
             shortcuts_header
-            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) { shortcuts_el }
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
+                scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { shortcuts_el }
+            }
         }
     };
     // Direct Messages screen (mock): same full-screen, paint-last idiom as the

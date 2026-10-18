@@ -27,9 +27,11 @@
 //! - the "dashed border" is emulated with a grid of small absolute-positioned
 //!   dash cells. `StyleRules` exposes per-side `border_*_width` /
 //!   `border_*_color` but NO `border-style`, so there is no built-in `dashed`
-//!   — the 24 dashes in [`DASHES`] below are laid out on a 6px grid around a
-//!   72px square (a 6×6 of 12px cells, 6px dash + 6px gap per side, corner
-//!   dots), which reads as a dashed outline at a glance;
+//!   — the 24 dashes in [`dashes`] are laid out on a 16px grid around the
+//!   `SQUARE`-px host (an 8px dash + 8px gap per side, corner dots), which
+//!   reads as a dashed outline at a glance. The box is 96px (was 72px): the
+//!   wrapped "Click to upload" label was crowding the dashes at the smaller
+//!   size, so the host and frame grew to give the two label lines room.
 //! - the click is a `view` + `.on_touch(|ev| …)` chain with the
 //!   `TouchPhase::Ended` guard — the app's standard click pattern (the
 //!   runtime's `button` helper takes a fixed `label` prop, which doesn't fit
@@ -50,17 +52,39 @@ const CIRCLE: &str = "#5865f2"; // blurple stand-in for an uploaded icon
 // side carries a 6px dash + 6px gap and the four corners are 6px dots. Static
 // (computed once) so the `ui!` `for` body stays a simple property list and
 // `StyleRules` can be built inline per dash.
-#[allow(dead_code)]
-const DASHES: &[(u32, u32, u32, u32)] = &[
-    // top edge (y=0): corner, dash, dash, dash, dash, dash, corner
-    (0, 0, 6, 6), (12, 0, 6, 6), (24, 0, 6, 6), (36, 0, 6, 6), (48, 0, 6, 6), (60, 0, 6, 6), (66, 0, 6, 6),
-    // bottom edge (y=66): corner, dash, dash, dash, dash, dash, corner
-    (0, 66, 6, 6), (12, 66, 6, 6), (24, 66, 6, 6), (36, 66, 6, 6), (48, 66, 6, 6), (60, 66, 6, 6), (66, 66, 6, 6),
-    // left edge (x=0), between the corner dots
-    (0, 12, 6, 6), (0, 24, 6, 6), (0, 36, 6, 6), (0, 48, 6, 6), (0, 60, 6, 6),
-    // right edge (x=66), between the corner dots
-    (66, 12, 6, 6), (66, 24, 6, 6), (66, 36, 6, 6), (66, 48, 6, 6), (66, 60, 6, 6),
-];
+// The dashed frame is GENERATED rather than hardcoded: a `SQUARE`-px box with
+// `DASH`-px corner dots and dashes on a `DASH + GAP` step, so widening the box
+// to give the "Click to upload" label room can never desync the chrome from
+// the box it frames. (A loop, because `StyleRules` has no `border-style` for a
+// real dashed outline.)
+const SQUARE: f32 = 96.0;
+const DASH: f32 = 8.0;
+const GAP: f32 = 8.0;
+
+fn dashes() -> Vec<(f32, f32, f32, f32)> {
+    let last = SQUARE - DASH;
+    let step = DASH + GAP;
+    let mut out = Vec::<(f32, f32, f32, f32)>::new();
+    // Four corner dots, then dashes between them on each edge — same 24-cell
+    // density as the original hand-laid frame.
+    out.push((0.0, 0.0, DASH, DASH));
+    out.push((last, 0.0, DASH, DASH));
+    out.push((0.0, last, DASH, DASH));
+    out.push((last, last, DASH, DASH));
+    let mut x = step;
+    while x < last {
+        out.push((x, 0.0, DASH, DASH));
+        out.push((x, last, DASH, DASH));
+        x += step;
+    }
+    let mut y = step;
+    while y < last {
+        out.push((0.0, y, DASH, DASH));
+        out.push((last, y, DASH, DASH));
+        y += step;
+    }
+    out
+}
 
 /// The server-icon upload placeholder. Renders the dashed "Click to upload"
 /// area while the local `hasImage` signal is `false` (the start state), and a
@@ -70,30 +94,33 @@ const DASHES: &[(u32, u32, u32, u32)] = &[
 #[allow(non_snake_case)]
 pub fn ServerIconUploadPlaceholder() -> Element {
     let hasImage = signal(false);
+    // Dash positions come from `dashes()` (generated off SQUARE/DASH/GAP) so
+    // the frame and the box can't drift apart.
+    let frame = dashes();
 
     ui! {
-        // The 72px square host. `position: Relative` anchors the absolute
+        // The host square. `position: Relative` anchors the absolute
         // dash cells to it; `.on_touch` is the app's standard click pattern,
         // firing the toggle on `TouchPhase::Ended`. The whole square is the
         // click target so the empty gaps between the dashes are clickable too.
         view(style = StyleRules {
-            width: Some(px(72.0)),
-            height: Some(px(72.0)),
+            width: Some(px(SQUARE)),
+            height: Some(px(SQUARE)),
             position: Some(Position::Relative),
             ..Default::default()
         }) {
-            // The dashed border: 24 absolute-positioned 6px cells. `for`
-            // over the static `DASHES` with `key = idx` (the same loop+key
+            // The dashed border: generated 8px cells. `for` over the static
+            // `DASHES` with `key = idx` (the same loop+key
             // shape `emoji_upload_slot` uses). Each dash's style is built
             // inline (created fresh, never captured — `StyleRules` is not
             // `Copy`).
-            for (idx, &(x, y, w, h)) in DASHES.iter().enumerate(), key = idx {
+            for (idx, &(x, y, w, h)) in frame.iter().enumerate(), key = idx {
                 view(style = StyleRules {
                     position: Some(Position::Absolute),
-                    left: Some(px(x as f32)),
-                    top: Some(px(y as f32)),
-                    width: Some(px(w as f32)),
-                    height: Some(px(h as f32)),
+                    left: Some(px(x)),
+                    top: Some(px(y)),
+                    width: Some(px(w)),
+                    height: Some(px(h)),
                     background: Some(col(BORDER)),
                     border_top_left_radius: Some(px(1.0)),
                     border_top_right_radius: Some(px(1.0)),
@@ -103,14 +130,14 @@ pub fn ServerIconUploadPlaceholder() -> Element {
                 })
             }
 
-            // The center 60×60 box (inset 6px, inside the dashed frame),
+            // The center box (inset one dash, inside the dashed frame),
             // centering whatever state branch mounts into it.
             view(style = StyleRules {
                 position: Some(Position::Absolute),
-                left: Some(px(6.0)),
-                top: Some(px(6.0)),
-                width: Some(px(60.0)),
-                height: Some(px(60.0)),
+                left: Some(px(DASH)),
+                top: Some(px(DASH)),
+                width: Some(px(SQUARE - 2.0 * DASH)),
+                height: Some(px(SQUARE - 2.0 * DASH)),
                 flex_direction: Some(FlexDirection::Column),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
@@ -134,10 +161,12 @@ pub fn ServerIconUploadPlaceholder() -> Element {
                         ..Default::default()
                     })
                 } else {
-                    // The "Click to upload" placeholder label, centered in
-                    // the 60px box.
+                    // The "Click to upload" placeholder label. 9px in a
+                    // SQUARE-16 box so the two wrapped lines sit clear of the
+                    // dashed chrome on every side (the old 10px label in a
+                    // 60px box crowded the dashes).
                     text(style = StyleRules {
-                        font_size: Some(px(10.0)),
+                        font_size: Some(px(9.0)),
                         color: Some(col(BORDER)),
                         ..Default::default()
                     }) { "Click to upload".to_string() }

@@ -27,7 +27,7 @@
 //! on_click = …)` for the actions. `Signal` is `Copy`, so `move` closures
 //! capture copies of the same signals and stay `Fn`.
 
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{borderless_input, col, px};
 use std::rc::Rc;
 use runtime_core::{
     component, signal, switch, ui, AlignItems, Element, FlexDirection, JustifyContent, Position,
@@ -39,6 +39,7 @@ const BG_CARD: &str = "#2b2d31"; // card surface
 const BG_ROW: &str = "#313338"; // elevated surface (rows, tab bar)
 const BG_BAR: &str = "#313338"; // tab bar background
 const BG_TAB_ACTIVE: &str = "#5865f2"; // active tab fill (Discord blurple)
+const BG_TAB_INACTIVE: &str = "#3a3d44"; // inactive tab ghost fill (a hair above the bar so every tab shares the same pill box)
 const TEXT: &str = "#f2f3f5"; // primary text
 const TEXT_MUTED: &str = "#949ba4"; // muted text
 const LABEL: &str = "#dbdee1"; // option label
@@ -243,6 +244,9 @@ fn account_tab() -> Element {
         move |s: String| new.set(s)
     };
 
+    // `borderless_input()` zeroes the four border widths so the `<input>`
+    // UA-default bevel (the light 3D bottom/right edge) doesn't leak as a
+    // partial stroke — the same idiom every other `text_input` in the app uses.
     let input_style = StyleRules {
         height: Some(px(32.0)),
         background: Some(col("#1e1f22")),
@@ -254,7 +258,7 @@ fn account_tab() -> Element {
         padding_left: Some(px(10.0)),
         padding_right: Some(px(10.0)),
         color: Some(col(TEXT)),
-        ..Default::default()
+        ..borderless_input()
     };
 
     ui! {
@@ -510,8 +514,11 @@ pub fn UserTabBar(active: Signal<usize>) -> Element {
             background: Some(col(BG_BAR)),
             padding_top: Some(px(6.0)),
             padding_bottom: Some(px(6.0)),
-            padding_left: Some(px(6.0)),
-            padding_right: Some(px(6.0)),
+            // Match the tab pills to the panel body's content margin (the tab
+            // views below use padding_left 16) so the active pill never
+            // overhangs to the left of the content it labels.
+            padding_left: Some(px(16.0)),
+            padding_right: Some(px(16.0)),
             border_top_left_radius: Some(px(8.0)),
             border_top_right_radius: Some(px(8.0)),
             border_bottom_left_radius: Some(px(8.0)),
@@ -529,7 +536,7 @@ pub fn UserTabBar(active: Signal<usize>) -> Element {
                         padding_right: Some(px(16.0)),
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),
-                        background: Some(col(if on { BG_TAB_ACTIVE } else { "transparent" })),
+                        background: Some(col(if on { BG_TAB_ACTIVE } else { BG_TAB_INACTIVE })),
                         border_top_left_radius: Some(px(6.0)),
                         border_top_right_radius: Some(px(6.0)),
                         border_bottom_left_radius: Some(px(6.0)),
