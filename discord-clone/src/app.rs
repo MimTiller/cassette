@@ -3399,6 +3399,8 @@ fn live_member_panel(
     error: Signal<String>,
     kick_confirm: Signal<Option<i64>>,
     ban_confirm: Signal<Option<i64>>,
+    timeout_confirm: Signal<Option<i64>>,
+    timeout_duration: Signal<i64>,
     presence: Rc<RefCell<HashMap<i64, String>>>,
     search_corpus: ReadSignal<Vec<(String, String)>>,
 ) -> Element {
@@ -3559,6 +3561,9 @@ fn live_member_panel(
         let kick = kick_confirm.clone();
         let banning = ban_confirm.clone();
         let ban = ban_confirm.clone();
+        let timing = timeout_confirm.clone();
+        let timeout = timeout_confirm.clone();
+        let dur = timeout_duration.clone();
         let error = error.clone();
         // Fresh per-iteration clones of every style used below -- the whole
         // `ui! { ... }` row block compiles to one closure per iteration, and
@@ -3690,10 +3695,11 @@ fn live_member_panel(
                 // Kick / Ban: a two-step inline confirm each. The row's three
                 // mutually-exclusive action states (kick confirm pending, ban
                 // confirm pending, idle buttons) are one flat `match` over the
-                // two confirm signals, not an `if / else if / else` chain — see
-                // the "B5" capture note above.
-                match (confirming.get(), banning.get()) {
-                    (Some(uid), _) if *uid == member_id => {
+                // the confirm signals, not an `if / else if / else` chain — see
+                // the "B5" capture note above. The timeout confirm is the
+                // third mutually-exclusive pending state (kick / ban / timeout).
+                match (confirming.get(), banning.get(), timing.get()) {
+                    (Some(uid), _, _) if *uid == member_id => {
                     view(style = confirm_bg_style.clone()) {
                         text(style = StyleRules {
                             font_size: Some(px(12.0)),
@@ -3737,7 +3743,7 @@ fn live_member_panel(
                             TouchResponse::CONSUMED
                         })
                     }
-                } (Some(_), Some(uid)) if *uid == member_id && !is_self => {
+                } (_, Some(uid), _) if *uid == member_id && !is_self => {
                     // Ban: same two-step shape as the kick confirm, but calls
                     // `ban_member` (remove AND bar rejoining) and clears the ban
                     // confirm on resolve. Takes priority over the kick confirm
@@ -3787,6 +3793,73 @@ fn live_member_panel(
                             TouchResponse::CONSUMED
                         })
                     }
+                } (_, _, Some(uid)) if *uid == member_id && !is_self => {
+                    // Timeout: the mildest of the three severities — the member
+                    // stays on the roster but is silenced from posting for the
+                    // chosen duration. The row shows the duration picker (taps
+                    // write the shared `timeout_duration` signal) plus Yes/No;
+                    // Yes calls `timeout_member` with the duration read at
+                    // click time, No (or a re-tap) dismisses.
+                    // Stacks vertically (unlike the kick/ban confirm, whose
+                    // one-word label + Yes/No fit in the 260px panel as a row):
+                    // the inline duration picker is wide, so a flex Row pushes
+                    // Yes/No past the panel's right edge (clipped, unreachable).
+                    // A flex Column keeps every control inside the panel width.
+                    view(style = StyleRules {
+                        background: Some(col(BG_ACTIVE)),
+                        border_top_left_radius: Some(px(8.0)),
+                        border_top_right_radius: Some(px(8.0)),
+                        border_bottom_left_radius: Some(px(8.0)),
+                        border_bottom_right_radius: Some(px(8.0)),
+                        padding_top: Some(px(4.0)),
+                        padding_bottom: Some(px(4.0)),
+                        padding_left: Some(px(8.0)),
+                        padding_right: Some(px(8.0)),
+                        gap: Some(px(8.0)),
+                        flex_direction: Some(FlexDirection::Column),
+                        align_items: Some(AlignItems::Center),
+                        ..Default::default()
+                    }) {
+                        text(style = StyleRules {
+                            font_size: Some(px(12.0)),
+                            color: Some(col(TEXT)),
+                            ..Default::default()
+                        }) { "Time out?" }
+                        TimeoutDurationPicker(duration = dur.clone())
+                        view(style = confirm_yes_style.clone()) {
+                            text(style = small_label_style.clone()) { "Yes" }
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                let sid = server_id;
+                                let uid = member_id;
+                                let err = error;
+                                let secs = dur.get();
+                                let timeout = timeout;
+                                runtime_core::driver::spawn_async(async move {
+                                    match crate::moderation::timeout_member(sid, uid, secs).await {
+                                        Ok(()) => {
+                                            timeout.set(None);
+                                        }
+                                        Err(msg) => {
+                                            timeout.set(None);
+                                            err.set(msg);
+                                        }
+                                    }
+                                });
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                        view(style = confirm_no_style.clone()) {
+                            text(style = small_label_style.clone()) { "No" }
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                timeout.set(None);
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                    }
                 } _ if !is_self => {
                     // Idle: the row's action buttons. Kick (mild, remove-only)
                     // and Ban (severe, remove AND bar rejoining) — each opens
@@ -3812,6 +3885,15 @@ fn live_member_panel(
                         .on_touch(move |ev| {
                             if ev.phase == TouchPhase::Ended {
                                 ban.set(Some(member_id));
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                        view(style = kick_btn_style.clone()) {
+                            text(style = kick_label_style.clone()) { "Timeout" }
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                timeout.set(Some(member_id));
                             }
                             TouchResponse::CONSUMED
                         })
@@ -4411,6 +4493,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let lmbr_err = live_member_error.clone();
         let lkick = live_kick_confirm.clone();
         let lbcm = live_ban_confirm.clone();
+        let ltcm = live_timeout_confirm.clone();
         let lunread = rail_unread.clone();
         let lunread_rev = live_unread_rev.clone();
         let is_real = is_real_user;
@@ -4441,6 +4524,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             }
             lkick.set(None);
             lbcm.set(None);
+            ltcm.set(None);
             lmbr_err.set(String::new());
             lmbrs.set(Vec::new());
             if let Ok(channels) = crate::servers::list_channels(sid).await {
@@ -5475,6 +5559,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 let live_mbr_err = live_member_error.clone();
                 let live_kick = live_kick_confirm.clone();
                 let live_ban = live_ban_confirm.clone();
+                let live_timeout = live_timeout_confirm.clone();
                 let base = row_style.clone();
                 ui! {
                     view(style = base.clone()) {
@@ -5515,9 +5600,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             crate::auth::save_last_server(sid);
                             live_ch_sel.set(None);
                             // Clear any stale moderation state from a previous
-                            // live server (kick + ban confirm and error text).
+                            // live server (kick + ban + timeout confirm and error text).
                             live_kick.set(None);
                             live_ban.set(None);
+                            live_timeout.set(None);
                             live_mbr_err.set(String::new());
                             live_mbrs.set(Vec::new());
                             // Clone the `Rc` before handing it to the `async move`
@@ -8199,6 +8285,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let live_member_error_panel = live_member_error.clone();
     let live_kick_panel = live_kick_confirm.clone();
     let live_ban_panel = live_ban_confirm.clone();
+    let live_timeout_panel = live_timeout_confirm.clone();
+    let live_timeout_dur_panel = live_timeout_duration.clone();
     let live_presence_panel = live_presence.clone();
     // The message-search corpus the mock member panel's `MessageSearchBar`
     // filters over: the active channel's seed messages plus this session's
@@ -8266,11 +8354,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 live_member_error.get(),
                 live_kick_confirm.get(),
                 live_ban_confirm.get(),
+                live_timeout_confirm.get(),
+                live_timeout_duration.get(),
                 live_presence_rev.get(),
                 is_real_user,
             )
         },
-        move |(_server_id, user_status, live_active, _live_members, _live_err, _live_kick, _live_ban, _presence_rev, real_user): &(
+        move |(_server_id, user_status, live_active, _live_members, _live_err, _live_kick, _live_ban, _live_timeout, _live_timeout_dur, _presence_rev, real_user): &(
             u32,
             Status,
             Option<i64>,
@@ -8278,6 +8368,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
             String,
             Option<i64>,
             Option<i64>,
+            Option<i64>,
+            i64,
             u32,
             bool,
         )| {
@@ -8291,6 +8383,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     live_member_error_panel.clone(),
                     live_kick_panel.clone(),
                     live_ban_panel.clone(),
+                    live_timeout_panel.clone(),
+                    live_timeout_dur_panel.clone(),
                     // `Rc` isn't `Copy`, and this is an `Fn` (re-entrant) closure —
                     // clone the handle each render.
                     live_presence_panel.clone(),
