@@ -24,14 +24,18 @@
 //!   when either changes, reusing the previous result otherwise. A reactive
 //!   derivation over two signals is exactly what `memo` is for — no manual
 //!   `switch` key plumbing.
-//! - the results are a `for` loop over the memo's output (rule 9.4
-//!   conditional/iterative rendering inside the macro), each row a plain
-//!   `view`/`text`; no `Vec<Element>` push loop outside the macro.
+//! - the results are a `switch` keyed on the memo's filtered output (the
+//!   pinned-messages panel's versioned-list idiom), each row a plain
+//!   `view`/`text` built inside the macro; no `Vec<Element>` push loop
+//!   outside the macro. A plain `for` over `matches.get()` is NOT
+//!   acceptable here: `ui!` routes `for`-over-`Vec` to `StaticForEach`
+//!   (rows frozen at mount), so narrowing queries would keep showing the
+//!   mount-time snapshot.
 
 use crate::style_helpers::{borderless_input, col, px};
 use icons_lucide::SEARCH;
 use runtime_core::{
-    component, icon, memo, signal, ui, AlignItems, Color, Element, FlexDirection, ReadSignal,
+    component, icon, memo, signal, switch, ui, AlignItems, Color, Element, FlexDirection, ReadSignal,
     StyleRules, Tokenized,
 };
 
@@ -139,48 +143,71 @@ pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>) -> Element {
                 )
             }
 
-            // The live results. Every style is INLINE (fresh per evaluation)
-            // because `StyleRules` is not `Copy` and must not be captured
-            // across the reactive `for` / `if` boundary. `ui!` does not allow
-            // `let` bindings inside its body, so the memo is read inline with
-            // `.get()` in both the `if` and the `for` — each read re-subscribes
-            // its node to the memo, so the list rebuilds on a keystroke.
-            if matches.get().is_empty() && !query.get().trim().is_empty() {
-                // A non-empty query with zero hits: a single muted row.
-                text(style = StyleRules {
-                    font_size: Some(px(13.0)),
-                    color: Some(col(MUTED)),
-                    ..Default::default()
-                }) { "No matches".to_string() }
-            } else {
-                for (author, text) in matches.get().into_iter() {
-                    view(style = StyleRules {
-                        flex_direction: Some(FlexDirection::Column),
-                        gap: Some(px(4.0)),
-                        background: Some(col(RESULT_BG)),
-                        padding_top: Some(px(10.0)),
-                        padding_bottom: Some(px(10.0)),
-                        padding_left: Some(px(12.0)),
-                        padding_right: Some(px(12.0)),
-                        border_top_left_radius: Some(px(6.0)),
-                        border_top_right_radius: Some(px(6.0)),
-                        border_bottom_left_radius: Some(px(6.0)),
-                        border_bottom_right_radius: Some(px(6.0)),
-                        ..Default::default()
-                    }) {
-                        text(style = StyleRules {
-                            font_size: Some(px(13.0)),
-                            color: Some(col(ACCENT)),
-                            ..Default::default()
-                        }) { author }
-                        text(style = StyleRules {
-                            font_size: Some(px(14.0)),
-                            color: Some(col(TEXT)),
-                            ..Default::default()
-                        }) { text }
+            // The live results. The rows come from `switch` keyed on the
+            // memo's FILTERED OUTPUT (the pinned-messages panel's `switch`
+            // idiom): the guarded hole rebuilds its subtree whenever the
+            // Vec<(author,text)> of hits changes, so every keystroke that
+            // narrows or widens the match set re-renders exactly those rows.
+            // A plain `for` over `matches.get()` here is a bug: `ui!` decides
+            // a `for`'s reactivity by the ITERABLE'S TYPE (`StaticForEach`
+            // for a `Vec` — rows built once at mount and frozen), and the
+            // surrounding `if` only re-runs its thunks when the *condition*
+            // flips, which a same-side query edit never does.
+            switch(
+                move || matches.get(),
+                move |rows: &Vec<(String, String)>| {
+                    if rows.is_empty() && !query.get().trim().is_empty() {
+                        // A non-empty query with zero hits: a single muted row.
+                        ui! {
+                            text(style = StyleRules {
+                                font_size: Some(px(13.0)),
+                                color: Some(col(MUTED)),
+                                ..Default::default()
+                            }) { "No matches".to_string() }
+                        }
+                    } else {
+                        let rows = rows.clone();
+                        ui! {
+                            // Wrapper view for the row list: an element in ONE
+                            // slot must be one node, and the rows' own styles
+                            // stay untouched inside it.
+                            view(style = StyleRules {
+                                flex_direction: Some(FlexDirection::Column),
+                                gap: Some(px(0.0)),
+                                ..Default::default()
+                            }) {
+                                for (author, text) in rows.into_iter() {
+                                    view(style = StyleRules {
+                                        flex_direction: Some(FlexDirection::Column),
+                                        gap: Some(px(4.0)),
+                                        background: Some(col(RESULT_BG)),
+                                        padding_top: Some(px(10.0)),
+                                        padding_bottom: Some(px(10.0)),
+                                        padding_left: Some(px(12.0)),
+                                        padding_right: Some(px(12.0)),
+                                        border_top_left_radius: Some(px(6.0)),
+                                        border_top_right_radius: Some(px(6.0)),
+                                        border_bottom_left_radius: Some(px(6.0)),
+                                        border_bottom_right_radius: Some(px(6.0)),
+                                        ..Default::default()
+                                    }) {
+                                        text(style = StyleRules {
+                                            font_size: Some(px(13.0)),
+                                            color: Some(col(ACCENT)),
+                                            ..Default::default()
+                                        }) { author }
+                                        text(style = StyleRules {
+                                            font_size: Some(px(14.0)),
+                                            color: Some(col(TEXT)),
+                                            ..Default::default()
+                                        }) { text }
+                                    }
+                                }
+                            }
+                        }
                     }
-                }
-            }
+                },
+            )
         }
     }
 }
