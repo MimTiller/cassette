@@ -28,7 +28,7 @@
 //!   conditional/iterative rendering inside the macro), each row a plain
 //!   `view`/`text`; no `Vec<Element>` push loop outside the macro.
 
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{borderless_input, col, px};
 use icons_lucide::SEARCH;
 use runtime_core::{
     component, icon, memo, signal, ui, AlignItems, Color, Element, FlexDirection, ReadSignal,
@@ -76,7 +76,7 @@ pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>) -> Element {
         border_top_right_radius: Some(px(6.0)),
         border_bottom_left_radius: Some(px(6.0)),
         border_bottom_right_radius: Some(px(6.0)),
-        ..Default::default()
+        ..borderless_input()
     };
 
     // Reactive derivation: `(author, text)` rows of the corpus that the query

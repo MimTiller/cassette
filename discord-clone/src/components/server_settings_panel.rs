@@ -106,6 +106,9 @@ pub fn ServerSettingsPanel(
     // --- Shared styles (one static pass) ------------------------------------
     let card_style = StyleRules {
         width: Some(px(380.0)),
+        // Fill the window height so tall content scrolls inside a `scroll_view`
+        // rather than overflowing (and being clipped by) the full-window wrap.
+        height: Some(pct(100.0)),
         padding_top: Some(px(20.0)),
         padding_bottom: Some(px(20.0)),
         padding_left: Some(px(20.0)),
@@ -512,7 +515,7 @@ pub fn ServerSettingsPanel(
                     align_items: Some(AlignItems::Center),
                     flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
                     flex_shrink: Some(runtime_core::Tokenized::Literal(1.0)),
-                    ..Default::default()
+                    ..borderless_input()
                 })
             };
             let add_role_chip = ui! {
@@ -606,15 +609,21 @@ pub fn ServerSettingsPanel(
                     AuditLogRow(text = "Rae timed out Juno for 10 minutes".to_string(), timestamp = "1 day ago".to_string())
                 }
             };
+            // The header (title + "Done") pins to the top of the card; the
+            // sections below it live in a `scroll_view` so a small window
+            // reveals them by scrolling rather than clipping (the same
+            // `scroll_view` idiom the Profile/Settings overlays use).
             ui! {
                 view(style = card_style.clone()) {
                     { header }
-                    { name_row }
-                    { icon_row }
-                    { add_row }
-                    { transfer_el }
-                    { audit_el }
-                    { err_el }
+                    scroll_view(style = StyleRules { flex_grow: Some(runtime_core::Tokenized::Literal(1.0)), ..Default::default() }) {
+                        { name_row }
+                        { icon_row }
+                        { add_row }
+                        { transfer_el }
+                        { audit_el }
+                        { err_el }
+                    }
                 }
             }
         },
