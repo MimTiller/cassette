@@ -80,6 +80,12 @@ server = { path = "/root/idealyst-native/crates/api/server" }
 # its `runtime-core`/`runtime-vocabulary` deps resolve to the identical crate
 # instances this crate already uses.
 clipboard = { path = "/root/idealyst-native/crates/sdk/client/clipboard" }
+# The markdown SDK: renders chat message bodies (bold/italic/inline code/
+# code blocks/links/blockquotes/strikethrough) as semantic DOM through its
+# ONE caps-generic scene handler. Same path root as the other framework/SDK
+# deps so its `runtime-scene`/`runtime-shared`/`runtime-vocabulary` deps
+# resolve to the identical crate instances this crate already uses.
+markdown = { path = "/root/idealyst-native/crates/sdk/client/markdown" }
 
 # No backend deps: `register_scene_extensions` is generic over the scene
 # `Host` (this scaffold registers no third-party SDKs), so the app crate

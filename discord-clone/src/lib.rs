@@ -225,9 +225,14 @@ pub use auth::{login, signup};
 // `run`) after `runtime_vocabulary::register_builtins`. Registry-generic over
 // the scene `Host` so ONE seam serves every backend. This app renders only
 // core primitives, so there is nothing extra to register.
-pub fn register_scene_extensions<H: runtime_scene::Host>(
-    _registry: &mut runtime_scene::Registry<H>,
-) {
+pub fn register_scene_extensions<H>(
+    registry: &mut runtime_scene::Registry<H>,
+)
+where
+    H: runtime_vocabulary::style_attach::StyleServices + runtime_vocabulary::caps::TextOps + 'static,
+{
+    // The markdown SDK's payload handler — see `markdown::register` docs.
+    markdown::register(registry);
 }
 
 // Recorder-side registration seam for the runtime-server sidecar
@@ -235,7 +240,9 @@ pub fn register_scene_extensions<H: runtime_scene::Host>(
 // of `register_scene_extensions`. Gated by `sidecar` (set only by the
 // generated sidecar wrapper) so device/web builds never pull `dev-server`.
 #[cfg(feature = "sidecar")]
-pub fn register_scene_extensions_recorder(_registry: &mut dev_server::newcore::SceneRegistry) {}
+pub fn register_scene_extensions_recorder(registry: &mut dev_server::newcore::SceneRegistry) {
+    markdown::register(registry);
+}
 
 // Android entry: the generated Android wrapper's `attach` mounts
 // `scene_app()` through `backend_android::newcore::start`. `app()` already
