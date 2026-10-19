@@ -400,6 +400,18 @@ pub(crate) fn format_full_when(unix_secs: i64) -> String {
 /// run (the previous behavior), so this is a content-dependent upgrade, not an
 /// unconditional per-row widget.
 fn message_body(body: &str) -> Element {
+    // A body that carries real Markdown syntax (emphasis, code, links, quotes,
+    // lists…) renders the WHOLE thing through the `markdown` SDK — one scene
+    // payload whose caps-generic handler builds the semantic DOM (styled runs,
+    // `<pre>` blocks, `<blockquote>`). Bodies with no Markdown sigils — every
+    // plain chat line, and every mock seed row — skip the SDK entirely and
+    // keep the exact node shape they had before, so plain messages keep their
+    // current metrics and grouped consecutive rows stay tight. A body
+    // carrying `||…||` spoilers keeps the spoiler path (SDK v1 has no spoiler
+    // construct); the two features never stack on one row.
+    if !body.contains("||") && looks_like_markdown(body) {
+        return Element::from(markdown::markdown(linkify_bare_urls(body), md_chat_theme()));
+    }
     // Split the body into `(is_spoiler, text)` runs. A `||…||` pair becomes a
     // spoiler run; the surrounding slices become plain runs. We walk the body
     // by finding each marker pair in turn so the runs stay in document order.
@@ -492,6 +504,208 @@ fn message_body(body: &str) -> Element {
             ..Default::default()
         }) { runs_el }
     }
+}
+
+/// Wrap whitespace-delimited tokens starting with `http://`/`https://` in
+/// `<…>` autolinks so the SDK renders them as links (Discord linkifies bare
+/// URLs; the SDK parser enables strikethrough but not GFM autolinking, and
+/// `<url>` is plain CommonMark autolink syntax). URLs inside `[t](u)` or an
+/// existing `<u>` never start a token with the scheme, so they're untouched;
+/// trailing sentence punctuation is moved outside the link marker. Code is
+/// protected per-region, not whole-body: inline `…` spans and ``` fenced blocks
+/// pass through verbatim while URLs outside them still linkify, so "`code`
+/// https://x" links but "`https://x`" doesn't.
+fn linkify_bare_urls(body: &str) -> String {
+    let bytes = body.as_bytes();
+    let n = bytes.len();
+    let is_ws = |c: u8| c == b' ' || c == b'\t' || c == b'\n' || c == b'\r';
+    let is_tail_punct = |c: u8| c == b'.' || c == b',' || c == b'!' || c == b'?'
+        || c == b';' || c == b':' || c == b'\'' || c == b'"';
+    // True when the line starting at `pos` opens with ``` (the fence marker),
+    // after up to 3 leading spaces (CommonMark's indent allowance).
+    let fence_at_line_start = |pos: usize| -> bool {
+        let mut j = pos;
+        let mut spaces = 0;
+        while j < n && spaces < 4 && (bytes[j] == b' ' || bytes[j] == b'\t') {
+            j += 1;
+            spaces += 1;
+        }
+        j + 2 < n && bytes[j] == b'`' && bytes[j + 1] == b'`' && bytes[j + 2] == b'`'
+    };
+    // Index just past the newline ending the line at `pos` (or end of body).
+    let line_end = |pos: usize| -> usize {
+        if pos >= n {
+            return n;
+        }
+        match body[pos..].find('\n') {
+            Some(off) => pos + off + 1,
+            None => n
+        }
+    };
+    let mut out = String::new();
+    let mut i = 0;
+    while i < n {
+        let line_start = i == 0 || bytes[i - 1] == b'\n';
+        // Fenced code block: copy the opening fence line through the closing
+        // fence line verbatim, then resume linkifying after it.
+        if line_start && fence_at_line_start(i) {
+            let open_end = line_end(i);
+            out += &body[i..open_end];
+            i = open_end;
+            while i < n {
+                let next_start = i == 0 || bytes[i - 1] == b'\n';
+                if next_start && fence_at_line_start(i) {
+                    let close_end = line_end(i);
+                    out += &body[i..close_end];
+                    i = close_end;
+                    break;
+                }
+                // interior line: verbatim
+                let end = line_end(i);
+                out += &body[i..end];
+                i = end;
+            }
+            continue;
+        }
+        // Inline code span: from this backtick through the NEXT backtick on
+        // the same line, verbatim. An unmatched backtick falls through to the
+        // token loop below and renders as-is, same as pulldown-cmark does.
+        if bytes[i] == b'`' {
+            let mut k = i + 1;
+            while k < n && bytes[k] != b'`' && bytes[k] != b'\n' {
+                k += 1;
+            }
+            if k < n && bytes[k] == b'`' {
+                out += &body[i..k + 1];
+                i = k + 1;
+                continue;
+            }
+        }
+        if is_ws(bytes[i]) {
+            out.push(bytes[i] as char);
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < n && !is_ws(bytes[i]) {
+            i += 1;
+        }
+        let tok = &body[start..i];
+        if tok.starts_with("http://") || tok.starts_with("https://") {
+            let scheme_len = if tok.starts_with("https://") { 8 } else { 7 };
+            let mut end = i - start;
+            while end > scheme_len && is_tail_punct(bytes[start + end - 1]) {
+                end -= 1;
+            }
+            out += "<";
+            out += &tok[..end];
+            out += ">";
+            out += &tok[end..];
+        } else {
+            out += tok;
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod linkify_tests {
+    use super::*;
+
+    /// A bare URL in prose is wrapped in `<…>` autolink syntax.
+    #[test]
+    fn plain_url_gets_linkified() {
+        assert_eq!(linkify_bare_urls("see https://example.com now"),
+            "see <https://example.com> now");
+    }
+
+    /// Inline code no longer vetoes linkification for the whole body: the
+    /// `` `code` `` span passes through verbatim and the URL after it links.
+    #[test]
+    fn url_outside_inline_code_links() {
+        assert_eq!(linkify_bare_urls("`code` https://example.com"),
+            "`code` <https://example.com>");
+    }
+
+    /// A URL INSIDE an inline code span stays untouched (no markers inserted).
+    #[test]
+    fn url_inside_inline_code_stays_untouched() {
+        assert_eq!(linkify_bare_urls("run `https://example.com` here"),
+            "run `https://example.com` here");
+    }
+
+    /// A URL inside a ``` fenced block stays untouched — verbatim through the
+    /// fence — while a URL after the closing fence still links.
+    #[test]
+    fn url_inside_fenced_block_stays_untouched() {
+        assert_eq!(linkify_bare_urls("```\nhttps://inside.example\n```\nafter https://outside.example"),
+            "```\nhttps://inside.example\n```\nafter <https://outside.example>");
+    }
+
+    /// Trailing sentence punctuation sits OUTSIDE the autolink marker.
+    #[test]
+    fn trailing_punctuation_trimmed() {
+        assert_eq!(linkify_bare_urls("https://example.com."),
+            "<https://example.com>.");
+        assert_eq!(linkify_bare_urls("go https://example.com, ok"),
+            "go <https://example.com>, ok");
+    }
+}
+
+/// Chat-body theme for the `markdown` SDK: the dark Discord palette at the
+/// message-body text size (15px). `code_bg` sits a hair below `BG_MAIN`
+/// (#313338) so inline code reads as a subtle chip rather than a boxy
+/// highlight; links use Discord's blurple (`BUTTON`).
+fn md_chat_theme() -> markdown::MdTheme {
+    markdown::MdTheme {
+        text: TEXT.to_string(),
+        muted: TEXT_MUTED.to_string(),
+        heading: TEXT.to_string(),
+        link: BUTTON.to_string(),
+        code_fg: TEXT.to_string(),
+        code_bg: "#232529".to_string(),
+        quote_fg: TEXT_CHANNEL.to_string(),
+        base_size: 15.0,
+        heading_scale: [1.6, 1.3, 1.15, 1.05, 1.0, 0.9],
+        mono_family: None,
+    }
+}
+
+/// Cheap super-set test for Markdown worth routing through the SDK: does the
+/// body contain an inline sigil (emphasis/code/strike/link brackets) or open
+/// a line with a block construct (heading, quote, list bullet, rule)? False
+/// positives (a stray `_`, an `[` in prose) are harmless — pulldown-cmark
+/// needs well-formed spans, so plain-looking text parses back to one plain
+/// run and renders at the same size/color as the `text` node it replaces.
+fn looks_like_markdown(body: &str) -> bool {
+    if body.contains("**")
+        || body.contains("__")
+        || body.contains("_")
+        || body.contains("*")
+        || body.contains("~~")
+        || body.contains("`")
+        || body.contains("](")
+        || body.contains("[")
+        || body.contains("http://")
+        || body.contains("https://")
+    {
+        return true;
+    }
+    for line in body.split('\n') {
+        let t = line.trim_start();
+        if t.starts_with("#") || t.starts_with(">") || t.starts_with("- ")
+            || t.starts_with("+ ") || t.starts_with("---")
+        {
+            return true;
+        }
+        // Ordered list marker: `1. ` etc. (a digit run then `. `). ASCII, so
+        // the byte slice offset equals the char count.
+        let ds: Vec<char> = t.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if !ds.is_empty() && t[ds.len()..].starts_with(". ") {
+            return true;
+        }
+    }
+    false
 }
 
 /// Extract a `LinkEmbedPreview` prop pair `(host, mock_title)` from a message
@@ -618,12 +832,6 @@ pub(crate) fn message_row(
         color: Some(col(TEXT)),
         ..Default::default()
     };
-    let body_style = StyleRules {
-        font_size: Some(px(15.0)),
-        color: Some(col(TEXT)),
-        flex_grow: Some(grow(1.0)),
-        ..Default::default()
-    };
     let initial = author.chars().next().unwrap_or(' ').to_string();
     if grouped {
         // Grouped form (Discord convention): no avatar, no author/time
@@ -640,7 +848,10 @@ pub(crate) fn message_row(
         };
         return ui! {
             view(style = grouped_style) {
-                text(style = body_style) { body.to_string() }
+                // `message_body` renders markdown-bearing bodies through the
+                // SDK; a plain body is one `text` run at the same 15px/TEXT
+                // styling, so grouped consecutive rows keep their tight look.
+                { message_body(body) }
                 if edited { edited_label() }
             }
         };
