@@ -905,10 +905,17 @@ fn message_row_with_actions(
         picker_c.set(Some(key));
     });
 
-    // More: toggle the overflow menu.
+    // More: toggle the overflow menu. The reaction picker's full-window
+    // backdrop paints over the row area, so opening the menu while the picker
+    // is up would bury the menu's rows (the Edit row intercepted by the
+    // picker in the last test) — close the picker as the menu opens.
     let menu_c = menu_open;
     let on_more = Rc::new(move || {
-        menu_c.set(!menu_c.get());
+        let opening = !menu_c.get();
+        menu_c.set(opening);
+        if opening {
+            picker_c.set(None);
+        }
     });
 
     // "Pin message" (from the overflow menu): the caller supplies `on_pin`. The
@@ -1520,10 +1527,47 @@ fn live_edit_row(
     let confirm_sig = live_delete_confirm;
     // --- inline edit input (reuses the composer's `text_input` idiom) -------
     // `text_input` takes a reactive `Signal<String>` for `value`, so the draft
-    // binds straight to `live_edit_text`. Confirmation is the explicit Save
-    // button (Enter isn't wired here to avoid surprising the composer's Enter
-    // handler); the input is seeded with the current content on Save-cancel
-    // paths by the list rebuild.
+    // binds straight to `live_edit_text`. `value` only drives the NATIVE field
+    // from the signal; keystrokes report back through `on_change`, which must
+    // write the typed text into `live_edit_text` or Save would read the seed
+    // instead (the "edit doesn't stick" bug). Cyclic but stable, same idiom as
+    // the composer's `on_change = update_on_type`. `autofocus = true` focuses
+    // the field at MOUNT — the input mounts when `live_editing` flips to this
+    // row (the list `switch` keys on it), so clicking Edit puts the caret in
+    // the seeded text with no extra click. Confirmation is the explicit Save
+    // button, plus Enter on the input (Enter already submits in the composer
+    // and the password fields, so it submits here too); the input is seeded
+    // with the current content on Save-cancel paths by the list rebuild.
+    let on_edit_type = move |s: String| { edit_text.set(s); };
+    // --- Save (shared by the Save pill and Enter on the edit input) --------
+    // Reads the DRAFT signal, which the input's `on_change` keeps in sync with
+    // the native field.
+    let do_save = move || {
+        let content = edit_text.get();
+        if !content.trim().is_empty() {
+            gateway.send(
+                discord_server::server_settings::WsClientMsg::EditMessage {
+                    message_id: mid,
+                    content,
+                },
+            );
+        }
+        editing_sig.set(None);
+        edit_text.set(String::new());
+    };
+    let save_fn: Rc<dyn Fn()> = Rc::new(do_save);
+    // `Rc` is not `Copy`: the `small_btn` handlers are `Fn` closures that
+    // move-capture and can't call it on every press, so the Save pill arm
+    // keeps its own Copy-only inline body; this `Rc` serves the Enter handler.
+    let save_for_enter = save_fn.clone();
+    let on_enter = move |ev: &KeyEvent| {
+        if ev.key == "Enter" && !ev.shift && !ev.ctrl && !ev.alt && !ev.meta {
+            (save_for_enter)();
+            KeyOutcome::PreventDefault
+        } else {
+            KeyOutcome::Default
+        }
+    };
     let edit_input = {
         let input_style = StyleRules {
             font_size: Some(px(15.0)),
@@ -1541,7 +1585,8 @@ fn live_edit_row(
             ..borderless_input()
         };
         ui! {
-            text_input(value = live_edit_text, placeholder = "Edit message", style = input_style, test_id = "edit-input")
+            text_input(value = live_edit_text, autofocus = true, on_change = on_edit_type, placeholder = "Edit message", style = input_style, test_id = "edit-input")
+                .on_key_down(on_enter)
         }
     };
     // --- per-row control buttons ------------------------------------------
@@ -1588,6 +1633,10 @@ fn live_edit_row(
             }
             match action {
                 MsgAction::Delete => confirm_sig.set(Some(mid)),
+                // Same action as Save-from-Enter (`save_for_enter` below); kept
+                // inline here because `save_fn` is a non-`Copy` `Rc` that an
+                // `Fn` touch handler can't move out of on every press, while
+                // every handle this arm touches is `Copy`.
                 MsgAction::Save => {
                     let content = edit_text.get();
                     if !content.trim().is_empty() {
@@ -1600,7 +1649,7 @@ fn live_edit_row(
                     }
                     editing_sig.set(None);
                     edit_text.set(String::new());
-                }
+                },
                 MsgAction::Cancel => {
                     editing_sig.set(None);
                     edit_text.set(String::new());
