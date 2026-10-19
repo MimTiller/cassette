@@ -997,7 +997,7 @@ fn reply_preview(
     crate::reply_preview_bar::reply_preview_bar(reply_ctx, on_cancel)
 }
 
-// --- message reactions (session-local, mock + live) -------------------------
+// --- message reactions (mock session-local + live persisted/synced) --------
 // Per-message reaction state shared by BOTH the MOCK and the LIVE (gateway)
 // message lists. Keyed by `MessageKey`: MOCK rows key by `(channel_id,
 // rendered-list-index)` (seed messages first, then this session's sends — a
@@ -1005,9 +1005,12 @@ fn reply_preview(
 // deterministic), LIVE rows key by their real wire `message_id`. Each value is
 // a list of `(emoji, count, reacted_by_me)` pills. Mutating the map does not
 // fire reactivity, so the message-list `switch` folds `reaction_rev` into its
-// key (the `revision` idiom) and re-reads the map on every rebuild. Purely
-// session-local — nothing is persisted or synced (there is no backend reaction
-// store); the live rows reuse the exact same pill store as the mock rows.
+// key (the `revision` idiom) and re-reads the map on every rebuild. MOCK pills
+// stay session-local (demo content); LIVE pills are persisted server-side:
+// clicks call the `add_reaction` / `remove_reaction` RPCs (see `crate::reactions`),
+// the gateway's history frames restore persisted pills on a cold load, and
+// `WsServerMsg::ReactionAdd` / `ReactionRemove` frames update every connected
+// client live.
 type Reaction = (String, u32, bool);
 
 /// The identity key for per-message session-local state (the reaction `picker`,
@@ -1024,6 +1027,79 @@ enum MessageKey {
 }
 
 type ReactionMap = HashMap<MessageKey, Vec<Reaction>>;
+
+/// Route a reaction click on a LIVE (gateway) row through the backend RPCs:
+/// `add_reaction` / `remove_reaction` persist the `(message, user, emoji)` row
+/// and broadcast a `ReactionAdd` / `ReactionRemove` frame to every connected
+/// member (the caller's own echo included), so the pill map is updated in
+/// `gateway_incoming_effect` — never optimistically here. A rejected call
+/// leaves no UI change (no optimistic pill to roll back). Also closes the
+/// picker overlay when one was open for this message. MOCK rows never call
+/// this (they stay session-local demo state).
+fn request_live_reaction(
+    key: MessageKey,
+    emoji: String,
+    remove: bool,
+    picker: Signal<Option<MessageKey>>,
+) {
+    let id = match key {
+        MessageKey::Live { id } => id,
+        MessageKey::Mock { .. } => return,
+    };
+    picker.set(None);
+    runtime_core::driver::spawn_async(async move {
+        if remove {
+            let _ = crate::reactions::remove_reaction(id, emoji).await;
+        } else {
+            let _ = crate::reactions::add_reaction(id, emoji).await;
+        }
+    });
+}
+
+/// Apply the server's authoritative post-state count for one emoji pill to the
+/// shared reaction map (the LIVE path). The `ReactionAdd` / `ReactionRemove`
+/// broadcast frames carry the total for the emoji, so the client SETS the pill
+/// rather than tracking deltas — duplicate or out-of-order frames converge.
+/// `reacted_override` is `Some(...)` only when the frame names this client's
+/// own user (it sets the "you reacted" highlight); otherwise the existing
+/// highlight is kept. Returns whether anything changed (the caller bumps
+/// `reaction_rev` on `true` so the message list rebuilds).
+fn apply_reaction(
+    map: Rc<RefCell<ReactionMap>>,
+    key: MessageKey,
+    emoji: String,
+    count: u32,
+    reacted_override: Option<bool>,
+) -> bool {
+    let mut m = map.borrow_mut();
+    let inner = m.entry(key).or_default();
+    let pos = inner.iter().position(|(e, _, _)| e == &emoji);
+    let changed: bool;
+    if count == 0 {
+        if let Some(p) = pos {
+            inner.remove(p);
+            changed = true;
+        } else {
+            changed = false;
+        }
+    } else if let Some(p) = pos {
+        let (e, c, reacted) = inner[p].clone();
+        let reacted = reacted_override.unwrap_or(reacted);
+        if c != count || reacted != inner[p].2 {
+            inner[p] = (e, count, reacted);
+            changed = true;
+        } else {
+            changed = false;
+        }
+    } else {
+        inner.push((emoji, count, reacted_override.unwrap_or(false)));
+        changed = true;
+    }
+    if m.get(&key).map_or(false, |v| v.is_empty()) {
+        m.remove(&key);
+    }
+    changed
+}
 
 /// The 12 common glyphs the add-reaction picker offers — the same set the
 /// composer's emoji popover uses (see `emoji_popover`).
@@ -1056,6 +1132,9 @@ fn reaction_area(
     // border on a neutral fill. Each pill's `.on_touch` gets fresh `Rc`/`Copy`
     // handles (`r`/`rev`) plus its own emoji clone (`em` for the label,
     // `em_close` for the closure), so it never moves the outer closure's values.
+    // LIVE rows route the tap through `on_toggle` (the RPC-backed pill toggle —
+    // the pill map then updates via the server's echo frames); MOCK rows keep
+    // the direct session-local mutation.
     let pills: Vec<Element> = list.iter().map(|(emoji, count, reacted)| {
         let (bg, border) = if *reacted {
             (REACTED_BG, REACTED_BORDER)
@@ -1067,6 +1146,15 @@ fn reaction_area(
         let cnt = *count;
         let r = reactions.clone();
         let rev = reaction_rev;
+        // Whether this tap removes (user already reacted) or adds (user has not)
+        // their own reaction. LIVE rows route the tap through the backend RPC
+        // (see `request_live_reaction`); MOCK rows mutate the pill map directly.
+        let will_remove = *reacted;
+        let live_key = match key {
+            MessageKey::Live { .. } => true,
+            MessageKey::Mock { .. } => false,
+        };
+        let picker_l = picker;
         ui! {
             view(style = StyleRules {
                 flex_direction: Some(FlexDirection::Row),
@@ -1106,28 +1194,36 @@ fn reaction_area(
                 }) { cnt.to_string() }
             }
             .on_touch(move |ev| {
-                // Toggle: not-yet-reacted -> count+1 and highlight;
-                // already-reacted -> count-1 and un-highlight, dropping the pill
-                // (and the empty map entry) once the count hits 0.
+                // LIVE rows route the tap through the backend RPC: `request_live_reaction`
+                // persists the row and broadcasts a count frame that updates the pill map
+                // (for THIS client via its own echo AND every other connected member). No
+                // optimistic mutation — the echo is the single source of truth, so a cold
+                // reload and a live sync converge identically. MOCK rows keep the direct
+                // session-local toggle: not-yet-reacted -> count+1 and highlight; already
+                // reacted -> count-1 and un-highlight, dropping the pill at 0.
                 if ev.phase == TouchPhase::Ended {
-                    let mut m = r.borrow_mut();
-                    let inner = m.entry(key).or_default();
-                    if let Some(pos) = inner.iter().position(|(e, _, _)| e == &em_close) {
-                        let (e, c, was_reacted) = inner[pos].clone();
-                        if was_reacted {
-                            if c <= 1 {
-                                inner.remove(pos);
+                    if live_key {
+                        request_live_reaction(key, em_close.clone(), will_remove, picker_l);
+                    } else {
+                        let mut m = r.borrow_mut();
+                        let inner = m.entry(key).or_default();
+                        if let Some(pos) = inner.iter().position(|(e, _, _)| e == &em_close) {
+                            let (e, c, was_reacted) = inner[pos].clone();
+                            if was_reacted {
+                                if c <= 1 {
+                                    inner.remove(pos);
+                                } else {
+                                    inner[pos] = (e, c - 1, false);
+                                }
                             } else {
-                                inner[pos] = (e, c - 1, false);
+                                inner[pos] = (e, c + 1, true);
                             }
-                        } else {
-                            inner[pos] = (e, c + 1, true);
                         }
+                        if m.get(&key).map_or(false, |v| v.is_empty()) {
+                            m.remove(&key);
+                        }
+                        rev.set(rev.get() + 1);
                     }
-                    if m.get(&key).map_or(false, |v| v.is_empty()) {
-                        m.remove(&key);
-                    }
-                    rev.set(rev.get() + 1);
                 }
                 TouchResponse::CONSUMED
             })
@@ -1236,18 +1332,32 @@ fn reaction_picker_overlay(
                     }
                     .on_touch(move |ev| {
                         // Add (or bump) this emoji's reaction for the message,
-                        // then close the picker.
+                        // then close the picker. LIVE rows (gateway-keyed) route
+                        // the click through the backend RPC (`request_live_reaction`)
+                        // which persists a row and broadcasts the count frame back
+                        // into `gateway_incoming_effect`; the pill is NOT mutated
+                        // optimistically — the echo frame is the single source of
+                        // truth, so a cold/reload and a live sync converge. MOCK
+                        // rows keep the session-local mutation.
                         if ev.phase == TouchPhase::Ended {
-                            let mut m = r.borrow_mut();
-                            let inner = m.entry(key).or_default();
-                            if let Some(pos) = inner.iter().position(|(e, _, _)| e == &glyph_close) {
-                                let (e, c, _) = inner[pos].clone();
-                                inner[pos] = (e, c + 1, true);
+                            let live = match key {
+                                MessageKey::Live { .. } => true,
+                                MessageKey::Mock { .. } => false,
+                            };
+                            if live {
+                                request_live_reaction(key, glyph_close.clone(), false, close);
                             } else {
-                                inner.push((glyph_close.clone(), 1, true));
+                                let mut m = r.borrow_mut();
+                                let inner = m.entry(key).or_default();
+                                if let Some(pos) = inner.iter().position(|(e, _, _)| e == &glyph_close) {
+                                    let (e, c, _) = inner[pos].clone();
+                                    inner[pos] = (e, c + 1, true);
+                                } else {
+                                    inner.push((glyph_close.clone(), 1, true));
+                                }
+                                rev.set(rev.get() + 1);
+                                close.set(None);
                             }
-                            rev.set(rev.get() + 1);
-                            close.set(None);
                         }
                         TouchResponse::CONSUMED
                     })
@@ -4270,6 +4380,22 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let live_messages: Rc<RefCell<HashMap<i64, Vec<LiveMsg>>>> =
         Rc::new(RefCell::new(HashMap::new()));
     let live_revision: Signal<u32> = signal(0);
+
+    // --- message reactions (shared by the MOCK and the LIVE message lists) --
+    // Per-message reaction state: `reactions` is the pill map (see the `ReactionMap`
+    // doc for the keying), `picker` names the message whose add-reaction overlay
+    // is open (`None` while closed), and `reaction_rev` is the rebuild counter the
+    // message-list `switch` folds into its key so a pill change re-renders the
+    // list. MOCK pills are session-local (seed demo); LIVE pills are persisted
+    // server-side via the `add_reaction` / `remove_reaction` RPCs and restored
+    // on cold loads from `WsServerMsg::Message.reactions` (history frames) plus
+    // updated live by the `ReactionAdd` / `ReactionRemove` broadcast frames.
+    // Declared HERE (before `gateway_incoming_effect`, whose `move` closure
+    // captures these handles — a `switch` effect cannot see a binding defined
+    // after its own call) and read by both paths.
+    let reactions: Rc<RefCell<ReactionMap>> = Rc::new(RefCell::new(HashMap::new()));
+    let reaction_rev: Signal<u32> = signal(0);
+    let picker: Signal<Option<MessageKey>> = signal(None);
     // Scroll-back state for the live message list:
     // - `live_at_bottom` is `true` while the scroll view is at (or near) the
     //   content bottom — the "follow the live tail" mode the list starts in.
@@ -4681,6 +4807,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let has_more_sig = has_more_earlier.clone();
     let presence_buf = live_presence.clone();
     let presence_rev = live_presence_rev.clone();
+    // Reaction handles cloned so the gateway effect's `move` closure owns them:
+    // history `Message` frames restore persisted pills, and the `ReactionAdd`
+    // / `ReactionRemove` broadcast frames update them live for every viewer.
+    let reactions_map = reactions.clone();
+    let reaction_rev_sig = reaction_rev.clone();
     // [Feature 14] A `MemberChanged` frame (another account joined or was
     // kicked/banned) re-fetches the active server's roster — the same
     // `list_members` call the kick/ban/role-change callbacks use — so the
@@ -4722,6 +4853,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 new,
                 mentioned_user_ids,
                 reply_to_message_id,
+                reactions,
             }) = frame
             {
                 // The server resolved the author's username for the frame
@@ -4824,6 +4956,68 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         notif_toast_title_sig,
                         notif_toast_body_sig,
                     );
+                }
+                // Cold-load persistence: a history frame (`new: false`) carries
+                // the message's persisted reactions, so restore them into the
+                // live pill map keyed by the wire `message_id` (`reacted_by_me`
+                // came relative to the socket's own user, resolved server-side
+                // from the verified token). Fresh-post echoes (`new: true`) are
+                // empty — their later reaction changes ride the frames below.
+                if !*new && !reactions.is_empty() {
+                    let key = MessageKey::Live { id: *message_id };
+                    let map_h = reactions_map.clone();
+                    let mut m = map_h.borrow_mut();
+                    let inner = m.entry(key).or_default();
+                    for (emoji, count, reacted) in reactions {
+                        if let Some(p) = inner.iter().position(|(e, _, _)| e == emoji) {
+                            inner[p] = (emoji.clone(), *count, *reacted);
+                        } else {
+                            inner.push((emoji.clone(), *count, *reacted));
+                        }
+                    }
+                    if m.get(&key).map_or(false, |v| v.is_empty()) {
+                        m.remove(&key);
+                    }
+                    drop(m);
+                    reaction_rev_sig.set(reaction_rev_sig.get() + 1);
+                }
+            }
+            // A member — including the caller via its own echo — added or
+            // removed an emoji reaction. The frame carries the message's
+            // post-operation total for the emoji, so apply it authoritatively
+            // (SET, not increment): duplicate frames and a cold-load race
+            // converge. `count == 0` drops the pill. The highlight flips only
+            // on a frame naming THIS client's user; other members' frames keep
+            // whatever highlight the pill already has. Bumping `reaction_rev`
+            // rebuilds the live list, so every connected client sees it.
+            if let Some(discord_server::server_settings::WsServerMsg::ReactionAdd {
+                message_id,
+                channel_id,
+                user_id,
+                emoji,
+                count,
+            }) = frame
+            {
+                let _ = channel_id;
+                let key = MessageKey::Live { id: *message_id };
+                let reacted_hint = if *user_id == my_id { Some(true) } else { None };
+                if apply_reaction(reactions_map.clone(), key, emoji.clone(), *count, reacted_hint) {
+                    reaction_rev_sig.set(reaction_rev_sig.get() + 1);
+                }
+            }
+            if let Some(discord_server::server_settings::WsServerMsg::ReactionRemove {
+                message_id,
+                channel_id,
+                user_id,
+                emoji,
+                count,
+            }) = frame
+            {
+                let _ = channel_id;
+                let key = MessageKey::Live { id: *message_id };
+                let reacted_hint = if *user_id == my_id { Some(false) } else { None };
+                if apply_reaction(reactions_map.clone(), key, emoji.clone(), *count, reacted_hint) {
+                    reaction_rev_sig.set(reaction_rev_sig.get() + 1);
                 }
             }
             // A channel message the signed-in user edited: replace the stored
@@ -5126,18 +5320,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     ));
     let dm_unread_rev: Signal<u32> = signal(0);
 
-    // --- message reactions (mock, session-local) ---------------------------
-    // Per-message reaction state for the MOCK message list: `reactions` is the
-    // pill map (keyed by `(channel_id, list_index)` — see the `ReactionMap`
-    // doc for why the rendered-list position is a stable-enough key), `picker`
-    // names the message whose add-reaction overlay is open (`None` while
-    // closed), and `reaction_rev` is the rebuild counter the message-list
-    // `switch` folds into its key so a pill change re-renders the list. Owned
-    // here next to the other mock per-app signals; the live/gateway path is
-    // left untouched (this feature is mock/session-local only).
-    let reactions: Rc<RefCell<ReactionMap>> = Rc::new(RefCell::new(HashMap::new()));
-    let reaction_rev: Signal<u32> = signal(0);
-    let picker: Signal<Option<MessageKey>> = signal(None);
+    // Reaction state (`reactions` / `reaction_rev` / `picker`) is declared up
+    // with the live state before `gateway_incoming_effect` — see that block.
+
     // Reply context for the channel composer: `Some((author, snippet))` while a
     // message row's hover "Reply" button is composing a reply (the
     // `ReplyPreviewBar` strip reads it); `None` while not. `PinConfirmToast`'s

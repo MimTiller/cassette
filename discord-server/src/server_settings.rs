@@ -113,6 +113,15 @@ pub enum WsServerMsg {
         /// loaded buffer to render the reply-reference strip.
         #[serde(default)]
         reply_to_message_id: Option<i64>,
+        /// Emoji reactions on this message, grouped by emoji: one
+        /// `(emoji, count, reacted_by_me)` tuple per distinct emoji, where
+        /// `reacted_by_me` is relative to the socket's own user (the server
+        /// computes it from the verified token). History frames (`new: false`)
+        /// carry the persisted state from `message_reactions` so a cold load
+        /// restores pills; a fresh-post echo is empty (later changes ride the
+        /// `ReactionAdd` / `ReactionRemove` frames).
+        #[serde(default)]
+        reactions: Vec<(String, u32, bool)>,
     },
     /// The most recent `Message { new: false }` frames for `History`.
     ///
@@ -145,6 +154,26 @@ pub enum WsServerMsg {
     /// re-fetch the local kick path already triggers). No roster data rides on
     /// the frame; the re-fetch supplies it.
     MemberChanged { server_id: i64, user_id: i64, joined: bool },
+    /// A member added (or removed) an emoji reaction on a channel message.
+    /// `count` is the message's total for `emoji` AFTER the operation (0 when
+    /// the last reaction was removed), so clients SET the pill's count rather
+    /// than incrementing locally — duplicate frames and out-of-order delivery
+    /// converge. `user_id` is who the frame is about: the client highlights
+    /// the pill when it names itself.
+    ReactionAdd {
+        message_id: i64,
+        channel_id: i64,
+        user_id: i64,
+        emoji: String,
+        count: u32,
+    },
+    ReactionRemove {
+        message_id: i64,
+        channel_id: i64,
+        user_id: i64,
+        emoji: String,
+        count: u32,
+    },
     /// A gateway error for a specific operation.
     Error { reason: String },
 }
@@ -279,7 +308,11 @@ pub async fn message_gateway(
                                 new: false,
                                 mentioned_user_ids: m.mentioned_user_ids,
                                 reply_to_message_id: m.reply_to_message_id,
-                            })
+                                // Cold-load persistence: history frames carry the
+                                // message's persisted reactions, with
+                                // `reacted_by_me` relative to the socket's own user.
+                                reactions: db.reactions_for_message(m.id, user_id),
+                                })
                             .await;
                     }
                 }
@@ -1239,6 +1272,59 @@ pub async fn unpin_message(input: PinInput) -> Result<PinResult, ServerError> {
         .map_err(ServerError::failed)
 }
 
+// ── message reactions ─────────────────────────────────────────────────────
+//
+// Add/remove an emoji reaction on a channel message (any member — unlike the
+// moderator+ pin bar, Discord lets every member react), persisting a
+// `(message, user, emoji)` row in `message_reactions` and broadcasting the
+// post-state count to the channel's server audience over the gateway
+// (`WsServerMsg::ReactionAdd` / `ReactionRemove`). The acting user comes from
+// the verified session token, never from the request.
+
+/// React to a message with an emoji. Any member of the message's channel's
+/// server may call (Discord parity: reacting needs no elevated role). Idempotent
+/// for a repeat add; the result's `count` is the message's total for that emoji
+/// after the operation.
+#[server]
+pub async fn add_reaction(input: ReactionInput) -> Result<ReactionResult, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let (channel_id, count) =
+        crate::realtime::add_channel_reaction(&db, caller, input.message_id, &input.emoji)
+            .map_err(ServerError::failed)?;
+    Ok(
+        ReactionResult {
+            message_id: input.message_id,
+            channel_id,
+            emoji: input.emoji,
+            count,
+            added: true,
+        }
+    )
+}
+
+/// Drop the caller's own emoji reaction from a message. Same member bar as
+/// `add_reaction`; idempotent (removing a reaction that is not there is a
+/// no-op). `count` is the message's total for the emoji after the removal —
+/// 0 means the last one was dropped.
+#[server]
+pub async fn remove_reaction(input: ReactionInput) -> Result<ReactionResult, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let (channel_id, count) =
+        crate::realtime::remove_channel_reaction(&db, caller, input.message_id, &input.emoji)
+            .map_err(ServerError::failed)?;
+    Ok(
+        ReactionResult {
+            message_id: input.message_id,
+            channel_id,
+            emoji: input.emoji,
+            count,
+            added: false,
+        }
+    )
+}
+
 /// Every pinned message in a channel, in pin order (oldest first). Any member
 /// of the owning server may read the view.
 #[server]
@@ -1458,6 +1544,26 @@ pub struct PinResult {
     pub channel_id: i64,
     pub pinned: bool,
     pub pinned_count: i64,
+}
+
+/// Which message the caller (the session-token user) is adding or dropping one
+/// emoji reaction on. The message's channel is resolved server-side from the
+/// stored row, like the pin endpoints.
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+pub struct ReactionInput {
+    pub message_id: i64,
+    pub emoji: String,
+}
+
+/// The outcome of an add/remove reaction. `count` is the message's total for
+/// `emoji` AFTER the operation; `added` reports which way the call went.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ReactionResult {
+    pub message_id: i64,
+    pub channel_id: i64,
+    pub emoji: String,
+    pub count: u32,
+    pub added: bool,
 }
 
 /// One entry in a channel's pinned view: the full message plus who pinned it.

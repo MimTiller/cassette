@@ -13,6 +13,11 @@ mod moderation;
 #[allow(dead_code)]
 mod invite;
 mod pins;
+// Client-side wrapper for the backend's message-reaction `#[server]` RPCs
+// (`discord_server::server_settings::{add_reaction, remove_reaction}`) — the
+// live (persisted, synced) half of the reaction feature; the mock rows stay
+// session-local. Same thin-stub shape as `pins.rs`.
+mod reactions;
 mod typing_indicator;
 mod notification_settings;
 mod keyboard_shortcuts_overlay;
