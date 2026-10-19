@@ -4856,6 +4856,20 @@ fn app_shell(authed: Signal<bool>) -> Element {
         Rc::new(RefCell::new(HashMap::new()));
     let live_presence_rev: Signal<u32> = signal(0);
 
+    // Realtime gateway: the signed session token authenticates the connect
+    // (the backend verifies it). It rides the connect URL's `?args=` query —
+    // a browser websocket cannot set request headers, so the token can't go on
+    // an Authorization header here the way the REST calls do. Non-async hook;
+    // call it once here. An empty token (guest, before a successful login)
+    // simply gets no working socket, so the status label below shows
+    // Closed/Error. Declared BEFORE the auto-enter effect below because that
+    // effect sends the saved channel's initial `History` frame over the
+    // gateway (same as a manual channel-row tap), and `UseSocket` is `Copy`
+    // so the effect's `async move` block just captures it.
+    let gateway = discord_server::server_settings::message_gateway(
+        crate::auth::current_token(),
+    );
+
     // [Feature 16] A real account lands on its own live server, not the mock
     // demo. When the list resolves and the user has at least one live server,
     // auto-enter one of them (select it + pull its channels / roster /
@@ -4864,12 +4878,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // they keep the mock default. A real account with zero servers stays on
     // the onboarding empty state (no live server to enter).
     //
-    // Which server: prefer the one `crate::auth::save_last_server` recorded
-    // the last time this account entered a live server (via a rail tap or
-    // just-created server) — so a refresh lands back where the user left
-    // off, not wherever `list_servers` happens to put first. Falls back to
-    // the first server when there's nothing saved, or the saved id is stale
-    // (e.g. they were removed from that server since).
+    // Which server/channel: prefer the exact spot `crate::auth::save_last_view_*`
+    // recorded the last time this account entered a live server / selected a
+    // live channel (or opened a live DM) — so a refresh lands back where the
+    // user left off, not wherever `list_servers` happens to put first. The key
+    // is per user id, so two accounts in one browser each restore THEIR OWN
+    // last view. Falls back to the first server's first text channel when
+    // there's nothing saved, or the saved ids are stale (the server/channel is
+    // gone or the channel isn't a text channel in this server), or the saved
+    // value is unparseable.
     {
         let ls = live_servers.clone();
         let als = active_live_server.clone();
@@ -4882,6 +4899,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let ltcm = live_timeout_confirm.clone();
         let lunread = rail_unread.clone();
         let lunread_rev = live_unread_rev.clone();
+        // The live list's scroll state re-arms for the restored channel exactly
+        // as the channel-row select handler does (the pane starts "following
+        // the live tail" at the bottom, and the fresh pane's `on_handle` gets
+        // to capture its own scroll handle).
+        let latbot = live_at_bottom.clone();
+        let lhandle = live_scroll_handle.clone();
         let is_real = is_real_user;
         runtime_core::driver::spawn_async(async move {
             if !is_real {
@@ -4897,8 +4920,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 return;
             };
             ls.set(servers.clone());
-            let last = crate::auth::load_last_server();
-            let Some(sid) = last
+            // The saved last view (kind 0 = server+channel, kind 1 = open DM).
+            // A DM-form save carries no server preference: the channel half of
+            // the restore then follows the plain first-server fallback.
+            let saved = crate::auth::load_last_view();
+            let saved_sid = match saved {
+                Some((0, sid, _)) => Some(sid),
+                _ => None
+            };
+            let Some(sid) = saved_sid
                 .filter(|id| servers.iter().any(|s| s.id == *id))
                 .or_else(|| servers.first().map(|s| s.id))
             else {
@@ -4914,10 +4944,38 @@ fn app_shell(authed: Signal<bool>) -> Element {
             lmbr_err.set(String::new());
             lmbrs.set(Vec::new());
             if let Ok(channels) = crate::servers::list_channels(sid).await {
-                let first = channels.iter().find(|c| c.kind == "text").map(|c| c.id);
+                let first = channels
+                    .iter()
+                    .find(|c| c.kind == "text")
+                    .map(|c| c.id);
+                // Prefer the SAVED channel over the first text channel — but
+                // only when it belongs to the server we actually entered and
+                // is a text channel there (a deleted/renamed channel or a
+                // server change makes the saved half stale; stale halves fall
+                // back independently).
+                let saved_cid = match saved {
+                    Some((0, s, c))
+                        if s == sid && channels.iter().any(|ch| ch.kind == "text" && ch.id == c) =>
+                        Some(c),
+                    _ => None
+                };
                 lch.set(channels);
-                if let Some(id) = first {
+                let chosen = saved_cid.or_else(|| first);
+                if let Some(id) = chosen {
                     alc.set(Some(id));
+                    // Re-arm the live list's scroll state for the restored
+                    // channel — identical to the channel-row select handler
+                    // (start "following the live tail" at the bottom, and
+                    // drop the old pane's captured scroll handle so the
+                    // fresh pane's `on_handle` callback can capture its own).
+                    latbot.set(true);
+                    *lhandle.borrow_mut() = None;
+                    gateway.send(
+                        discord_server::server_settings::WsClientMsg::History {
+                            channel_id: id,
+                            before_id: None,
+                        },
+                    );
                 }
             }
             if let Ok(members) = crate::moderation::list_members(sid).await {
@@ -4929,21 +4987,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     .extend(counts.into_iter().map(|c| (c.channel_id, (c.count, c.unread_mentions))));
                 lunread_rev.set(lunread_rev.get() + 1);
             }
-            crate::auth::save_last_server(sid);
             als.set(Some(sid));
         });
     }
 
     // Realtime gateway: the signed session token authenticates the connect
-    // (the backend verifies it). It rides the connect URL's `?args=` query —
-    // a browser websocket cannot set request headers, so the token can't go on
-    // an Authorization header here the way the REST calls do. Non-async hook;
-    // call it once here. An empty token (guest, before a successful login)
-    // simply gets no working socket, so the status label below shows
-    // Closed/Error.
-    let gateway = discord_server::server_settings::message_gateway(
-        crate::auth::current_token(),
-    );
+    // (the backend verifies it). Declared above (before the auto-enter
+    // effect) so that effect can send the restored channel's initial
+    // `History` frame — see the note there.
     // Compact single-line status label for the 72px rail: "● Open" etc.
     // (the wide `messaging: {:?}` form clipped/wrapped). The label is
     // reactive: `switch` re-runs the arm whenever the status string
@@ -5636,6 +5687,51 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // updated and the list `switch` re-creates its rows — an in-row signal
     // would drop the draft at exactly that moment).
     let live_dm_new_id: Signal<String> = signal(String::new());
+    // Refresh restore: when the persisted per-user last view is the DM form,
+    // re-open the DM panel on THAT conversation — the same state a live-DM
+    // row tap sets (`live_dm_active` + fetched history + revision bump), so
+    // the user lands with the conversation's messages visible and no click.
+    // Validate against the freshly fetched list first: a deleted conversation
+    // or one the user lost access to is ignored (falls back to the closed
+    // panel + the server fallback the auto-enter effect already applied).
+    {
+        let saved = crate::auth::load_last_view();
+        let is_real = is_real_user;
+        let mode = live_dm_mode.clone();
+        let list = live_dms.clone();
+        let act = live_dm_active.clone();
+        let buf = live_dm_messages.clone();
+        let rev = live_dm_revision.clone();
+        runtime_core::driver::spawn_async(async move {
+            if !is_real {
+                return;
+            }
+            let Some((kind, dm_id, _)) = saved.filter(|(k, _, _)| *k == 1) else { return; };
+            if kind != 1 {
+                return;
+            }
+            let Ok(dms_list) = crate::dms::list_dms().await else { return; };
+            if !dms_list.iter().any(|d| d.channel_id == dm_id) {
+                return; // stale saved DM: keep the default (closed panel)
+            }
+            list.set(dms_list);
+            act.set(Some(dm_id));
+            mode.set(true);
+            // History: identical to the row's `live_dm_row` select handler
+            // (clear + refill the one-conversation buffer, bump the rebuild
+            // counter) — the fetch is the click path's fetch.
+            if let Ok(history) = crate::dms::list_dm_messages(dm_id, None).await {
+                buf.borrow_mut().clear();
+                buf.borrow_mut().extend(history.into_iter().map(|m| (
+                    m.author_username,
+                    m.content,
+                    m.created_at,
+                    m.edited_at,
+                )));
+                rev.set(rev.get() + 1);
+            }
+        });
+    }
 
     // Server Moderation panel: a gavel icon in the channel header opens it as
     // a full-screen overlay (the same toggle idiom as `profile_mode` — built
@@ -6039,10 +6135,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
                             active_live.set(Some(sid));
-                            // Remember this as "the server to land on" so a
-                            // refresh re-enters it instead of the account's
-                            // first live server.
-                            crate::auth::save_last_server(sid);
                             live_ch_sel.set(None);
                             // Clear any stale moderation state from a previous
                             // live server (kick + ban + timeout confirm and error text).
@@ -6085,6 +6177,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                     live_ch.set(channels);
                                     if let Some(id) = first {
                                         live_ch_sel.set(Some(id));
+                                        // Persist the exact landing spot (this
+                                        // server + this first channel) keyed by
+                                        // user id, so a refresh re-enters HERE
+                                        // — not the account's first server.
+                                        crate::auth::save_last_view_channel(sid, id);
                                         // Auto-selecting only sets which channel
                                         // is "active" — it does NOT populate
                                         // `live_messages` for it. A manual row
@@ -6223,10 +6320,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         // handler: select it, reset any stale channel/moderation
                         // state, and pull its channels + roster + unread counts.
                         active_live_server.set(Some(summary.id));
-                        // Remember this as "the server to land on" so a
-                        // refresh re-enters it instead of the account's first
-                        // live server.
-                        crate::auth::save_last_server(summary.id);
                         active_live_channel.set(None);
                         live_kick_confirm.set(None);
                         live_member_error.set(String::new());
@@ -6245,6 +6338,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             live_channels.set(channels);
                             if let Some(id) = first {
                                 active_live_channel.set(Some(id));
+                                // Persist the landing spot for this account so
+                                // a refresh re-enters the just-created server's
+                                // first channel.
+                                crate::auth::save_last_view_channel(summary.id, id);
                                 // See the enter-live tile handler's identical
                                 // fix: auto-selecting doesn't fetch history on
                                 // its own, so send it explicitly or the fresh
@@ -6568,6 +6665,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     let now_open = !live_dm_mode.get();
                     live_dm_mode.set(now_open);
                     if now_open {
+                        // Persist the open conversation as this user's last
+                        // view (DM form) so a refresh re-opens the DM panel on
+                        // their own last conversation. None (nothing selected
+                        // yet this visit) clears nothing; the DM row's select
+                        // handler keeps the value current on every tap.
+                        if let Some(dm_id) = live_dm_active.get() {
+                            crate::auth::save_last_view_dm(dm_id);
+                        }
                         // Re-fetch on every open so the list reflects the backend's
                         // current state (mirrors how a live channel is re-fetched
                         // when its server is re-selected).
@@ -6828,6 +6933,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // `Vec<Element>` out of the inner `ui!` closure would be a
                     // move out of an `Fn` closure (`Element` is not `Clone`).
                     let live_sel = active_live_channel.clone();
+                    // The live server id — read by the channel-row select
+                    // handler to key the persisted last view (server+channel).
+                    let live_sid = active_live_server.clone();
                     let gw = gateway.clone();
                     let live_unread_map = live_unread.clone();
                     // Scroll-back state for the live list, captured for the
@@ -7066,6 +7174,17 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                     .on_touch(move |ev| {
                                         if ev.phase == TouchPhase::Ended {
                                             live_sel.set(Some(cid));
+                                            // Persist THIS channel (and its
+                                            // server) as the account's last
+                                            // view: the tap path is the
+                                            // canonical "selection", so the
+                                            // saved value always tracks where
+                                            // the user last clicked — a
+                                            // non-first server AND a non-first
+                                            // channel.
+                                            if let Some(sid) = live_sid.get() {
+                                                crate::auth::save_last_view_channel(sid, cid);
+                                            }
                                             // Re-arm the live list's scroll state for the
                                             // freshly opened channel: start "following the
                                             // live tail" (at the bottom) and drop the old
