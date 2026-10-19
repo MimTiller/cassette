@@ -169,6 +169,7 @@ fn live_dm_new_row(
                                 dms_sig.set(list);
                             }
                             act.set(Some(dm_id));
+                            crate::auth::save_last_view_dm(dm_id);
                             if let Ok(history) = dms::list_dm_messages(dm_id, None).await {
                                 m.borrow_mut().clear();
                                 m.borrow_mut()
@@ -314,6 +315,9 @@ fn live_dm_row(
         .on_touch(move |ev| {
             if ev.phase == TouchPhase::Ended {
                 active.set(Some(dm_id));
+                // Persist as this account's last open DM so a refresh re-opens
+                // THIS conversation (keyed by user id in localStorage).
+                crate::auth::save_last_view_dm(dm_id);
                 let msgs = msgs.clone();
                 let rev = rev.clone();
                 runtime_core::driver::spawn_async(async move {

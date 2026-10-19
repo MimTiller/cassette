@@ -279,43 +279,170 @@ pub(crate) fn load_session() -> Option<(String, i64, String)> {
 pub(crate) fn clear_session() {
     if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
         let _ = storage.remove_item("discord_session");
-        let _ = storage.remove_item("discord_last_server");
+        // Only the SIGNED-IN user's last-view key is dropped — other accounts
+        // sharing this browser keep their own last-view so logging A out never
+        // erases B's landing spot. `CURRENT_USER_ID` still holds the id being
+        // logged out at this call site (logout clears the statics afterwards).
+        let uid = CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+        if uid != 0 {
+            let _ = storage.remove_item(&format!("discord.last_view.{}", uid));
+        }
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn clear_session() {}
 
-/// Remember the live server the user most recently entered, so a page
-/// refresh can land them back on it instead of the onboarding empty state
-/// (the auto-enter effect in `app_shell` falls back to the account's first
-/// live server when there's nothing saved, or the saved id is no longer in
-/// their server list).
+// --- persisted last view (per user) ----------------------------------------
+//
+// Selection lives only in memory, so a page refresh drops the user back on
+// whatever the auto-enter fallback picks. Persist the last ENTERED view the
+// same way the session survives a refresh — one key PER USER ID
+// (`discord.last_view.<user_id>`) so two accounts sharing one browser each
+// land back on THEIR OWN last server + channel (or last open DM), never the
+// first server or another account's spot. Guest ids (0) never write a key.
+//
+// Value grammar (a compact tagged line, not JSON — no parser dep):
+//   `s:<server_id>:c:<channel_id>`   a live channel inside a live server
+//   `d:<dm_channel_id>`             the live DM conversation that was open
+// Anything unparseable (a hand-crafted bogus value from devtools, a key
+// written by an older build) parses to `None` = fall back to the default
+// behaviour.
+
+/// The pure half of the last-view grammar: parse a saved value's text into
+/// `(kind, a, b)` — kind `0` = live server+channel (`a` = server id, `b` =
+/// channel id); kind `1` = live DM (`a` = DM channel id). `None` when
+/// unparseable. Split out from `load_last_view` so it can be unit-tested on
+/// any target (the localStorage read itself only exists on wasm).
+pub(crate) fn parse_last_view(raw: &str) -> Option<(i64, i64, i64)> {
+    let parts: Vec<&str> = raw.split(':').collect();
+    if parts.len() < 2 {
+        return None;
+    }
+    let tag = parts[0];
+    match parts.len() {
+        // `s:8:c:9` → ["s","8","c","9"]: 4 tokens (tag, server id, literal 'c',
+        // channel id) — matches exactly what `save_last_view_channel` writes.
+        4 if tag == "s" && parts[2] == "c" =>
+            Some((0, parts[1].parse().ok()?, parts[3].parse().ok()?)),
+        2 if tag == "d" => Some((1, parts[1].parse().ok()?, 0)),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod last_view_tests {
+    use crate::auth::parse_last_view;
+    use crate::auth::format_last_view_channel;
+    use crate::auth::format_last_view_dm;
+
+    #[test]
+    fn saved_channel_view_round_trips_through_the_parser() {
+        // Regression for the 3-vs-4 token parse bug: `save_last_view_channel`
+        // writes `s:<server>:c:<channel>` (4 tokens on ':'); a parser matching
+        // on 3 tokens silently turns EVERY saved spot into a fallback.
+        assert_eq!(parse_last_view(&format_last_view_channel(9, 12)), Some((0, 9, 12)));
+        assert_eq!(parse_last_view(&format_last_view_channel(1, 1)), Some((0, 1, 1)));
+    }
+
+    #[test]
+    fn saved_dm_view_round_trips_through_the_parser() {
+        assert_eq!(parse_last_view(&format_last_view_dm(7)), Some((1, 7, 0)));
+    }
+
+    #[test]
+    fn bogus_or_stale_values_parse_to_none() {
+        // Hand-crafted garbage from devtools, old-build keys, stale ids:
+        // all must fall back (None) rather than crash or restore garbage.
+        assert_eq!(parse_last_view("s:9:c:abc"), None);
+        assert_eq!(parse_last_view("s:notanum:c:1"), None);
+        assert_eq!(parse_last_view("garbage"), None);
+        assert_eq!(parse_last_view(""), None);
+        assert_eq!(parse_last_view(":"), None);
+        assert_eq!(parse_last_view("x:1"), None);
+        assert_eq!(parse_last_view("s:9:c:1:extra"), None);
+        assert_eq!(parse_last_view("d:1:c:2"), None);
+    }
+}
+
+/// The saved-value text for a live server+channel view. Split from
+/// `save_last_view_channel` (wasm-only) so the grammar is testable anywhere.
+pub(crate) fn format_last_view_channel(server_id: i64, channel_id: i64) -> String {
+    format!("s:{server_id}:c:{channel_id}")
+}
+
+/// The saved-value text for an open live DM. Split from `save_last_view_dm`
+/// (wasm-only) so the grammar is testable anywhere.
+pub(crate) fn format_last_view_dm(dm_channel_id: i64) -> String {
+    format!("d:{dm_channel_id}")
+}
+
+/// Remember the live channel `channel_id` inside server `server_id` as this
+/// user's last view. Written on every live-server enter and every live-channel
+/// selection, so the persisted spot is exactly where the user last clicked —
+/// a non-first server AND a non-first channel.
 #[cfg(target_arch = "wasm32")]
-pub(crate) fn save_last_server(server_id: i64) {
+pub(crate) fn save_last_view_channel(server_id: i64, channel_id: i64) {
+    let uid = CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+    if uid == 0 {
+        return; // guest: no identity to key a per-user view on
+    }
     if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
-        let _ = storage.set_item("discord_last_server", &server_id.to_string());
+        let _ = storage.set_item(
+            &format!("discord.last_view.{}", uid),
+            &format_last_view_channel(server_id, channel_id),
+        );
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn save_last_server(_server_id: i64) {}
+pub(crate) fn save_last_view_channel(_server_id: i64, _channel_id: i64) {}
 
-/// The persisted last-entered live server id, or `None` when there is none
-/// (first visit, guest, or logged out since).
-pub(crate) fn load_last_server() -> Option<i64> {
+/// Remember the open live DM conversation `dm_channel_id` as this user's last
+/// view — it takes precedence over the channel form (a DM being the last open
+/// surface is the "last thing open" the refresh must restore).
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn save_last_view_dm(dm_channel_id: i64) {
+    let uid = CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+    if uid == 0 {
+        return;
+    }
+    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        let _ = storage.set_item(
+            &format!("discord.last_view.{}", uid),
+            &format_last_view_dm(dm_channel_id),
+        );
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn save_last_view_dm(_dm_channel_id: i64) {}
+
+/// The signed-in user's persisted last view as `(kind, a, b)`: kind `0` =
+/// live server+channel (`a` = server id, `b` = channel id); kind `1` = live
+/// DM (`a` = DM channel id). `None` when nothing is saved, the value is
+/// unparseable, or the user has no key (guest / first visit / logged out
+/// since).
+pub(crate) fn load_last_view() -> Option<(i64, i64, i64)> {
     #[cfg(target_arch = "wasm32")]
     {
-        web_sys::window()
+        let uid = CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+        if uid == 0 {
+            return None;
+        }
+        let raw = web_sys::window()
             .and_then(|w| w.local_storage().ok().flatten())?
-            .get_item("discord_last_server")
+            .get_item(&format!("discord.last_view.{}", uid))
             .ok()
-            .flatten()?
-            .parse()
-            .ok()
+            .flatten()?;
+        // Shared, tested parser (the pure half of the grammar) — the wasm
+        // reader owns only the localStorage lookup.
+        parse_last_view(&raw)
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
+        // Off wasm (native/test builds) there is no persisted view; the tests
+        // exercise `parse_last_view` directly.
         None
     }
 }
