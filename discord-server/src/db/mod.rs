@@ -697,9 +697,13 @@ impl Db {
     // ── message reactions ──────────────────────────────────────────────────
     //
     // Emoji reactions per channel message (`message_reactions`): one row per
-    // (message, user, emoji). Written by the live gateway when a client sends a
-    // `ReactionAdd` / `ReactionRemove` frame; read back into `Message.reactions`
-    // on history loads. See migration `0013_message_reactions.sql`.
+    // (message, user, emoji). Written by `realtime::add_channel_reaction` /
+    // `remove_channel_reaction` — the bodies behind the `#[server]` `add_reaction`
+    // / `remove_reaction` endpoints — which also broadcast a
+    // `WsServerMsg::ReactionAdd` / `ReactionRemove` frame so connected members
+    // see the pill live. History loads fold them back per message via
+    // `reactions_for_message` (the gateway attaches them to
+    // `WsServerMsg::Message.reactions`). See migration `0013_message_reactions.sql`.
 
     /// Record that `user_id` reacted with `emoji` to `message_id`. Upsert: a
     /// re-add of the same (message, user, emoji) is a no-op (the UNIQUE key

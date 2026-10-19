@@ -311,6 +311,9 @@ pub fn post_channel_message(
             new: true,
             mentioned_user_ids,
             reply_to_message_id,
+            // A fresh post has no reactions yet; later adds ride the
+            // `ReactionAdd` broadcast frames.
+            reactions: Vec::new(),
         },
     );
     Ok(())
@@ -390,6 +393,95 @@ pub fn delete_channel_message(db: &Db, user_id: i64, message_id: i64) -> Result<
         &WsServerMsg::MessageDeleted { message_id, channel_id },
     );
     Ok(())
+}
+
+/// Persist that `user_id` reacted with `emoji` to `message_id`, then fan out a
+/// `ReactionAdd` frame carrying the new per-emoji count to the channel's server
+/// audience (the reactor's own echo included). The count is read back after the
+/// write, never incremented, so a duplicate add converges to the truth.
+/// Returns the resolved `(channel_id, count)` for the endpoint's result.
+///
+/// Authorization: the message must exist AND its channel must be a text channel
+/// of a server the caller is a member of (`authorize_text_channel`, same bar as
+/// posting). Unlike pinning there is NO elevated-role check — Discord lets any
+/// member react.
+pub fn add_channel_reaction(
+    db: &Db,
+    user_id: i64,
+    message_id: i64,
+    emoji: &str,
+) -> Result<(i64, u32), String> {
+    if emoji.trim().is_empty() || emoji.chars().count() > 16 {
+        return Err("invalid reaction emoji".into());
+    }
+    let (_author_id, channel_id) = match db.message_row(message_id) {
+        Some(pair) => pair,
+        None => return Err("message not found".into()),
+    };
+    let server_id = authorize_text_channel(db, user_id, channel_id).map_err(String::from)?;
+    db.add_reaction(message_id, user_id, emoji, now_millis())
+        .map_err(|e| format!("failed to store reaction: {e}"))?;
+    let count = reaction_count_for(db, message_id, emoji);
+    hub().publish(
+        &server_audience(db, server_id),
+        &WsServerMsg::ReactionAdd {
+            message_id,
+            channel_id,
+            user_id,
+            emoji: emoji.to_string(),
+            count,
+        },
+    );
+    Ok((channel_id, count))
+}
+
+/// Drop `user_id`'s `emoji` reaction from `message_id` and fan out a
+/// `ReactionRemove` frame with the post-state count. Authorization as
+/// [`add_channel_reaction`]; idempotent (removing an absent reaction is a
+/// no-op that still broadcasts the unchanged count, so clients converge).
+pub fn remove_channel_reaction(
+    db: &Db,
+    user_id: i64,
+    message_id: i64,
+    emoji: &str,
+) -> Result<(i64, u32), String> {
+    if emoji.trim().is_empty() || emoji.chars().count() > 16 {
+        return Err("invalid reaction emoji".into());
+    }
+    let (_author_id, channel_id) = match db.message_row(message_id) {
+        Some(pair) => pair,
+        None => return Err("message not found".into()),
+    };
+    let server_id = authorize_text_channel(db, user_id, channel_id).map_err(String::from)?;
+    let removed = db
+        .remove_reaction(message_id, user_id, emoji)
+        .map_err(|e| format!("failed to remove reaction: {e}"))?;
+    // Whether a row was actually dropped does not gate the broadcast: a no-op
+    // removal still reports the post-state count so clients converge.
+    let _ = removed;
+    let count = reaction_count_for(db, message_id, emoji);
+    hub().publish(
+        &server_audience(db, server_id),
+        &WsServerMsg::ReactionRemove {
+            message_id,
+            channel_id,
+            user_id,
+            emoji: emoji.to_string(),
+            count,
+        },
+    );
+    Ok((channel_id, count))
+}
+
+/// How many users reacted with `emoji` on `message_id` — the authoritative
+/// post-operation total for one emoji (the grouped store in
+/// [`crate::db::Db::reactions_for_message`] returns per-emoji counts).
+fn reaction_count_for(db: &Db, message_id: i64, emoji: &str) -> u32 {
+    db.reactions_for_message(message_id, 0)
+        .iter()
+        .find(|(e, _, _)| e == emoji)
+        .map(|(_, c, _)| *c)
+        .unwrap_or(0)
 }
 
 /// The recent history of a channel, if `user_id` may read it. With
@@ -680,6 +772,72 @@ mod tests {
                 WsServerMsg::MessageDeleted { message_id, .. } if message_id == mid
             ),
             "the deletion fans out to the whole server, not just the sender"
+        );
+    }
+
+    #[test]
+    fn reaction_persists_and_bounces_to_the_server_audience() {
+        // Regression for the non-persistent reaction gap: a member's react must
+        // write a `message_reactions` row AND broadcast the post-state count to
+        // every socket of the channel's server (the reactor's echo included).
+        let _guard = crate::e2e_lock::guard();
+        let (_d, db) = setup();
+        let hub = crate::realtime::hub();
+        hub.reset();
+        let (_id, mut rx) = hub.register(1); // alice — the reactor
+        let (_id2, mut rx2) = hub.register(2); // bob — co-member (viewer)
+
+        let mid = db.insert_message(1, 1, "reactable", 100, None).unwrap();
+
+        // A non-member of the channel's server cannot react.
+        assert_eq!(
+            add_channel_reaction(&db, 4, mid, "🎉").unwrap_err(),
+            "not a member of this server"
+        );
+        // No row was written for the refused attempt.
+        assert!(db.reactions_for_message(mid, 1).is_empty(), "refused add wrote nothing");
+
+        // Alice reacts with 👍: resolved channel + post-state count 1,
+        // read back from the DB (never a per-client increment).
+        let (channel_id, count) = add_channel_reaction(&db, 1, mid, "👍").unwrap();
+        assert_eq!((channel_id, count), (1, 1u32), "resolved channel + post-state count");
+
+        // PERSISTENCE: the grouped store now shows one 👍 reacted by alice (1).
+        // This is the row a cold load reads back via `reactions_for_message`,
+        // so a reload restores the pill without re-clicking.
+        let pills = db.reactions_for_message(mid, 1);
+        assert_eq!(pills, vec![("👍".to_string(), 1u32, true)], "the reaction row persisted");
+
+        // Bob reacting with the SAME emoji bumps the authoritative total to 2.
+        let (_cid, count2) = add_channel_reaction(&db, 2, mid, "👍").unwrap();
+        assert_eq!(count2, 2u32, "the count is the DB total after the write");
+
+        // DROPPING alice's 👍 leaves bob's, so the total returns to 1.
+        let (_cid, count3) = remove_channel_reaction(&db, 1, mid, "👍").unwrap();
+        assert_eq!(count3, 1u32, "post-state total after removing alice's reaction");
+        // A second remove of alice's now-absent reaction is a no-op at count 1.
+        let (_cid, count4) = remove_channel_reaction(&db, 1, mid, "👍").unwrap();
+        assert_eq!(count4, 1u32, "idempotent: removing an absent reaction keeps 1");
+        // PERSISTENCE: alice's 👍 row is gone, bob's remains.
+        let pills2 = db.reactions_for_message(mid, 1);
+        assert_eq!(pills2, vec![("👍".to_string(), 1u32, false)], "bob still reacts, alice does not");
+
+        // The FIRST reaction (alice's 👍, count 1) bounced to BOTH sockets:
+        // alice's own echo plus bob's copy, each with the post-state count 1.
+        match rx.try_recv().expect("reactor echo") {
+            WsServerMsg::ReactionAdd { message_id, channel_id, user_id, emoji, count, .. } => {
+                assert_eq!((message_id, channel_id, user_id, count), (mid, 1, 1, 1u32));
+                assert_eq!(emoji, "👍", "the echo names the emoji");
+            }
+            other => panic!("expected ReactionAdd, got {other:?}"),
+        }
+        assert!(
+            matches!(
+                rx2.try_recv().expect("co-member sees the reaction live"),
+                WsServerMsg::ReactionAdd { message_id, emoji, count, .. }
+                    if message_id == mid && emoji == "👍" && count == 1u32
+            ),
+            "the reaction fans out to the whole server, not just the reactor"
         );
     }
 
