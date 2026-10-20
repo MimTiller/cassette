@@ -34,6 +34,10 @@ mod profile_settings;
 mod dm_view;
 mod dms;
 mod live_dm_view;
+// Client friends-list wrapper (RPC front-end for discord-server/src/friends.rs)
+// + the live friends panel view.
+mod friends;
+mod friends_view;
 
 // Standalone component, not wired into any screen yet — same "declared so it
 // compiles, referenced by nothing" shape as `profile_settings`. Lives under
