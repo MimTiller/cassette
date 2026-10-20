@@ -1403,6 +1403,110 @@ impl Db {
         (incoming, outgoing, accepted)
     }
 
+    /// Delete the pair's friendship row (either direction, any status).
+    /// Used by block cleanup: blocking removes any existing link between the
+    /// two. Returns true when a row was deleted.
+    pub fn delete_friendship_between(&self, a: i64, b: i64) -> bool {
+        let Some((row_id, _, _, _)) = self.friendship_between(a, b) else {
+            return false;
+        };
+        let c = self.lock().ok().expect("lock");
+        let n = c
+            .execute(
+                "DELETE FROM friendships WHERE id = ?1",
+                rusqlite::params![row_id],
+            )
+            .unwrap_or(0);
+        n > 0
+    }
+
+    // ── user blocks ────────────────────────────────────────────────────────
+    //
+    // `user_blocks` (migration `0017_user_blocks.sql`): one row per DIRECTED
+    // (blocker_id, blocked_id) pair, composite PK on both. Blocking is
+    // unilateral — a pair is "blocked" when a row exists in EITHER direction,
+    // so app-layer checks go through `blocks_pair` (two-way `EXISTS`). No
+    // status lifecycle: a block is presence/absence, removed by deleting the
+    // row. `created_at` is UTC epoch milliseconds, like the other tables.
+
+    /// Insert a directed block row. Idempotent — `INSERT OR IGNORE` against
+    /// the composite PK, so a second block by the same blocker is a no-op.
+    pub fn insert_user_block(&self, blocker_id: i64, blocked_id: i64) {
+        let c = self.lock().ok().expect("lock");
+        let _ = c.execute(
+            "INSERT OR IGNORE INTO user_blocks (blocker_id, blocked_id, created_at)
+             VALUES (?1, ?2, ?3)",
+            rusqlite::params![blocker_id, blocked_id, now_epoch_ms()],
+        );
+    }
+
+    /// Delete the directed block row, if any (a reverse block is a separate
+    /// row and survives — unblock only removes the blocker's own row).
+    pub fn delete_user_block(&self, blocker_id: i64, blocked_id: i64) {
+        let c = self.lock().ok().expect("lock");
+        let _ = c.execute(
+            "DELETE FROM user_blocks WHERE blocker_id = ?1 AND blocked_id = ?2",
+            rusqlite::params![blocker_id, blocked_id],
+        );
+    }
+
+    /// True when a block exists in EITHER direction between `a` and `b`. The
+    /// pair is blocked regardless of who initiated it; the app layer enforces
+    /// this symmetrically (friend requests and DM starts fail both ways).
+    pub fn blocks_pair(&self, a: i64, b: i64) -> bool {
+        let c = self.lock().ok().expect("lock");
+        c.query_row(
+            "SELECT EXISTS (
+                 SELECT 1 FROM user_blocks WHERE blocker_id = ?1 AND blocked_id = ?2
+                 UNION
+                 SELECT 1 FROM user_blocks WHERE blocker_id = ?2 AND blocked_id = ?1
+             )",
+            rusqlite::params![a, b],
+            |r| r.get::<_, bool>(0),
+        )
+        .unwrap_or(false)
+    }
+
+    /// The user ids the acting user has blocked (rows they initiated). Feeds
+    /// the `LoginResult` startup payload so the client can collapse channel
+    /// messages from blocked users (the server does not filter channel
+    /// messages itself).
+    pub fn blocked_ids_for_user(&self, user_id: i64) -> Vec<i64> {
+        let c = self.lock().ok().expect("lock");
+        let mut stmt = c
+            .prepare("SELECT blocked_id FROM user_blocks WHERE blocker_id = ?1 ORDER BY blocked_id")
+            .expect("prepare blocked ids");
+        let rows = stmt.query_map(rusqlite::params![user_id], |r| r.get::<_, i64>(0));
+        match rows {
+            Ok(rows) => rows.filter_map(Result::ok).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    /// The full blocked-user roster for a user: the ids they blocked, joined
+    /// with username + avatar for the listing surface.
+    pub fn blocked_users_for_user(&self, user_id: i64) -> Vec<(i64, String, Option<String>)> {
+        let c = self.lock().ok().expect("lock");
+        let mut stmt = c
+            .prepare(
+                "SELECT ub.blocked_id, u.username, u.avatar_url
+                 FROM user_blocks ub JOIN users u ON u.id = ub.blocked_id
+                 WHERE ub.blocker_id = ?1 ORDER BY ub.blocked_id",
+            )
+            .expect("prepare blocked users");
+        let rows = stmt.query_map(rusqlite::params![user_id], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, Option<String>>(2)?,
+            ))
+        });
+        match rows {
+            Ok(rows) => rows.filter_map(Result::ok).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
     // ── servers ────────────────────────────────────────────────────────────
 
     /// Look up a server by id. Returns `(id, name, owner_id, icon_url)`.

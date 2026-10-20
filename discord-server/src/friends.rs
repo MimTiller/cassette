@@ -151,6 +151,7 @@ impl FriendService {
     /// # Errors
     /// - `user not found` — the caller or the named username is not a user.
     /// - `cannot friend yourself` — the username resolves to the caller.
+    /// - `blocked` — a user block exists between the pair in either direction.
     /// - `already friends` — the pair is already `'accepted'`.
     /// - `a friend request is already pending` — the caller's own pending
     ///   request to that user already exists (a duplicate).
@@ -164,6 +165,9 @@ impl FriendService {
             .ok_or("user not found")?;
         if caller == other_id {
             return Err("cannot friend yourself".into());
+        }
+        if self.db.blocks_pair(caller, other_id) {
+            return Err("you cannot friend this user: they are blocked".into());
         }
         match self.db.friendship_between(caller, other_id) {
             None => {
