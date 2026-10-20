@@ -60,6 +60,10 @@ pub mod servers;
 // compile to client RPC stubs by default; only the DB-touching internals are
 // gated `#[cfg(feature = "server")]` inside the module.
 pub mod dms;
+// Not feature-gated (like `servers` / `auth` / `dms` above): the `#[server]`
+// fns compile to client RPC stubs by default; only the DB-touching internals
+// are gated `#[cfg(feature = "server")]` inside the module.
+pub mod friends;
 
 /// Shared e2e serialization guard. Every HTTP/WebSocket e2e test installs its
 /// `Db` into the same process-wide `server::install_state` slot (the macro

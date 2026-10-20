@@ -179,6 +179,13 @@ pub enum WsServerMsg {
         emoji: String,
         count: u32,
     },
+    /// The friends list changed for the socket's owner: a friend request was
+    /// sent / auto-accepted (`action` = 'requested' / 'accepted'), declined or
+    /// cancelled, or a friend was removed ('removed'). `friend_id` is the other
+    /// user in the pair. The client re-fetches `list_friends` on receipt (the
+    /// same re-fetch pattern as `MemberChanged`) — no relationship data rides
+    /// on the frame; the re-fetch supplies it.
+    FriendChanged { friend_id: i64, action: String },
     /// A gateway error for a specific operation.
     Error { reason: String },
 }
