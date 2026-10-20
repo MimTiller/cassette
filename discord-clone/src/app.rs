@@ -39,6 +39,10 @@ use runtime_core::{
     pan, signal, switch, ui, viewport_size, ObjectFit,
 };
 use runtime_core::icon;
+// The file-picker SDK (also a `profile_settings` dep): the composer's attach
+// button opens the platform's native multi-image picker and stages each
+// picked file through `stage_attachment` (the same encode as avatars).
+use file_picker::{FilePicker, PickRequest, PickOutcome, MediaKind};
 use icons_lucide::{
     CHEVRON_DOWN, CHEVRON_UP, CIRCLE_HELP, COMPASS, GAVEL, GLOBE, HASH, HEADPHONES, MAIL,
     MESSAGE_CIRCLE, MIC, MIC_OFF, PENCIL, PIN, PLUS, SETTINGS, SMILE, SMILE_PLUS, TRASH_2,
@@ -202,6 +206,142 @@ const GROUP_WINDOW_SECS: i64 = 420;
 pub(crate) fn same_group(prev_author: &str, prev_ts: i64, cur_author: &str, cur_ts: i64) -> bool {
     prev_author == cur_author && cur_ts >= prev_ts && cur_ts - prev_ts < GROUP_WINDOW_SECS
 }
+/// One staged composer attachment: a unique staging key (for the thumbnail
+/// strip's `switch` so an 'x' removes exactly that entry), the file name
+/// (shown in the mock fallback line + carried to the wire frame), the MIME
+/// type, and the encoded `data:image/…;base64,` URL.
+type PendingImage = (i64, String, String, String);
+
+/// Validate one image and stage it in the composer's pending list: the
+/// shared client-side limit gate (max 4 per message, and the type/size
+/// checks via `crate::profile_settings::validate_and_encode_attachment`,
+/// the same encode the avatar upload uses). Rejections land visibly in the
+/// `err` signal; accepted images append to `pending` with a fresh key from
+/// `next_key`. Reached by BOTH the file-picker callback and the robot
+/// `attach.stage` hook, so an E2E test stages exactly what the picker would.
+pub(crate) fn stage_attachment(
+    pending: Signal<Vec<PendingImage>>,
+    next_key: Signal<i64>,
+    err: Signal<String>,
+    filename: String,
+    mime: String,
+    bytes: &[u8],
+) {
+    if pending.get().len() >= crate::profile_settings::ATTACHMENT_MAX_COUNT {
+        err.set("Too many images (max 4 per message)".to_string());
+        return;
+    }
+    match crate::profile_settings::validate_and_encode_attachment(mime.as_str(), bytes) {
+        Ok(url) => {
+            let key = next_key.get();
+            next_key.set(key + 1);
+            let mut staged = pending.get();
+            staged.push((key, filename, mime, url));
+            pending.set(staged);
+            err.set(String::new());
+        }
+        Err(msg) => err.set(msg),
+    }
+}
+
+/// The images attached to one live message, rendered as a row UNDER the
+/// body: each image sits in a definite 400x300 box with `object_fit`
+/// Contain preserving the aspect ratio (the same definite-box sizing the
+/// avatar chips use — width/height + object_fit + no flex_shrink drift).
+/// A reactive style fed from the image's `on_load` natural size is NOT
+/// used: that never took effect in the live app (the node rendered 0x0).
+fn attachment_row(atts: &[discord_server::server_settings::MessageAttachment]) -> Element {
+    let cells: Vec<Element> = atts.iter().map(|a| {
+        let data = a.data.clone();
+        let name = a.filename.clone();
+        ui! {
+            image(
+                src = data,
+                alt = name,
+                style = StyleRules {
+                    width: Some(px(400.0)),
+                    height: Some(px(300.0)),
+                    flex_shrink: Some(grow(0.0)),
+                    object_fit: Some(ObjectFit::Contain),
+                    ..Default::default()
+                },
+            )
+        }
+    }).collect();
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            gap: Some(px(8.0)),
+            margin_top: Some(px(6.0)),
+            margin_bottom: Some(px(6.0)),
+            ..Default::default()
+        }) { cells }
+    }
+}
+
+/// Robot test hook (`attach.stage`): stage one composer image attachment
+/// from base64 bytes — the file-picker callback's validate → encode path
+/// (`stage_attachment` above, which the picker's async callback runs),
+/// callable through the robot bridge so an E2E test can attach a real
+/// image without driving the native file-open dialog (which no in-page
+/// tool can tap). Compiled only into robot builds.
+runtime_vocabulary::robot_only! {
+use runtime_vocabulary::robot_fn::{RobotArg, RobotCall, RobotFunction, RobotReply, register as robot_register};
+use runtime_shared::__serde_json as robot_json;
+
+pub(crate) fn register_send_now_hook(on_send: Rc<dyn Fn()>) {
+    let hook: RobotCall = Rc::new(
+        move |args: &robot_json::Value| -> Result<RobotReply, String> {
+            (on_send)();
+            Ok(RobotReply::Ready(robot_json::Value::Null))
+        },
+    );
+    robot_register(
+        RobotFunction {
+            name: "send.now",
+            doc: "Fire the composer's send action (the same Rc Enter's on_key_down calls — body + staged attachments). No args.",
+            args: &[],
+            returns: "()",
+            is_async: false,
+            call: Some(hook),
+        },
+    );
+}
+
+pub(crate) fn register_attach_stage_hook(
+    pending: runtime_core::Signal<Vec<PendingImage>>,
+    next_key: runtime_core::Signal<i64>,
+    err: runtime_core::Signal<String>,
+) {
+    let hook: RobotCall = Rc::new(
+        move |args: &robot_json::Value| -> Result<RobotReply, String> {
+            let mime = args.get("mime").and_then(|v| v.as_str()).ok_or("attach.stage: 'mime' must be a string")?;
+            let data_b64 = args.get("data_b64").and_then(|v| v.as_str()).ok_or("attach.stage: 'data_b64' must be a string")?;
+            let filename = args.get("filename").and_then(|v| v.as_str()).unwrap_or("image");
+            let bytes = crate::profile_settings::b64_decode(data_b64)?;
+            stage_attachment(pending.clone(), next_key.clone(), err.clone(), filename.to_string(), mime.to_string(), &bytes);
+            let reply = RobotReply::Ready(robot_json::Value::Null);
+            Ok(reply)
+        },
+    );
+    robot_register(
+        RobotFunction {
+            name: "attach.stage",
+            doc: "Stage a composer image attachment from base64 bytes ({mime, data_b64, filename?}) — the file-picker callback's encode path for tests that cannot drive the native file dialog.",
+            args: &[
+                RobotArg { name: "mime", ty: "String" },
+                RobotArg { name: "data_b64", ty: "String" },
+                RobotArg { name: "filename", ty: "String" },
+            ],
+            returns: "()",
+            is_async: false,
+            call: Some(hook),
+        },
+    );
+}
+}
+
 /// One buffered live (gateway-fed) message: the server's wire `message_id`,
 /// then `author_id` + `author_label`, `content`, `created_at_secs`, and
 /// `edited_at` (the `MessageEdited` timestamp in seconds, `None` until edited).
@@ -4700,11 +4840,28 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // smile button. Pure local UI state (no backend), toggled by the smile
     // icon and closed by picking an emoji or tapping elsewhere.
     let emoji_open: Signal<bool> = signal(false);
-    // Mock attachment chip: `Some(name)` = a pending fake attachment is staged
-    // in the composer strip above the input (e.g. "screenshot.png"). `None` =
-    // none. No real file picker/upload — just local state the '+' toggles and
-    // the 'x' removes; Send clears it alongside the composer text.
-    let pending_attachment: Signal<Option<String>> = signal(None);
+    // Pending message-image attachments staged by the composer's attach
+    // button: each entry is `(staging_key, filename, mime, data_url)` where
+    // `data_url` is the encoded `data:image/…;base64,` URL, already filled by
+    // the file-picker callback BEFORE the entry is staged (staging happens
+    // when the async pick completes), so the string never mutates in place.
+    // The thumbnail strip above the composer reads this signal (keyed
+    // `for …, key =` loop); an 'x' on a thumbnail removes that entry; Send
+    // consumes the list alongside the composer text. Keys are unique via
+    // `attach_next_key`.
+    let pending_attachment: Signal<Vec<PendingImage>> = signal(Vec::new());
+    let attach_next_key: Signal<i64> = signal(0);
+    // The attach flow's in-flight flag and visible rejection line (same
+    // triple idiom as the profile screen's avatar upload).
+    let attach_busy: Signal<bool> = signal(false);
+    let attach_error: Signal<String> = signal(String::new());
+    // Persisted/live attachments per wire message id (`message_id` ->
+    // attachments carried on the `WsServerMsg::Message` frames — history
+    // pages and live fan-out alike). Plain buffer (not a signal): the
+    // message-list `switch` already rebuilds on `live_revision`, which the
+    // gateway effect bumps whenever a message (and its attachments) land.
+    let live_attachments: Rc<RefCell<HashMap<i64, Vec<discord_server::server_settings::MessageAttachment>>>> =
+        Rc::new(RefCell::new(HashMap::new()));
     // The voice channel the user is currently joined to, keyed by (server_id,
     // voice_channel_id). Joining a voice row in the sidebar sets it; leaving
     // (from the profile strip) or switching servers clears it. `None` = not
@@ -4735,7 +4892,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // current value does NOT rebuild the message list — this counter does.
     let revision: Signal<u32> = signal(0);
 
-    // --- live/real message state -----------------------------------------
+    // --- live/real message state (composer image attachments ride this) ----
     // Separate from the mock `sent`/`revision` above: when `active_live_channel`
     // is `Some(id)` the message list reads from here instead of the mock path.
     // channel_id -> Vec<LiveMsg>, oldest-first (the gateway's History replies
@@ -5247,6 +5404,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // / `ReactionRemove` broadcast frames update them live for every viewer.
     let reactions_map = reactions.clone();
     let reaction_rev_sig = reaction_rev.clone();
+    // Persisted/live attachments cloned so the gateway effect can store each
+    // message frame's `attachments` list for the row renderer below.
+    let attach_buf = live_attachments.clone();
     // [Feature 14] A `MemberChanged` frame (another account joined or was
     // kicked/banned) re-fetches the active server's roster — the same
     // `list_members` call the kick/ban/role-change callbacks use — so the
@@ -5290,10 +5450,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 mentioned_user_ids,
                 reply_to_message_id,
                 reactions,
-                // Image attachments ride the frame but the client UI for them
-                // is a later layer; ignored here so the pattern stays
-                // exhaustive against the shared wire type.
-                attachments: _attachments,
+                attachments,
             }) = frame
             {
                 // The server resolved the author's username for the frame
@@ -5337,6 +5494,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 // dedup (re-delivery) is a no-op that must not force a rebuild.
                 if changed {
                     live_rev.set(live_rev.get() + 1);
+                }
+                // Persist the frame's attachments for the row renderer (the
+                // same frames — history pages AND live fan-out — carry the
+                // persisted `MessageAttachment` lists from the server).
+                if !attachments.is_empty() {
+                    attach_buf.borrow_mut().insert(*message_id, attachments.clone());
                 }
                 // Live @mention indicator: a freshly posted (`new: true`) message
                 // that names the signed-in user, on a channel that is NOT the one
@@ -8110,6 +8273,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // keeps the same channel) would not rebuild the list.
     let sent_read = sent.clone();
     let live_read = live_messages.clone();
+    // Attachments per wire `message_id` cloned for the row renderer below —
+    // the gateway effect stored each frame's list; a row looks its id up.
+    let attach_render = live_attachments.clone();
     // Handles for the per-row edit/delete mode (see `live_edit_row`). Cloned so
     // the `sent_messages` closure moves its own copies (the closures below all
     // `move`-capture their handles rather than sharing one non-`Copy` value).
@@ -8328,6 +8494,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         pin_c,
                         trans_l,
                     ));
+                    // Image attachments render UNDER the body: the persisted
+                    // list the gateway effect stored for this wire id (empty
+                    // rows push nothing, so every other row is unchanged).
+                    let atts = attach_render.borrow().get(&*mid).cloned().unwrap_or_default();
+                    if !atts.is_empty() {
+                        rows.push(attachment_row(&atts));
+                    }
                     // Reaction strip under each live row, keyed by the real wire
                     // `message_id` — the same session-local pill store the mock
                     // rows use, so live reactions behave exactly like mock ones.
@@ -8602,44 +8775,66 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let gateway_send = gateway;
     let do_send = move || {
         let body = send_composer.get();
-        if body.trim().is_empty() {
+        let attached = pending_attachment.get();
+        // A message must carry a body OR at least one staged image — the
+        // same "not both empty" gate the backend enforces on the `Send`
+        // frame, mirrored client-side so a no-op send never round-trips.
+        if body.trim().is_empty() && attached.is_empty() {
             return;
         }
-        // A staged mock attachment (if any) rides along with the send. It's a
-        // pure UI mock (no real file), so the visible message body is what
-        // carries it: we append a `[attachment: <name>]` line to it, then clear
-        // the chip alongside the composer text on both the live and mock paths.
-        let attached = pending_attachment.get();
-        pending_attachment.set(None);
-        let out_body = match attached {
-            Some(name) => format!("{body}\n[attachment: {name}]"),
-            None => body,
-        };
+        // Live/real mode: stage the pending images as the wire frame's
+        // `AttachmentInput` list — the data URLs were already validated +
+        // encoded client-side (`stage_attachment`), and the backend
+        // re-validates and persists them with the message row.
+        let inputs: Vec<discord_server::server_settings::AttachmentInput> = attached
+            .iter()
+            .map(|(_, filename, mime, url)| discord_server::server_settings::AttachmentInput {
+                filename: filename.clone(),
+                mime: mime.clone(),
+                data: url.clone(),
+            })
+            .collect();
         // Live/real mode: send over the gateway socket to the live channel.
         // The server echoes it back as a `Message` frame, which the incoming
         // effect buffers and bumps `live_revision`, rebuilding the list.
         if let Some(live_cid) = live_chan.get() {
             gateway_send.send(discord_server::server_settings::WsClientMsg::Send {
                 channel_id: live_cid,
-                content: out_body.clone(),
+                content: body.clone(),
                 reply_to_message_id: reply_target.get(),
-                // No image attachments from the composer yet (UI is a later
-                // layer); the field exists so the frame matches the wire type.
-                attachments: Vec::new(),
+                attachments: inputs,
             });
             send_composer.set(String::new());
+            pending_attachment.set(Vec::new());
             reply_ctx.set(None);
             reply_target.set(None);
             return;
         }
+        // Mock path: the per-session log carries only a body string, so
+        // staged images ride it as `[attachment: <name>]` lines (the
+        // pre-backend affordance; live mode sends real data URLs).
+        let out_body = if attached.is_empty() {
+            body
+        } else {
+            let names: Vec<String> = attached.iter().map(|(_, filename, _, _)| filename.clone()).collect();
+            format!("{}\n[attachment: {}]", body, names.join(", "))
+        };
         let cid = active_channel.get();
         sent_write.borrow_mut().push((cid, "Nova", out_body, crate::data::now_secs()));
         send_composer.set(String::new());
+        pending_attachment.set(Vec::new());
         // Bump the revision so the message-list `switch` rebuilds (its key
         // dedups on value, so re-setting the same channel alone would not).
         revision_bump.set(revision_bump.get() + 1);
     };
     let on_send = Rc::new(do_send);
+    // Robot test hook (`send.now`): Enter on the composer is a raw keyboard
+    // event the robot bridge cannot synthesize, so an E2E test drives the
+    // exact action Enter invokes — the same `on_send` `Rc` the `on_key_down`
+    // handler calls — body + staged attachments included.
+    runtime_vocabulary::robot_only! {
+        register_send_now_hook(on_send.clone());
+    };
     // Enter on the composer → send. Plain Enter only; Shift/Ctrl/Alt/Meta+
     // Enter fall through to the platform default. `PreventDefault` stops the
     // input's default Enter handling (no newline / no stray submit) now that
@@ -8935,83 +9130,133 @@ fn app_shell(authed: Signal<bool>) -> Element {
         "😀", "😊", "😂", "😍", "😎", "🤔", "👍", "🎉", "🚀", "❤️", "🙌", "🍕",
     ];
 
-    // Staged-attachment chip: `switch` on `pending_attachment` so the chip
-    // only renders while a mock attachment is staged. The `x` clears it.
-    // `chip_clear` is a `Copy` handle on `pending_attachment`; the nested
-    // `on_touch` `move` closure gets a fresh per-render copy (`cc`) so it never
-    // tries to move the outer closure's captured handle (E0507).
-    let chip_clear = pending_attachment;
+    // Staged-attachment strip: the composer's pending images, each a small
+    // thumbnail cell with an 'x' that removes just that entry (the send
+    // consumes the whole list). `switch` on the staged `Vec<PendingImage>`
+    // rebuilds on every stage/removal/send; empty renders zero height.
+    // `strip_pending` is a `Copy` handle on `pending_attachment`; the nested
+    // `on_touch` `move` closure gets a fresh per-render copy (`rm`) so it
+    // never moves the outer closure's handle (E0507 pattern from `chip_clear`).
+
+    // Attach flow: open the file picker (multi-image) and stage every picked
+    // file through `stage_attachment` — the SAME validate + encode the
+    // avatar-upload picker callback runs (`profile_settings`), against the
+    // message-attachment limits. Rejections (bad type / oversize / over
+    // count) land in the visible `attach_error` line below the composer.
+    // Same busy/error/picker triple idiom as the profile screen's avatar
+    // upload; the '+' button calls it from its `on_touch`.
+    let do_attach = move || {
+        if attach_busy.get() {
+            return;
+        }
+        let busy = attach_busy;
+        let err = attach_error;
+        let pending = pending_attachment;
+        let nextk = attach_next_key;
+        busy.set(true);
+        err.set(String::new());
+        runtime_core::driver::spawn_async(async move {
+            let outcome = match FilePicker::new()
+                .pick(PickRequest::media(MediaKind::Images).multiple())
+                .await
+            {
+                Ok(outcome) => outcome,
+                Err(e) => {
+                    err.set(format!("file picker: {e}"));
+                    busy.set(false);
+                    return;
+                }
+            };
+            match outcome {
+                PickOutcome::Picked(files) => {
+                    for file in files.iter() {
+                        match file.read_all().await {
+                            Ok(bytes) => stage_attachment(
+                                pending.clone(),
+                                nextk.clone(),
+                                err.clone(),
+                                file.name().to_string(),
+                                file.mime().to_string(),
+                                &bytes,
+                            ),
+                            Err(e) => err.set(format!("could not read the file: {e}")),
+                        }
+                    }
+                }
+                // Cancelled (dismissed picker): back to idle, not an error.
+                _ => {}
+            }
+            busy.set(false);
+        });
+    };
+
+    // Register the robot test hook so an MCP E2E can stage a composer
+    // attachment through the same `stage_attachment` validate → encode path
+    // the file-picker callback above runs — without driving the native file
+    // dialog (which no in-page tool can tap). Rebuilt per screen open; a
+    // no-op outside robot builds.
+    runtime_vocabulary::robot_only! {
+        register_attach_stage_hook(pending_attachment.clone(), attach_next_key.clone(), attach_error.clone());
+    };
+
+    let strip_pending = pending_attachment;
     let attach_chip = switch(
         move || pending_attachment.get(),
-        move |att: &Option<String>| {
-            match att {
-                None => ui! {
+        move |list: &Vec<PendingImage>| {
+            if list.is_empty() {
+                return ui! {
                     view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
-                },
-                Some(name) => ui! {
-                    // A thin row just above the composer holding the pill; the
-                    // row's own margins give the pill breathing room.
+                };
+            }
+            let cells: Vec<Element> = list.iter().map(|(key, filename, _mime, url)| {
+                let k = *key;
+                let rm = strip_pending;
+                ui! {
                     view(style = StyleRules {
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),
-                        margin_top: Some(px(8.0)),
-                        margin_bottom: Some(px(8.0)),
-                        margin_left: Some(px(16.0)),
-                        margin_right: Some(px(16.0)),
+                        gap: Some(px(6.0)),
                         ..Default::default()
                     }) {
-                        // The pill itself: fully-rounded (radius = half height)
-                        // — the app's standard chip/lozenge shape (see
-                        // `server_tag_chips` / the rail unread pill).
+                        crate::profile_settings::attachment_thumbnail(signal(url.clone()).into(), filename.clone(), 56.0)
                         view(style = StyleRules {
-                            height: Some(px(26.0)),
-                            padding_left: Some(px(12.0)),
-                            padding_right: Some(px(8.0)),
-                            flex_direction: Some(FlexDirection::Row),
+                            width: Some(px(16.0)),
+                            height: Some(px(16.0)),
                             align_items: Some(AlignItems::Center),
-                            gap: Some(px(8.0)),
-                            background: Some(col(BG_SIDEBAR)),
-                            border_top_left_radius: Some(px(13.0)),
-                            border_top_right_radius: Some(px(13.0)),
-                            border_bottom_left_radius: Some(px(13.0)),
-                            border_bottom_right_radius: Some(px(13.0)),
+                            justify_content: Some(JustifyContent::Center),
+                            border_top_left_radius: Some(px(8.0)),
+                            border_top_right_radius: Some(px(8.0)),
+                            border_bottom_left_radius: Some(px(8.0)),
+                            border_bottom_right_radius: Some(px(8.0)),
                             ..Default::default()
                         }) {
                             text(style = StyleRules {
                                 font_size: Some(px(12.0)),
-                                color: Some(col(TEXT)),
+                                color: Some(col(TEXT_MUTED)),
                                 ..Default::default()
-                            }) { format!("📎 {name}") }
-                            // The 'x' to clear the staged attachment: a tiny
-                            // circular hit target (a `view` + glyph, the same
-                            // shape as the composer's icon buttons).
-                            view(style = StyleRules {
-                                width: Some(px(16.0)),
-                                height: Some(px(16.0)),
-                                align_items: Some(AlignItems::Center),
-                                justify_content: Some(JustifyContent::Center),
-                                border_top_left_radius: Some(px(8.0)),
-                                border_top_right_radius: Some(px(8.0)),
-                                border_bottom_left_radius: Some(px(8.0)),
-                                border_bottom_right_radius: Some(px(8.0)),
-                                ..Default::default()
-                            }) {
-                                text(style = StyleRules {
-                                    font_size: Some(px(12.0)),
-                                    color: Some(col(TEXT_MUTED)),
-                                    ..Default::default()
-                                }) { "✕".to_string() }
-                            }
-                            .on_touch(move |ev| {
-                                if ev.phase == TouchPhase::Ended {
-                                    let cc = chip_clear;
-                                    cc.set(None);
-                                }
-                                TouchResponse::CONSUMED
-                            })
+                            }) { "✕".to_string() }
                         }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                let mut staged = rm.get();
+                                staged.retain(|(entry_key, _, _, _)| *entry_key != k);
+                                rm.set(staged);
+                            }
+                            TouchResponse::CONSUMED
+                        })
                     }
                 }
+            }).collect();
+            ui! {
+                view(style = StyleRules {
+                    flex_direction: Some(FlexDirection::Column),
+                    margin_top: Some(px(8.0)),
+                    margin_bottom: Some(px(8.0)),
+                    margin_left: Some(px(16.0)),
+                    margin_right: Some(px(16.0)),
+                    gap: Some(px(8.0)),
+                    ..Default::default()
+                }) { cells }
             }
         },
     );
@@ -10281,16 +10526,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         view(style = icon_button_style.clone()) {
                             icon(PLUS).color(|| Color::from(TEXT_MUTED)).size(16.0)
                         }
-                        // `+` = stage/unstage the mock attachment. `Signal` is
-                        // `Copy`, so each `move` closure captures its own handle;
-                        // the chip above the composer mirrors this state.
+                        // `+` = open the file picker and stage a real image
+                        // attachment (up to the shared per-message cap). The
+                        // strip above the composer mirrors the staged list.
                         .on_touch(move |ev| {
                             if ev.phase == TouchPhase::Ended {
-                                pending_attachment.set(if pending_attachment.get().is_some() {
-                                    None
-                                } else {
-                                    Some("mock-attachment.png".to_string())
-                                });
+                                do_attach();
                             }
                             TouchResponse::CONSUMED
                         })
@@ -10306,6 +10547,17 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             }
                             TouchResponse::CONSUMED
                         })
+                    }
+                    // Visible rejection line for the attach flow: a bad type
+                    // / oversize / over-count pick (or a picker error) shows
+                    // here in the app's error red; empty = nothing rendered.
+                    if !attach_error.get().is_empty() {
+                        text(style = StyleRules {
+                            font_size: Some(px(12.0)),
+                            color: Some(col(BADGE)),
+                            margin_left: Some(px(16.0)),
+                            ..Default::default()
+                        }) { move || attach_error.get().clone() }
                     }
                 }
             }
