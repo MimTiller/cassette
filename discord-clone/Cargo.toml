@@ -86,6 +86,13 @@ clipboard = { path = "/root/idealyst-native/crates/sdk/client/clipboard" }
 # deps so its `runtime-scene`/`runtime-shared`/`runtime-vocabulary` deps
 # resolve to the identical crate instances this crate already uses.
 markdown = { path = "/root/idealyst-native/crates/sdk/client/markdown" }
+# The file-picker SDK: "Change avatar" opens the platform's native file-open
+# UI (web: `showOpenFilePicker()` / `<input type=file>` fallback) so the user
+# uploads a real image instead of pasting a data URL. Imperative API only —
+# no scene handler — so `register_scene_extensions` gains nothing from it.
+# Its default `drop` feature pulls runtime-core/runtime-shared, which resolve
+# to the identical crate instances (same path root as the other SDK deps).
+file-picker = { path = "/root/idealyst-native/crates/sdk/client/file-picker" }
 
 # No backend deps: `register_scene_extensions` is generic over the scene
 # `Host` (this scaffold registers no third-party SDKs), so the app crate

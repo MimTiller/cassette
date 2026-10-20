@@ -298,7 +298,7 @@ pub fn configure_server() {
 // display name has no other post-refresh source).
 
 #[cfg(target_arch = "wasm32")]
-fn save_session(token: &str, user_id: i64, username: &str, avatar_url: Option<String>) {
+pub(crate) fn save_session(token: &str, user_id: i64, username: &str, avatar_url: Option<String>) {
     if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
         // The avatar segment is empty when the account has no avatar (the
         // NULL column's sentinel). Sessions saved before the avatar existed
@@ -312,12 +312,25 @@ fn save_session(token: &str, user_id: i64, username: &str, avatar_url: Option<St
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn save_session(
+pub(crate) fn save_session(
     _token: &str,
     _user_id: i64,
     _username: &str,
     _avatar_url: Option<String>,
 ) {}
+
+/// Rewrite the persisted session's avatar segment after a set/clear that did
+/// not go through login, so a page refresh restores the NEW avatar (the
+/// segment written at login time would be stale). No-op off-web (no storage).
+pub(crate) fn refresh_saved_avatar(avatar_url: Option<String>) {
+    let token = current_token();
+    if token.is_empty() {
+        return;
+    }
+    let user_id = CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+    let username = current_username();
+    save_session(token.as_str(), user_id, username.as_str(), avatar_url);
+}
 
 /// A persisted session `(token, user_id, username, avatar_url)`, or `None`
 /// when there is none to restore. The username segment is absent in sessions
