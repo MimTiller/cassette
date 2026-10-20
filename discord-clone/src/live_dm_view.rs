@@ -31,7 +31,7 @@ use std::rc::Rc;
 
 use runtime_core::{
     AlignItems, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent, KeyOutcome,
-    Overflow, Signal, StyleRules, Tokenized, TouchPhase, TouchResponse, signal,
+    Overflow, ObjectFit, Signal, StyleRules, Tokenized, TouchPhase, TouchResponse, signal,
     switch, ui,
 };
 
@@ -247,6 +247,10 @@ fn live_dm_row(
         .map(|p| p.username.clone())
         .unwrap_or_else(|| format!("user #{}", dm_id));
     let initial = name.chars().next().unwrap_or('?').to_string();
+    // The other participant's uploaded avatar (from the shared client
+    // registry, fed by `list_dms`), if any — drawn as a round-cropped image
+    // over the chip area; otherwise the pre-existing initial chip.
+    let avatar_img = crate::auth::avatar_for(name.as_str());
 
     let hovered = signal(false);
     let row_style = move || {
@@ -300,15 +304,41 @@ fn live_dm_row(
         ..Default::default()
     };
 
+    // The chip: uploaded image (round-cropped) when the shared client
+    // registry knows the participant, else the pre-existing initial chip.
+    let avatar_chip = if let Some(url) = &avatar_img {
+        ui! {
+            image(
+                src = url.clone(),
+                alt = format!("{} avatar", name),
+                style = StyleRules {
+                    width: Some(px(34.0)),
+                    height: Some(px(34.0)),
+                    flex_shrink: Some(grow(0.0)),
+                    object_fit: Some(ObjectFit::Cover),
+                    border_top_left_radius: Some(px(10.0)),
+                    border_top_right_radius: Some(px(10.0)),
+                    border_bottom_left_radius: Some(px(10.0)),
+                    border_bottom_right_radius: Some(px(10.0)),
+                    ..Default::default()
+                },
+            )
+        }
+    } else {
+        ui! {
+            view(style = avatar_style) {
+                text(style = initial_style) { initial }
+            }
+        }
+    };
+
     // Selecting a DM: set `active` (rebuilds the list to highlight it) and
     // fetch its history. Clone the `Rc` before handing it to the `async move`
     // block (it outlives the `on_touch` `Fn` closure — a plain capture would
     // be a move out of the closure, E0507).
     ui! {
         view(style = row_style) {
-            view(style = avatar_style) {
-                text(style = initial_style) { initial }
-            }
+            { avatar_chip }
             text(style = name_style) { name }
         }
         .on_hover(move |on| hovered.set(on))
@@ -692,12 +722,16 @@ pub fn dm_incoming_effect(
                 message_id,
                 dm_id,
                 author_username,
+                author_avatar,
                 content,
                 created_at,
                 ..
             }) = frame
             {
                 let dm_id = *dm_id;
+                // The author's avatar rides the frame: register it so the DM
+                // pane's rows (and the rail) draw it instead of the initial.
+                crate::auth::remember_avatar(author_username.as_str(), author_avatar.clone());
                 // Only buffer frames for the currently-open conversation —
                 // the buffer holds exactly one DM's history at a time, and
                 // re-selecting a DM re-fetches its history anyway, so

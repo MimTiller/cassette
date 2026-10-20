@@ -96,6 +96,29 @@ pub struct AuthService {
     db: Db,
 }
 
+/// Wire types + validation for account avatars. An avatar is stored as a
+/// small inline image — a `data:image/{png,jpeg,webp,gif};base64,` URL — so
+/// the backend never fetches remote images and the browser decodes the bytes.
+/// The data layer (`crate::db`) moves the string; THIS layer validates the
+/// prefix and caps the size.
+const AVATAR_MAX_BYTES: usize = 256 * 1024;
+
+pub fn avatar_is_valid_spec(value: &str) -> bool {
+    if value.len() > AVATAR_MAX_BYTES {
+        return false;
+    }
+    // `data:image/<kind>;base64,` with <kind> in the accepted set, then a
+    // non-empty base64 body (we do not decode it — the browser does, and an
+    // undecodable body just fails to render client-side).
+    const PREFIXES: &[&str] = &[
+        "data:image/png;base64,",
+        "data:image/jpeg;base64,",
+        "data:image/webp;base64,",
+        "data:image/gif;base64,",
+    ];
+    PREFIXES.iter().any(|p| value.starts_with(p) && value.len() > p.len())
+}
+
 #[cfg(feature = "server")]
 impl AuthService {
     pub fn new(db: Db) -> Self {
@@ -231,6 +254,12 @@ pub struct LoginResult {
     /// identity (the profile strip) with the real name rather than an id or the
     /// mock "you" placeholder.
     pub username: String,
+    /// The account's stored avatar (a `data:image/…;base64,` URL) or `None`
+    /// for the default initial-circle avatar. Echoed with the login so the
+    /// client restores the signed-in user's avatar on a page refresh without
+    /// a second round trip.
+    #[serde(default)]
+    pub avatar_url: Option<String>,
 }
 
 #[cfg(feature = "server")]
@@ -279,7 +308,55 @@ impl AuthService {
         self.db
             .clear_login_failures(user_id)
             .map_err(|e| format!("failed to clear login failures: {e}"))?;
-        Ok(LoginResult { user_id, token: crate::session::issue_token(user_id), username: stored_username })
+        Ok(LoginResult {
+            user_id,
+            token: crate::session::issue_token(user_id),
+            username: stored_username,
+            avatar_url: self.db.user_avatar(user_id),
+        })
+    }
+
+    /// Set (or clear) the signed-in account's avatar. `avatar` is `None` to
+    /// clear, or a `data:image/{png,jpeg,webp,gif};base64,` URL to set.
+    ///
+    /// # Errors
+    /// - `user not found` — no such account.
+    /// - `avatar must be a data:image/…;base64, URL` — a set value whose
+    ///   prefix is not one of the accepted image types.
+    /// - `avatar too large (max 256 KB)` — the URL string exceeds the cap.
+    pub fn set_avatar(
+        &self,
+        user_id: i64,
+        avatar: Option<&str>,
+    ) -> Result<AvatarResult, String> {
+        if self.db.user_by_id(user_id).is_none() {
+            return Err("user not found".into());
+        }
+        if let Some(value) = avatar {
+            let value = value.trim();
+            if value.is_empty() {
+                return Err(
+                    "avatar must be a data:image/…;base64, URL (pass null to clear)"
+                        .into()
+                );
+            }
+            if value.len() > AVATAR_MAX_BYTES {
+                return Err(format!("avatar too large (max {AVATAR_MAX_BYTES} bytes)"));
+            }
+            if !avatar_is_valid_spec(value) {
+                return Err(
+                    "avatar must be a data:image/{png,jpeg,webp,gif};base64, URL".into()
+                );
+            }
+            self.db
+                .set_user_avatar(user_id, Some(value.to_string()))
+                .map_err(|e| format!("failed to store avatar: {e}"))?;
+        } else {
+            self.db
+                .set_user_avatar(user_id, None)
+                .map_err(|e| format!("failed to clear avatar: {e}"))?;
+        }
+        Ok(AvatarResult { user_id, avatar_url: self.db.user_avatar(user_id) })
     }
 
     /// Seconds until the account's lockout window slides past its oldest
@@ -359,6 +436,48 @@ pub async fn change_password(
         .change_password(user, &input.current_password, &input.new_password)
         .map(|_| ChangePasswordResult {})
         .map_err(|e| ServerError::failed(e))
+}
+
+/// Set (or clear) the signed-in account's avatar. The acting user is resolved
+/// from the verified bearer token ([`crate::session::acting_user`]) — there is
+/// no client-supplied user id, so a caller can only change THEIR OWN avatar.
+/// `avatar` is `null` to clear, or a `data:image/{png,jpeg,webp,gif};base64,`
+/// URL (at most 256 KB) to set; anything else is rejected server-side.
+#[server]
+pub async fn set_avatar(input: SetAvatarInput) -> Result<AvatarResult, ServerError> {
+    let db = db_from_state()?;
+    let user = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    AuthService::new(db)
+        .set_avatar(user, input.avatar_url.as_ref().map(String::as_str))
+        .map_err(ServerError::failed)
+}
+
+/// The signed-in account's current avatar, `None` for the default initial
+/// circle. Authenticated (the acting user comes from the verified token) so
+/// any client can load its own avatar after a refresh.
+#[server]
+pub async fn get_avatar() -> Result<AvatarResult, ServerError> {
+    let db = db_from_state()?;
+    let user = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    Ok(AvatarResult { user_id: user, avatar_url: db.user_avatar(user) })
+}
+
+// ── avatar wire types ───────────────────────────────────────────────────────
+
+/// Input for [`set_avatar`]: the avatar data URL to store, or `None` to clear.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SetAvatarInput {
+    #[serde(default)]
+    pub avatar_url: Option<String>,
+}
+
+/// What [`set_avatar`] / [`get_avatar`] confirm: the account's id and its
+/// avatar after the operation (`None` = default initial circle).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct AvatarResult {
+    pub user_id: i64,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
 }
 
 /// Pull the shared `Db` out of server state (installed at startup by the
@@ -496,6 +615,79 @@ mod tests {
         let creds = db.user_by_username_creds("taken").expect("still readable");
         assert!(crate::db::verify_password(&creds.2, "pw-one"));
         assert!(!crate::db::verify_password(&creds.2, "pw-two"), "the password was not overwritten");
+    }
+
+    // ── avatars ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn avatar_set_clear_and_revalidate() {
+        let (_dir, db) = setup_db();
+        let svc = AuthService::new(db.clone());
+        let id = svc.signup("nova", "pw-one").expect("signup").user_id;
+
+        let avatar = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQg";
+        svc.set_avatar(id, Some(avatar)).expect("a valid data URL is stored");
+        assert_eq!(db.user_avatar(id), Some(avatar.to_string()));
+
+        // The login echo carries it.
+        let res = svc.login("nova", "pw-one").expect("login");
+        assert_eq!(res.avatar_url, Some(avatar.to_string()));
+
+        // Prefix rejection: a remote URL, a wrong mime, bare base64, an
+        // empty-body prefix, and whitespace-only are all refused and leave
+        // the stored value unchanged.
+        for bad in [
+            "https://example.com/a.png",
+            "data:image/svg+xml;base64,AAAA",
+            "iVBORw0KGgo",
+            "data:image/png;base64,", // prefix but empty body
+            "   ",
+        ] {
+            let err = svc.set_avatar(id, Some(bad)).expect_err("bad avatar rejected");
+            assert!(err.contains("data:image"), "got: {err}");
+            assert_eq!(db.user_avatar(id), Some(avatar.to_string()), "unchanged");
+        }
+
+        // Size rejection: 256 KB + 1 over the cap; 256 KB exactly is accepted
+        // (with a valid prefix).
+        let over_cap = format!("{}{}", avatar_prefix(), "A".repeat(AVATAR_MAX_BYTES));
+        let err = svc.set_avatar(id, Some(over_cap.as_str())).expect_err("over-cap avatar rejected");
+        assert!(err.contains("too large"), "got: {err}");
+        assert_eq!(db.user_avatar(id), Some(avatar.to_string()));
+        let at_cap =
+            format!("{}{}", avatar_prefix(), "A".repeat(AVATAR_MAX_BYTES - avatar_prefix().len()));
+        svc.set_avatar(id, Some(at_cap.as_str())).expect("exactly-at-cap avatar accepted");
+
+        // Clear: None wipes the column; the login echo goes back to None.
+        svc.set_avatar(id, None).expect("clear succeeds");
+        assert_eq!(db.user_avatar(id), None);
+        let res = svc.login("nova", "pw-one").expect("login");
+        assert_eq!(res.avatar_url, None, "login echoes no avatar");
+
+        // Unknown account.
+        let err = svc.set_avatar(99_999, Some(avatar)).expect_err("unknown user rejected");
+        assert!(err.contains("user not found"), "got: {err}");
+    }
+
+    /// The accepted-prefix example used above (kept as a fn so the test's
+    /// cap math has one source for the prefix length).
+    fn avatar_prefix() -> &'static str {
+        "data:image/png;base64,"
+    }
+
+    #[test]
+    fn avatar_prefix_grammar_is_the_single_source_of_truth() {
+        // The pure validator itself, unit-level: the four accepted kinds and
+        // only those; svg and text/plain are NOT (a data: URL of those could
+        // smuggle script-capable payloads to <img src>).
+        assert!(avatar_is_valid_spec("data:image/png;base64,AA=="));
+        assert!(avatar_is_valid_spec("data:image/jpeg;base64,AA=="));
+        assert!(avatar_is_valid_spec("data:image/webp;base64,AA=="));
+        assert!(avatar_is_valid_spec("data:image/gif;base64,AA=="));
+        assert!(!avatar_is_valid_spec("data:image/png;base64,"));
+        assert!(!avatar_is_valid_spec("data:image/svg+xml;base64,AA=="));
+        assert!(!avatar_is_valid_spec("data:image/text;base64,AA=="));
+        assert!(!avatar_is_valid_spec(&format!("data:image/png;base64,{}", "A".repeat(AVATAR_MAX_BYTES) + "A")));
     }
 
     // ── login ─────────────────────────────────────────────────────────────

@@ -36,7 +36,7 @@ use runtime_core::{
     FlexDirection, FlexWrap, FontFamily, FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow,
     PanEvent, PanRecognizer, Position, Ref, ReadSignal, ScrollViewHandle, Signal, StyleRules,
     TextAlign, TextTransform, Tokenized, TouchEvent, TouchPhase, TouchResponse, ViewHandle, memo,
-    pan, signal, switch, ui, viewport_size,
+    pan, signal, switch, ui, viewport_size, ObjectFit,
 };
 use runtime_core::icon;
 use icons_lucide::{
@@ -833,6 +833,36 @@ pub(crate) fn message_row(
         ..Default::default()
     };
     let initial = author.chars().next().unwrap_or(' ').to_string();
+    // The author's avatar chip: the uploaded image (round-cropped, cover-fit)
+    // when the shared client avatar registry (`crate::auth::avatar_for`, fed
+    // by login / `list_members` / gateway frames) knows a URL for this author,
+    // else the pre-existing colored initial circle. Mock identities are never
+    // registered, so guest/demo rows render exactly as before.
+    let avatar_chip = if let Some(url) = crate::auth::avatar_for(author) {
+        ui! {
+            image(
+                src = url,
+                alt = format!("{} avatar", author),
+                style = StyleRules {
+                    width: Some(px(40.0)),
+                    height: Some(px(40.0)),
+                    flex_shrink: Some(grow(0.0)),
+                    object_fit: Some(ObjectFit::Cover),
+                    border_top_left_radius: Some(px(20.0)),
+                    border_top_right_radius: Some(px(20.0)),
+                    border_bottom_left_radius: Some(px(20.0)),
+                    border_bottom_right_radius: Some(px(20.0)),
+                    ..Default::default()
+                },
+            )
+        }
+    } else {
+        ui! {
+            view(style = avatar_style) {
+                text(style = avatar_text_style) { initial }
+            }
+        }
+    };
     if grouped {
         // Grouped form (Discord convention): no avatar, no author/time
         // header. Just the body, tightly spaced above the row it follows
@@ -866,9 +896,7 @@ pub(crate) fn message_row(
     let link = link_preview_props(body);
     ui! {
         view(style = row_style) {
-            view(style = avatar_style) {
-                text(style = avatar_text_style) { initial }
-            }
+            { avatar_chip }
             view(style = stack_style) {
                 view(style = meta_style) {
                     text(style = author_style) { author.to_string() }
@@ -2609,6 +2637,11 @@ fn user_panel(
             // is set before `authed` flips (login completes first), so a plain
             // read here is stable for the whole mount — no reactivity needed.
             let real_name = crate::auth::current_username();
+            // When the signed-in account has an uploaded avatar (shared
+            // client registry, fed by login / `list_members`), the profile
+            // strip's chip draws the image instead of the initial. Read
+            // before `real_name` moves into the display-name branch below.
+            let avatar_img = crate::auth::avatar_for(real_name.as_str());
             let display_name = if !real_name.is_empty() {
                 real_name
             } else {
@@ -2782,18 +2815,61 @@ fn user_panel(
             // Online → Idle → DND → Online). The touch target is the avatar
             // only, not the whole row — the Leave button lives in the same
             // row while connected, and its own `on_touch` owns that region.
-            let avatar = ui! {
-                view(style = avatar_style) {
-                    text(style = initial_style) { initial }
-                    view(style = dot_style) {}
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        let touch = user_status;
-                        touch.set(touch.get().next());
+            // When the signed-in account has an uploaded avatar, the image
+            // sits under the status dot (same 32px circle, cover-cropped);
+            // the initial-circle branch renders exactly as before.
+            let avatar = if let Some(url) = avatar_img {
+                ui! {
+                    view(style = StyleRules {
+                        width: Some(px(32.0)),
+                        height: Some(px(32.0)),
+                        position: Some(Position::Relative),
+                        flex_shrink: Some(grow(0.0)),
+                        border_top_left_radius: Some(px(16.0)),
+                        border_top_right_radius: Some(px(16.0)),
+                        border_bottom_left_radius: Some(px(16.0)),
+                        border_bottom_right_radius: Some(px(16.0)),
+                        ..Default::default()
+                    }) {
+                        image(
+                            src = url,
+                            alt = "Your avatar",
+                            style = StyleRules {
+                                width: Some(px(32.0)),
+                                height: Some(px(32.0)),
+                                flex_shrink: Some(grow(0.0)),
+                                object_fit: Some(ObjectFit::Cover),
+                                border_top_left_radius: Some(px(16.0)),
+                                border_top_right_radius: Some(px(16.0)),
+                                border_bottom_left_radius: Some(px(16.0)),
+                                border_bottom_right_radius: Some(px(16.0)),
+                                ..Default::default()
+                            },
+                        )
+                        view(style = dot_style) {}
                     }
-                    TouchResponse::CONSUMED
-                })
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            let touch = user_status;
+                            touch.set(touch.get().next());
+                        }
+                        TouchResponse::CONSUMED
+                    })
+                }
+            } else {
+                ui! {
+                    view(style = avatar_style) {
+                        text(style = initial_style) { initial }
+                        view(style = dot_style) {}
+                    }
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            let touch = user_status;
+                            touch.set(touch.get().next());
+                        }
+                        TouchResponse::CONSUMED
+                    })
+                }
             };
             // Log Out: flips the shared `authed` signal back to false, which
             // unmounts this tree and re-mounts the login screen (the `switch`
@@ -3623,10 +3699,10 @@ pub fn app() -> Element {
     // to be stale, the first authenticated backend call fails and the app
     // shell routes the failure back here (see `live_servers` fetch), clearing
     // the saved session and showing "session expired" on the login screen.
-    let restored = matches!(crate::auth::load_session(), Some((token, user_id, _))
+    let restored = matches!(crate::auth::load_session(), Some((token, user_id, _, _))
         if !token.is_empty() && user_id != 0);
     if restored {
-        if let Some((token, user_id, username)) = crate::auth::load_session() {
+        if let Some((token, user_id, username, avatar)) = crate::auth::load_session() {
             crate::auth::CURRENT_USER_ID
                 .store(user_id, std::sync::atomic::Ordering::SeqCst);
             *crate::auth::CURRENT_TOKEN
@@ -3638,7 +3714,11 @@ pub fn app() -> Element {
             if !username.is_empty() {
                 *crate::auth::CURRENT_USERNAME
                     .lock()
-                    .unwrap_or_else(|p| p.into_inner()) = username;
+                    .unwrap_or_else(|p| p.into_inner()) = username.clone();
+                // The avatar rides the same persisted session so the signed-in
+                // user's uploaded image comes back on a refresh without waiting
+                // for a roster fetch.
+                crate::auth::remember_avatar(username.as_str(), avatar.clone());
             }
         }
         RESTORED.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -3981,6 +4061,11 @@ fn live_member_panel(
             Some("offline") => "#80848e",
             _ => "#80848e",
         };
+        // Snapshot the member's avatar from the shared client registry before
+        // the row closure: the ui! body cannot hold a `let`, and the `if
+        // let Some(...)` child branch reads this plain local.
+        let member_avatar: Option<String> =
+            crate::auth::avatar_for(member.username.as_str());
         let dot_style = StyleRules {
             width: Some(px(10.0)),
             height: Some(px(10.0)),
@@ -4008,6 +4093,27 @@ fn live_member_panel(
                 // map; grey when no `Presence` frame has landed for this member
                 // yet). Placed first so it leads the row.
                 view(style = dot_style) {}
+                // The member's avatar when the shared client registry has one
+                // (fed by `list_members` / login / gateway frames): a 22px
+                // round-cropped image. Members without an uploaded avatar
+                // keep the plain dot-led row (the pre-existing look).
+                if let Some(avatar) = &member_avatar {
+                    image(
+                        src = avatar.clone(),
+                        alt = format!("{} avatar", member.username),
+                        style = StyleRules {
+                            width: Some(px(22.0)),
+                            height: Some(px(22.0)),
+                            flex_shrink: Some(grow(0.0)),
+                            object_fit: Some(ObjectFit::Cover),
+                            border_top_left_radius: Some(px(11.0)),
+                            border_top_right_radius: Some(px(11.0)),
+                            border_bottom_left_radius: Some(px(11.0)),
+                            border_bottom_right_radius: Some(px(11.0)),
+                            ..Default::default()
+                        },
+                    )
+                }
                 // Name (+ a "(you)" tag on the signed-in user's own row).
                 view(style = StyleRules {
                     flex_shrink: Some(grow(1.0)),
@@ -5158,6 +5264,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 channel_id,
                 author_id,
                 author_username,
+                author_avatar,
                 content,
                 created_at,
                 edited_at,
@@ -5170,8 +5277,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 // The server resolved the author's username for the frame
                 // (`WsServerMsg::Message.author_username`), so the row shows a
                 // real name instead of an id. `author_id` still rides along for
-                // the "@me / self" checks below.
+                // the "@me / self" checks below. The author's avatar rides the
+                // same frame and lands in the shared registry, so the row's
+                // avatar chip and the member list can draw it.
                 let label = author_username.clone();
+                crate::auth::remember_avatar(label.as_str(), author_avatar.clone());
                 // Push the full 6-tuple: the wire `message_id` + the optional
                 // `edited_at` (epoch millis -> secs, like `created_at`) ride
                 // along so the row's edit affordance and "(edited)" marker can

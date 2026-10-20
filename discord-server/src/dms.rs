@@ -69,11 +69,15 @@ pub struct StartDmInput {
     pub user_id: i64,
 }
 
-/// One member of a DM channel, as returned by [`start_dm`] / [`list_dms`].
+/// One member of a DM channel, as returned by [`start_dm`] / [`list_dms`] —
+/// including their avatar (a `data:image/…;base64,` URL or `None`), so the
+/// DM rail can show the other participant's uploaded avatar.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct DmParticipant {
     pub user_id: i64,
     pub username: String,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
 }
 
 /// The wire record of a DM channel: its id, creation time, and both
@@ -111,6 +115,11 @@ pub struct DmMessage {
     pub channel_id: i64,
     pub author_id: i64,
     pub author_username: String,
+    /// The author's avatar URL (a `data:image/…;base64,` URL) or `None`
+    /// = default initial circle, so a DM client can render the author's
+    /// uploaded avatar.
+    #[serde(default)]
+    pub author_avatar: Option<String>,
     pub content: String,
     /// UTC epoch milliseconds.
     pub created_at: i64,
@@ -221,6 +230,7 @@ impl DmService {
             channel_id,
             author_id: user_id,
             author_username: String::new(),
+            author_avatar: self.db.user_avatar(user_id),
             content: content.to_string(),
             created_at,
             edited_at: None,
@@ -268,6 +278,7 @@ impl DmService {
                     channel_id: m.channel_id,
                     author_id: m.author_id,
                     author_username: username,
+                    author_avatar: self.db.user_avatar(m.author_id),
                     content: m.content,
                     created_at: m.created_at,
                     edited_at: m.edited_at,
@@ -297,7 +308,11 @@ impl DmService {
             .db
             .dm_participants_of(channel_id)
             .into_iter()
-            .map(|(user_id, username)| DmParticipant { user_id, username })
+            .map(|(user_id, username)| DmParticipant {
+                user_id,
+                username,
+                avatar_url: self.db.user_avatar(user_id),
+            })
             .collect();
         Dm {
             channel_id,
@@ -358,6 +373,7 @@ pub async fn send_dm_message(input: SendDmMessageInput) -> Result<SendDmMessageR
             dm_id: message.channel_id,
             author_id: message.author_id,
             author_username: message.author_username.clone(),
+            author_avatar: db.user_avatar(message.author_id),
             content: message.content.clone(),
             created_at: message.created_at,
         },

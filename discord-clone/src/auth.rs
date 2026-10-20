@@ -15,6 +15,20 @@
 //! process-wide ([`CURRENT_TOKEN`]) so every subsequent call authenticates as
 //! `Authorization: Bearer <token>`.
 
+/// Set (or clear) the SIGNED-IN account's avatar on the backend. `avatar` is
+/// `None` to clear, or a `data:image/{png,jpeg,webp,gif};base64,` URL (≤256 KB)
+/// to set; the backend validates the prefix and size and its rejection comes
+/// back as the `Err` string. Self-only: the acting user is the bearer token.
+pub async fn set_avatar(avatar: Option<String>) -> Result<Option<String>, String> {
+    let input = discord_server::auth::SetAvatarInput {
+        avatar_url: avatar,
+    };
+    discord_server::auth::set_avatar(input)
+        .await
+        .map(|r| r.avatar_url)
+        .map_err(|e| e.to_string())
+}
+
 /// Authenticate with a username + password and return the account's numeric
 /// id on success, or an error message on failure.
 ///
@@ -48,8 +62,18 @@ pub async fn login(username: &str, password: &str) -> Result<i64, String> {
             // statics and reloads the WASM module) can restore it without a
             // re-login — username included, so the profile strip keeps the
             // real identity after a refresh too. `signup` funnels through
-            // `login`, so one call site covers both.
-            save_session(&result.token, result.user_id, &username);
+            // `login`, so one call site covers both. The avatar URL rides
+            // along so a refresh restores the uploaded image without a
+            // second round trip.
+            save_session(&result.token, result.user_id, &username, result.avatar_url.clone());
+            // Register the author's avatar so every other surface (message
+            // rows, member lists, DMs) resolves it by username.
+            if !username.is_empty() {
+                crate::auth::remember_avatar(
+                    username.as_str(),
+                    result.avatar_url.clone(),
+                );
+            }
             Ok(result.user_id)
         }
         Err(error) => Err(error.to_string()),
@@ -187,6 +211,44 @@ pub(crate) fn current_username() -> String {
     CURRENT_USERNAME.lock().map(|u| u.clone()).unwrap_or_default()
 }
 
+// --- avatar registry (client-side, keyed by username) ----------------------
+//
+// Every live payload the client reads (member roster, DM participants,
+// message-author frames, login) carries the author's avatar URL; we stash the
+// username -> avatar mapping in one process-wide map so every initial-circle
+// render site (`message_row`, `member_row`, `user_panel`, the live member
+// panel, the DM rail) resolves an author by the name it already draws.
+// Usernames are globally unique (the `users.username` UNIQUE constraint), so
+// the name is a sound key. Mock identities are never in the map, so they
+// keep rendering their initial circles.
+
+pub(crate) static AVATAR_MAP: std::sync::Mutex<Vec<(String, String)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Record a user's avatar (or erase it with `None` — the roster is
+/// authoritative, so a `None` member row wipes a stale entry).
+pub(crate) fn remember_avatar(username: &str, avatar_url: Option<String>) {
+    if username.is_empty() {
+        return;
+    }
+    let mut map = AVATAR_MAP.lock().unwrap_or_else(|p| p.into_inner());
+    map.retain(|(u, _)| *u != username);
+    if let Some(url) = avatar_url {
+        map.push((username.to_string(), url.clone()));
+    }
+}
+
+/// The stored avatar for `username`, or `None` = draw the initial circle.
+pub(crate) fn avatar_for(username: &str) -> Option<String> {
+    if username.is_empty() {
+        return None;
+    }
+    let map = AVATAR_MAP.lock().unwrap_or_else(|p| p.into_inner());
+    map.iter()
+        .find(|(u, _)| *u == username)
+        .map(|(_, url)| url.clone())
+}
+
 /// The page's own origin on the web target (the bundle is served same-origin
 /// with the API); `None` off-web.
 #[cfg(target_arch = "wasm32")]
@@ -236,23 +298,33 @@ pub fn configure_server() {
 // display name has no other post-refresh source).
 
 #[cfg(target_arch = "wasm32")]
-fn save_session(token: &str, user_id: i64, username: &str) {
+fn save_session(token: &str, user_id: i64, username: &str, avatar_url: Option<String>) {
     if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+        // The avatar segment is empty when the account has no avatar (the
+        // NULL column's sentinel). Sessions saved before the avatar existed
+        // carry no 4th segment — `load_session` parses those as `None`.
+        let avatar = avatar_url.unwrap_or_default();
         let _ = storage.set_item(
             "discord_session",
-            &format!("{user_id}\u{0}{token}\u{0}{username}"),
+            &format!("{user_id}\u{0}{token}\u{0}{username}\u{0}{avatar}"),
         );
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn save_session(_token: &str, _user_id: i64, _username: &str) {}
+fn save_session(
+    _token: &str,
+    _user_id: i64,
+    _username: &str,
+    _avatar_url: Option<String>,
+) {}
 
-/// A persisted session `(token, user_id, username)`, or `None` when there is
-/// none to restore. The username segment is absent in sessions saved before
-/// was persisted — those restore with an empty name (the profile strip
-/// falls back to the mock identity until the next login re-saves it).
-pub(crate) fn load_session() -> Option<(String, i64, String)> {
+/// A persisted session `(token, user_id, username, avatar_url)`, or `None`
+/// when there is none to restore. The username segment is absent in sessions
+/// saved before it was persisted (they restore with an empty name), and the
+/// avatar segment is absent in sessions saved before the avatar existed
+/// (they restore with `None` = the initial circle).
+pub(crate) fn load_session() -> Option<(String, i64, String, Option<String>)> {
     #[cfg(target_arch = "wasm32")]
     {
         // `local_storage()` and `get_item()` return `Result<_, JsValue>`; fold
@@ -266,7 +338,11 @@ pub(crate) fn load_session() -> Option<(String, i64, String)> {
         let user_id: i64 = parts.next()?.parse().ok()?;
         let token = parts.next().unwrap_or_default().to_string();
         let username = parts.next().unwrap_or_default().to_string();
-        Some((token, user_id, username))
+        // Empty avatar segment = no avatar (the NULL sentinel), so map it to
+        // None and keep the map value `Option<String>`.
+        let avatar = parts.next().unwrap_or_default().to_string();
+        let avatar = if avatar.is_empty() { None } else { Some(avatar) };
+        Some((token, user_id, username, avatar))
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
