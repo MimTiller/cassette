@@ -384,6 +384,7 @@ fn live_dm_list(
     _msgs: Rc<RefCell<Vec<LiveDmMsg>>>,
     rev: Signal<u32>,
     new_id: Signal<String>,
+    friends_entry: Rc<dyn Fn() -> Element>,
 ) -> Element {
     let column_style = StyleRules {
         width: Some(px(240.0)),
@@ -422,9 +423,11 @@ fn live_dm_list(
                 .cloned()
                 .map(|dm| live_dm_row(dm, active.clone(), _msgs.clone(), rev.clone()))
                 .collect();
+            let entry = (friends_entry)();
             ui! {
                 view(style = column_style) {
                     text(style = section_style) { "Direct Messages".to_string() }
+                    { entry }
                     new_row
                     view(style = StyleRules {
                         flex_grow: Some(grow(1.0)),
@@ -800,8 +803,35 @@ pub fn live_dm_screen(
     rev: Signal<u32>,
     new_id: Signal<String>,
     frame_seq: Signal<Option<discord_server::server_settings::WsServerMsg>>,
+    friends_entry: Rc<dyn Fn() -> Element>,
+    friends_open: Signal<bool>,
+    friends_panel: Rc<dyn Fn() -> Element>,
 ) -> Element {
     let effect = dm_incoming_effect(frame_seq, active.clone(), msgs.clone(), rev.clone());
+    // Main area: the selected DM conversation, or — while the Friends panel
+    // is open (toggled by the "Friends" entry at the top of the list column)
+    // — the panel itself. `Element` is not `Clone`, so the panel and the
+    // entry both enter as factories; all their state is signals owned in
+    // app_shell scope, so rebuilding per render is cheap and state-stable.
+    let conv_msgs = msgs.clone();
+    let conv_dms = live_dms.clone();
+    let conv_active = active.clone();
+    let conv_rev = rev.clone();
+    let main = switch(
+        move || friends_open.get(),
+        move |open: &bool| {
+            if *open {
+                (friends_panel)()
+            } else {
+                live_dm_conversation(
+                    conv_dms.clone(),
+                    conv_active.clone(),
+                    conv_msgs.clone(),
+                    conv_rev.clone(),
+                )
+            }
+        },
+    );
     ui! {
         view(style = StyleRules {
             width: Some(pct(100.0)),
@@ -810,8 +840,8 @@ pub fn live_dm_screen(
             overflow: Some(Overflow::Hidden),
             ..Default::default()
         }) {
-            live_dm_list(live_dms.clone(), active.clone(), msgs.clone(), rev.clone(), new_id)
-            live_dm_conversation(live_dms, active, msgs, rev)
+            live_dm_list(live_dms.clone(), active.clone(), msgs.clone(), rev.clone(), new_id, friends_entry)
+            main
             effect
         }
     }

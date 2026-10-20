@@ -4962,6 +4962,24 @@ fn app_shell(authed: Signal<bool>) -> Element {
         Rc::new(RefCell::new(HashMap::new()));
     let live_presence_rev: Signal<u32> = signal(0);
 
+    // Friends panel (live): the panel snapshot of `list_friends`, flat + tagged
+    // (`0 = incoming / 1 = outgoing / 2 = accepted`) so the panel's `switch`
+    // can key on the whole vector. The ACTOR half of the server's sync path is
+    // in `friends_view` (each mutating RPC re-fetches and `set()`s this); the
+    // OTHER user's half is the `FriendChanged` gateway branch below, which
+    // re-fetches into the same signal — the snapshot IS the rebuild key. The
+    // tab selector (0 = Online, 1 = All, 2 = Pending, 3 = Add Friend) and the
+    // Add Friend draft + inline server error are owned here so a panel rebuild
+    // never drops the typed username.
+    let friends_snap: Signal<Vec<crate::friends_view::FriendRow>> = signal(Vec::new());
+    let friends_tab: Signal<u8> = signal(1);
+    let friends_add_username: Signal<String> = signal(String::new());
+    let friends_add_error: Signal<String> = signal(String::new());
+    // Whether the Friends panel is showing in the live-DM main area (the
+    // "Friends" entry at the top of the live DM column toggles it; while
+    // false the main area shows the selected DM conversation as before).
+    let friends_open: Signal<bool> = signal(false);
+
     // Realtime gateway: the signed session token authenticates the connect
     // (the backend verifies it). It rides the connect URL's `?args=` query —
     // a browser websocket cannot set request headers, so the token can't go on
@@ -5610,6 +5628,25 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     });
                 }
             }
+            // A friends-list change involving the peer of one of THIS user's
+            // relationships (the backend pushes `FriendChanged { friend_id,
+            // action }` to the *other* user on every send/accept/decline/
+            // cancel/remove): re-fetch `list_friends` and set the panel
+            // snapshot — the same single-source-of-truth re-fetch idiom as the
+            // `MemberChanged` branch above. The snapshot IS the panel's `switch`
+            // key, so the rows rebuild with no extra revision counter. The
+            // acting user re-syncs from their RPC return instead (in
+            // `friends_view`), so they never wait on this frame.
+            if let Some(discord_server::server_settings::WsServerMsg::FriendChanged { .. }) = frame {
+                let snap_sig = friends_snap.clone();
+                runtime_core::driver::spawn_async(
+                    async move {
+                        if let Ok(list) = crate::friends::list_friends().await {
+                            snap_sig.set(crate::friends_view::snapshot(list));
+                        }
+                    },
+                );
+            }
             // Scrollback marker: the server sends a `History { channel_id,
             // has_more }` frame BEFORE the `Message { new: false }` frames of a
             // page. `has_more` is `true` when the page was a full `limit` (50),
@@ -5800,7 +5837,139 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // value survives a list rebuild (when `start_dm` lands, `live_dms` is
     // updated and the list `switch` re-creates its rows — an in-row signal
     // would drop the draft at exactly that moment).
+    // --- friends panel (live) ----------------------------------------------
+    // The "Friends" entry at the TOP of the live DM list column (see the
+    // `friends_entry` splice in `live_dm_view::live_dm_list`) + the panel
+    // itself (built once in app_shell scope; see `friends_panel` below its
+    // render site) + the `on_message` callback above. `friends_open` toggles
+    // which of the two the DM screen's main area shows. Both the entry and
+    // the panel are `Rc<dyn Fn() -> Element>` factories (`Element` is not
+    // `Clone`; the live DM list's rows rebuild on every `live_dms` change, so
+    // the entry must be re-buildable inside that `Fn` render). The signals the
+    // factories touch are cloned into locals first (a `move` factory must own
+    // them; the clones share the same backing cells, so a `.set` from inside
+    // reaches the panes exactly as on the canonical names).
+    let friends_open_entry = friends_open.clone();
+    let friends_add_username_entry = friends_add_username.clone();
+    let friends_add_error_entry = friends_add_error.clone();
+    let friends_snap_entry = friends_snap.clone();
+    let friends_entry = Rc::new(
+        move || ui! {
+            view(
+                style = StyleRules {
+                    height: Some(px(40.0)),
+                    margin_left: Some(px(8.0)),
+                    margin_right: Some(px(8.0)),
+                    margin_bottom: Some(px(6.0)),
+                    padding_left: Some(px(10.0)),
+                    padding_right: Some(px(10.0)),
+                    align_items: Some(AlignItems::Center),
+                    background: Some(col(BG_SIDEBAR)),
+                    border_top_left_radius: Some(px(8.0)),
+                    border_top_right_radius: Some(px(8.0)),
+                    border_bottom_left_radius: Some(px(8.0)),
+                    border_bottom_right_radius: Some(px(8.0)),
+                    ..Default::default()
+                },
+                test_id = "friends-entry",
+            ) {
+                icon(USERS).color(|| Color::from(TEXT_MUTED)).size(18.0)
+                text(
+                    style = StyleRules {
+                        font_size: Some(px(14.0)),
+                        font_weight: Some(FontWeight::SemiBold),
+                        color: Some(col(TEXT)),
+                        ..Default::default()
+                    },
+                ) { "Friends".to_string() }
+            }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    let now_open = !friends_open_entry.get();
+                    friends_open_entry.set(now_open);
+                    if now_open {
+                        // On open: reset the Add Friend draft + error (the same
+                        // per-open reset the join/create modals apply to their
+                        // fields) and re-fetch the relationship list so the
+                        // panel reflects the backend's current state
+                        // immediately.
+                        friends_add_username_entry.set(String::new());
+                        friends_add_error_entry.set(String::new());
+                        let snap = friends_snap_entry.clone();
+                        runtime_core::driver::spawn_async(
+                            async move {
+                                if let Ok(list) = crate::friends::list_friends().await {
+                                    snap.set(crate::friends_view::snapshot(list));
+                                }
+                            },
+                        );
+                    }
+                }
+                TouchResponse::CONSUMED
+            })
+        },
+    );
     let live_dm_new_id: Signal<String> = signal(String::new());
+    // Friends panel's "Message" action: open/create the live DM with `uid`
+    // through the EXISTING DM functions (mirrors `live_dm_new_row`'s start:
+    // `start_dm` is idempotent, the returned channel id is selected, history
+    // is fetched + the revision bumped so the conversation pane renders, and
+    // `live_dm_mode` flips on so the panel is on screen). Owned here (app_shell
+    // scope) and handed to `friends_screen` via `on_message`; a `Rc<dyn Fn>` so
+    // each row's closure captures only a `Copy` uid + this shared handle.
+    let live_dm_msgs_rc = live_dm_messages.clone();
+    let friends_open_panel = friends_open.clone();
+    let on_dm_message: Rc<dyn Fn(i64)> = Rc::new(
+        move |uid: i64| {
+            let dms_sig = live_dms.clone();
+            let act = live_dm_active.clone();
+            let buf = live_dm_msgs_rc.clone();
+            let rev = live_dm_revision.clone();
+            let mode = live_dm_mode.clone();
+            runtime_core::driver::spawn_async(
+                async move {
+                    let input = discord_server::dms::StartDmInput { user_id: uid };
+                    match discord_server::dms::start_dm(input).await {
+                        Ok(dm) => {
+                            mode.set(true);
+                            // Message closes the Friends panel so the DM
+                            // conversation the panel opened becomes visible
+                            // (the panel shares the live-DM screen's main
+                            // area; leaving it open would bury the DM).
+                            friends_open_panel.set(false);
+                            let dm_id = dm.channel_id;
+                            if !dms_sig.get().iter().any(|d| d.channel_id == dm_id) {
+                                let mut list = dms_sig.get();
+                                list.insert(0, dm);
+                                dms_sig.set(list);
+                            }
+                            act.set(Some(dm_id));
+                            crate::auth::save_last_view_dm(dm_id);
+                            if let Ok(history) = discord_server::dms::list_dm_messages(
+                                discord_server::dms::ListDmMessagesInput {
+                                    channel_id: dm_id,
+                                    limit: None,
+                                },
+                            ).await {
+                                buf.borrow_mut().clear();
+                                buf.borrow_mut()
+                                    .extend(history.into_iter().map(|msg| (
+                                        msg.author_username,
+                                        msg.content,
+                                        msg.created_at,
+                                        msg.edited_at,
+                                    )));
+                                rev.set(rev.get() + 1);
+                            }
+                        }
+                        Err(_) => {
+                            // A failed start leaves the selection untouched.
+                        }
+                    }
+                },
+            );
+        },
+    );
     // Refresh restore: when the persisted per-user last view is the DM form,
     // re-open the DM panel on THAT conversation — the same state a live-DM
     // row tap sets (`live_dm_active` + fetched history + revision bump), so
@@ -9432,6 +9601,21 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // + `live_dm_revision`) are owned in `app_shell` scope, so the open
     // conversation and its fetched history survive a close/re-open. A "Done"
     // pill in the header flips `live_dm_mode` back off to close it.
+    // Friends panel (live): the factory the live DM screen's main area calls
+    // while `friends_open` is on (`Element` is not `Clone`, hence a factory —
+    // all state is signals owned in app_shell scope, so a rebuild is cheap and
+    // state-stable). Reads the app_shell live-presence map for the Online tab.
+    let friends_panel = Rc::new(
+        move || crate::friends_view::friends_screen(
+            friends_snap.clone(),
+            friends_tab.clone(),
+            friends_add_username.clone(),
+            friends_add_error.clone(),
+            live_presence.clone(),
+            live_presence_rev.clone(),
+            on_dm_message.clone(),
+        ),
+    );
     let live_dm_el = crate::live_dm_view::live_dm_screen(
         live_dms,
         live_dm_active,
@@ -9439,6 +9623,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
         live_dm_revision,
         live_dm_new_id,
         gateway.incoming(),
+        friends_entry,
+        friends_open,
+        friends_panel,
     );
     let live_dm_close = live_dm_mode.clone();
     let live_dm_header = ui! {
