@@ -9,12 +9,20 @@
 
 pub use discord_server::server_settings::MemberInfo;
 
-/// List the members of a server with their roles, owner-first.
+/// List the members of a server with their roles, owner-first. Every row's
+/// avatar (a `data:image/…;base64,` URL or `None`) is pushed into the shared
+/// client avatar registry (`crate::auth::remember_avatar`) so the member
+/// panel, message rows, and DMs can draw it by username; the roster is
+/// authoritative, so a `None` row wipes a stale entry.
 pub async fn list_members(server_id: i64) -> Result<Vec<MemberInfo>, String> {
     let input = discord_server::server_settings::ListMembersInput { server_id };
-    discord_server::server_settings::list_members(input)
+    let members = discord_server::server_settings::list_members(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    for m in members.iter() {
+        crate::auth::remember_avatar(m.username.as_str(), m.avatar_url.clone());
+    }
+    Ok(members)
 }
 
 /// Kick a member from a server. The backend enforces the real permission

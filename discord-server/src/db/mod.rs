@@ -422,6 +422,39 @@ impl Db {
         )
     }
 
+    // ── avatars ────────────────────────────────────────────────────────────
+    //
+    // The `users.avatar_url` column (declared in `0001_users.sql`: "the remote
+    // image (or null for the default avatar)") stores a small image as a
+    // `data:image/…;base64,` URL; the app layer validates the prefix and size
+    // before persisting, so the data layer only moves strings.
+
+    /// The user's stored avatar URL (a `data:image/…` URL), or `None` for
+    /// "no avatar" (the NULL column) or an unknown id.
+    pub fn user_avatar(&self, user_id: i64) -> Option<String> {
+        let c = self.lock().ok()?;
+        c.query_row(
+            "SELECT avatar_url FROM users WHERE id = ?1",
+            rusqlite::params![user_id],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten()
+    }
+
+    /// Set (or clear, with `None`) the stored avatar URL for `user_id`.
+    pub fn set_user_avatar(
+        &self,
+        user_id: i64,
+        avatar_url: Option<String>,
+    ) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        c.execute(
+            "UPDATE users SET avatar_url = ?2 WHERE id = ?1",
+            rusqlite::params![user_id, avatar_url],
+        )
+    }
+
     // ── presence ───────────────────────────────────────────────────────────
     //
     // One status per user: 'online' / 'away' / 'offline', driven entirely by

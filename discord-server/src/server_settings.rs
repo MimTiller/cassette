@@ -102,6 +102,11 @@ pub enum WsServerMsg {
         channel_id: i64,
         author_id: i64,
         author_username: String,
+        /// The author's avatar (a `data:image/…;base64,` URL) at post time,
+        /// `None` = default initial circle. Lets clients render the author's
+        /// avatar without a per-message user lookup.
+        #[serde(default)]
+        author_avatar: Option<String>,
         content: String,
         created_at: i64,
         edited_at: Option<i64>,
@@ -135,7 +140,7 @@ pub enum WsServerMsg {
     /// rather than re-deriving it from the page's own length.
     History { channel_id: i64, has_more: bool },
     /// A direct message pushed to a participant of the DM (always `new`).
-    DmMessage { message_id: i64, dm_id: i64, author_id: i64, author_username: String, content: String, created_at: i64 },
+    DmMessage { message_id: i64, dm_id: i64, author_id: i64, author_username: String, #[serde(default)] author_avatar: Option<String>, content: String, created_at: i64 },
     /// A presence status change for a user: 'online' / 'away' / 'offline'.
     Presence { user_id: i64, status: String },
     /// A channel member started typing. The client shows this transiently
@@ -302,6 +307,7 @@ pub async fn message_gateway(
                                 channel_id: m.channel_id,
                                 author_id: m.author_id,
                                 author_username,
+                                author_avatar: db.user_avatar(m.author_id),
                                 content: m.content,
                                 created_at: m.created_at,
                                 edited_at: m.edited_at,
@@ -919,7 +925,12 @@ impl ServerSettings {
             .db
             .server_members(server_id)
             .into_iter()
-            .map(|(user_id, username, role)| MemberInfo { user_id, username, role })
+            .map(|(user_id, username, role)| MemberInfo {
+                user_id,
+                username,
+                role,
+                avatar_url: self.db.user_avatar(user_id),
+            })
             .collect())
     }
 
@@ -1461,13 +1472,16 @@ pub struct ListMembersInput {
     pub server_id: i64,
 }
 
-/// One member of a server: their id, display name, and stored role string
-/// (`'owner'` / `'admin'` / `'moderator'` / `'member'`).
+/// One member of a server: their id, display name, stored role string
+/// (`'owner'` / `'admin'` / `'moderator'` / `'member'`), and avatar URL
+/// (a `data:image/…;base64,` string, `None` = default initial circle).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct MemberInfo {
     pub user_id: i64,
     pub username: String,
     pub role: String,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
 }
 
 /// Confirmation that a channel was marked read: the channel and the message id

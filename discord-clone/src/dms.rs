@@ -9,19 +9,28 @@
 pub use discord_server::dms::{Dm, DmMessage};
 
 /// List the signed-in user's existing DMs, most-recently-created first.
+/// Every participant's avatar is pushed into the shared client avatar
+/// registry (`crate::auth::remember_avatar`) so the DM rail rows draw the
+/// uploaded image.
 pub async fn list_dms() -> Result<Vec<Dm>, String> {
-    discord_server::dms::list_dms()
-        .await
-        .map_err(|e| e.to_string())
+    let list = discord_server::dms::list_dms().await.map_err(|e| e.to_string())?;
+    for dm in list.iter() {
+        for p in dm.participants.iter() {
+            crate::auth::remember_avatar(p.username.as_str(), p.avatar_url.clone());
+        }
+    }
+    Ok(list)
 }
 
 /// Start a DM with the user named by `user_id` (idempotent: if the caller
 /// and that user already share a DM, the existing channel is returned).
 pub async fn start_dm(user_id: i64) -> Result<Dm, String> {
     let input = discord_server::dms::StartDmInput { user_id };
-    discord_server::dms::start_dm(input)
-        .await
-        .map_err(|e| e.to_string())
+    let dm = discord_server::dms::start_dm(input).await.map_err(|e| e.to_string())?;
+    for p in dm.participants.iter() {
+        crate::auth::remember_avatar(p.username.as_str(), p.avatar_url.clone());
+    }
+    Ok(dm)
 }
 
 /// Send a message into the DM channel named by `dm_id` and return it. The
@@ -40,13 +49,19 @@ pub async fn send_dm_message(dm_id: i64, content: String) -> Result<DmMessage, S
 }
 
 /// List a DM channel's recent message history, oldest-first. `limit` caps
-/// the number of returned messages (the backend defaults it to 50).
+/// the number of returned messages (the backend defaults it to 50). Every
+/// author's avatar is pushed into the shared client avatar registry so the
+/// DM pane's rows can draw the uploaded image on a cold load.
 pub async fn list_dm_messages(dm_id: i64, limit: Option<i64>) -> Result<Vec<DmMessage>, String> {
     let input = discord_server::dms::ListDmMessagesInput {
         channel_id: dm_id,
         limit,
     };
-    discord_server::dms::list_dm_messages(input)
+    let history = discord_server::dms::list_dm_messages(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    for m in history.iter() {
+        crate::auth::remember_avatar(m.author_username.as_str(), m.author_avatar.clone());
+    }
+    Ok(history)
 }
