@@ -260,6 +260,13 @@ pub struct LoginResult {
     /// a second round trip.
     #[serde(default)]
     pub avatar_url: Option<String>,
+    /// The ids of users the account has blocked (rows it initiated). The
+    /// client uses this at startup to collapse blocked users' channel
+    /// messages; an empty list when the account blocks nobody. `#[serde
+    /// (default)]` so a cached payload from before the field existed still
+    /// deserializes.
+    #[serde(default)]
+    pub blocked_ids: Vec<i64>,
 }
 
 #[cfg(feature = "server")]
@@ -313,6 +320,7 @@ impl AuthService {
             token: crate::session::issue_token(user_id),
             username: stored_username,
             avatar_url: self.db.user_avatar(user_id),
+            blocked_ids: self.db.blocked_ids_for_user(user_id),
         })
     }
 

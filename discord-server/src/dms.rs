@@ -157,6 +157,7 @@ impl DmService {
     /// # Errors
     /// - `user not found` — `other_id` (or the caller) is not a user.
     /// - `cannot start a DM with yourself` — `other_id == caller_id`.
+    /// - `blocked` — a user block exists between the pair (either direction).
     pub fn start_dm(&self, caller_id: i64, other_id: i64) -> Result<Dm, String> {
         if caller_id == other_id {
             return Err("cannot start a DM with yourself".into());
@@ -169,9 +170,16 @@ impl DmService {
             .user_by_id(other_id)
             .ok_or("user not found")?;
 
-        // Idempotent: reuse the pair's existing DM if one exists.
+        // Idempotent: reuse the pair's existing DM if one exists. A block does
+        // NOT make an existing DM unreadable — only STARTING a new one is
+        // refused below.
         if let Some(id) = self.db.dm_channel_between(caller_id, other_id) {
             return Ok(self.dm(id));
+        }
+
+        // A block in either direction forbids opening a new DM.
+        if self.db.blocks_pair(caller_id, other_id) {
+            return Err("you cannot message this user: they are blocked".into());
         }
 
         let now = now_ms();
