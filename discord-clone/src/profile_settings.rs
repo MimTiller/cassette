@@ -39,6 +39,7 @@ use runtime_core::{
     FontWeight,
     JustifyContent,
     ObjectFit,
+    Overflow,
     StyleRules,
     Tokenized,
     TouchPhase,
@@ -121,9 +122,9 @@ fn b64_encode(data: &[u8]) -> String {
     String::from_utf8(out).unwrap()
 }
 
-/// Decode standard padded base64 (the robot hook's argument; the picker path
+/// Decode standard padded base64 (the robot hooks' argument; the picker path
 /// never needs it).
-fn b64_decode(s: &str) -> Result<Vec<u8>, String> {
+pub fn b64_decode(s: &str) -> Result<Vec<u8>, String> {
     let mut out: Vec<u8> = Vec::new();
     let mut acc: u32 = 0;
     let mut bits: u32 = 0;
@@ -185,6 +186,62 @@ fn validate_and_encode(mime: &str, bytes: &[u8]) -> Result<String, String> {
         return Err("avatar too large (max 256 KB)".to_string());
     }
     Ok(url)
+}
+
+// --- message-attachment upload plumbing (app.rs composer shares these) ----
+
+/// Per-image decoded cap the backend enforces on channel-message attachments
+/// (`MAX_ATTACHMENT_BYTES` in discord-server's realtime layer) — mirrored
+/// client-side so an oversized pick rejects visibly, not in a dropped frame.
+const ATTACHMENT_MAX_BYTES: usize = 2 * 1024 * 1024;
+
+/// Max images one message may carry (`MAX_ATTACHMENTS_PER_MESSAGE`).
+pub const ATTACHMENT_MAX_COUNT: usize = 4;
+
+/// The same validate + encode as [`validate_and_encode`] but against the
+/// message-attachment cap (avatars are capped far tighter). Reuses the
+/// shared `b64_encode` and `accepted_mime` rather than duplicating them.
+pub fn validate_and_encode_attachment(mime: &str, bytes: &[u8]) -> Result<String, String> {
+    let kind = accepted_mime(mime, bytes).ok_or("Not a PNG/JPEG/WebP/GIF image — pick an image file")?;
+    let url = format!("data:{};base64,{}", kind, b64_encode(bytes));
+    if bytes.len() > ATTACHMENT_MAX_BYTES {
+        return Err("image too large (max 2 MB)".to_string());
+    }
+    Ok(url)
+}
+
+/// Thumbnail cell for the composer's pending-attachment strip: the image
+/// letterboxed into a `cell`-px square on a dark chip, so a strip of mixed
+/// aspect ratios stays even. The full-resolution image is only carried in
+/// the send frame, not rendered here.
+pub fn attachment_thumbnail(src: runtime_core::Reactive<String>, filename: String, cell: f32) -> Element {
+    ui! {
+        view(style = StyleRules {
+            width: Some(px(cell)),
+            height: Some(px(cell)),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(JustifyContent::Center),
+            background: Some(col("#1e2024")),
+            border_top_left_radius: Some(px(6.0)),
+            border_top_right_radius: Some(px(6.0)),
+            border_bottom_left_radius: Some(px(6.0)),
+            border_bottom_right_radius: Some(px(6.0)),
+            overflow: Some(Overflow::Hidden),
+            flex_shrink: Some(grow(0.0)),
+            ..Default::default()
+        }) {
+            image(
+                src = src,
+                alt = format!("attachment: {filename}"),
+                style = StyleRules {
+                    width: Some(px(cell)),
+                    height: Some(px(cell)),
+                    object_fit: Some(ObjectFit::Contain),
+                    ..Default::default()
+                },
+            )
+        }
+    }
 }
 
 // Robot test hook (`avatar.upload`): the picker callback's validate → encode
