@@ -517,6 +517,8 @@ impl Db {
     /// This inserts the message row only. Resolved `@mention` rows are written
     /// separately via [`Self::insert_message_mentions`] (the caller resolves
     /// the tokens against the member list — see `realtime::resolve_mentions`).
+    /// Message attachments go through [`Self::insert_message_with_attachments`]
+    /// so the message row and its `message_attachments` rows land together.
     pub fn insert_message(
         &self,
         channel_id: i64,
@@ -532,6 +534,43 @@ impl Db {
             rusqlite::params![channel_id, author_id, content, created_at, reply_to_message_id],
         )?;
         Ok(c.last_insert_rowid())
+    }
+
+    /// Insert a chat message AND its image attachments in ONE SQLite
+    /// transaction, so a message never exists without its attachments (and
+    /// vice versa) if the process dies mid-post. `attachments` is a list of
+    /// `(filename, mime, data)` triples, `data` inline as a
+    /// `data:image/…;base64,` URL (migration `0015_message_attachments.sql`);
+    /// attachment rows share the message's `created_at`. Returns
+    /// `(message_id, attachment_ids)` in input order.
+    pub fn insert_message_with_attachments(
+        &self,
+        channel_id: i64,
+        author_id: i64,
+        content: &str,
+        created_at: i64,
+        reply_to_message_id: Option<i64>,
+        attachments: &[(String, String, String)],
+    ) -> Result<(i64, Vec<i64>), rusqlite::Error> {
+        let mut c = self.lock()?;
+        let tx = c.transaction()?;
+        tx.execute(
+            "INSERT INTO messages (channel_id, author_id, content, created_at, reply_to_message_id)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![channel_id, author_id, content, created_at, reply_to_message_id],
+        )?;
+        let message_id = tx.last_insert_rowid();
+        let mut attachment_ids: Vec<i64> = Vec::new();
+        for (filename, mime, data) in attachments {
+            tx.execute(
+                "INSERT INTO message_attachments (message_id, filename, mime, data, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![message_id, filename, mime, data, created_at],
+            )?;
+            attachment_ids.push(tx.last_insert_rowid());
+        }
+        tx.commit()?;
+        Ok((message_id, attachment_ids))
     }
 
     /// Record the resolved `@mention`s for `message_id` (one row per user id).
@@ -625,7 +664,8 @@ impl Db {
 
     /// The most recent `limit` messages in a channel, oldest-first (ready to
     /// hand to a client as initial history). Each message carries its resolved
-    /// `@mention` user ids (see `0012_message_mentions.sql`).
+    /// `@mention` user ids (see `0012_message_mentions.sql`) and its image
+    /// attachments (see `0015_message_attachments.sql`).
     pub fn recent_messages(&self, channel_id: i64, limit: i64) -> Vec<Message> {
         let mut out: Vec<Message> = {
             let Ok(c) = self.lock() else {
@@ -648,6 +688,7 @@ impl Db {
                     edited_at: r.get(5)?,
                     reply_to_message_id: r.get(6)?,
                     mentioned_user_ids: Vec::new(),
+                    attachments: Vec::new(),
                 })
             }) {
                 Ok(rows) => rows,
@@ -659,6 +700,7 @@ impl Db {
         }; // drop the connection lock before re-locking in message_mentions
         for m in &mut out {
             m.mentioned_user_ids = self.message_mentions(m.id);
+            m.attachments = self.message_attachments(m.id);
         }
         out
     }
@@ -692,6 +734,7 @@ impl Db {
                     edited_at: r.get(5)?,
                     reply_to_message_id: r.get(6)?,
                     mentioned_user_ids: Vec::new(),
+                    attachments: Vec::new(),
                 })
             }) {
                 Ok(rows) => rows,
@@ -703,6 +746,7 @@ impl Db {
         }; // drop the connection lock before re-locking in message_mentions
         for m in &mut out {
             m.mentioned_user_ids = self.message_mentions(m.id);
+            m.attachments = self.message_attachments(m.id);
         }
         out
     }
@@ -721,6 +765,33 @@ impl Db {
             Err(_) => return Vec::new(),
         };
         let rows = match stmt.query_map(rusqlite::params![message_id], |r| r.get::<_, i64>(0)) {
+            Ok(rows) => rows,
+            Err(_) => return Vec::new(),
+        };
+        rows.filter_map(Result::ok).collect()
+    }
+
+    /// The image attachments stored for `message_id` (`message_attachments`,
+    /// see migration `0015_message_attachments.sql`), ordered by id. Empty
+    /// when the message has none (or the id is unknown).
+    pub fn message_attachments(&self, message_id: i64) -> Vec<Attachment> {
+        let Ok(c) = self.lock() else {
+            return Vec::new();
+        };
+        let mut stmt = match c.prepare(
+            "SELECT id, filename, mime, data FROM message_attachments WHERE message_id = ?1 ORDER BY id",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let rows = match stmt.query_map(rusqlite::params![message_id], |r| {
+            Ok(Attachment {
+                id: r.get(0)?,
+                filename: r.get(1)?,
+                mime: r.get(2)?,
+                data: r.get(3)?,
+            })
+        }) {
             Ok(rows) => rows,
             Err(_) => return Vec::new(),
         };
@@ -1016,6 +1087,7 @@ impl Db {
                         edited_at: r.get(5)?,
                         reply_to_message_id: None,
                         mentioned_user_ids: Vec::new(),
+                        attachments: Vec::new(),
                     },
                     pinned_by,
                 ))
@@ -1209,6 +1281,7 @@ impl Db {
                 edited_at: r.get(5)?,
                 reply_to_message_id: None,
                 mentioned_user_ids: Vec::new(),
+                attachments: Vec::new(),
             })
         }) {
             Ok(rows) => rows,
@@ -1897,6 +1970,21 @@ pub struct Message {
     /// (`dm_messages`) always come back empty.
     #[serde(default)]
     pub mentioned_user_ids: Vec<i64>,
+    /// Image attachments persisted with the message; always empty for
+    /// `dm_messages` rows.
+    #[serde(default)]
+    pub attachments: Vec<Attachment>,
+}
+
+/// One image attached to a channel message (migration
+/// `0015_message_attachments.sql`), as persisted.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Attachment {
+    pub id: i64,
+    pub filename: String,
+    pub mime: String,
+    /// The image bytes inline as a `data:image/…;base64,` URL.
+    pub data: String,
 }
 
 /// The `@mention` token grammar, for messages: `@` followed by a run of ASCII

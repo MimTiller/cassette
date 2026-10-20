@@ -33,6 +33,13 @@ const QUEUE_DEPTH: usize = 512;
 /// Longest message body accepted, in characters.
 pub const MAX_MESSAGE_CHARS: usize = 4000;
 
+/// Image attachment limits, enforced at the post boundary (see
+/// `0015_message_attachments.sql`): only these mimes, at most this many
+/// decoded bytes per image, at most this many images per message.
+const ATTACHMENT_MIMES: &[&str] = &["image/png", "image/jpeg", "image/webp", "image/gif"];
+const MAX_ATTACHMENT_BYTES: usize = 2 * 1024 * 1024;
+pub const MAX_ATTACHMENTS_PER_MESSAGE: usize = 4;
+
 /// Posts allowed per user per window.
 const SEND_LIMIT: usize = 20;
 const SEND_WINDOW: Duration = Duration::from_secs(10);
@@ -249,9 +256,47 @@ pub fn resolve_mentions(db: &Db, server_id: i64, content: &str) -> Vec<i64> {
     out
 }
 
+/// Validate one image attachment: allowed mime on BOTH the declared field and
+/// the `data:` URL prefix (the URL prefix is what the browser actually renders,
+/// so the two must agree), non-empty base64 body, and at most
+/// [`MAX_ATTACHMENT_BYTES`] decoded. Decoded size is bounded arithmetically —
+/// 4 base64 chars carry at most 3 bytes — so we never need a decoder here.
+fn validate_attachment(filename: &str, mime: &str, data: &str) -> Result<(), String> {
+    if filename.trim().is_empty() {
+        return Err("attachment filename is empty".into());
+    }
+    if !ATTACHMENT_MIMES.iter().any(|m| *m == mime) {
+        return Err(format!("attachment mime not allowed: {mime}"));
+    }
+    const SCHEMES: &[&str] = &[
+        "data:image/png;base64,",
+        "data:image/jpeg;base64,",
+        "data:image/webp;base64,",
+        "data:image/gif;base64,",
+    ];
+    let want = format!("data:{mime};base64,");
+    if !SCHEMES.iter().any(|s| data.starts_with(s)) || !data.starts_with(&want) {
+        return Err(format!("attachment data URL does not match its mime: {mime}"));
+    }
+    let body = data.len() - want.len();
+    // 4 base64 chars decode to at most 3 bytes; +3 per partial group is the
+    // upper bound, so reject on the bound without decoding.
+    if body == 0 || (body + 3) / 4 * 3 > MAX_ATTACHMENT_BYTES {
+        return Err(format!("attachment too large (max {MAX_ATTACHMENT_BYTES} bytes)"));
+    }
+    Ok(())
+}
+
 /// Validate, persist and fan out one channel message. The audience is every
 /// member of the channel's server (including the sender's own sockets, which is
 /// how the sender receives its echo).
+///
+/// A message must carry a body OR at least one image attachment (not neither);
+/// `attachments` are validated by [`validate_attachment`] (mime allowlist,
+/// size cap, count cap) and persisted in the same transaction as the message
+/// row (`db::insert_message_with_attachments`). The persisted attachments
+/// (id, filename, mime, data URL) ride the broadcast frame as
+/// `attachments`, so clients render without a second lookup.
 ///
 /// Before persisting, the message text is scanned for `@username` tokens and
 /// each is resolved against the server's members (see [`resolve_mentions`]).
@@ -264,12 +309,19 @@ pub fn post_channel_message(
     channel_id: i64,
     content: &str,
     reply_to_message_id: Option<i64>,
+    attachments: Vec<crate::server_settings::AttachmentInput>,
 ) -> Result<(), String> {
-    if content.trim().is_empty() {
+    if attachments.len() > MAX_ATTACHMENTS_PER_MESSAGE {
+        return Err(format!("too many attachments (max {MAX_ATTACHMENTS_PER_MESSAGE})"));
+    }
+    if content.trim().is_empty() && attachments.is_empty() {
         return Err("empty message".into());
     }
     if content.chars().count() > MAX_MESSAGE_CHARS {
         return Err(format!("message too long (max {MAX_MESSAGE_CHARS} characters)"));
+    }
+    for att in &attachments {
+        validate_attachment(&att.filename, &att.mime, &att.data)?;
     }
     if let Err(retry) = send_limiter().check(&user_id.to_string()) {
         return Err(format!("rate limited: retry in {}s", retry.as_secs() + 1));
@@ -284,8 +336,19 @@ pub fn post_channel_message(
         return Err("you are timed out and cannot post messages".into());
     }
     let created_at = now_millis();
-    let message_id = db
-        .insert_message(channel_id, user_id, content, created_at, reply_to_message_id)
+    let attachment_rows = attachments
+        .into_iter()
+        .map(|a| (a.filename, a.mime, a.data))
+        .collect::<Vec<(String, String, String)>>();
+    let (message_id, attachment_ids) = db
+        .insert_message_with_attachments(
+            channel_id,
+            user_id,
+            content,
+            created_at,
+            reply_to_message_id,
+            &attachment_rows,
+        )
         .map_err(|e| e.to_string())?;
     let mentioned_user_ids = resolve_mentions(db, server_id, content);
     if let Err(e) = db.insert_message_mentions(message_id, &mentioned_user_ids) {
@@ -298,6 +361,18 @@ pub fn post_channel_message(
         .user_by_id(user_id)
         .map(|(_, n)| n)
         .unwrap_or_default();
+    // Pair the persisted attachment ids (from the same transaction) with the
+    // sent rows so the frame carries the full persisted attachment record.
+    let wire_attachments = attachment_ids
+        .into_iter()
+        .zip(attachment_rows)
+        .map(|(id, (filename, mime, data))| crate::server_settings::MessageAttachment {
+            id,
+            filename,
+            mime,
+            data,
+        })
+        .collect();
     hub().publish(
         &server_audience(db, server_id),
         &WsServerMsg::Message {
@@ -313,8 +388,9 @@ pub fn post_channel_message(
             mentioned_user_ids,
             reply_to_message_id,
             // A fresh post has no reactions yet; later adds ride the
-            // `ReactionAdd` broadcast frames.
+            // `ReactionAdd` / `ReactionRemove` broadcast frames.
             reactions: Vec::new(),
+            attachments: wire_attachments,
         },
     );
     Ok(())
@@ -603,13 +679,93 @@ mod tests {
     #[test]
     fn posting_validates_size_emptiness_and_membership() {
         let (_d, db) = setup();
-        assert_eq!(post_channel_message(&db, 1, 1, "   ", None).unwrap_err(), "empty message");
+        assert_eq!(post_channel_message(&db, 1, 1, "   ", None, Vec::new()).unwrap_err(), "empty message");
         let long = "x".repeat(MAX_MESSAGE_CHARS + 1);
-        assert!(post_channel_message(&db, 1, 1, &long, None).unwrap_err().contains("too long"));
-        assert!(post_channel_message(&db, 4, 1, "hi", None).unwrap_err().contains("not a member"));
-        assert!(post_channel_message(&db, 1, 2, "hi", None).unwrap_err().contains("not a text"));
-        assert!(post_channel_message(&db, 1, 1, "ok", None).is_ok());
+        assert!(post_channel_message(&db, 1, 1, &long, None, Vec::new()).unwrap_err().contains("too long"));
+        assert!(post_channel_message(&db, 4, 1, "hi", None, Vec::new()).unwrap_err().contains("not a member"));
+        assert!(post_channel_message(&db, 1, 2, "hi", None, Vec::new()).unwrap_err().contains("not a text"));
+        assert!(post_channel_message(&db, 1, 1, "ok", None, Vec::new()).is_ok());
         assert_eq!(db.recent_messages(1, 10).len(), 1, "only the valid post persisted");
+    }
+
+    // ── image attachments ─────────────────────────────────────────────────
+
+    #[test]
+    fn attachment_only_post_with_one_image_lands_in_history() {
+        let (_d, db) = setup();
+        let png = "data:image/png;base64,iVBORw0KGgo=";
+        let att = crate::server_settings::AttachmentInput {
+            filename: "dot.png".into(),
+            mime: "image/png".into(),
+            data: png.into(),
+        };
+        // An attachment-only message (empty body) is accepted — a message
+        // carrying body OR attachments, not neither.
+        assert!(post_channel_message(&db, 1, 1, "", None, vec![att]).is_ok());
+        let msgs = db.recent_messages(1, 10);
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].attachments.len(), 1, "attachment comes back in history");
+        let a = &msgs[0].attachments[0];
+        assert_eq!(a.filename, "dot.png");
+        assert_eq!(a.mime, "image/png");
+        assert_eq!(a.data, png);
+        assert!(a.id > 0, "the persisted attachment id rides the history row");
+    }
+
+    #[test]
+    fn attachment_count_size_and_mime_limits_are_enforced() {
+        let (_d, db) = setup();
+        let good = crate::server_settings::AttachmentInput {
+            filename: "dot.png".into(),
+            mime: "image/png".into(),
+            data: "data:image/png;base64,iVBORw0KGgo=".into(),
+        };
+        // 5 attachments on one message: rejected (max 4), nothing persisted.
+        let five = vec![good.clone(), good.clone(), good.clone(), good.clone(), good.clone()];
+        assert!(
+            post_channel_message(&db, 1, 1, "x", None, five).unwrap_err()
+                .contains("too many attachments")
+        );
+        assert!(db.recent_messages(1, 10).is_empty());
+        // Oversize: the base64 body decodes past the 2 MB cap (upper bound
+        // `(chars+3)/4*3` crosses MAX_ATTACHMENT_BYTES).
+        let huge_data =
+            String::new()
+            + "data:image/png;base64,"
+            + &"A".repeat(MAX_ATTACHMENT_BYTES / 3 * 4 + 4);
+        assert!(
+            post_channel_message(
+                &db, 1, 1, "x", None,
+                vec![crate::server_settings::AttachmentInput {
+                    filename: "big.png".into(),
+                    mime: "image/png".into(),
+                    data: huge_data,
+                }],
+            )
+            .unwrap_err()
+            .contains("too large")
+        );
+        // Non-image declared mime rejected.
+        let pdf = crate::server_settings::AttachmentInput {
+            filename: "doc.pdf".into(),
+            mime: "application/pdf".into(),
+            data: "data:application/pdf;base64,JU".into(),
+        };
+        assert!(
+            post_channel_message(&db, 1, 1, "x", None, vec![pdf]).unwrap_err()
+                .contains("mime not allowed")
+        );
+        // Declared mime agrees but the data URL prefix disagrees: rejected.
+        let liar = crate::server_settings::AttachmentInput {
+            filename: "x.png".into(),
+            mime: "image/png".into(),
+            data: "data:image/gif;base64,R0lG".into(),
+        };
+        assert!(
+            post_channel_message(&db, 1, 1, "x", None, vec![liar]).unwrap_err()
+                .contains("does not match")
+        );
+        assert!(db.recent_messages(1, 10).is_empty(), "no rejected post persisted");
     }
 
     // ── @mention tokenization + resolution ────────────────────────────────
@@ -658,7 +814,7 @@ mod tests {
         hub.reset();
         let (_id, mut rx) = hub.register(1); // alice's (sender) socket
 
-        assert!(post_channel_message(&db, 1, 1, "@bob @alice and @nobody", None).is_ok());
+        assert!(post_channel_message(&db, 1, 1, "@bob @alice and @nobody", None, Vec::new()).is_ok());
         // The echo frame carries the resolved mentions (bob=2, alice=1; nobody dropped).
         let frame = rx.try_recv().expect("sender receives the echo");
         match frame {
@@ -1005,7 +1161,7 @@ mod tests {
         );
 
         // 3. Fan-out: Alice posts; Alice (echo) and Bob receive it.
-        send(&mut alice, &WsClientMsg::Send { channel_id: 1, content: "hello bob".into(), reply_to_message_id: None }).await;
+        send(&mut alice, &WsClientMsg::Send { channel_id: 1, content: "hello bob".into(), reply_to_message_id: None, attachments: Vec::new() }).await;
         assert!(next_matching(&mut alice, is_msg("hello bob")).await.is_some(), "echo to sender");
         assert!(next_matching(&mut bob, is_msg("hello bob")).await.is_some(), "bob receives");
         // ...but users outside server 1 hear nothing.
@@ -1013,13 +1169,13 @@ mod tests {
         assert!(hears_nothing(&mut dave, is_msg("hello bob")).await, "dave is in no server");
 
         // 4. Authorization: a non-member cannot post or read; voice is not text.
-        send(&mut dave, &WsClientMsg::Send { channel_id: 1, content: "sneaky".into(), reply_to_message_id: None }).await;
+        send(&mut dave, &WsClientMsg::Send { channel_id: 1, content: "sneaky".into(), reply_to_message_id: None, attachments: Vec::new() }).await;
         let err = next_matching(&mut dave, |m| matches!(m, WsServerMsg::Error { .. })).await;
         assert!(matches!(err, Some(WsServerMsg::Error { ref reason }) if reason.contains("not a member")));
         send(&mut dave, &WsClientMsg::History { channel_id: 1, before_id: None }).await;
         let err = next_matching(&mut dave, |m| matches!(m, WsServerMsg::Error { .. })).await;
         assert!(matches!(err, Some(WsServerMsg::Error { ref reason }) if reason.contains("not a member")));
-        send(&mut alice, &WsClientMsg::Send { channel_id: 2, content: "into voice".into(), reply_to_message_id: None }).await;
+        send(&mut alice, &WsClientMsg::Send { channel_id: 2, content: "into voice".into(), reply_to_message_id: None, attachments: Vec::new() }).await;
         let err = next_matching(&mut alice, |m| matches!(m, WsServerMsg::Error { .. })).await;
         assert!(matches!(err, Some(WsServerMsg::Error { ref reason }) if reason.contains("not a text")));
         assert!(hears_nothing(&mut bob, is_msg("sneaky")).await);
