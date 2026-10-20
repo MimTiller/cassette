@@ -5272,6 +5272,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 mentioned_user_ids,
                 reply_to_message_id,
                 reactions,
+                // Image attachments ride the frame but the client UI for them
+                // is a later layer; ignored here so the pattern stays
+                // exhaustive against the shared wire type.
+                attachments: _attachments,
             }) = frame
             {
                 // The server resolved the author's username for the frame
@@ -8450,6 +8454,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 channel_id: live_cid,
                 content: out_body.clone(),
                 reply_to_message_id: reply_target.get(),
+                // No image attachments from the composer yet (UI is a later
+                // layer); the field exists so the frame matches the wire type.
+                attachments: Vec::new(),
             });
             send_composer.set(String::new());
             reply_ctx.set(None);
