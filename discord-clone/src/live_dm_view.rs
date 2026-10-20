@@ -30,10 +30,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use runtime_core::{
-    AlignItems, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent, KeyOutcome,
-    Overflow, ObjectFit, Signal, StyleRules, Tokenized, TouchPhase, TouchResponse, signal,
-    switch, ui,
+    AlignItems, Color, Element, FlexDirection, FlexWrap, FontWeight, JustifyContent, KeyEvent,
+    KeyOutcome, ObjectFit, Overflow, Position, Signal, StyleRules, TextTransform, Tokenized,
+    TouchPhase, TouchResponse, signal, switch, ui,
 };
+use runtime_core::icon;
+use icons_lucide::{PLUS, SMILE};
 
 use crate::app::{format_when, message_row, same_group};
 use crate::dms::{self, Dm};

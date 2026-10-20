@@ -72,7 +72,7 @@ pub fn server_stats_card(
             border_bottom_right_radius: Some(px(10.0)),
             ..Default::default()
         }) {
-            for (label, value) in stats.iter() {
+            for (i, (label, value)) in stats.iter().enumerate(), key = i {
                 view(style = StyleRules {
                     flex_direction: Some(FlexDirection::Column),
                     align_items: Some(AlignItems::Center),

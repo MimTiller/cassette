@@ -43,7 +43,7 @@ crate-type = ["rlib"]
 # (`idealyst dev`). Pulls `dev-server` so the recorder-side registration
 # seams compile.
 [features]
-default = []
+default = ["server"]
 server = [
     "server/server",
     "dep:rusqlite",

@@ -78,7 +78,7 @@ pub fn TimeoutDurationPicker(duration: Signal<i64>) -> Element {
                 margin_bottom: Some(px(8.0)),
                 ..Default::default()
             }) { "TIMEOUT DURATION".to_string() }
-            for (i, name) in TIMEOUT_OPTIONS.iter().enumerate() {
+            for (i, name) in TIMEOUT_OPTIONS.iter().enumerate(), key = i {
                 // `i` is the loop index (compile-time repeat key); the closure
                 // only *reads* `i` and `duration` (`Copy`), so it stays `Fn`
                 // and the built `StyleRules` is a fresh value each time.

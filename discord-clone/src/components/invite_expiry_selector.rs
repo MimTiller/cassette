@@ -77,7 +77,7 @@ pub fn InviteExpirySelector(value: Signal<usize>) -> Element {
                 margin_bottom: Some(px(8.0)),
                 ..Default::default()
             }) { "INVITE EXPIRY".to_string() }
-            for (i, name) in INVITE_EXPIRY_OPTIONS.iter().enumerate() {
+            for (i, name) in INVITE_EXPIRY_OPTIONS.iter().enumerate(), key = i {
                 // `i` is the loop index (compile-time repeat key); the closure
                 // only *reads* `i` and `value` (both `Copy`), so it stays
                 // `Fn` and the built `StyleRules` is a fresh value each time.

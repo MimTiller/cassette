@@ -60,7 +60,7 @@ pub fn SlashCommandDropdown() -> Element {
             padding_bottom: Some(px(8.0)),
             ..Default::default()
         }) {
-            for (i, cmd) in SLASH_COMMANDS.iter().enumerate() {
+            for (i, cmd) in SLASH_COMMANDS.iter().enumerate(), key = i {
                 // `i` is the loop index (compile-time repeat key); the closure
                 // only *reads* `selected` (a `Copy` `Signal`), so it stays `Fn`
                 // and the built `StyleRules` is a fresh value each time.

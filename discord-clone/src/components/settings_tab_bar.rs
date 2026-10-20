@@ -67,7 +67,7 @@ pub fn SettingsTabBar() -> Element {
             // key); the per-tab `move` closures read `i` and `active` (both
             // `Copy`) so they stay `Fn`, rebuilding a fresh `StyleRules` each
             // evaluation.
-            for (i, label) in SETTINGS_TABS.iter().enumerate() {
+            for (i, label) in SETTINGS_TABS.iter().enumerate(), key = i {
                 // The tab pill. The reactive `style = move || …` closure reads
                 // `active` and rebuilds the `StyleRules` on every selection
                 // change: active → blurple fill; inactive → transparent.

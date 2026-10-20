@@ -102,7 +102,7 @@ pub fn ServerRegionSelector() -> Element {
                 margin_bottom: Some(px(8.0)),
                 ..Default::default()
             }) { "VOICE REGION".to_string() }
-            for (i, (name, ping)) in REGIONS.iter().enumerate() {
+            for (i, (name, ping)) in REGIONS.iter().enumerate(), key = i {
                 // `i` is the loop index (compile-time repeat key); the closure
                 // only *reads* `i` and `selected` (both `Copy`), so it stays
                 // `Fn` and the built `StyleRules` is a fresh value each time.
