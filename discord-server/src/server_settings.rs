@@ -58,6 +58,27 @@ use crate::session::acting_user;
 // verified before any frame is exchanged; the user id is taken from the
 // verified token. All events (channel messages, DMs, presence) are fanned out
 // through `crate::realtime` to every socket that should hear them.
+
+/// An image attachment the client sends with a message: `filename`, a declared
+/// `mime` (must be one of `image/png`, `image/jpeg`, `image/webp`, `image/gif`),
+/// and `data` = a `data:image/…;base64,` URL.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttachmentInput {
+    pub filename: String,
+    pub mime: String,
+    pub data: String,
+}
+
+/// The persisted form of an image attachment (`id` = `message_attachments.id`),
+/// riding on history/live `Message` frames.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MessageAttachment {
+    pub id: i64,
+    pub filename: String,
+    pub mime: String,
+    pub data: String,
+}
+
 /// Inbound frames the client sends.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum WsClientMsg {
@@ -69,6 +90,9 @@ pub enum WsClientMsg {
         content: String,
         #[serde(default)]
         reply_to_message_id: Option<i64>,
+        /// Image attachments sent with this message (empty = none).
+        #[serde(default)]
+        attachments: Vec<AttachmentInput>,
     },
     /// Request the recent message history for a channel. `before_id` is the
     /// scrollback cursor: `None` for the initial load (latest `limit`), or the
@@ -127,6 +151,11 @@ pub enum WsServerMsg {
         /// `ReactionAdd` / `ReactionRemove` frames).
         #[serde(default)]
         reactions: Vec<(String, u32, bool)>,
+        /// The image attachments persisted with this message (empty = none),
+        /// as stored in `message_attachments`. Older clients ignore them via
+        /// the serde default.
+        #[serde(default)]
+        attachments: Vec<MessageAttachment>,
     },
     /// The most recent `Message { new: false }` frames for `History`.
     ///
@@ -274,11 +303,19 @@ pub async fn message_gateway(
                 channel_id,
                 content,
                 reply_to_message_id,
+                attachments,
             } => {
                 // Success fans out through the hub (the sender's own echo
                 // included); only failures are answered on this socket.
                 if let Err(reason) =
-                    post_channel_message(&db, user_id, channel_id, &content, reply_to_message_id)
+                    post_channel_message(
+                        &db,
+                        user_id,
+                        channel_id,
+                        &content,
+                        reply_to_message_id,
+                        attachments.clone(),
+                    )
                 {
                     let _ = ch.send(WsServerMsg::Error { reason }).await;
                 }
@@ -325,6 +362,20 @@ pub async fn message_gateway(
                                 // message's persisted reactions, with
                                 // `reacted_by_me` relative to the socket's own user.
                                 reactions: db.reactions_for_message(m.id, user_id),
+                                // Image attachments persisted with the message
+                                // (empty = none), so a cold history load renders
+                                // them without a second lookup. The db-layer
+                                // `Attachment` and wire-layer `MessageAttachment`
+                                // are the same record shape, re-typed.
+                                attachments: m.attachments
+                                    .into_iter()
+                                    .map(|a| crate::server_settings::MessageAttachment {
+                                        id: a.id,
+                                        filename: a.filename,
+                                        mime: a.mime,
+                                        data: a.data,
+                                    })
+                                    .collect(),
                                 })
                             .await;
                     }
@@ -2125,9 +2176,9 @@ mod tests {
         // Three messages in channel 1 authored by user 1 (the owner); two of
         // them @mention user 2 (alice). The mention rows land via the live
         // gateway's resolver, exactly as the production path writes them.
-        crate::realtime::post_channel_message(&db, 1, 1, "hello @alice and @bob", None).unwrap();
-        crate::realtime::post_channel_message(&db, 1, 1, "no mention here", None).unwrap();
-        crate::realtime::post_channel_message(&db, 1, 1, "again @alice", None).unwrap();
+        crate::realtime::post_channel_message(&db, 1, 1, "hello @alice and @bob", None, Vec::new()).unwrap();
+        crate::realtime::post_channel_message(&db, 1, 1, "no mention here", None, Vec::new()).unwrap();
+        crate::realtime::post_channel_message(&db, 1, 1, "again @alice", None, Vec::new()).unwrap();
 
         // User 2 (alice) has read nothing. The channel has 3 unread messages,
         // and 2 of them mention alice (the "hello" and "again" lines). The
