@@ -197,6 +197,7 @@ fn dm_row(
             margin_right: Some(px(8.0)),
             padding_left: Some(px(10.0)),
             padding_right: Some(px(10.0)),
+            flex_direction: Some(FlexDirection::Row),
             align_items: Some(AlignItems::Center),
             gap: Some(px(10.0)),
             background: Some(col(if on {
