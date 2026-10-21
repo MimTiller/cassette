@@ -2,8 +2,11 @@
 //! entry at the top of the live DM list column.
 //!
 //! Layout: a column — a "Friends" header line (icon + title), a row of tab
-//! pills (Online / All / Pending / Add Friend), then the active tab's rows
-//! inside a scrollable list.
+//! pills (Online / All / Pending / Add Friend) INLINE in one header row, then
+//! the active tab's rows inside a scrollable list. Each friend row is ONE
+//! line: avatar chip, username on the left, and the actions (Message / Remove
+//! for accepted, Accept / Decline for incoming, Cancel for outgoing) on the
+//! right, with even row spacing.
 //!
 //! State convention (mirrors `live_dm_view` / app.rs's live idiom): `snap` is
 //! a `Signal<Vec<FriendRow>>` snapshot of `list_friends`, flat + tagged so the
@@ -44,6 +47,7 @@ use runtime_core::{
 use runtime_core::icon;
 use icons_lucide::{PLUS, USERS};
 
+use crate::avatar_chip::{avatar_chip, registered_avatar, mountable_avatar_url};
 use crate::friends::{self, FriendList, FriendUser};
 use crate::style_helpers::{borderless_input, col, pct, px};
 
@@ -99,6 +103,7 @@ fn pill_style() -> StyleRules {
         border_top_right_radius: Some(px(8.0)),
         border_bottom_left_radius: Some(px(8.0)),
         border_bottom_right_radius: Some(px(8.0)),
+        flex_shrink: Some(grow(0.0)),
         ..Default::default()
     }
 }
@@ -116,10 +121,15 @@ fn action_style() -> StyleRules {
         border_top_right_radius: Some(px(6.0)),
         border_bottom_left_radius: Some(px(6.0)),
         border_bottom_right_radius: Some(px(6.0)),
+        flex_shrink: Some(grow(0.0)),
         ..Default::default()
     }
 }
 
+// One friend row: a fixed-height line laid out left-to-right (`flex_direction:
+// Row` — the framework default is Column, and a Column row is what stacked the
+// chip, name, and buttons on top of each other). The name grows and the action
+// pills are pinned after it, so every row reads as one line at even spacing.
 fn row_style() -> StyleRules {
     StyleRules {
         height: Some(px(52.0)),
@@ -127,6 +137,7 @@ fn row_style() -> StyleRules {
         margin_right: Some(px(8.0)),
         padding_left: Some(px(10.0)),
         padding_right: Some(px(10.0)),
+        flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Center),
         gap: Some(px(10.0)),
         border_top_left_radius: Some(px(8.0)),
@@ -148,29 +159,14 @@ fn name_style() -> StyleRules {
 }
 
 /// The avatar chip: the uploaded image (round-cropped) when the shared client
-/// registry knows the user, else the initial chip — same shape as the live DM
-/// rows.
+/// avatar registry (`crate::auth::avatar_for`, fed by `crate::friends` on
+/// every list landing) carries a RESOLVABLE URL, else the initial-letter
+/// circle. The snapshot's own `avatar_url` is consulted only as a fallback —
+/// the web backend refuses to mount an unresolvable src (broken-image
+/// placeholder + leaking alt text), so the shared helper's registry gate is
+/// what prevents that class of bug.
 fn friend_avatar_chip(name: &str, avatar: Option<String>) -> Element {
-    let avatar_style = StyleRules {
-        width: Some(px(34.0)),
-        height: Some(px(34.0)),
-        flex_shrink: Some(grow(0.0)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        background: Some(col(BUTTON)),
-        border_top_left_radius: Some(px(10.0)),
-        border_top_right_radius: Some(px(10.0)),
-        border_bottom_left_radius: Some(px(10.0)),
-        border_bottom_right_radius: Some(px(10.0)),
-        ..Default::default()
-    };
-    let initial_style = StyleRules {
-        font_size: Some(px(15.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
-        ..Default::default()
-    };
-    if let Some(url) = avatar {
+    if let Some(url) = registered_avatar(name) {
         ui! {
             image(
                 src = url.clone(),
@@ -188,13 +184,32 @@ fn friend_avatar_chip(name: &str, avatar: Option<String>) -> Element {
                 },
             )
         }
-    } else {
-        let initial = name.chars().next().unwrap_or('?').to_string();
-        ui! {
-            view(style = avatar_style) {
-                text(style = initial_style) { initial }
+    } else if let Some(url) = avatar {
+        // The row's own snapshot URL, gated the same way: only data:/http(s):
+        // with a non-empty base64 body may mount.
+        if mountable_avatar_url(url.as_str()) {
+            ui! {
+                image(
+                    src = url.clone(),
+                    alt = format!("{} avatar", name),
+                    style = StyleRules {
+                        width: Some(px(34.0)),
+                        height: Some(px(34.0)),
+                        flex_shrink: Some(grow(0.0)),
+                        object_fit: Some(ObjectFit::Cover),
+                        border_top_left_radius: Some(px(10.0)),
+                        border_top_right_radius: Some(px(10.0)),
+                        border_bottom_left_radius: Some(px(10.0)),
+                        border_bottom_right_radius: Some(px(10.0)),
+                        ..Default::default()
+                    },
+                )
             }
+        } else {
+            avatar_chip(name, BUTTON, 34.0, 10.0)
         }
+    } else {
+        avatar_chip(name, BUTTON, 34.0, 10.0)
     }
 }
 
@@ -212,7 +227,8 @@ fn friend_action(label: &str, id: i64, click: Rc<dyn Fn()>) -> Element {
     }
 }
 
-/// One friend row: avatar chip, username, then the caller-supplied actions.
+/// One friend row: avatar chip, username, then the caller-supplied actions —
+/// all inline (the row's `flex_direction: Row`, set in `row_style`).
 fn friend_row(name: String, avatar: Option<String>, actions: Vec<Element>) -> Element {
     let chip = friend_avatar_chip(name.as_str(), avatar.clone());
     ui! {
@@ -264,6 +280,9 @@ pub fn friends_screen(
     on_message: Rc<dyn Fn(i64)>,
 ) -> Element {
     // --- tab pills (built once; a tap sets active_tab) ----------------------
+    // One inline header row: the container's `flex_direction: Row` (below, in
+    // the assembled ui!) places the four pills side by side — stacked full-
+    // width bars was the Column-default bug.
     let tab_read = active_tab.clone();
     let pills: Vec<Element> = {
         let mut out: Vec<Element> = Vec::new();
@@ -597,6 +616,9 @@ pub fn friends_screen(
         },
     );
 
+    // The outer column carries NO explicit width: it flex-grows into the main
+    // area the live DM screen gives it (pct-based fills would pin it narrow —
+    // the narrow-column clipping bug class).
     ui! {
         view(style = StyleRules {
             flex_grow: Some(grow(1.0)),
@@ -608,6 +630,7 @@ pub fn friends_screen(
             view(style = StyleRules {
                 align_items: Some(AlignItems::Center),
                 gap: Some(px(10.0)),
+                flex_direction: Some(FlexDirection::Row),
                 padding_left: Some(px(16.0)),
                 padding_bottom: Some(px(8.0)),
                 ..Default::default()
@@ -626,6 +649,8 @@ pub fn friends_screen(
                 margin_top: Some(px(10.0)),
                 margin_bottom: Some(px(10.0)),
                 gap: Some(px(8.0)),
+                flex_direction: Some(FlexDirection::Row),
+                align_items: Some(AlignItems::Center),
                 padding_left: Some(px(16.0)),
                 padding_right: Some(px(16.0)),
                 ..Default::default()

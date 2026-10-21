@@ -64,21 +64,14 @@ use crate::icon_change_confirm::IconChangeConfirm;
 use crate::ban_reason_input::BanReasonInput;
 use crate::delete_account_warning::DeleteAccountWarning;
 
-use crate::server_boost_badge::ServerBoostBadge;
-use crate::language_picker::LanguagePicker;
 use crate::user_bio_block::user_bio_block;
-use crate::dm_request_card::DmRequestCard;
 use crate::audit_log_row::AuditLogRow;
 use crate::blocked_user_row::BlockedUserRow;
 use crate::server_region_selector::ServerRegionSelector;
 use crate::server_icon_upload_placeholder::ServerIconUploadPlaceholder;
 use crate::category_header::CategoryHeader;
 use crate::mic_selector::MicSelector;
-use crate::friend_request_card::FriendRequestCard;
-use crate::server_icon_fallback::ServerIconFallback;
 
-use crate::welcome_banner::WelcomeBanner;
-use crate::activity_card::ActivityCard;
 use crate::link_embed_preview::LinkEmbedPreview;
 use crate::code_block::code_block;
 use crate::screen_share_indicator::ScreenShareIndicator;
@@ -89,7 +82,6 @@ use crate::slowmode_indicator::SlowmodeIndicator;
 use crate::latency_badge::LatencyBadge;
 use crate::jump_to_bottom_button::JumpToBottomButton;
 use crate::load_earlier_button::load_earlier_button;
-use crate::afk_timer_display::AfkTimerDisplay;
 use crate::connection_quality_indicator::ConnectionQualityIndicator;
 use crate::voice_join_button::VoiceJoinButton;
 use crate::volume_slider::VolumeSlider;
@@ -2311,6 +2303,7 @@ fn member_profile_panel(selected: Signal<Option<&'static str>>) -> Element {
                 let content = ui! {
                     view(style = StyleRules {
                         flex_grow: Some(grow(1.0)),
+                        background: Some(col(BG_MAIN)),
                         flex_direction: Some(FlexDirection::Column),
                         overflow: Some(Overflow::Hidden),
                         padding_top: Some(px(8.0)),
@@ -2320,21 +2313,8 @@ fn member_profile_panel(selected: Signal<Option<&'static str>>) -> Element {
                         gap: Some(px(12.0)),
                         ..Default::default()
                     }) {
-                        WelcomeBanner(name = name.clone())
-                        AfkTimerDisplay()
-                        ActivityCard(
-                            activity = prof.activity_verb.to_string(),
-                            detail = prof.activity_detail.to_string(),
-                        )
-                        ServerBoostBadge(boost_level = prof.boost_level as i32)
-                        LanguagePicker()
                         user_bio_block(prof.bio.to_string().into())
-                        FriendRequestCard(sender = prof.friend_sender.to_string())
-                        DmRequestCard()
-                        BlockedUserRow()
                         NicknameEditField(default_nickname = prof.nickname.to_string())
-                        ServerIconFallback()
-                        MicSelector()
                     }
                 };
                 ui! {
@@ -6027,6 +6007,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     padding_left: Some(px(10.0)),
                     padding_right: Some(px(10.0)),
                     align_items: Some(AlignItems::Center),
+                    flex_direction: Some(FlexDirection::Row),
+                    gap: Some(px(8.0)),
                     background: Some(col(BG_SIDEBAR)),
                     border_top_left_radius: Some(px(8.0)),
                     border_top_right_radius: Some(px(8.0)),
@@ -9589,7 +9571,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         top: Some(px(0.0)),
         width: Some(if profile_open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if profile_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col(BG_MAIN)),
+        background: Some(col("rgba(0, 0, 0, 0.55)")),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
@@ -9597,7 +9579,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let profile_region = ui! {
         view(style = profile_wrap) {
             profile_header
-            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), background: Some(col(BG_MAIN)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
                 scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {
                     profile_el
                     NicknameEditField()
@@ -9674,7 +9656,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         top: Some(px(0.0)),
         width: Some(if notif_open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if notif_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col(BG_MAIN)),
+        background: Some(col("rgba(0, 0, 0, 0.55)")),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
@@ -9687,7 +9669,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let notif_region = ui! {
         view(style = notif_wrap) {
             notif_header
-            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), background: Some(col(BG_MAIN)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
                 scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { UserSettings(notif_mode = notif_level.clone()) }
             }
         }
@@ -9752,7 +9734,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         top: Some(px(0.0)),
         width: Some(if shortcuts_open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if shortcuts_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col(BG_MAIN)),
+        background: Some(col("rgba(0, 0, 0, 0.55)")),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
@@ -9760,7 +9742,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let shortcuts_region = ui! {
         view(style = shortcuts_wrap) {
             shortcuts_header
-            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), background: Some(col(BG_MAIN)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
                 scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { shortcuts_el }
             }
         }
@@ -9828,7 +9810,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         top: Some(px(0.0)),
         width: Some(if dm_open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if dm_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col(BG_MAIN)),
+        background: Some(col("rgba(0, 0, 0, 0.55)")),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
@@ -9836,7 +9818,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let dm_region = ui! {
         view(style = dm_wrap) {
             dm_header
-            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) { dm_el }
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), background: Some(col(BG_MAIN)), overflow: Some(Overflow::Hidden), ..Default::default() }) { dm_el }
         }
     };
 
@@ -9928,7 +9910,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         top: Some(px(0.0)),
         width: Some(if live_dm_open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if live_dm_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col(BG_MAIN)),
+        background: Some(col("rgba(0, 0, 0, 0.55)")),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
@@ -9936,7 +9918,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let live_dm_region = ui! {
         view(style = live_dm_wrap) {
             live_dm_header
-            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) { live_dm_el }
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), background: Some(col(BG_MAIN)), overflow: Some(Overflow::Hidden), ..Default::default() }) { live_dm_el }
         }
     };
 
@@ -10000,7 +9982,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         top: Some(px(0.0)),
         width: Some(if moderation_open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if moderation_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col(BG_MAIN)),
+        background: Some(col("rgba(0, 0, 0, 0.55)")),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
@@ -10053,7 +10035,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let moderation_region = ui! {
         view(style = moderation_wrap) {
             moderation_header
-            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), background: Some(col(BG_MAIN)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
                 scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { moderation_el }
             }
         }
@@ -10131,7 +10113,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         top: Some(px(0.0)),
         width: Some(if live_invite_open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if live_invite_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col(BG_MAIN)),
+        background: Some(col("rgba(0, 0, 0, 0.55)")),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
@@ -10235,7 +10217,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let live_invite_region = ui! {
         view(style = live_invite_wrap) {
             live_invite_header
-            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), background: Some(col(BG_MAIN)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
                 scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { live_invite_content }
             }
         }
@@ -10351,7 +10333,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         top: Some(px(0.0)),
         width: Some(if bug_reports_open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if bug_reports_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col(BG_MAIN)),
+        background: Some(col("rgba(0, 0, 0, 0.55)")),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
@@ -10359,7 +10341,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let bug_reports_region = ui! {
         view(style = bug_reports_wrap) {
             bug_reports_header
-            view(style = StyleRules { flex_grow: Some(grow(1.0)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), background: Some(col(BG_MAIN)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
                 scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { bug_reports_el }
             }
         }

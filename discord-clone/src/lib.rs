@@ -66,14 +66,10 @@ mod emoji_upload_slot;
 mod rules_accept_checkbox;
 #[path = "components/setup_checklist_item.rs"]
 mod setup_checklist_item;
-#[path = "components/welcome_banner.rs"]
-mod welcome_banner;
 #[path = "components/translate_toggle.rs"]
 mod translate_toggle;
 #[path = "components/permission_override_row.rs"]
 mod permission_override_row;
-#[path = "components/server_icon_fallback.rs"]
-mod server_icon_fallback;
 #[path = "components/message_action_bar.rs"]
 mod message_action_bar;
 #[path = "components/server_event_card.rs"]
@@ -84,8 +80,8 @@ mod connection_quality_indicator;
 mod read_receipt_indicator;
 #[path = "components/transfer_ownership_confirm.rs"]
 mod transfer_ownership_confirm;
-#[path = "components/activity_card.rs"]
-mod activity_card;
+#[path = "components/avatar_chip.rs"]
+mod avatar_chip;
 #[path = "components/server_stats_card.rs"]
 mod server_stats_card;
 #[path = "components/audit_log_row.rs"]
@@ -110,8 +106,6 @@ mod code_block;
 mod user_bio_block;
 #[path = "components/server_tag_chips.rs"]
 mod server_tag_chips;
-#[path = "components/dm_request_card.rs"]
-mod dm_request_card;
 #[path = "components/icon_change_confirm.rs"]
 mod icon_change_confirm;
 #[path = "components/nickname_edit_field.rs"]
@@ -138,8 +132,6 @@ mod soundboard_button;
 mod poll_widget;
 #[path = "components/thread_list_row.rs"]
 mod thread_list_row;
-#[path = "components/afk_timer_display.rs"]
-mod afk_timer_display;
 #[path = "components/spoiler_image_placeholder.rs"]
 mod spoiler_image_placeholder;
 #[path = "components/attachment_preview_card.rs"]
@@ -150,8 +142,6 @@ mod reply_preview_bar;
 mod reply_reference_strip;
 #[path = "components/mute_channel_toggle.rs"]
 mod mute_channel_toggle;
-#[path = "components/friend_request_card.rs"]
-mod friend_request_card;
 #[path = "components/server_icon_upload_placeholder.rs"]
 mod server_icon_upload_placeholder;
 #[path = "components/kick_confirm_dialog.rs"]
@@ -198,8 +188,6 @@ mod server_template_card;
 mod forward_message_dialog;
 #[path = "components/two_factor_toggle.rs"]
 mod two_factor_toggle;
-#[path = "components/language_picker.rs"]
-mod language_picker;
 #[path = "components/server_region_selector.rs"]
 mod server_region_selector;
 #[path = "components/delete_account_warning.rs"]
@@ -212,8 +200,6 @@ mod char_counter;
 mod slowmode_indicator;
 #[path = "components/message_search_bar.rs"]
 mod message_search_bar;
-#[path = "components/server_boost_badge.rs"]
-mod server_boost_badge;
 #[path = "components/member_count_display.rs"]
 mod member_count_display;
 #[path = "components/slash_command_dropdown.rs"]

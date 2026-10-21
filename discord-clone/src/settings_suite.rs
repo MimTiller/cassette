@@ -27,7 +27,7 @@
 //! on_click = …)` for the actions. `Signal` is `Copy`, so `move` closures
 //! capture copies of the same signals and stay `Fn`.
 
-use crate::style_helpers::{borderless_input, col, px};
+use crate::style_helpers::{borderless_input, col, pct, px};
 use std::rc::Rc;
 use runtime_core::{
     component, signal, switch, ui, AlignItems, Element, FlexDirection, JustifyContent, Position,
@@ -480,6 +480,7 @@ pub fn UserSettings(notif_mode: Signal<u32>) -> Element {
 
     ui! {
         view(style = StyleRules {
+            width: Some(pct(100.0)),
             flex_direction: Some(FlexDirection::Column),
             ..Default::default()
         }) {

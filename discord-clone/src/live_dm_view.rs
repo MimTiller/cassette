@@ -250,9 +250,10 @@ fn live_dm_row(
         .unwrap_or_else(|| format!("user #{}", dm_id));
     let initial = name.chars().next().unwrap_or('?').to_string();
     // The other participant's uploaded avatar (from the shared client
-    // registry, fed by `list_dms`), if any — drawn as a round-cropped image
-    // over the chip area; otherwise the pre-existing initial chip.
-    let avatar_img = crate::auth::avatar_for(name.as_str());
+    // registry, fed by `list_dms`), gated: only a resolvable URL (data:/http(s):)
+    // may mount — an unresolvable src is what rendered a broken-image
+    // placeholder whose alt text leaked onto the row.
+    let avatar_img = crate::avatar_chip::registered_avatar(name.as_str());
 
     let hovered = signal(false);
     let row_style = move || {
@@ -263,6 +264,7 @@ fn live_dm_row(
             margin_right: Some(px(8.0)),
             padding_left: Some(px(10.0)),
             padding_right: Some(px(10.0)),
+            flex_direction: Some(FlexDirection::Row),
             align_items: Some(AlignItems::Center),
             gap: Some(px(10.0)),
             background: Some(col(if on {
