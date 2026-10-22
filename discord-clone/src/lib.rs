@@ -18,6 +18,8 @@ mod pins;
 // live (persisted, synced) half of the reaction feature; the mock rows stay
 // session-local. Same thin-stub shape as `pins.rs`.
 mod reactions;
+// Static Unicode emoji table for the picker — names + keywords + categories.
+mod emoji_data;
 mod typing_indicator;
 mod notification_settings;
 mod keyboard_shortcuts_overlay;
@@ -204,6 +206,8 @@ mod message_search_bar;
 mod member_count_display;
 #[path = "components/slash_command_dropdown.rs"]
 mod slash_command_dropdown;
+#[path = "components/emoji_picker.rs"]
+pub mod emoji_picker;
 #[path = "components/settings_tab_bar.rs"]
 mod settings_tab_bar;
 
