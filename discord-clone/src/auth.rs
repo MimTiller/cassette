@@ -261,15 +261,17 @@ fn page_origin() -> Option<String> {
     None
 }
 
-/// Point the `#[server]` RPC stubs at a base URL and attach the signed-in
-/// user's session token as `Authorization: Bearer <token>` on every outgoing
-/// call.
+/// Point the `#[server]` RPC stubs at a base URL and attach credentials on
+/// every outgoing call.
 ///
 /// Called once at startup, before any backend call. The base URL comes from
 /// `server::dev_base_url()` (the dev server on native, `None` on the web
 /// target), then the page origin on web (same-origin), then a localhost
 /// fallback. The credential provider reads [`current_token()`] on each call,
-/// so the header appears only after a successful login.
+/// so the header appears only after a successful login; on WEB an empty token
+/// slot is normal — the browser attaches the httpOnly `session` cookie
+/// automatically to every same-origin request (the backend accepts either),
+/// which is what keeps the token out of any client-readable storage.
 pub fn configure_server() {
     let base = server::dev_base_url()
         .or_else(page_origin)
@@ -289,98 +291,201 @@ pub fn configure_server() {
 // --- persisted session ------------------------------------------------------
 //
 // The WASM module reloads its process-wide statics from scratch on every page
-// refresh, wiping [`CURRENT_TOKEN`]/[`CURRENT_USER_ID`]/[`CURRENT_USERNAME`].
-// `window.localStorage` survives that, so a successful login writes the signed
-// session (token + user id + username) there and `app()` reads it back before
-// defaulting `authed` to false — a returning visitor lands signed in without
-// retyping credentials, with the profile strip showing the real identity
-// (persisting the username is what a restored session used to miss: the
-// display name has no other post-refresh source).
+// refresh. Two SDK-backed stores keep the returning visitor signed in:
+//
+// - the session TOKEN is a secret: on NATIVE targets it lives in the
+//   platform's real secure store (Keychain / Keystore / OS vault) via the
+//   `credentials` SDK. On WEB the token is never stored client-side at all —
+//   the `login` server fn sets an httpOnly `session` cookie that the browser
+//   replays on every request AND the WebSocket upgrade, while JS cannot read
+//   it (the credentials README's BFF pattern; calling `credentials` on web
+//   errors loudly, which is exactly why this half is web-gated off).
+// - the non-secret identity (user id, username, avatar) rides the plaintext
+//   `storage` SDK — `localStorage` namespaced `discord-clone:` on web and
+//   the native key-value store otherwise, so a restored session keeps its
+//   profile strip on every target.
+//
+// A stale cookie / invalid token does not restore a broken shell: identity
+// alone cannot authenticate, so the first backend call after restore fails
+// and the app shell routes back to the login screen (see `RESTORED` in
+// `crate::app`). Legacy pre-migration keys (`discord_session`, which held
+// the RAW TOKEN in localStorage, and `discord.last_view.<id>`) are removed
+// on load — old sessions simply require one fresh login.
 
-#[cfg(target_arch = "wasm32")]
-pub(crate) fn save_session(token: &str, user_id: i64, username: &str, avatar_url: Option<String>) {
-    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
-        // The avatar segment is empty when the account has no avatar (the
-        // NULL column's sentinel). Sessions saved before the avatar existed
-        // carry no 4th segment — `load_session` parses those as `None`.
-        let avatar = avatar_url.unwrap_or_default();
-        let _ = storage.set_item(
-            "discord_session",
-            &format!("{user_id}\u{0}{token}\u{0}{username}\u{0}{avatar}"),
-        );
-    }
+/// The shared storage-SDK namespace for every non-secret client key
+/// (identity, last view, notification prefs). Namespacing is what lets
+/// `clear()` and key reads stay collision-free across the origin/device.
+pub(crate) const STORE_NS: &str = "discord-clone";
+
+/// The credentials-SDK namespace (an OS-vault scope, not a storage key).
+const CREDS_NS: &str = "discord-clone";
+
+/// The storage-SDK key for the session token on NATIVE targets (the OS
+/// secure-store slot — never a `localStorage` key: on web the httpOnly
+/// `session` cookie set by the `login` server fn carries the session, and
+/// the credentials SDK errors there on purpose).
+const TOKEN_CRED_KEY: &str = "session_token";
+
+/// Storage-SDK keys for the NON-SECRET identity parts (the plaintext half —
+/// `storage` is explicitly not for secrets, so the token never appears here).
+const ID_USER_KEY: &str = "identity.user_id";
+const ID_USERNAME_KEY: &str = "identity.username";
+const ID_AVATAR_KEY: &str = "identity.avatar";
+
+/// The process-wide storage-SDK handle (`platform_storage(STORE_NS)`) —
+/// `localStorage` prefixed `discord-clone:` on web, the platform's native
+/// key-value store otherwise. Built on first use; backend failures surface
+/// per-operation as `StorageError`, which every call site here folds into a
+/// no-op (a missing store must not break the app, only persistence).
+pub(crate) static STORE: std::sync::OnceLock<std::sync::Arc<dyn storage::Storage>> = std::sync::OnceLock::new();
+
+pub(crate) fn store() -> std::sync::Arc<dyn storage::Storage> {
+    STORE.get_or_init(|| storage::platform_storage(STORE_NS)).clone()
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn save_session(
-    _token: &str,
-    _user_id: i64,
-    _username: &str,
-    _avatar_url: Option<String>,
-) {}
+// The legacy pre-migration keys that used to hold the RAW session TOKEN in
+// localStorage. They are removed on load; an old session simply requires one
+// fresh login. (The old `discord.last_view.<id>` keys die the same way — the
+// new keys live inside the `discord-clone:` storage-SDK namespace.)
+#[cfg(target_arch = "wasm32")]
+const LEGACY_SESSION_KEY: &str = "discord_session";
 
-/// Rewrite the persisted session's avatar segment after a set/clear that did
-/// not go through login, so a page refresh restores the NEW avatar (the
-/// segment written at login time would be stale). No-op off-web (no storage).
-pub(crate) fn refresh_saved_avatar(avatar_url: Option<String>) {
-    let token = current_token();
-    if token.is_empty() {
+/// Persist the signed-in session through the framework SDKs:
+/// - the TOKEN is a secret → the `credentials` SDK on native targets (OS
+///   Keychain/Keystore/vault). On web the credentials SDK errors on purpose
+///   and the token is NEVER stored client-side: the `login` server fn set an
+///   httpOnly `session` cookie, which the browser replays on every request
+///   and on the WebSocket upgrade, so restoring after a reload needs no
+///   client-side token at all — an identity key in `storage` is the signal
+///   that a session was started, and any authed backend call validates it.
+/// - the non-secret identity (id, username, avatar) rides the `storage` SDK.
+pub(crate) fn save_session(token: &str, user_id: i64, username: &str, avatar_url: Option<String>) {
+    if user_id == 0 {
         return;
     }
-    let user_id = CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
-    let username = current_username();
-    save_session(token.as_str(), user_id, username.as_str(), avatar_url);
-}
-
-/// A persisted session `(token, user_id, username, avatar_url)`, or `None`
-/// when there is none to restore. The username segment is absent in sessions
-/// saved before it was persisted (they restore with an empty name), and the
-/// avatar segment is absent in sessions saved before the avatar existed
-/// (they restore with `None` = the initial circle).
-pub(crate) fn load_session() -> Option<(String, i64, String, Option<String>)> {
-    #[cfg(target_arch = "wasm32")]
-    {
-        // `local_storage()` and `get_item()` return `Result<_, JsValue>`; fold
-        // each into an `Option` so the `?` stays inside this `Option` fn.
-        let raw = web_sys::window()
-            .and_then(|w| w.local_storage().ok().flatten())?
-            .get_item("discord_session")
-            .ok()
-            .flatten()?;
-        let mut parts = raw.split('\u{0}');
-        let user_id: i64 = parts.next()?.parse().ok()?;
-        let token = parts.next().unwrap_or_default().to_string();
-        let username = parts.next().unwrap_or_default().to_string();
-        // Empty avatar segment = no avatar (the NULL sentinel), so map it to
-        // None and keep the map value `Option<String>`.
-        let avatar = parts.next().unwrap_or_default().to_string();
-        let avatar = if avatar.is_empty() { None } else { Some(avatar) };
-        Some((token, user_id, username, avatar))
-    }
+    let store = store();
+    // Identity first (all targets) — `get_now`/`set_now` are the synchronous
+    // half of the Storage trait; every shipped store answers them. Failures
+    // fold to no-ops: losing persistence must not break the running app.
+    let uid_str = user_id.to_string();
+    let _ = store.set_now(ID_USER_KEY, &uid_str);
+    let _ = store.set_now(ID_USERNAME_KEY, username);
+    let avatar = avatar_url.unwrap_or_default();
+    let _ = store.set_now(ID_AVATAR_KEY, &avatar);
     #[cfg(not(target_arch = "wasm32"))]
     {
-        None
+        // The secret half, native-only: the OS secure store via the
+        // credentials SDK. On web this block does not exist at all — the
+        // token must never touch localStorage.
+        let creds = credentials::platform_credentials(CREDS_NS);
+        let _ = creds.set(TOKEN_CRED_KEY, token);
     }
-}
-
-/// Drop the persisted session (logout), so a refresh doesn't restore it.
-#[cfg(target_arch = "wasm32")]
-pub(crate) fn clear_session() {
-    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
-        let _ = storage.remove_item("discord_session");
-        // Only the SIGNED-IN user's last-view key is dropped — other accounts
-        // sharing this browser keep their own last-view so logging A out never
-        // erases B's landing spot. `CURRENT_USER_ID` still holds the id being
-        // logged out at this call site (logout clears the statics afterwards).
-        let uid = CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
-        if uid != 0 {
-            let _ = storage.remove_item(&format!("discord.last_view.{}", uid));
+    #[cfg(target_arch = "wasm32")]
+    {
+        // Drop the pre-migration raw-token key: old builds kept the session
+        // in localStorage; those accounts get one fresh login, not a
+        // resurrected secret.
+        if let Some(legacy) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+            let _ = legacy.remove_item(LEGACY_SESSION_KEY);
         }
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn clear_session() {}
+/// Rewrite the persisted identity's avatar after a set/clear that did not go
+/// through login, so a page refresh restores the NEW avatar (the value written
+/// at login time would be stale). No-op when not signed in.
+pub(crate) fn refresh_saved_avatar(avatar_url: Option<String>) {
+    let user_id = CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+    if user_id == 0 {
+        return;
+    }
+    let avatar = avatar_url.unwrap_or_default();
+    let _ = store().set_now(ID_AVATAR_KEY, &avatar);
+}
+
+/// A persisted session `(token, user_id, username, avatar_url)`, or `None`
+/// when there is none to restore. On NATIVE the token comes back from the
+/// `credentials` SDK (the OS secure store); on WEB the token slot is always
+/// empty — the httpOnly `session` cookie the browser still carries
+/// authenticates every request and the WebSocket upgrade after a reload, and
+/// JS can (by design) never read the cookie to put it back in the slot. The
+/// identity keys decide whether a reload restores a signed-in shell. The
+/// username segment is absent in sessions persisted before it was persisted
+/// (they restore with an empty name), and the avatar is `None` for accounts
+/// that had none when saved.
+pub(crate) fn load_session() -> Option<(String, i64, String, Option<String>)> {
+    let store = store();
+    let raw_id = store.get_now(ID_USER_KEY).ok().flatten().unwrap_or_default();
+    let user_id = raw_id.trim().parse::<i64>().unwrap_or(0);
+    if user_id == 0 {
+        // Nothing to restore — and sweep the pre-migration raw-token keys so
+        // an old session's secret never lingers in localStorage once a fresh
+        // login rewrites through the SDK stores.
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Some(legacy) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+                let _ = legacy.remove_item(LEGACY_SESSION_KEY);
+            }
+        }
+        return None;
+    }
+    let username = store.get_now(ID_USERNAME_KEY).ok().flatten().unwrap_or_default();
+    let avatar = store.get_now(ID_AVATAR_KEY).ok().flatten().unwrap_or_default();
+    let avatar = if avatar.is_empty() { None } else { Some(avatar) };
+    // The secret half, read back from where it was written: the OS secure
+    // store on native; on web there is no client-side token at all (empty
+    // slot) — the httpOnly session cookie authenticates every replay.
+    #[cfg(not(target_arch = "wasm32"))]
+    let token =
+        credentials::platform_credentials(CREDS_NS)
+            .get(TOKEN_CRED_KEY)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+    #[cfg(target_arch = "wasm32")]
+    let token = String::new();
+    #[cfg(target_arch = "wasm32")]
+    {
+        // Drop the pre-migration raw-token key: old sessions require one fresh
+        // login rather than resurrecting a secret out of localStorage.
+        if let Some(legacy) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+            let _ = legacy.remove_item(LEGACY_SESSION_KEY);
+        }
+    }
+    Some((token, user_id, username, avatar))
+}
+
+/// Ask the backend to log the session out: it clears the httpOnly `session`
+/// cookie, so a page reload lands on the login screen rather than replaying a
+/// dead session. Fire-and-forget: the client-side `clear_session()` already
+/// dropped the identity keys, so a failed RPC cannot resurrect the shell.
+pub(crate) fn request_logout() {
+    runtime_core::driver::spawn_async(async move {
+        let _ = discord_server::auth::logout().await;
+    });
+}
+
+/// Drop the persisted session (logout), so a refresh doesn't restore it. The
+/// web half also relies on the `logout` server fn having cleared the httpOnly
+/// cookie — both halves are needed: keys gone AND cookie gone.
+pub(crate) fn clear_session() {
+    // Only the SIGNED-IN user's last-view key is dropped — other accounts
+    // sharing this browser/origin keep their own last-view so logging A out
+    // never erases B's landing spot. `CURRENT_USER_ID` still holds the id
+    // being logged out at this call site (logout clears the statics after).
+    let uid = CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+    if uid != 0 {
+        let _ = store().remove_now(&format!("last_view.{uid}"));
+    }
+    let _ = store().remove_now(ID_USER_KEY);
+    let _ = store().remove_now(ID_USERNAME_KEY);
+    let _ = store().remove_now(ID_AVATAR_KEY);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let creds = credentials::platform_credentials(CREDS_NS);
+        let _ = creds.remove(TOKEN_CRED_KEY);
+    }
+}
 
 // --- persisted last view (per user) ----------------------------------------
 //
@@ -466,46 +571,33 @@ pub(crate) fn format_last_view_dm(dm_channel_id: i64) -> String {
     format!("d:{dm_channel_id}")
 }
 
+#[cfg(target_arch = "wasm32")]
+const LEGACY_LAST_VIEW_PREFIX: &str = "discord.last_view.";
+
 /// Remember the live channel `channel_id` inside server `server_id` as this
 /// user's last view. Written on every live-server enter and every live-channel
 /// selection, so the persisted spot is exactly where the user last clicked —
-/// a non-first server AND a non-first channel.
-#[cfg(target_arch = "wasm32")]
+/// a non-first server AND a non-first channel. Rides the storage SDK (every
+/// target: localStorage on web, the native store elsewhere), keyed per user
+/// id inside the namespace.
 pub(crate) fn save_last_view_channel(server_id: i64, channel_id: i64) {
     let uid = CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
     if uid == 0 {
         return; // guest: no identity to key a per-user view on
     }
-    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
-        let _ = storage.set_item(
-            &format!("discord.last_view.{}", uid),
-            &format_last_view_channel(server_id, channel_id),
-        );
-    }
+    let _ = store().set_now(&format!("last_view.{uid}"), &format_last_view_channel(server_id, channel_id));
 }
-
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn save_last_view_channel(_server_id: i64, _channel_id: i64) {}
 
 /// Remember the open live DM conversation `dm_channel_id` as this user's last
 /// view — it takes precedence over the channel form (a DM being the last open
 /// surface is the "last thing open" the refresh must restore).
-#[cfg(target_arch = "wasm32")]
 pub(crate) fn save_last_view_dm(dm_channel_id: i64) {
     let uid = CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
     if uid == 0 {
         return;
     }
-    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
-        let _ = storage.set_item(
-            &format!("discord.last_view.{}", uid),
-            &format_last_view_dm(dm_channel_id),
-        );
-    }
+    let _ = store().set_now(&format!("last_view.{uid}"), &format_last_view_dm(dm_channel_id));
 }
-
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn save_last_view_dm(_dm_channel_id: i64) {}
 
 /// The signed-in user's persisted last view as `(kind, a, b)`: kind `0` =
 /// live server+channel (`a` = server id, `b` = channel id); kind `1` = live
@@ -513,25 +605,23 @@ pub(crate) fn save_last_view_dm(_dm_channel_id: i64) {}
 /// unparseable, or the user has no key (guest / first visit / logged out
 /// since).
 pub(crate) fn load_last_view() -> Option<(i64, i64, i64)> {
+    let uid = CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+    if uid == 0 {
+        return None;
+    }
+    // A value from a pre-migration key ("discord.last_view.<id>" outside the
+    // SDK namespace) is removed on load; those sessions fall back to the
+    // default landing spot once.
     #[cfg(target_arch = "wasm32")]
     {
-        let uid = CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
-        if uid == 0 {
-            return None;
+        if let Some(legacy) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+            let _ = legacy.remove_item(&format!("{LEGACY_LAST_VIEW_PREFIX}{uid}"));
         }
-        let raw = web_sys::window()
-            .and_then(|w| w.local_storage().ok().flatten())?
-            .get_item(&format!("discord.last_view.{}", uid))
-            .ok()
-            .flatten()?;
-        // Shared, tested parser (the pure half of the grammar) — the wasm
-        // reader owns only the localStorage lookup.
-        parse_last_view(&raw)
     }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        // Off wasm (native/test builds) there is no persisted view; the tests
-        // exercise `parse_last_view` directly.
-        None
+    let raw = store().get_now(&format!("last_view.{uid}")).ok().flatten().unwrap_or_default();
+    if raw.is_empty() {
+        return None;
     }
+    // Shared, tested parser (the pure half of the grammar).
+    parse_last_view(&raw)
 }

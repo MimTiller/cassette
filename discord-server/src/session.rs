@@ -1,10 +1,17 @@
 //! Session tokens and the acting-user resolver (server-only).
 //!
-//! `login` returns a signed, expiring token; every authenticated request sends
-//! it back as `Authorization: Bearer <token>` (the websocket gateway takes it
-//! as a connect-time wire arg, because a browser socket cannot set headers).
-//! The server never trusts a client-supplied user id: identity comes only from
-//! a token whose HMAC-SHA256 signature verifies against the server secret.
+//! `login` returns a signed, expiring token. The web client never holds it:
+//! `login` also sets an httpOnly `session` cookie (the `server` SDK's
+//! [`set_cookie`]), and the browser carries that cookie on every later request
+//! AND on the WebSocket upgrade handshake — JS cannot read it, so an XSS
+//! cannot steal it. Native clients (no browser cookie jar) send the token
+//! back as `Authorization: Bearer <token>`, sourced from the platform's
+//! secure credential store.
+//!
+//! The server never trusts a client-supplied user id either way: identity
+//! comes only from a token whose HMAC-SHA256 signature verifies against the
+//! server secret — whether it arrived as a bearer header or as the session
+//! cookie.
 //!
 //! Token format: `v1.<user_id>.<expires_unix_secs>.<hex hmac-sha256>` where the
 //! MAC covers the `v1.<user_id>.<expires>` prefix.
@@ -199,14 +206,37 @@ pub(crate) fn set_legacy_header_for_tests(allow: Option<bool>) {
     );
 }
 
-/// Resolve an identity from the raw `Authorization` and legacy `x-user-id`
-/// header values. Pure (no request context), so it is unit-testable.
+/// Parse the value of cookie `name` out of a raw `Cookie` header string.
+/// Pure so it is unit-testable; a forged/unknown cookie simply misses.
+pub fn cookie_value(header: Option<&str>, name: &str) -> Option<String> {
+    let header = header?;
+    for pair in header.split(';') {
+        let key = pair.trim();
+        let (k, v) = key.split_once('=')?;
+        if k.trim() != name {
+            continue;
+        }
+        let v = v.trim();
+        if !v.is_empty() {
+            return Some(v.to_string());
+        }
+    }
+    None
+}
+
+/// Resolve an identity from the raw `Authorization`, session-cookie, and
+/// legacy `x-user-id` header values. Pure (no request context), so it is
+/// unit-testable.
 ///
 /// - `Authorization: Bearer <token>` present → the token must verify, else
 ///   unauthenticated (never falls back to the legacy header);
+/// - otherwise a `session` cookie value must verify (the web path —
+///   the browser carries it on requests AND the WebSocket upgrade, and JS
+///   can never read it out);
 /// - otherwise the legacy header counts only when `allow_legacy`.
 pub fn resolve_identity(
     authorization: Option<&str>,
+    session_cookie: Option<&str>,
     legacy_user_id: Option<&str>,
     allow_legacy: bool,
 ) -> Option<i64> {
@@ -217,19 +247,26 @@ pub fn resolve_identity(
             .or_else(|| auth.strip_prefix("bearer "))?;
         return verify_token(token.trim());
     }
+    if let Some(cookie) = session_cookie {
+        return verify_token(cookie.trim());
+    }
     if allow_legacy {
         return legacy_user_id?.trim().parse().ok();
     }
     None
 }
 
-/// The acting user for the current request: a verified bearer token (or, only
-/// when explicitly enabled, the legacy header). `None` = unauthenticated.
+/// The acting user for the current request: a verified bearer token, the
+/// verified session cookie (the web path), or — only when explicitly
+/// enabled — the legacy header. `None` = unauthenticated.
 pub fn acting_user() -> Option<i64> {
     let authorization = server::use_request_header("authorization");
+    let session_cookie =
+        cookie_value(server::use_request_header("cookie").as_deref(), "session");
     let legacy = server::use_request_header("x-user-id");
     resolve_identity(
         authorization.as_deref(),
+        session_cookie.as_deref(),
         legacy.as_deref(),
         legacy_header_allowed(),
     )
@@ -279,18 +316,32 @@ mod tests {
         let t = issue_token(3);
         let bearer = format!("Bearer {t}");
         // A valid bearer token wins.
-        assert_eq!(resolve_identity(Some(&bearer), None, false), Some(3));
-        assert_eq!(resolve_identity(Some(&bearer), Some("99"), true), Some(3));
+        assert_eq!(resolve_identity(Some(&bearer), None, None, false), Some(3));
+        assert_eq!(resolve_identity(Some(&bearer), None, Some("99"), true), Some(3));
         // The scheme is case-insensitive for the common spellings.
-        assert_eq!(resolve_identity(Some(&format!("bearer {t}")), None, false), Some(3));
+        assert_eq!(resolve_identity(Some(&format!("bearer {t}")), None, None, false), Some(3));
         // A bad bearer token is unauthenticated -- no fallback to the header.
-        assert_eq!(resolve_identity(Some("Bearer nope"), Some("1"), true), None);
-        assert_eq!(resolve_identity(Some("Basic abc"), Some("1"), true), None);
+        assert_eq!(resolve_identity(Some("Bearer nope"), None, Some("1"), true), None);
+        assert_eq!(resolve_identity(Some("Basic abc"), None, Some("1"), true), None);
+        // The session cookie authenticates when the token verifies.
+        assert_eq!(resolve_identity(None, Some(&t), None, false), Some(3));
+        // A forged/stale cookie is unauthenticated -- no header fallback.
+        assert_eq!(resolve_identity(None, Some("nope"), Some("1"), true), None);
         // The legacy header only counts when explicitly allowed.
-        assert_eq!(resolve_identity(None, Some("1"), false), None);
-        assert_eq!(resolve_identity(None, Some("1"), true), Some(1));
-        assert_eq!(resolve_identity(None, Some("abc"), true), None);
-        assert_eq!(resolve_identity(None, None, true), None);
+        assert_eq!(resolve_identity(None, None, Some("1"), false), None);
+        assert_eq!(resolve_identity(None, None, Some("1"), true), Some(1));
+        assert_eq!(resolve_identity(None, None, Some("abc"), true), None);
+        assert_eq!(resolve_identity(None, None, None, true), None);
+    }
+
+    #[test]
+    fn cookie_header_parses_the_session_value() {
+        assert_eq!(cookie_value(Some("session=v1.1.x.abc"), "session"), Some("v1.1.x.abc".to_string()));
+        assert_eq!(cookie_value(Some("theme=dark; session = tok ;x=1"), "session"), Some("tok".to_string()));
+        assert_eq!(cookie_value(Some("theme=dark"), "session"), None);
+        assert_eq!(cookie_value(Some("session="), "session"), None);
+        assert_eq!(cookie_value(Some("sessionist=1"), "session"), None);
+        assert_eq!(cookie_value(None, "session"), None);
     }
 
     #[test]

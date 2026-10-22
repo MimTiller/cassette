@@ -84,6 +84,11 @@ pub struct ChangeUsernameResult {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct ChangePasswordResult {}
 
+/// The unit result of a successful [`logout`] (the server-side half clears
+/// the session cookie; the wire result just confirms it did).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct LogoutResult {}
+
 // ── service ──────────────────────────────────────────────────────────────────
 //
 // The `AuthService` + its two `impl` blocks are server-only: they take the
@@ -215,9 +220,6 @@ impl AuthService {
 /// is rejected with a clear error.
 #[server]
 pub async fn signup(input: SignupInput) -> Result<SignupResult, ServerError> {
-    // TEMP-TEST-SLOWDOWN: widen the client busy window so the in-flight
-    // button state is observable in live UI tests. REVERT BEFORE COMMIT.
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     let db = db_from_state()?;
     AuthService::new(db)
         .signup(&input.username, &input.password)
@@ -405,13 +407,43 @@ impl AuthService {
 /// clears the account's failure log.
 #[server]
 pub async fn login(input: LoginInput) -> Result<LoginResult, ServerError> {
-    // TEMP-TEST-SLOWDOWN: widen the client busy window so the in-flight
-    // button state is observable in live UI tests. REVERT BEFORE COMMIT.
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     let db = db_from_state()?;
-    AuthService::new(db)
+    let result = AuthService::new(db)
         .login(&input.username, &input.password)
-        .map_err(ServerError::failed)
+        .map_err(ServerError::failed)?;
+    // Web auth rides an httpOnly session cookie (the BFF pattern from the
+    // `credentials` SDK's README): the browser stores and replays it — on
+    // every request AND on the WebSocket upgrade handshake — while JS can
+    // never read it, so the session token never sits in client-side storage
+    // anywhere.
+    server::set_cookie(session_cookie(&result.token, request_is_https()));
+    Ok(result)
+}
+
+#[server]
+pub async fn logout() -> Result<LogoutResult, ServerError> {
+    // Cleared from the same definition that set it: a deletion with a
+    // different `Secure` flag would leave the original cookie in place.
+    server::set_cookie(session_cookie("", request_is_https()).clearing());
+    Ok(LogoutResult {})
+}
+
+/// The `session` cookie: HttpOnly and SameSite=Lax (the `server` SDK's
+/// defaults), and `Secure` only when the request came over https. Browsers
+/// drop `Secure` cookies on plain-http origins other than localhost, and the
+/// LAN dev/preview servers (e.g. http://192.168.0.50:8080) are plain http.
+#[cfg(feature = "server")]
+fn session_cookie(token: &str, https: bool) -> server::Cookie {
+    server::Cookie::new("session", token).secure(https)
+}
+
+/// Whether the current request reached us over https, directly (an https
+/// `Origin`) or through a TLS-terminating proxy (`X-Forwarded-Proto`).
+#[cfg(feature = "server")]
+fn request_is_https() -> bool {
+    let header = |name: &str| server::use_request_header(name).unwrap_or_default();
+    header("x-forwarded-proto").eq_ignore_ascii_case("https")
+        || header("origin").starts_with("https://")
 }
 
 /// Rename the signed-in account's handle. The new handle must be globally
@@ -505,6 +537,17 @@ fn db_from_state() -> Result<Db, ServerError> {
 
 #[cfg(all(test, feature = "server"))]
 mod tests {
+    #[test]
+    fn session_cookie_is_secure_only_over_https() {
+        let http = super::session_cookie("tok", false).to_string();
+        let https = super::session_cookie("tok", true).to_string();
+        assert!(http.contains("HttpOnly") && !http.contains("Secure"), "{http}");
+        assert!(https.contains("HttpOnly") && https.contains("Secure"), "{https}");
+        // Logout clears with the same flags, so the browser matches the cookie.
+        let cleared = super::session_cookie("", false).clearing().to_string();
+        assert!(cleared.contains("Max-Age=0") && !cleared.contains("Secure"), "{cleared}");
+    }
+
     use super::*;
     use std::path::Path;
 

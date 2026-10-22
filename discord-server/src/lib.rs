@@ -1,42 +1,30 @@
-//! `welcome` — three-act cinematic intro driven by springs + tweens
-//! + a raf-driven sun/vignette/planet pulse.
+//! `discord-server` — the backend half of the Discord clone.
 //!
-//! - Act 1: "Welcome to Idealyst" rises into a light frame.
-//! - Act 2: frame washes dark, a warm sun blooms from the top-right.
-//! - Act 3: subtitle materializes below the shuffled-up headline.
+//! One crate, two halves:
 //!
-//! Each animated property is an `AnimatedValue` bound to a `Ref` via
-//! [`AnimatedValue::bind`] (or `bind_color` / `bind_gradient_stop` /
-//! `bind_text_color`). The framework owns all per-platform dispatch —
-//! this library is pure platform-agnostic Rust. The entry point is
-//! `src/main.rs`, one `idealyst::entry!(welcome)` line whose shell the
-//! target triple selects; the iOS / Android wrappers the CLI still
-//! generates depend on this crate as an `rlib`.
+//! - **Client surface (always compiled):** the `#[server]` fns of
+//!   `auth` (signup / login / password + username / avatar changes),
+//!   `servers` (create / join / channel listings), `dms`, `friends`,
+//!   `blocks`, `invites`, `roles`, and `server_settings` (channel +
+//!   member management, pins, reactions, unread counts, the realtime
+//!   message-gateway types). With default features these compile to
+//!   typed wire structs + client RPC stubs the `discord-clone` UI crate
+//!   calls over the wire.
+//! - **Server surface (compiled with the `server` cargo feature):** the
+//!   SQLite data layer (`db`, migrations under `migrations/`), the
+//!   realtime WebSocket gateway (`realtime`), rate limiting (`rate_limit`),
+//!   session identity (`session`), and the KDF-backed service bodies the
+//!   stubs above dispatch to, hosted by the `--bin server` full-stack
+//!   binary (API at `/_srv/*` + static wasm bundle at `/`, one process).
+//!
+//! Standalone scaffold (NOT a member of the parent workspace): the empty
+//! `[workspace]` table below detaches it so cargo doesn't pull it in and it
+//! keeps its own warm `target/`. Framework crates are path deps to the local
+//! checkout (the idealyst registry is flaky in this environment) — same
+//! convention as the sibling `discord-clone` UI project.
 
-mod color;
 #[macro_use]
-mod components;
-mod app;
-mod constants;
-mod coordinator;
-mod style_helpers;
-mod typeface;
-
-// Data layer + server-settings API. Compiled ONLY under the `server`
-// feature: they pull in `rusqlite` (a native C dep) and the server-side
-// `server::` extractors (`use_state` / `use_request_header`), neither of
-// which exist in the wasm client build. `server_settings`' `#[server]` fns
-// emit client RPC stubs by default, but the bodies + DB they reference are
-// server-only, so gating the whole module keeps the wasm build free of the
-// native SQLite dep.
-#[cfg(feature = "server")]
-pub mod db;
-#[cfg(feature = "server")]
-pub mod realtime;
-#[cfg(feature = "server")]
-pub mod rate_limit;
-#[cfg(feature = "server")]
-pub mod session;
+pub mod components;
 pub mod roles;
 pub mod server_settings;
 // `invites` compiles in BOTH halves, like `auth` / `server_settings`: the
@@ -70,6 +58,17 @@ pub mod friends;
 // `#[cfg(feature = "server")]` inside the module.
 pub mod blocks;
 
+#[cfg(feature = "server")]
+pub mod db;
+#[cfg(feature = "server")]
+pub mod realtime;
+#[cfg(feature = "server")]
+pub mod rate_limit;
+#[cfg(feature = "server")]
+pub mod session;
+// Style substrate shared by the remaining component mocks.
+pub mod style_helpers;
+
 /// Shared e2e serialization guard. Every HTTP/WebSocket e2e test installs its
 /// `Db` into the same process-wide `server::install_state` slot (the macro
 /// reads it back via `use_state`), so all such tests MUST run one at a time
@@ -85,8 +84,6 @@ pub(crate) mod e2e_lock {
         E2E_LOCK.lock().unwrap_or_else(|p| p.into_inner())
     }
 }
-
-pub use app::app;
 
 // Recorder-side registration seam for the runtime-server sidecar
 // (`dev_server::sidecar::run_newcore`) — the recorder's scene-registry
@@ -110,13 +107,4 @@ pub fn register_scene_extensions_recorder(_registry: &mut dev_server::newcore::S
 pub fn register_scene_extensions<H: runtime_scene::Host>(
     _registry: &mut runtime_scene::Registry<H>,
 ) {
-}
-
-// Android entry: the generated Android wrapper's `attach` mounts
-// `scene_app()` through `backend_android::newcore::start` (see
-// crates/tools/build/android). `app()` already returns the scene
-// `Element`, so this is a plain re-export shim with the conventional
-// name.
-pub fn scene_app() -> runtime_core::Element {
-    app()
 }

@@ -132,70 +132,32 @@ pub async fn request_permission() {
     }
 }
 
-// ── persistence (localStorage on web; ignored on native) ─────────────────────
+// ── persistence (storage SDK: localStorage on web, native store elsewhere)
+// ─────────────────────────────────────────────────────────────────────────────
 
 /// Read the stored notification level (0..=2). `None` when there is no stored
-/// value (first run) or the storage is unavailable.
+/// value (first run) or the storage is unavailable. Rides the shared
+/// `discord-clone` storage-SDK store (see `crate::auth::STORE_NS`), not raw
+/// web_sys localStorage — so the preference persists on native targets too.
 pub fn load_mode() -> Option<u32> {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let window = web_sys::window()?;
-        let storage = window.local_storage().ok()??;
-        storage
-            .get_item(KEY_MODE)
-            .ok()?
-            .and_then(|v| v.parse::<u32>().ok())
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = KEY_MODE; // keep the key name referenced (native has no storage).
-        None
-    }
+    crate::auth::store()
+        .get_now(KEY_MODE)
+        .ok()
+        .flatten()
+        .and_then(|v| v.trim().parse::<u32>().ok())
 }
 
 /// Read the stored accent-color hex (e.g. `"#5865f2"`), or `None` if unset.
 pub fn load_accent() -> Option<String> {
-    #[cfg(target_arch = "wasm32")]
-    {
-        let window = web_sys::window()?;
-        let storage = window.local_storage().ok()??;
-        storage.get_item(KEY_ACCENT).ok()?
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = KEY_ACCENT;
-        None
-    }
+    crate::auth::store().get_now(KEY_ACCENT).ok().flatten()
 }
 
-/// Store the notification level. Best-effort: a full/absent storage is ignored.
+/// Store the notification level. Best-effort: a full/absent store is ignored.
 pub fn save_mode(mode: u32) {
-    #[cfg(target_arch = "wasm32")]
-    {
-        if let Some(window) = web_sys::window() {
-            if let Ok(Some(storage)) = window.local_storage() {
-                let _ = storage.set_item(KEY_MODE, &mode.to_string());
-            }
-        }
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = (KEY_MODE, mode);
-    }
+    let _ = crate::auth::store().set_now(KEY_MODE, &mode.to_string());
 }
 
 /// Store the accent-color hex. Best-effort, same as [`save_mode`].
 pub fn save_accent(hex: &str) {
-    #[cfg(target_arch = "wasm32")]
-    {
-        if let Some(window) = web_sys::window() {
-            if let Ok(Some(storage)) = window.local_storage() {
-                let _ = storage.set_item(KEY_ACCENT, hex);
-            }
-        }
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let _ = (KEY_ACCENT, hex);
-    }
+    let _ = crate::auth::store().set_now(KEY_ACCENT, hex);
 }
