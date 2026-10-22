@@ -4,9 +4,13 @@
 //! `ReadSignal<Vec<(String, String)>>` (each entry is `(author, text)`).
 //!
 //! Typing filters that corpus (case-insensitive substring match over the
-//! text, or over the author name) and the matching rows render live beneath
-//! the input; clearing it restores the full, unfiltered message list. When a
-//! non-empty query matches nothing, a single muted "no matches" row shows.
+//! text, or over the author name). The RESULTS CARD only mounts while a
+//! search is active (query non-blank): an empty query leaves just the search
+//! field, matching Discord's blank input before a search runs. The card has a
+//! "×" close control that clears the query (collapsing the card away), and its
+//! results live in their own bounded `scroll_view`, so a long result set
+//! scrolls inside the card instead of growing past the panel/rail it sits in.
+//! A non-empty query matching nothing shows a single muted "no matches" row.
 //! The corpus is a *signal* prop (not a plain value) so the bar tracks
 //! reactive changes to it — the caller derives it with `runtime_core::memo`
 //! over the active channel + its sent messages, so switching channels or
@@ -35,8 +39,8 @@
 use crate::style_helpers::{borderless_input, col, px};
 use icons_lucide::SEARCH;
 use runtime_core::{
-    component, icon, memo, signal, switch, ui, AlignItems, Color, Element, FlexDirection, ReadSignal,
-    StyleRules, Tokenized,
+    component, icon, memo, signal, switch, ui, AlignItems, Color, Element, FlexDirection,
+    JustifyContent, ReadSignal, StyleRules, Tokenized, TouchPhase, TouchResponse,
 };
 
 // Discord dark palette (kept local so the component is self-contained).
@@ -111,11 +115,11 @@ pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>) -> Element {
             flex_direction: Some(FlexDirection::Column),
             align_items: Some(AlignItems::Stretch),
             background: Some(col(BG_MAIN)),
-            padding_top: Some(px(24.0)),
-            padding_bottom: Some(px(24.0)),
-            padding_left: Some(px(20.0)),
-            padding_right: Some(px(20.0)),
-            gap: Some(px(14.0)),
+            padding_top: Some(px(8.0)),
+            padding_bottom: Some(px(8.0)),
+            padding_left: Some(px(12.0)),
+            padding_right: Some(px(12.0)),
+            gap: Some(px(10.0)),
             ..Default::default()
         }) {
             text(style = StyleRules {
@@ -143,20 +147,26 @@ pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>) -> Element {
                 )
             }
 
-            // The live results. The rows come from `switch` keyed on the
-            // memo's FILTERED OUTPUT (the pinned-messages panel's `switch`
-            // idiom): the guarded hole rebuilds its subtree whenever the
-            // Vec<(author,text)> of hits changes, so every keystroke that
-            // narrows or widens the match set re-renders exactly those rows.
-            // A plain `for` over `matches.get()` here is a bug: `ui!` decides
-            // a `for`'s reactivity by the ITERABLE'S TYPE (`StaticForEach`
-            // for a `Vec` — rows built once at mount and frozen), and the
-            // surrounding `if` only re-runs its thunks when the *condition*
-            // flips, which a same-side query edit never does.
+            // The results card is shown ONLY while a search is active
+            // (query typed and non-blank) — an empty query leaves just the
+            // search field itself, like Discord's blank input before a
+            // search runs. The card carries a "×" close control that clears
+            // the query, and its results live in their own `scroll_view` at a
+            // bounded height, so a long result set scrolls INSIDE the card
+            // instead of growing past the panel/rail it sits in.
             switch(
-                move || matches.get(),
-                move |rows: &Vec<(String, String)>| {
-                    if rows.is_empty() && !query.get().trim().is_empty() {
+                move || (!query.get().trim().is_empty(), matches.get()),
+                move |(active, rows): &(bool, Vec<(String, String)>)| {
+                    if !active {
+                        // No query: no card at all (zero-size hole).
+                        ui! {
+                            view(style = StyleRules {
+                                width: Some(px(0.0)),
+                                height: Some(px(0.0)),
+                                ..Default::default()
+                            }) {}
+                        }
+                    } else if rows.is_empty() {
                         // A non-empty query with zero hits: a single muted row.
                         ui! {
                             text(style = StyleRules {
@@ -167,6 +177,29 @@ pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>) -> Element {
                         }
                     } else {
                         let rows = rows.clone();
+                        // The card's "×" close control: tapping clears the query,
+                        // collapsing the card away (built outside the `ui!` so its
+                        // touch handler chains unambiguously to the button node).
+                        let close_btn = ui! {
+                            view(style = StyleRules {
+                                flex_direction: Some(FlexDirection::Row),
+                                justify_content: Some(JustifyContent::FlexEnd),
+                                height: Some(px(24.0)),
+                                ..Default::default()
+                            }) {
+                                text(style = StyleRules {
+                                    font_size: Some(px(15.0)),
+                                    color: Some(col(MUTED)),
+                                    ..Default::default()
+                                }) { "×".to_string() }
+                            }
+                            .on_touch(move |ev| {
+                                if ev.phase == TouchPhase::Ended {
+                                    query.set(String::new());
+                                }
+                                TouchResponse::CONSUMED
+                            })
+                        };
                         ui! {
                             // Wrapper view for the row list: an element in ONE
                             // slot must be one node, and the rows' own styles
@@ -176,6 +209,14 @@ pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>) -> Element {
                                 gap: Some(px(0.0)),
                                 ..Default::default()
                             }) {
+                                { close_btn }
+                                // Bounded scroll region: the hits scroll
+                                // inside the card, never past its own box.
+                                scroll_view(style = StyleRules {
+                                    height: Some(px(220.0)),
+                                    flex_grow: Some(Tokenized::Literal(1.0)),
+                                    ..Default::default()
+                                }) {
                                 for (author, text) in rows.into_iter() {
                                     view(style = StyleRules {
                                         flex_direction: Some(FlexDirection::Column),
@@ -202,6 +243,7 @@ pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>) -> Element {
                                             ..Default::default()
                                         }) { text }
                                     }
+                                }
                                 }
                             }
                         }
