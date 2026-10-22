@@ -39,13 +39,15 @@ use runtime_core::{
     pan, signal, switch, ui, viewport_size, ObjectFit,
 };
 use runtime_core::icon;
+use runtime_core::primitives::overlay::BackdropMode;
+use runtime_core::primitives::portal::{AnchorTarget, ElementAlign, ElementSide};
 // The file-picker SDK (also a `profile_settings` dep): the composer's attach
 // button opens the platform's native multi-image picker and stages each
 // picked file through `stage_attachment` (the same encode as avatars).
 use file_picker::{FilePicker, PickRequest, PickOutcome, MediaKind};
 use icons_lucide::{
     CHEVRON_DOWN, CHEVRON_UP, CIRCLE_HELP, COMPASS, GAVEL, GLOBE, HASH, HEADPHONES, MAIL,
-    MESSAGE_CIRCLE, MIC, MIC_OFF, PENCIL, PIN, PLUS, SETTINGS, SMILE, SMILE_PLUS, TRASH_2,
+    MESSAGE_CIRCLE, MIC, MIC_OFF, PIN, PLUS, SETTINGS, SMILE, SMILE_PLUS,
     USER_PLUS, USERS, VOLUME_2,
 };
 use crate::idle_timer_badge::idle_timer_badge;
@@ -3935,6 +3937,123 @@ fn next_role(current: &str) -> &'static str {
     }
 }
 
+/// Client-side permission pre-check mirroring the backend's role bars (the
+/// backend stays the enforcer; this only decides which menu rows RENDER):
+/// roles rank member < moderator < admin < owner; kick and channel-rename
+/// need moderator+, ban / timeout / channel-delete need admin+.
+fn role_rank(role: String) -> i32 {
+    match role.trim().to_lowercase().as_str() {
+        "owner" => 3,
+        "admin" => 2,
+        "moderator" => 1,
+        "member" => 0,
+        _ => -1,
+    }
+}
+
+/// The acting (signed-in) user's own role string in the active live roster —
+/// the discriminator for rendering moderation controls (Kick/Ban/Timeout/
+/// Rename/Delete) before the user even taps them. A user not on the roster
+/// (or a guest) resolves to "" and ranks below every bar, so no controls
+/// render. Data comes from the same `list_members` fetch the panel renders.
+fn acting_role(members: &Vec<crate::moderation::MemberInfo>, self_id: i64) -> String {
+    members.iter()
+        .find(|m| m.user_id == self_id)
+        .map(|m| m.role.clone())
+        .unwrap_or_default()
+}
+
+/// A small popup action menu anchored below a target element (the member-
+/// row / channel-row context menu Discord opens from a row tap). Rendered by
+/// a `switch` keyed on a SHARED `Signal<Option<i64>>` — the row's tap handler
+/// sets it to `Some(key)`, so exactly one menu (the tapped row's) mounts,
+/// anchored below that row. Backdrop is `BackdropMode::None`: the rest of the
+/// screen stays interactive (a menu, not a full-screen modal). Rows are
+/// (label, destructive-red?, handler); a row tap fires its handler then
+/// closes the menu (the downstream confirm steps — kick/ban/timeout inline
+/// two-steps, rename/delete modals — stay as they were).
+fn action_menu(
+    open: Signal<Option<i64>>,
+    key: i64,
+    anchor: Ref<ViewHandle>,
+    rows: Vec<(String, bool, Rc<dyn Fn()>)>,
+) -> Element {
+    switch(
+        move || open.get(),
+        move |sel: &Option<i64>| {
+            if *sel != Some(key) {
+                return ui! {
+                    view(style = StyleRules {
+                        width: Some(px(0.0)),
+                        height: Some(px(0.0)),
+                        ..Default::default()
+                    }) {}
+                };
+            }
+            // The render closure is `Fn` — clone the (non-`Copy`) row list
+            // into a local so the `for` below can consume it each render.
+            let rows = rows.clone();
+            ui! {
+                anchored_overlay(
+                    target = AnchorTarget::from(anchor),
+                    side = ElementSide::Below,
+                    align = ElementAlign::Start,
+                    offset = 6.0,
+                    backdrop = BackdropMode::None,
+                ) {
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Column),
+                        width: Some(px(150.0)),
+                        gap: Some(px(2.0)),
+                        background: Some(col("#111214")),
+                        border_top_left_radius: Some(px(8.0)),
+                        border_top_right_radius: Some(px(8.0)),
+                        border_bottom_left_radius: Some(px(8.0)),
+                        border_bottom_right_radius: Some(px(8.0)),
+                        border_top_width: Some(border_width(1.0)),
+                        border_right_width: Some(border_width(1.0)),
+                        border_bottom_width: Some(border_width(1.0)),
+                        border_left_width: Some(border_width(1.0)),
+                        border_top_color: Some(col(BORDER)),
+                        border_right_color: Some(col(BORDER)),
+                        border_bottom_color: Some(col(BORDER)),
+                        border_left_color: Some(col(BORDER)),
+                        overflow: Some(Overflow::Hidden),
+                        ..Default::default()
+                    }) {
+                        for (label, red, on) in rows.into_iter() {
+                            view(style = StyleRules {
+                                padding_top: Some(px(8.0)),
+                                padding_bottom: Some(px(8.0)),
+                                padding_left: Some(px(12.0)),
+                                padding_right: Some(px(12.0)),
+                                flex_direction: Some(FlexDirection::Row),
+                                align_items: Some(AlignItems::Center),
+                                ..Default::default()
+                            }) {
+                                text(style = StyleRules {
+                                    font_size: Some(px(14.0)),
+                                    // Destructive actions read as RED TEXT only
+                                    // (Discord's treatment) — never a filled pill.
+                                    color: Some(col(if red { BADGE } else { TEXT })),
+                                    ..Default::default()
+                                }) { label.clone() }
+                            }
+                            .on_touch(move |ev| {
+                                if ev.phase == TouchPhase::Ended {
+                                    on();
+                                    open.set(None);
+                                }
+                                TouchResponse::CONSUMED
+                            })
+                        }
+                    }
+                }
+            }
+        },
+    )
+}
+
 /// The live-server member panel: the real membership of the active backend
 /// server (fetched from the `#[server]` `list_members` endpoint, owner-first)
 /// rendered as a right-side column — the live counterpart of the mock
@@ -3943,26 +4062,13 @@ fn next_role(current: &str) -> &'static str {
 /// message buffer as `(author, text)` rows (derived by the caller's
 /// `live_search_corpus` memo), so a live server's search actually searches
 /// real messages instead of the mock seed data. Each member row shows the
-/// member's name, their role (a tappable
-/// cycle-button member→moderator→admin→owner→member), and a `Kick` button that
-/// opens an inline two-step confirm before calling the backend `remove_member`.
-/// After a successful kick or role change the roster is re-fetched, so the
-/// list refreshes (a kicked row disappears; a changed role re-renders).
-///
-/// The backend enforces every permission check (who may kick, who may change
-/// roles, that the owner can't be kicked or re-roled, that `owner` can't be
-/// assigned to someone else); this panel does **no** client-side permission
-/// pre-computation — on a rejection the backend's message is shown inline as a
-/// simple red line beneath the row, and on success the roster reloads.
-///
-/// Idioms, verified against this file: a plain `fn -> Element` (like
-/// `member_panel`); the row list is a local `Vec<Element>` built in a `for`
-/// loop (like the mock `member_panel`'s `body`) with a `.collect()` — the
-/// standard static-row idiom; the per-row controls are `view {…}.on_touch(move
-/// |ev| …)` chains (the live channel rows' idiom); `Signal` is `Copy`, so each
-/// `move` closure captures a copy and stays `Fn`; the inline kick-confirm and
-/// the per-row error line are reactive `if` branches inside `ui!` (lowered to
-/// the `when` primitive, `ban_list_row`'s idiom).
+/// presence dot, the member's avatar chip (when the backend carries one) and
+/// their username + role chip — the same content contract as the mock
+/// `member_row` / the current user's row. Moderation actions (Kick / Ban /
+/// Timeout) are NOT inline pills: tapping the row opens the `action_menu`
+/// popup anchored below it (rendered only when the acting user's role clears
+/// the backend's bar — moderator+ for Kick, admin+ for Ban/Timeout), and the
+/// menu entry arms the row's existing inline two-step confirm.
 fn live_member_panel(
     server_id: i64,
     members: Signal<Vec<crate::moderation::MemberInfo>>,
@@ -3973,6 +4079,7 @@ fn live_member_panel(
     timeout_duration: Signal<i64>,
     presence: Rc<RefCell<HashMap<i64, String>>>,
     search_corpus: ReadSignal<Vec<(String, String)>>,
+    member_menu: Signal<Option<i64>>,
 ) -> Element {
     // Snapshot of the current roster. The panel is rebuilt (by the caller's
     // `switch` keyed on this signal) whenever the roster changes — including
@@ -4045,26 +4152,8 @@ fn live_member_panel(
         color: Some(col(TEXT_CHANNEL)),
         ..Default::default()
     };
-    let kick_btn_style = StyleRules {
-        padding_top: Some(px(3.0)),
-        padding_bottom: Some(px(3.0)),
-        padding_left: Some(px(8.0)),
-        padding_right: Some(px(8.0)),
-        background: Some(col(BADGE)),
-        color: Some(col("#ffffff")),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        flex_shrink: Some(grow(0.0)),
-        ..Default::default()
-    };
-    let kick_label_style = StyleRules {
-        font_size: Some(px(11.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col("#ffffff")),
-        ..Default::default()
-    };
+    // The Kick/Ban/Timeout pills that used to render here are gone: those
+    // actions live in the row-tap `action_menu` popup (red TEXT labels only).
     let confirm_bg_style = StyleRules {
         background: Some(col(BG_ACTIVE)),
         border_top_left_radius: Some(px(8.0)),
@@ -4122,6 +4211,13 @@ fn live_member_panel(
     // Each row is a `move` closure: `server_id` (i64) and `member_id` (i64) are
     // `Copy`, and the three `Signal`s it captures are `Copy`, so every closure
     // owns a fresh copy and stays `Fn` across rebuilds.
+    // Client-side permission bars mirror the backend's role checks (the backend
+    // stays the enforcer — this only decides which menu rows RENDER): the
+    // acting user's own role from the roster gates whether the Kick/Ban/Timeout
+    // popup menu shows at all, and rank decides which entries it carries.
+    let acting_rank = role_rank(acting_role(&roster, self_id));
+    let can_kick = acting_rank >= 1;
+    let can_ban = acting_rank >= 2;
     let mut rows: Vec<Element> = Vec::new();
     for member in roster.iter() {
         let member_id = member.user_id;
@@ -4149,8 +4245,6 @@ fn live_member_panel(
         let confirm_yes_style = confirm_yes_style.clone();
         let confirm_no_style = confirm_no_style.clone();
         let small_label_style = small_label_style.clone();
-        let kick_btn_style = kick_btn_style.clone();
-        let kick_label_style = kick_label_style.clone();
         let error_style = error_style.clone();
         // The kick-confirm / ban-confirm / idle arms below share the confirm +
         // kick styles above. They render through ONE flat `match` (in the row
@@ -4198,6 +4292,36 @@ fn live_member_panel(
             ..Default::default()
         };
 
+        // The row's anchored-popup state: the row view fills this handle at
+        // mount, and the row's tap handler opens `action_menu` below it.
+        let row_ref: Ref<ViewHandle> = Ref::<ViewHandle>::new();
+        // The row's menu entries, gated by the ACTING user's role (mirrors the
+        // backend bars: Kick = moderator+; Ban + Timeout = admin+). Handlers
+        // only ARM the existing inline two-step confirms — permission checks
+        // and confirm steps stay exactly as before.
+        let on_kick = Rc::new(move || { kick.set(Some(member_id)); });
+        let on_ban = Rc::new(move || { ban.set(Some(member_id)); });
+        let on_timeout = Rc::new(move || { timeout.set(Some(member_id)); });
+        let menu_items: Vec<(String, bool, Rc<dyn Fn()>)> = {
+            let mut items: Vec<(String, bool, Rc<dyn Fn()>)> =
+                Vec::<(String, bool, Rc<dyn Fn()>)>::new();
+            if !is_self {
+                if can_kick {
+                    items.push((
+                        "Kick".to_string(),
+                        true,
+                        on_kick,
+                    ));
+                }
+                if can_ban {
+                    items.push(("Ban".to_string(), true, on_ban));
+                    items.push(("Timeout".to_string(), false, on_timeout));
+                }
+            }
+            items
+        };
+        let menu = action_menu(member_menu, member_id, row_ref, menu_items);
+
         let row = ui! {
             view(style = StyleRules {
                 padding_top: Some(px(6.0)),
@@ -4235,8 +4359,12 @@ fn live_member_panel(
                     )
                 }
                 // Name (+ a "(you)" tag on the signed-in user's own row).
+                // flex_shrink 0 + min content: the wrapper must NEVER collapse
+                // to zero width (the bug this fixes: shrinking the name's
+                // wrapper to fit alongside the row's inline action pills
+                // rendered non-self rows with a role badge and NO username).
                 view(style = StyleRules {
-                    flex_shrink: Some(grow(1.0)),
+                    flex_shrink: Some(grow(0.0)),
                     overflow: Some(Overflow::Hidden),
                     ..Default::default()
                 }) {
@@ -4456,48 +4584,11 @@ fn live_member_panel(
                             TouchResponse::CONSUMED
                         })
                     }
-                } _ if !is_self => {
-                    // Idle: the row's action buttons. Kick (mild, remove-only)
-                    // and Ban (severe, remove AND bar rejoining) — each opens
-                    // its own two-step inline confirm above.
-                    view(style = StyleRules {
-                        flex_direction: Some(FlexDirection::Row),
-                        gap: Some(px(6.0)),
-                        flex_shrink: Some(grow(0.0)),
-                        ..Default::default()
-                    }) {
-                        view(style = kick_btn_style.clone()) {
-                            text(style = kick_label_style.clone()) { "Kick" }
-                        }
-                        .on_touch(move |ev| {
-                            if ev.phase == TouchPhase::Ended {
-                                kick.set(Some(member_id));
-                            }
-                            TouchResponse::CONSUMED
-                        })
-                        view(style = kick_btn_style.clone()) {
-                            text(style = kick_label_style.clone()) { "Ban" }
-                        }
-                        .on_touch(move |ev| {
-                            if ev.phase == TouchPhase::Ended {
-                                ban.set(Some(member_id));
-                            }
-                            TouchResponse::CONSUMED
-                        })
-                        view(style = kick_btn_style.clone()) {
-                            text(style = kick_label_style.clone()) { "Timeout" }
-                        }
-                        .on_touch(move |ev| {
-                            if ev.phase == TouchPhase::Ended {
-                                timeout.set(Some(member_id));
-                            }
-                            TouchResponse::CONSUMED
-                        })
-                    }
                 }
-                // Catch-all: a self row (or no pending confirm) shows no action
-                // controls here — the role cycle above is the only affordance.
-                // Guards are not exhaustive, so the compiler requires this arm.
+                // Idle rows carry NO inline action buttons: the moderation
+                // actions (Kick / Ban / Timeout) live in the popup `action_menu`
+                // anchored below the row, opened by a tap on the row itself
+                // (below, in `.on_touch`). Only the confirm states render here.
                 _ => {}
             }
 
@@ -4507,7 +4598,32 @@ fn live_member_panel(
             if !error.get().is_empty() {
                 text(style = error_style.clone()) { move || error.get().clone() }
             }
+            // The row's tap popup menu, anchored below this row's own box
+            // (the row is Position::Relative and fills its handle ref). Only
+            // this row's menu mounts — `action_menu`'s switch key matches on
+            // the shared `member_menu` signal's `Some(member_id)`.
+            { menu }
+        }
+        .bind(row_ref)
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended && !is_self {
+                // Tapping a member row: a pending confirm for THIS row is
+                // dismissed (the old re-tap-cancel idiom — the two-step stays);
+                // otherwise the row's action menu opens (permitted users only;
+                // `menu` is empty — a zero-size view — for everyone else).
+                if confirming.get().is_some()
+                    || banning.get().is_some()
+                    || timing.get().is_some()
+                {
+                    confirming.set(None);
+                    banning.set(None);
+                    timing.set(None);
+                } else if can_kick || can_ban {
+                    member_menu.set(Some(member_id));
+                }
             }
+            TouchResponse::CONSUMED
+        })
         };
         rows.push(row);
     }
@@ -5086,6 +5202,18 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // to this signal as the user taps an option; the confirm's "Yes" reads it.
     let live_timeout_duration: Signal<i64> = signal(60);
     let live_member_error: Signal<String> = signal(String::new());
+    // Which member row's Kick/Ban/Timeout popup menu is currently open
+    // (`Some(user_id)` = that member's menu; `None` = closed). A member-row
+    // tap sets it; a menu entry arms the per-action confirm signal above and
+    // clears this. Part of the member panel's `switch` key so the portal
+    // mounts/unmounts on tap.
+    let live_member_menu: Signal<Option<i64>> = signal(None);
+    // Which channel row's management menu (Rename / Delete) is currently open
+    // (`Some(channel_id)`; `None` = closed). A gear tap on a hovered channel
+    // row sets it; the gear itself renders ONLY while the row is hovered and
+    // the acting user is moderator+ (the per-row idiom `message_action_bar`
+    // uses for message rows — a per-row `hovered` signal fed by `on_hover`).
+    let live_chan_menu: Signal<Option<i64>> = signal(None);
     // Live presence: `user_id -> status string`. The backend broadcasts
     // `WsServerMsg::Presence` ('online' on socket auth + activity, 'away' after
     // `PRESENCE_IDLE_SECS` of no inbound frames, 'offline' on the user's last
@@ -7256,9 +7384,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 // Per-category collapse flags, so the row loop re-runs (and
                 // re-gates each category's rows) when a CategoryHeader toggles.
                 cat_collapsed,
+                // Which channel row's management popup is open — in the key so
+                // a gear tap rebuilds the rows and mounts/unmounts the portal.
+                live_chan_menu.get(),
             )
         },
-        move |(server_id, _channel_id, _voice, _live_server, _live_fp, _mention_rev, _unread_rev, _cat_collapsed): &(
+        move |(server_id, _channel_id, _voice, _live_server, _live_fp, _mention_rev, _unread_rev, _cat_collapsed, _chan_menu): &(
             u32,
             u32,
             Option<(u32, u32)>,
@@ -7267,6 +7398,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             u32,
             u32,
             Vec<(u32, bool)>,
+            Option<i64>,
         )| {
             // `switch`'s render is `Fn` — clone the captured styles so the
             // closure borrows them rather than moving them out (whiteboard idiom).
@@ -7374,15 +7506,26 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // store its own.
                     let live_at_bottom_row = live_at_bottom.clone();
                     let live_scroll_handle_row = live_scroll_handle.clone();
+                    // The channel-row management-menu state (which hovered row's
+                    // Rename/Delete popup is open), captured for `chan_actions`
+                    // and the per-row hover handlers.
+                    let chan_menu = live_chan_menu.clone();
+                    // The roster (already fetched when a live server entered) —
+                    // read here ONLY to pick which menu rows RENDER (the
+                    // backend re-checks on commit). Plain read of the acting
+                    // id is fine at this build site: the sidebar rebuilds on
+                    // live-server/channel changes and on login (`authed`).
+                    let live_mbrs = live_members.clone();
+                    let chan_self_id =
+                        crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
                     // Shared style for the live channel row action icon buttons
-                    // (rename pencil / delete trash) and the new-channel "+"
-                    // header action. Defined here, inside the live arm of the
-                    // `switch` render closure, because the per-button handlers
-                    // touch the modal `Signal`s (`rc_*` / `dc_*` / `cc_*`) that
-                    // this `move` render closure owns copies of — a
-                    // function-scope non-`move` closure could not borrow those
-                    // across the `move` capture boundary (E0373).
-                    let chan_btn_style = StyleRules {
+                    // (hover gear) and the new-channel "+" header action. A
+                    // rules *closure* (like `live_row_style` below) so the
+                    // gear's nested `move` render closures can capture it and
+                    // re-build it on every re-render (StyleRules is not `Copy`)
+                    // without the E0507 "move out of Fn" the per-use `.clone()`
+                    // hits when the style itself is a plain local.
+                    let chan_btn_style = move || StyleRules {
                         width: Some(px(22.0)),
                         height: Some(px(22.0)),
                         align_items: Some(AlignItems::Center),
@@ -7398,7 +7541,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // an `Rc<String>` (`Clone`), so neither handler moves a `String`
                     // out of this `Fn` closure (E0507) — the established idiom for
                     // non-`Copy` data in `'static` handlers here.
-                    let chan_actions = |cid: i64, nm: Rc<String>, u_count: i64, u_mentions: i64| -> Element {
+                    let chan_actions = |cid: i64, nm: Rc<String>, u_count: i64, u_mentions: i64, hovered: Signal<bool>, row_ref: Ref<ViewHandle>| -> Element {
                         // `nm` is an `Rc` (`Clone`, not `Copy`): each `move` tap
                         // handler captures its own clone, and reads the name via
                         // `(*nm)` without ever moving the `String` out of this
@@ -7463,35 +7606,85 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         } else {
                             None
                         };
-                        let rename_btn = ui! {
-                            view(style = chan_btn_style.clone(), test_id = "live-channel-rename") {
-                                icon(PENCIL).color(|| Color::from(TEXT_MUTED)).size(14.0)
+                        // The ALWAYS-VISIBLE pencil + trash icons are gone: a
+                        // single settings GEAR renders only while the row is
+                        // hovered (per-row `hovered`, the `message_action_bar`
+                        // idiom), and only for users whose own roster role
+                        // clears the backend bars — the menu below still arms
+                        // the existing rename/delete modals (permission checks
+                        // and their confirm/commit steps stay the backend's).
+                        let my_role = live_mbrs
+                            .get()
+                            .iter()
+                            .find(|m| m.user_id == chan_self_id)
+                            .map(|m| role_rank(m.role.clone()))
+                            .unwrap_or(-1);
+                        let menu_items: Vec<(String, bool, Rc<dyn Fn()>)> = {
+                            let mut items: Vec<(String, bool, Rc<dyn Fn()>)> =
+                                Vec::<(String, bool, Rc<dyn Fn()>)>::new();
+                            if my_role >= 1 {
+                                items.push((
+                                    "Rename".to_string(),
+                                    false,
+                                    Rc::new(move || {
+                                        rc_cid.set(Some(cid));
+                                        rc_name.set((*nm_rename).clone());
+                                        rc_busy.set(false);
+                                        rc_err.set(String::new());
+                                        rc_open.set(true);
+                                    }),
+                                ));
                             }
-                            .on_touch(move |ev| {
-                                if ev.phase == TouchPhase::Ended {
-                                    rc_cid.set(Some(cid));
-                                    rc_name.set((*nm_rename).clone());
-                                    rc_busy.set(false);
-                                    rc_err.set(String::new());
-                                    rc_open.set(true);
-                                }
-                                TouchResponse::CONSUMED
-                            })
+                            if my_role >= 2 {
+                                items.push((
+                                    "Delete".to_string(),
+                                    true,
+                                    Rc::new(move || {
+                                        dc_cid.set(Some(cid));
+                                        dc_name.set((*nm_delete).clone());
+                                        dc_busy.set(false);
+                                        dc_err.set(String::new());
+                                        dc_open.set(true);
+                                    }),
+                                ));
+                            }
+                            items
                         };
-                        let delete_btn = ui! {
-                            view(style = chan_btn_style.clone(), test_id = "live-channel-delete") {
-                                icon(TRASH_2).color(|| Color::from(TEXT_MUTED)).size(14.0)
-                            }
-                            .on_touch(move |ev| {
-                                if ev.phase == TouchPhase::Ended {
-                                    dc_cid.set(Some(cid));
-                                    dc_name.set((*nm_delete).clone());
-                                    dc_busy.set(false);
-                                    dc_err.set(String::new());
-                                    dc_open.set(true);
-                                }
-                                TouchResponse::CONSUMED
-                            })
+                        let has_menu = !menu_items.is_empty();
+                        let menu = action_menu(chan_menu, cid, row_ref, menu_items);
+                        // The gear: mounted only while hovered (and only when
+                        // this row has any menu entry at all — `has_menu` is
+                        // the Copy snapshot computed BEFORE `menu_items` is
+                        // moved into `action_menu` above, so the gear's `Fn`
+                        // render closure borrows a bool, never the Vec), and a
+                        // tap opens this row's Rename/Delete menu.
+                        let gear = ui! {
+                            switch(
+                                move || hovered.get() && has_menu,
+                                move |on: &bool| {
+                                    if !*on {
+                                        ui! {
+                                            view(style = StyleRules {
+                                                width: Some(px(0.0)),
+                                                height: Some(px(0.0)),
+                                                ..Default::default()
+                                            }) {}
+                                        }
+                                    } else {
+                                        ui! {
+                                            view(style = chan_btn_style(), test_id = "live-channel-gear") {
+                                                icon(SETTINGS).color(|| Color::from(TEXT_MUTED)).size(14.0)
+                                            }
+                                            .on_touch(move |ev| {
+                                                if ev.phase == TouchPhase::Ended {
+                                                    chan_menu.set(Some(cid));
+                                                }
+                                                TouchResponse::CONSUMED
+                                            })
+                                        }
+                                    }
+                                },
+                            )
                         };
                         ui! {
                             view(style = StyleRules {
@@ -7506,8 +7699,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                 if let Some(b) = badge {
                                     { b }
                                 }
-                                { rename_btn }
-                                { delete_btn }
+                                { gear }
+                                { menu }
                             }
                         }
                     };
@@ -7578,11 +7771,19 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                 ..live_label_style()
                             };
                             // The right-side action cluster for this row (mention
-                            // pill + rename/delete buttons), built once per row.
-                            // `chan_actions` is `Copy` (all `Copy` captures), so
-                            // calling it here does not move it out of the
-                            // `switch` render closure.
-                            let actions = chan_actions(cid, Rc::new(name.clone()), u_count, u_mentions);
+                            // pill + hover-gated gear + the gear's Rename/Delete
+                            // menu), built once per row. `chan_actions` is
+                            // `Copy` (all `Copy` captures), so calling it here
+                            // does not move it out of the `switch` render
+                            // closure. `hovered` is minted PER ROW here (not
+                            // threaded through the shared row builder — the
+                            // per-row idiom `message_action_bar` uses) so each
+                            // row's gear tracks its own hover, and `row_ref`
+                            // anchors the menu portal to this row.
+                            let hovered = signal(false);
+                            let row_ref: Ref<ViewHandle> = Ref::<ViewHandle>::new();
+                            let actions =
+                                chan_actions(cid, Rc::new(name.clone()), u_count, u_mentions, hovered, row_ref);
                             let row = if is_text {
                                 // Voice rows stay non-clickable for now — a later
                                 // task handles voice selection. Text rows select
@@ -7634,6 +7835,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                         }
                                         TouchResponse::CONSUMED
                                     })
+                                    .bind(row_ref)
+                                    .on_hover(move |on| hovered.set(on))
                                 }
                             } else {
                                 ui! {
@@ -7644,6 +7847,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                                         text(style = label_style) { name }
                                         { actions }
                                     }
+                                    .bind(row_ref)
+                                    .on_hover(move |on| hovered.set(on))
                                 }
                             };
                             row
@@ -9365,6 +9570,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let live_timeout_panel = live_timeout_confirm.clone();
     let live_timeout_dur_panel = live_timeout_duration.clone();
     let live_presence_panel = live_presence.clone();
+    // The member row's tap-popup state (which member's Kick/Ban/Timeout menu
+    // is open, `None` = closed). In the `members_switch` key so opening the
+    // menu from a row tap rebuilds the panel and mounts the portal.
+    let live_member_menu_panel = live_member_menu.clone();
     // The message-search corpus the mock member panel's `MessageSearchBar`
     // filters over: the active channel's seed messages plus this session's
     // sends, as `(author, text)` rows. A `memo` keyed on the same signals the
@@ -9434,10 +9643,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 live_timeout_confirm.get(),
                 live_timeout_duration.get(),
                 live_presence_rev.get(),
+                live_member_menu.get(),
                 is_real_user,
             )
         },
-        move |(_server_id, user_status, live_active, _live_members, _live_err, _live_kick, _live_ban, _live_timeout, _live_timeout_dur, _presence_rev, real_user): &(
+        move |(_server_id, user_status, live_active, _live_members, _live_err, _live_kick, _live_ban, _live_timeout, _live_timeout_dur, _presence_rev, _live_menu, real_user): &(
             u32,
             Status,
             Option<i64>,
@@ -9448,6 +9658,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             Option<i64>,
             i64,
             u32,
+            Option<i64>,
             bool,
         )| {
             if let Some(ls) = *live_active {
@@ -9466,6 +9677,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // clone the handle each render.
                     live_presence_panel.clone(),
                     live_search_corpus_panel.read_only(),
+                    live_member_menu_panel.clone(),
                 );
             }
             if *real_user {
