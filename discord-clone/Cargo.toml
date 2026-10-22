@@ -39,27 +39,27 @@ sidecar = ["dep:dev-server"]
 # the target needs — `backend-web` + the wasm-bindgen glue on wasm, a
 # native shell otherwise — so this manifest names no backend directly
 # and `cargo build` alone produces a runnable artifact.
-idealyst = { path = "/root/idealyst-native/crates/idealyst" }
+idealyst = { version = "=3.0.0", registry = "idealyst" }
 # The author surface. `runtime-core` is the crate this project aliases
 # to `runtime_core` at its root (see src/lib.rs). `runtime-vocabulary` is
 # needed because the `ui!` emission spells absolute
 # `::runtime_vocabulary::glue::…` paths, and `runtime-scene` because
 # `register_scene_extensions` is generic over the scene `Registry` host.
-runtime-core = { path = "/root/idealyst-native/crates/runtime/core" }
-runtime-vocabulary = { path = "/root/idealyst-native/crates/runtime/vocabulary" }
-runtime-scene = { path = "/root/idealyst-native/crates/runtime/scene" }
+runtime-core = { version = "=3.2.0", registry = "idealyst" }
+runtime-vocabulary = { version = "=4.1.0", registry = "idealyst" }
+runtime-scene = { version = "=1.11.0", registry = "idealyst" }
 # The zero-cost Lucide icon pack — each `pub const IconData` referenced lands
 # in the binary (LTO drops the rest); used via `runtime_core::icon(…)`.
-icons-lucide = { path = "/root/idealyst-native/crates/ui/icons-lucide" }
+icons-lucide = { version = "=3.0.0", registry = "idealyst" }
 # Wall-clock readings for message timestamps (`runtime_shared::time::epoch_millis`
 # / `local_offset_minutes` — the web backend installs a `js Date`-backed source
 # during bootstrap). Not re-exported at the `runtime_core` root, so the crate
 # is depended on directly.
-runtime-shared = { path = "/root/idealyst-native/crates/runtime/shared" }
+runtime-shared = { version = "=3.1.0", registry = "idealyst" }
 # Recorder backend for the runtime-server sidecar wrapper. Optional —
 # pulled in only by the `sidecar` feature (host-side sidecar build);
 # never compiled for device/web targets.
-dev-server = { path = "/root/idealyst-native/crates/dev/server", optional = true }
+dev-server = { version = "=3.0.0", registry = "idealyst", optional = true }
 # The backend half of the full-stack pair. We depend on it with DEFAULT
 # features (no `server`), so its `#[server]` fns — e.g. `auth::login` — compile
 # here as typed RPC *stubs* that POST over the `server` SDK's transport. That
@@ -72,40 +72,40 @@ discord-server = { path = "../discord-server", default-features = false }
 # URL) and attach the signed-in user id as the `x-user-id` header via
 # `server::credentials_from_fn`. `discord-server` also pulls it in transitively
 # for its codegen'd stubs; the direct dep is for the `configure` call site.
-server = { path = "/root/idealyst-native/crates/api/server" }
+server = { version = "=3.0.0", registry = "idealyst" }
 # Cross-platform clipboard SDK (the `InviteLinkDisplay` Copy button writes the
 # shareable link to the system clipboard). Per-backend: `navigator.clipboard`
 # on wasm, UIPasteboard/NSPasteboard on Apple, ClipboardManager on Android,
 # `arboard` on Linux desktop. Same path root as the other framework deps, so
 # its `runtime-core`/`runtime-vocabulary` deps resolve to the identical crate
 # instances this crate already uses.
-clipboard = { path = "/root/idealyst-native/crates/sdk/client/clipboard" }
+clipboard = { version = "=3.0.0", registry = "idealyst" }
 # The markdown SDK: renders chat message bodies (bold/italic/inline code/
 # code blocks/links/blockquotes/strikethrough) as semantic DOM through its
 # ONE caps-generic scene handler. Same path root as the other framework/SDK
 # deps so its `runtime-scene`/`runtime-shared`/`runtime-vocabulary` deps
 # resolve to the identical crate instances this crate already uses.
-markdown = { path = "/root/idealyst-native/crates/sdk/client/markdown" }
+markdown = { version = "=3.0.0", registry = "idealyst" }
 # The file-picker SDK: "Change avatar" opens the platform's native file-open
 # UI (web: `showOpenFilePicker()` / `<input type=file>` fallback) so the user
 # uploads a real image instead of pasting a data URL. Imperative API only —
 # no scene handler — so `register_scene_extensions` gains nothing from it.
 # Its default `drop` feature pulls runtime-core/runtime-shared, which resolve
 # to the identical crate instances (same path root as the other SDK deps).
-file-picker = { path = "/root/idealyst-native/crates/sdk/client/file-picker" }
+file-picker = { version = "=3.0.1", registry = "idealyst" }
 # The plaintext storage SDK: non-secret client state (the signed-in
 # account's identity and per-user last-view spot, the notification level,
 # the accent color) persists through `platform_storage` — `localStorage`
 # prefixed by the namespace on web, `NSUserDefaults` / SharedPreferences /
 # a JSON file on native — instead of raw web_sys calls that only work on
 # wasm (the native halves used to no-op, signing users out every launch).
-storage = { path = "/root/idealyst-native/crates/sdk/client/storage", features = ["reactive"] }
+storage = { version = "=3.0.0", registry = "idealyst", features = ["reactive"] }
 # The secure-credentials SDK: the session token on NATIVE targets lives in
 # the platform's real secure store (Keychain / Keystore / OS vault). On web
 # every operation errors — by design, a browser has no secure client store —
 # and the httpOnly session cookie the `login` server fn sets carries the
 # session instead (the credentials README's BFF pattern).
-credentials = { path = "/root/idealyst-native/crates/sdk/client/credentials" }
+credentials = { version = "=1.5.3", registry = "idealyst" }
 
 # No backend deps: `register_scene_extensions` is generic over the scene
 # `Host` (this scaffold registers no third-party SDKs), so the app crate

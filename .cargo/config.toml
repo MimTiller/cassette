@@ -1,0 +1,3 @@
+# The idealyst framework crates come from its own registry.
+[registries.idealyst]
+index = "sparse+https://crates.idealyst.io/index/"
