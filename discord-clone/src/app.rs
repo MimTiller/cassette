@@ -111,6 +111,7 @@ use crate::invite_link_display::InviteLinkDisplay;
 use crate::invite_expiry_selector::InviteExpirySelector;
 use crate::thread_list_row::ThreadListRow;
 use crate::slash_command_dropdown::SlashCommandDropdown;
+use crate::emoji_picker::EmojiPicker;
 use crate::settings_tab_bar::SettingsTabBar;
 use crate::setup_checklist_item::SetupChecklistDemo;
 use crate::emoji_upload_slot::EmojiUploadSlot;
@@ -1487,12 +1488,6 @@ fn apply_reaction(
     changed
 }
 
-/// The 12 common glyphs the add-reaction picker offers — the same set the
-/// composer's emoji popover uses (see `emoji_popover`).
-const REACT_EMOJIS: [&str; 12] = [
-    "😀", "😊", "😂", "😍", "😎", "🤔", "👍", "🎉", "🚀", "❤️", "🙌", "🍕",
-];
-
 /// The reaction strip under one message row: existing reaction pills on the
 /// left, a spacer, and an always-visible "add reaction" button (the Lucide
 /// SMILE_PLUS glyph) on the right. Tapping the add button opens the picker for
@@ -1692,65 +1687,34 @@ fn reaction_picker_overlay(
                 };
             };
             let key = *sel;
-            let cells: Vec<Element> = REACT_EMOJIS.iter().map(|g| {
-                let glyph = g.to_string();
-                let glyph_close = glyph.clone();
-                let r = reactions.clone();
-                let rev = reaction_rev;
-                let close = picker;
-                let key = key;
-                ui! {
-                    view(style = StyleRules {
-                        width: Some(px(34.0)),
-                        height: Some(px(34.0)),
-                        align_items: Some(AlignItems::Center),
-                        justify_content: Some(JustifyContent::Center),
-                        border_top_left_radius: Some(px(6.0)),
-                        border_top_right_radius: Some(px(6.0)),
-                        border_bottom_left_radius: Some(px(6.0)),
-                        border_bottom_right_radius: Some(px(6.0)),
-                        ..Default::default()
-                    }) {
-                        text(style = StyleRules {
-                            font_size: Some(px(20.0)),
-                            ..Default::default()
-                        }) { glyph }
+            // Add (or bump) the picked emoji's reaction for this message, then
+            // close the picker. LIVE rows (gateway-keyed) route through the
+            // backend RPC (`request_live_reaction`) which persists a row and
+            // broadcasts the count frame back into `gateway_incoming_effect` —
+            // the pill is NOT mutated optimistically, the echo frame is the
+            // single source of truth. MOCK rows keep the session-local mutation.
+            let r = reactions.clone();
+            let rev = reaction_rev;
+            let close = picker;
+            let pick_cb: Rc<dyn Fn(String)> = Rc::new(move |glyph: String| {
+                let live = matches!(key, MessageKey::Live { .. });
+                if live {
+                    request_live_reaction(key, glyph, false, close);
+                } else {
+                    let mut m = r.borrow_mut();
+                    let inner = m.entry(key).or_default();
+                    if let Some(pos) = inner.iter().position(|(e, _, _)| e == &glyph) {
+                        let (e, c, _) = inner[pos].clone();
+                        inner[pos] = (e, c + 1, true);
+                    } else {
+                        inner.push((glyph, 1, true));
                     }
-                    .on_touch(move |ev| {
-                        // Add (or bump) this emoji's reaction for the message,
-                        // then close the picker. LIVE rows (gateway-keyed) route
-                        // the click through the backend RPC (`request_live_reaction`)
-                        // which persists a row and broadcasts the count frame back
-                        // into `gateway_incoming_effect`; the pill is NOT mutated
-                        // optimistically — the echo frame is the single source of
-                        // truth, so a cold/reload and a live sync converge. MOCK
-                        // rows keep the session-local mutation.
-                        if ev.phase == TouchPhase::Ended {
-                            let live = match key {
-                                MessageKey::Live { .. } => true,
-                                MessageKey::Mock { .. } => false,
-                            };
-                            if live {
-                                request_live_reaction(key, glyph_close.clone(), false, close);
-                            } else {
-                                let mut m = r.borrow_mut();
-                                let inner = m.entry(key).or_default();
-                                if let Some(pos) = inner.iter().position(|(e, _, _)| e == &glyph_close) {
-                                    let (e, c, _) = inner[pos].clone();
-                                    inner[pos] = (e, c + 1, true);
-                                } else {
-                                    inner.push((glyph_close.clone(), 1, true));
-                                }
-                                rev.set(rev.get() + 1);
-                                close.set(None);
-                            }
-                        }
-                        TouchResponse::CONSUMED
-                    })
+                    rev.set(rev.get() + 1);
+                    close.set(None);
                 }
-            }).collect();
-            // Opaque full-window backdrop (dismiss-on-outside-tap) with the
-            // wrapping emoji grid centered in a rounded elevated card.
+            });
+            // Opaque full-window backdrop (dismiss-on-outside-tap) with the full
+            // emoji picker card centered.
             let backdrop_close = picker;
             ui! {
                 view(style = StyleRules {
@@ -1765,24 +1729,15 @@ fn reaction_picker_overlay(
                     ..Default::default()
                 }) {
                     view(style = StyleRules {
-                        background: Some(col(BG_SIDEBAR)),
-                        padding_top: Some(px(12.0)),
-                        padding_bottom: Some(px(12.0)),
-                        padding_left: Some(px(12.0)),
-                        padding_right: Some(px(12.0)),
+                        background: Some(col(BG_ELEVATED)),
                         border_top_left_radius: Some(px(10.0)),
                         border_top_right_radius: Some(px(10.0)),
                         border_bottom_left_radius: Some(px(10.0)),
                         border_bottom_right_radius: Some(px(10.0)),
+                        overflow: Some(Overflow::Hidden),
                         ..Default::default()
                     }) {
-                        view(style = StyleRules {
-                            flex_direction: Some(FlexDirection::Row),
-                            flex_wrap: Some(FlexWrap::Wrap),
-                            gap: Some(px(4.0)),
-                            width: Some(px(220.0)),
-                            ..Default::default()
-                        }) { cells }
+                        EmojiPicker(on_pick = Some(pick_cb))
                     }
                 }
                 .on_touch(move |ev| {
@@ -9124,12 +9079,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // collapses to zero height when nothing is staged, while the emoji popover
     // is `Position::Absolute` floating just above the composer.
 
-    // The mock emoji set: 12 common glyphs as a wrapped grid. A local `let`
-    // (not a module const) so the popover stays self-contained in `app()`.
-    let EMOJIS: [&str; 12] = [
-        "😀", "😊", "😂", "😍", "😎", "🤔", "👍", "🎉", "🚀", "❤️", "🙌", "🍕",
-    ];
-
     // Staged-attachment strip: the composer's pending images, each a small
     // thumbnail cell with an 'x' that removes just that entry (the send
     // consumes the whole list). `switch` on the staged `Vec<PendingImage>`
@@ -9275,71 +9224,22 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
                 };
             }
-            // One clickable glyph cell per emoji. Built as a `Vec<Element>`
-            // (the `ac_el` idiom) and splatted below; each cell's `on_touch`
-            // gets fresh `Copy` handles (`c`/`eo`) per iteration so it never
-            // moves the outer closure's captured signals.
-            let cells: Vec<Element> = EMOJIS.iter().enumerate().map(|(_, g)| {
-                let glyph = g.to_string();
-                let glyph_close = glyph.clone();
-                let c = composer_e;
-                let eo = emoji_open_sig;
-                ui! {
-                    view(style = StyleRules {
-                        width: Some(px(34.0)),
-                        height: Some(px(34.0)),
-                        align_items: Some(AlignItems::Center),
-                        justify_content: Some(JustifyContent::Center),
-                        border_top_left_radius: Some(px(6.0)),
-                        border_top_right_radius: Some(px(6.0)),
-                        border_bottom_left_radius: Some(px(6.0)),
-                        border_bottom_right_radius: Some(px(6.0)),
-                        ..Default::default()
-                    }) {
-                        text(style = StyleRules {
-                            font_size: Some(px(20.0)),
-                            ..Default::default()
-                        }) { glyph }
-                    }
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            let mut t = c.get();
-                            t.push_str(&glyph_close);
-                            c.set(t);
-                            eo.set(false);
-                        }
-                        TouchResponse::CONSUMED
-                    })
-                }
-            }).collect();
-            // The floating panel: absolutely positioned just above the composer
-            // (mirroring `ac_el`'s `bottom` anchor), dark `BG_SIDEBAR` fill with
-            // a wrapping row of cells inside.
+            let c = composer_e;
+            let eo = emoji_open_sig;
+            let pick_cb: Rc<dyn Fn(String)> = Rc::new(move |glyph: String| {
+                let mut t = c.get();
+                t.push_str(&glyph);
+                c.set(t);
+                eo.set(false);
+            });
             ui! {
                 view(style = StyleRules {
                     position: Some(Position::Absolute),
-                    left: Some(px(16.0)),
                     right: Some(px(16.0)),
                     bottom: Some(px(76.0)),
-                    background: Some(col(BG_SIDEBAR)),
-                    padding_top: Some(px(10.0)),
-                    padding_bottom: Some(px(10.0)),
-                    padding_left: Some(px(10.0)),
-                    padding_right: Some(px(10.0)),
-                    border_top_left_radius: Some(px(8.0)),
-                    border_top_right_radius: Some(px(8.0)),
-                    border_bottom_left_radius: Some(px(8.0)),
-                    border_bottom_right_radius: Some(px(8.0)),
-                    overflow: Some(Overflow::Hidden),
                     ..Default::default()
                 }) {
-                    // The wrapping grid of emoji cells.
-                    view(style = StyleRules {
-                        flex_direction: Some(FlexDirection::Row),
-                        flex_wrap: Some(FlexWrap::Wrap),
-                        gap: Some(px(4.0)),
-                        ..Default::default()
-                    }) { cells }
+                    EmojiPicker(on_pick = Some(pick_cb))
                 }
             }
         },
