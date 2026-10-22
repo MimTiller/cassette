@@ -93,6 +93,19 @@ markdown = { path = "/root/idealyst-native/crates/sdk/client/markdown" }
 # Its default `drop` feature pulls runtime-core/runtime-shared, which resolve
 # to the identical crate instances (same path root as the other SDK deps).
 file-picker = { path = "/root/idealyst-native/crates/sdk/client/file-picker" }
+# The plaintext storage SDK: non-secret client state (the signed-in
+# account's identity and per-user last-view spot, the notification level,
+# the accent color) persists through `platform_storage` — `localStorage`
+# prefixed by the namespace on web, `NSUserDefaults` / SharedPreferences /
+# a JSON file on native — instead of raw web_sys calls that only work on
+# wasm (the native halves used to no-op, signing users out every launch).
+storage = { path = "/root/idealyst-native/crates/sdk/client/storage", features = ["reactive"] }
+# The secure-credentials SDK: the session token on NATIVE targets lives in
+# the platform's real secure store (Keychain / Keystore / OS vault). On web
+# every operation errors — by design, a browser has no secure client store —
+# and the httpOnly session cookie the `login` server fn sets carries the
+# session instead (the credentials README's BFF pattern).
+credentials = { path = "/root/idealyst-native/crates/sdk/client/credentials" }
 
 # No backend deps: `register_scene_extensions` is generic over the scene
 # `Host` (this scaffold registers no third-party SDKs), so the app crate

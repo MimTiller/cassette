@@ -84,6 +84,11 @@ pub struct ChangeUsernameResult {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct ChangePasswordResult {}
 
+/// The unit result of a successful [`logout`] (the server-side half clears
+/// the session cookie; the wire result just confirms it did).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct LogoutResult {}
+
 // ── service ──────────────────────────────────────────────────────────────────
 //
 // The `AuthService` + its two `impl` blocks are server-only: they take the
@@ -215,9 +220,6 @@ impl AuthService {
 /// is rejected with a clear error.
 #[server]
 pub async fn signup(input: SignupInput) -> Result<SignupResult, ServerError> {
-    // TEMP-TEST-SLOWDOWN: widen the client busy window so the in-flight
-    // button state is observable in live UI tests. REVERT BEFORE COMMIT.
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     let db = db_from_state()?;
     AuthService::new(db)
         .signup(&input.username, &input.password)
@@ -405,13 +407,23 @@ impl AuthService {
 /// clears the account's failure log.
 #[server]
 pub async fn login(input: LoginInput) -> Result<LoginResult, ServerError> {
-    // TEMP-TEST-SLOWDOWN: widen the client busy window so the in-flight
-    // button state is observable in live UI tests. REVERT BEFORE COMMIT.
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     let db = db_from_state()?;
-    AuthService::new(db)
+    let result = AuthService::new(db)
         .login(&input.username, &input.password)
-        .map_err(ServerError::failed)
+        .map_err(ServerError::failed)?;
+    // Web auth rides an httpOnly session cookie (the BFF pattern from the
+    // `credentials` SDK's README): the browser stores and replays it — on
+    // every request AND on the WebSocket upgrade handshake — while JS can
+    // never read it, so the session token never sits in client-side storage
+    // anywhere. `set_cookie` defaults to HttpOnly/Secure/SameSite=Lax.
+    server::set_cookie(server::Cookie::new("session", result.token.clone()));
+    Ok(result)
+}
+
+#[server]
+pub async fn logout() -> Result<LogoutResult, ServerError> {
+    server::set_cookie(server::clear_cookie("session"));
+    Ok(LogoutResult {})
 }
 
 /// Rename the signed-in account's handle. The new handle must be globally

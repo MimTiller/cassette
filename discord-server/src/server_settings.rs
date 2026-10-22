@@ -244,12 +244,22 @@ const PRESENCE_IDLE_SECS: u64 = 30;
 pub async fn message_gateway(
     mut ch: server::Socket<WsClientMsg, WsServerMsg>,
     token: String,
+    cookies: server::Cookies,
 ) -> Result<(), ServerError> {
     use crate::realtime::{announce_presence, history_for, hub, post_channel_message, server_audience_for_channel};
 
     let db = db_from_state()?;
-    let user_id = crate::session::verify_token(&token)
-        .ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    // The credential: the connect-URL wire arg (native clients, whose bearer
+    // comes from the platform keystore) OR the httpOnly `session` cookie the
+    // browser replays on the upgrade handshake — the web path, where JS never
+    // sees the token. Both are HMAC-verified; a client-supplied user id is
+    // never trusted.
+    let cookie_user =
+        cookies.get("session").and_then(|c| crate::session::verify_token(c));
+    let user_id =
+        crate::session::verify_token(&token).or(cookie_user);
+    let user_id =
+        user_id.ok_or_else(|| ServerError::failed("unauthenticated"))?;
 
     let hub = hub();
     let (conn_id, mut events) = hub.register(user_id);

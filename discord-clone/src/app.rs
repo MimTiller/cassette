@@ -3039,6 +3039,11 @@ fn user_panel(
                         // note so this (a real logout) shows a clean form — no
                         // spurious "session expired".
                         crate::auth::clear_session();
+                        // Ask the backend to clear the httpOnly session cookie
+                        // too — both halves are needed: storage keys gone AND
+                        // cookie gone, or a reload would replay the dead
+                        // session.
+                        crate::auth::request_logout();
                         *SESSION_NOTE
                             .lock()
                             .unwrap_or_else(|p| p.into_inner()) = None;
@@ -3821,8 +3826,12 @@ pub fn app() -> Element {
     // to be stale, the first authenticated backend call fails and the app
     // shell routes the failure back here (see `live_servers` fetch), clearing
     // the saved session and showing "session expired" on the login screen.
-    let restored = matches!(crate::auth::load_session(), Some((token, user_id, _, _))
-        if !token.is_empty() && user_id != 0);
+    let restored = matches!(crate::auth::load_session(), Some((_, user_id, _, _))
+        if user_id != 0);
+    // On web the restored token slot is intentionally EMPTY — the httpOnly
+    // session cookie the browser replays authenticates every backend call
+    // (and the WS upgrade). Identity keys alone decide the restore; a dead
+    // cookie means the first authed call fails and routes back here.
     if restored {
         if let Some((token, user_id, username, avatar)) = crate::auth::load_session() {
             crate::auth::CURRENT_USER_ID
