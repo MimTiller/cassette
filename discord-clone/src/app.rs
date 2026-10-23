@@ -247,7 +247,7 @@ pub(crate) fn stage_attachment(
 /// used: that never took effect in the live app (the node rendered 0x0).
 fn attachment_row(atts: &[discord_server::server_settings::MessageAttachment]) -> Element {
     let cells: Vec<Element> = atts.iter().map(|a| {
-        let data = a.data.clone();
+        let data = crate::auth::media_url(a.url.clone());
         let name = a.filename.clone();
         ui! {
             image(
@@ -974,6 +974,7 @@ pub(crate) fn message_row(
     // else the pre-existing colored initial circle. Mock identities are never
     // registered, so guest/demo rows render exactly as before.
     let avatar_chip = if let Some(url) = crate::auth::avatar_for(author) {
+        let url = crate::auth::media_url(url.clone());
         ui! {
             image(
                 src = url,
@@ -2909,7 +2910,7 @@ fn user_panel(
                         ..Default::default()
                     }) {
                         image(
-                            src = url,
+                            src = crate::auth::media_url(url.clone()),
                             alt = "Your avatar",
                             style = StyleRules {
                                 width: Some(px(32.0)),
@@ -4307,7 +4308,7 @@ fn live_member_panel(
                 // keep the plain dot-led row (the pre-existing look).
                 if let Some(avatar) = &member_avatar {
                     image(
-                        src = avatar.clone(),
+                        src = crate::auth::media_url(avatar.clone()),
                         alt = format!("{} avatar", member.username),
                         style = StyleRules {
                             width: Some(px(22.0)),
@@ -9363,7 +9364,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         gap: Some(px(6.0)),
                         ..Default::default()
                     }) {
-                        crate::profile_settings::attachment_thumbnail(signal(url.clone()).into(), filename.clone(), 56.0)
+                        crate::profile_settings::attachment_thumbnail(signal(crate::auth::media_url(url.clone())).into(), filename.clone(), 56.0)
                         view(style = StyleRules {
                             width: Some(px(16.0)),
                             height: Some(px(16.0)),

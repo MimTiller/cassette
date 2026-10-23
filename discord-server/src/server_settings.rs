@@ -70,13 +70,15 @@ pub struct AttachmentInput {
 }
 
 /// The persisted form of an image attachment (`id` = `message_attachments.id`),
-/// riding on history/live `Message` frames.
+/// riding on history/live `Message` frames. `url` is a `/media/<sha>.<ext>` path
+/// (the bytes live on disk); a legacy inline `data:` URL until the one-time
+/// `media::migrate_existing` pass converts it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MessageAttachment {
     pub id: i64,
     pub filename: String,
     pub mime: String,
-    pub data: String,
+    pub url: String,
 }
 
 /// Inbound frames the client sends.
@@ -126,7 +128,7 @@ pub enum WsServerMsg {
         channel_id: i64,
         author_id: i64,
         author_username: String,
-        /// The author's avatar (a `data:image/…;base64,` URL) at post time,
+        /// The author's avatar (a `/media/…` path) at post time,
         /// `None` = default initial circle. Lets clients render the author's
         /// avatar without a per-message user lookup.
         #[serde(default)]
@@ -383,7 +385,7 @@ pub async fn message_gateway(
                                         id: a.id,
                                         filename: a.filename,
                                         mime: a.mime,
-                                        data: a.data,
+                                        url: a.url,
                                     })
                                     .collect(),
                                 })
@@ -518,8 +520,23 @@ impl ServerSettings {
             if url.trim().is_empty() {
                 return Err("icon url must not be empty (pass null to clear)".into());
             }
+            // Same posture as avatars: the bytes move to the media store, the
+            // DB keeps the `/media/…` path. Server icons use the AVATAR cap.
+            let (mime, bytes) = match crate::media::decode_data_image_url(url) {
+                Some(p) => p,
+                None => return Err("icon must be a data:image/…;base64, URL".into()),
+            };
+            match crate::media::store(bytes.as_slice(), &mime, crate::auth::AVATAR_MAX_BYTES) {
+                Err(e) => return Err(e),
+                Ok(path) => {
+                    self.db
+                        .set_server_icon(sid, Some(&path))
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+        } else {
+            self.db.set_server_icon(sid, None).map_err(|e| e.to_string())?;
         }
-        self.db.set_server_icon(sid, icon).map_err(|e| e.to_string())?;
         let (_id, name, owner_id, icon_url) = self
             .db
             .server_by_id(server_id)
@@ -1796,15 +1813,15 @@ mod tests {
     fn owner_can_set_icon() {
         let (_dir, db) = setup_db();
         let svc = ServerSettings::new(db);
-        let res = svc.set_icon(1, 1, Some("https://cdn.example.com/icon.png")).unwrap();
-        assert_eq!(res.icon_url.as_deref(), Some("https://cdn.example.com/icon.png"));
+        let res = svc.set_icon(1, 1, Some("data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAADQAQCdASoIAAgAAgA0JaACdLoB+AADsAD+8FMf/yz5/DZ1Of/Cr43IWFAAAA==")).unwrap();
+        assert!(res.icon_url.is_some() && res.icon_url.expect("path").starts_with("/media/"), "icon stored as media path");
     }
 
     #[test]
     fn owner_can_clear_icon() {
         let (_dir, db) = setup_db();
         let svc = ServerSettings::new(db.clone());
-        svc.set_icon(1, 1, Some("https://cdn.example.com/icon.png")).unwrap();
+        svc.set_icon(1, 1, Some("data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAADQAQCdASoIAAgAAgA0JaACdLoB+AADsAD+8FMf/yz5/DZ1Of/Cr43IWFAAAA==")).unwrap();
         let res = svc.set_icon(1, 1, None).unwrap();
         assert!(res.icon_url.is_none());
     }

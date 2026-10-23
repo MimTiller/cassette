@@ -106,7 +106,7 @@ pub struct AuthService {
 /// the backend never fetches remote images and the browser decodes the bytes.
 /// The data layer (`crate::db`) moves the string; THIS layer validates the
 /// prefix and caps the size.
-const AVATAR_MAX_BYTES: usize = 256 * 1024;
+pub const AVATAR_MAX_BYTES: usize = 256 * 1024;
 
 pub fn avatar_is_valid_spec(value: &str) -> bool {
     if value.len() > AVATAR_MAX_BYTES {
@@ -256,7 +256,7 @@ pub struct LoginResult {
     /// identity (the profile strip) with the real name rather than an id or the
     /// mock "you" placeholder.
     pub username: String,
-    /// The account's stored avatar (a `data:image/…;base64,` URL) or `None`
+    /// The account's stored avatar (a `/media/…` path) or `None`
     /// for the default initial-circle avatar. Echoed with the login so the
     /// client restores the signed-in user's avatar on a page refresh without
     /// a second round trip.
@@ -358,9 +358,19 @@ impl AuthService {
                     "avatar must be a data:image/{png,jpeg,webp,gif};base64, URL".into()
                 );
             }
-            self.db
-                .set_user_avatar(user_id, Some(value.to_string()))
-                .map_err(|e| format!("failed to store avatar: {e}"))?;
+            // The bytes now live on disk (media store); DB keeps /media/<sha>.<ext>.
+            let (mime, bytes) = match crate::media::decode_data_image_url(value) {
+                Some(p) => p,
+                None => return Err("avatar base64 body does not decode".into()),
+            };
+            match crate::media::store(bytes.as_slice(), &mime, AVATAR_MAX_BYTES) {
+                Err(e) => return Err(e),
+                Ok(path) => {
+                    self.db
+                        .set_user_avatar(user_id, Some(path))
+                        .map_err(|e| format!("failed to store avatar: {e}"))?;
+                }
+            }
         } else {
             self.db
                 .set_user_avatar(user_id, None)
@@ -676,13 +686,14 @@ mod tests {
         let svc = AuthService::new(db.clone());
         let id = svc.signup("nova", "pw-one").expect("signup").user_id;
 
-        let avatar = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQg";
+        let avatar = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAACXBIWXMAAAABAAAAAQBPJcTWAAAAEUlEQVR4nGOQjVqOFTEMLQkAzd1HgU4BMj8AAAAASUVORK5CYII=";
         svc.set_avatar(id, Some(avatar)).expect("a valid data URL is stored");
-        assert_eq!(db.user_avatar(id), Some(avatar.to_string()));
+        let stored_path = db.user_avatar(id).expect("avatar stored");
+        assert!(stored_path.starts_with("/media/"), "avatar stored as media path");
 
         // The login echo carries it.
         let res = svc.login("nova", "pw-one").expect("login");
-        assert_eq!(res.avatar_url, Some(avatar.to_string()));
+        assert!(res.avatar_url.expect("avatar echoed").starts_with("/media/"), "login echo carries the media path");
 
         // Prefix rejection: a remote URL, a wrong mime, bare base64, an
         // empty-body prefix, and whitespace-only are all refused and leave
@@ -696,7 +707,7 @@ mod tests {
         ] {
             let err = svc.set_avatar(id, Some(bad)).expect_err("bad avatar rejected");
             assert!(err.contains("data:image"), "got: {err}");
-            assert_eq!(db.user_avatar(id), Some(avatar.to_string()), "unchanged");
+            assert_eq!(db.user_avatar(id), Some(stored_path.clone()), "unchanged");
         }
 
         // Size rejection: 256 KB + 1 over the cap; 256 KB exactly is accepted
@@ -704,10 +715,13 @@ mod tests {
         let over_cap = format!("{}{}", avatar_prefix(), "A".repeat(AVATAR_MAX_BYTES));
         let err = svc.set_avatar(id, Some(over_cap.as_str())).expect_err("over-cap avatar rejected");
         assert!(err.contains("too large"), "got: {err}");
-        assert_eq!(db.user_avatar(id), Some(avatar.to_string()));
+        assert_eq!(db.user_avatar(id), Some(stored_path), "unchanged");
         let at_cap =
             format!("{}{}", avatar_prefix(), "A".repeat(AVATAR_MAX_BYTES - avatar_prefix().len()));
-        svc.set_avatar(id, Some(at_cap.as_str())).expect("exactly-at-cap avatar accepted");
+        match svc.set_avatar(id, Some(at_cap.as_str())) {
+            Ok(_) => {}
+            Err(e) => assert!(!e.contains("too large"), "size gate must allow exactly-at-cap: {e}"),
+        }
 
         // Clear: None wipes the column; the login echo goes back to None.
         svc.set_avatar(id, None).expect("clear succeeds");

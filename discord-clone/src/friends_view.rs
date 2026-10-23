@@ -169,7 +169,7 @@ fn friend_avatar_chip(name: &str, avatar: Option<String>) -> Element {
     if let Some(url) = registered_avatar(name) {
         ui! {
             image(
-                src = url.clone(),
+                src = crate::auth::media_url(url.clone()),
                 alt = format!("{} avatar", name),
                 style = StyleRules {
                     width: Some(px(34.0)),
@@ -190,7 +190,7 @@ fn friend_avatar_chip(name: &str, avatar: Option<String>) -> Element {
         if mountable_avatar_url(url.as_str()) {
             ui! {
                 image(
-                    src = url.clone(),
+                    src = crate::auth::media_url(url.clone()),
                     alt = format!("{} avatar", name),
                     style = StyleRules {
                         width: Some(px(34.0)),

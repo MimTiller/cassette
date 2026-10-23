@@ -70,7 +70,7 @@ pub struct StartDmInput {
 }
 
 /// One member of a DM channel, as returned by [`start_dm`] / [`list_dms`] —
-/// including their avatar (a `data:image/…;base64,` URL or `None`), so the
+/// including their avatar (a `/media/…` path or `None`), so the
 /// DM rail can show the other participant's uploaded avatar.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct DmParticipant {
@@ -115,7 +115,7 @@ pub struct DmMessage {
     pub channel_id: i64,
     pub author_id: i64,
     pub author_username: String,
-    /// The author's avatar URL (a `data:image/…;base64,` URL) or `None`
+    /// The author's avatar (a `/media/…` path) or `None`
     /// = default initial circle, so a DM client can render the author's
     /// uploaded avatar.
     #[serde(default)]

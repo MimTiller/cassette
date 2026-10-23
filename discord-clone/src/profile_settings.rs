@@ -231,7 +231,7 @@ pub fn attachment_thumbnail(src: runtime_core::Reactive<String>, filename: Strin
             ..Default::default()
         }) {
             image(
-                src = src,
+                src = move || src.get().clone(),
                 alt = format!("attachment: {filename}"),
                 style = StyleRules {
                     width: Some(px(cell)),
@@ -432,7 +432,7 @@ pub fn profile_settings() -> Element {
             // non-Copy is captured across the `when` boundary.
             if !avatar_url.get().is_empty() {
                 image(
-                    src = move || avatar_url.get().clone(),
+                    src = move || crate::auth::media_url(avatar_url.get().clone()),
                     alt = "Your avatar",
                     style = StyleRules {
                         width: Some(px(72.0)),

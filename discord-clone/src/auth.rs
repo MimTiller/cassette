@@ -288,6 +288,17 @@ pub fn configure_server() {
     );
 }
 
+/// Turn a backend media path (`/media/<sha>.<ext>`, what the DB and wire frames
+/// carry) into the ABSOLUTE URL `image()` accepts: relative paths are rejected
+/// on every backend, so the base URL `configure_server` installed is prefixed.
+/// Anything else (`data:` previews, `http(s)://` URLs) passes through untouched.
+pub fn media_url(value: String) -> String {
+    match server::base_url() {
+        Some(base) if value.starts_with("/media/") => format!("{}{}", base.trim_end_matches('/'), value),
+        _ => value,
+    }
+}
+
 // --- persisted session ------------------------------------------------------
 //
 // The WASM module reloads its process-wide statics from scratch on every page

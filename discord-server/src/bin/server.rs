@@ -27,6 +27,17 @@ use std::path::PathBuf;
 use axum::Router;
 use tower_http::services::ServeDir;
 
+use axum::extract::Path;
+use axum::response::Response;
+use axum::routing::get;
+
+/// GET /media/{name}: serve ONLY content-addressed names (see
+/// [`discord_server::media::http_response`] — anything else, including
+/// `..`, is a 404 without touching the filesystem).
+async fn media_route(Path(name): Path<String>) -> Response {
+    discord_server::media::http_response(discord_server::media::media_dir(), &name)
+}
+
 #[tokio::main]
 async fn main() {
     // Open (or create + migrate) the SQLite database.
@@ -53,11 +64,24 @@ async fn main() {
     discord_server::session::init_persistent_secret(std::path::Path::new(&secret_path))
         .unwrap_or_else(|e| panic!("failed to load/create the session secret at {secret_path:?}: {e}"));
 
+    // One-time, idempotent legacy pass: convert inline `data:` values in
+    // users.avatar_url, servers.icon_url and message_attachments.url into
+    // media files + paths (decoded bytes AS-IS, no validation; a base64
+    // body that fails to decode is left in place and counted).
+    let (converted, unchanged) = discord_server::media::migrate_existing(&db);
+    if converted > 0 || unchanged > 0 {
+        println!(
+            "media legacy pass: converted {converted} inline image values to media files, left {unchanged} unchanged"
+        );
+    }
+
     // Install the shared state the `#[server]` fns read via `use_state::<Db>()`.
     server::install_state(db);
 
     // Compose the router: the API, plus the built UI when `WEB_DIST` is set.
     let mut app: Router = server::router();
+    // Content-addressed image bytes live on disk; serve them under /media/*.
+    app = app.route("/media/*name", get(media_route));
     if let Some(dist) = std::env::var_os("WEB_DIST").map(PathBuf::from) {
         let pkg_dir = dist.join("pkg");
         if !pkg_dir.exists() {

@@ -425,9 +425,9 @@ impl Db {
     // ── avatars ────────────────────────────────────────────────────────────
     //
     // The `users.avatar_url` column (declared in `0001_users.sql`: "the remote
-    // image (or null for the default avatar)") stores a small image as a
-    // `data:image/…;base64,` URL; the app layer validates the prefix and size
-    // before persisting, so the data layer only moves strings.
+    // image (or null for the default avatar)") stores a `/media/…` path:
+    // the app layer validates the image and moves its bytes into the media
+    // store before persisting, so the data layer only moves strings.
 
     /// The user's stored avatar URL (a `data:image/…` URL), or `None` for
     /// "no avatar" (the NULL column) or an unknown id.
@@ -539,8 +539,8 @@ impl Db {
     /// Insert a chat message AND its image attachments in ONE SQLite
     /// transaction, so a message never exists without its attachments (and
     /// vice versa) if the process dies mid-post. `attachments` is a list of
-    /// `(filename, mime, data)` triples, `data` inline as a
-    /// `data:image/…;base64,` URL (migration `0015_message_attachments.sql`);
+    /// `(filename, mime, url)` triples, `url` a `/media/…` path (column renamed
+    /// from `data` by migration `0018_attachment_media_paths.sql`);
     /// attachment rows share the message's `created_at`. Returns
     /// `(message_id, attachment_ids)` in input order.
     pub fn insert_message_with_attachments(
@@ -563,7 +563,7 @@ impl Db {
         let mut attachment_ids: Vec<i64> = Vec::new();
         for (filename, mime, data) in attachments {
             tx.execute(
-                "INSERT INTO message_attachments (message_id, filename, mime, data, created_at)
+                "INSERT INTO message_attachments (message_id, filename, mime, url, created_at)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
                 rusqlite::params![message_id, filename, mime, data, created_at],
             )?;
@@ -779,7 +779,7 @@ impl Db {
             return Vec::new();
         };
         let mut stmt = match c.prepare(
-            "SELECT id, filename, mime, data FROM message_attachments WHERE message_id = ?1 ORDER BY id",
+            "SELECT id, filename, mime, url FROM message_attachments WHERE message_id = ?1 ORDER BY id",
         ) {
             Ok(s) => s,
             Err(_) => return Vec::new(),
@@ -789,7 +789,7 @@ impl Db {
                 id: r.get(0)?,
                 filename: r.get(1)?,
                 mime: r.get(2)?,
-                data: r.get(3)?,
+                url: r.get(3)?,
             })
         }) {
             Ok(rows) => rows,
@@ -2198,8 +2198,10 @@ pub struct Attachment {
     pub id: i64,
     pub filename: String,
     pub mime: String,
-    /// The image bytes inline as a `data:image/…;base64,` URL.
-    pub data: String,
+    /// The `url` column: either a legacy inline `data:image/…;base64,` URL
+    /// (pre-media migration) or a `/media/<sha>.<ext>` path served by the
+    /// backend.
+    pub url: String,
 }
 
 /// The `@mention` token grammar, for messages: `@` followed by a run of ASCII

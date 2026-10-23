@@ -61,6 +61,8 @@ pub mod blocks;
 #[cfg(feature = "server")]
 pub mod db;
 #[cfg(feature = "server")]
+pub mod media;
+#[cfg(feature = "server")]
 pub mod realtime;
 #[cfg(feature = "server")]
 pub mod rate_limit;

@@ -54,6 +54,8 @@ server = [
     "dep:sha2",
     "dep:hmac",
     "dep:rand",
+    "dep:image",
+    "dep:base64",
 ]
 sidecar = ["dep:dev-server"]
 
@@ -105,6 +107,12 @@ futures-util = { version = "0.3.32", optional = true }
 sha2 = { version = "0.10.9", optional = true }
 hmac = { version = "0.12.1", optional = true }
 rand = { version = "0.8.6", optional = true }
+
+# Server-only: the media store validates uploads by decoding them — the `image`
+# crate (four formats only; default features off so no avif/tiff/rayon bloat
+# lands in the server binary) and `base64` for the client's `data:` URLs.
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"], optional = true }
+base64 = { version = "0.22.1", optional = true }
 
 # Pin the wasm-bindgen family to exactly what the installed `wasm-bindgen-cli`
 # (0.2.122, matching the parent repo's lockfile) produces. `idealyst build

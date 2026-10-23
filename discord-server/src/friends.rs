@@ -69,7 +69,7 @@ fn now_ms() -> i64 {
 
 /// One user in a friendship group, as returned by [`list_friends`] and the
 /// accept / decline / remove fns — including their avatar (a
-/// `data:image/…;base64,` URL or `None`), so the friends list can render the
+/// `/media/…` path or `None`), so the friends list can render the
 /// other participant's uploaded avatar.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct FriendUser {

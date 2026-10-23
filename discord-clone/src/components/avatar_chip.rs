@@ -25,6 +25,11 @@ use runtime_core::{
 /// a corrupt-stream body decodes fine but paints as a broken image, which is
 /// what leaked alt text onto friend/DM rows).
 pub fn mountable_avatar_url(url: &str) -> bool {
+    // A backend media path (post-migration posture) mounts once absolutized
+    // by crate::auth::media_url at the render site.
+    if url.starts_with("/media/") {
+        return true
+    }
     let scheme_ok = url.starts_with("data:")
         || url.starts_with("http://")
         || url.starts_with("https://");
@@ -121,7 +126,7 @@ pub fn avatar_chip(name: &str, tint: &str, size: f32, radius: f32) -> Element {
                 ..Default::default()
             }) {
                 image(
-                    src = url.clone(),
+                    src = crate::auth::media_url(url.clone()),
                     alt = format!("{} avatar", name),
                     style = StyleRules {
                         width: Some(px(size)),

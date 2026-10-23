@@ -287,6 +287,19 @@ fn validate_attachment(filename: &str, mime: &str, data: &str) -> Result<(), Str
     Ok(())
 }
 
+/// Validate, decode and store one attachment's bytes in the media store,
+/// returning the `/media/<sha>.<ext>` path the DB + frame carry. `validate_attachment`
+/// already checked the mime/prefix/size bound; here the base64 must actually
+/// decode, the bytes must pass the media layer's magic-byte + decode-under-
+/// limits validation, and the file is written content-addressed.
+fn media_store_attachment(data: &str, mime: &str) -> Result<String, String> {
+    let (_, bytes) = match crate::media::decode_data_image_url(data) {
+        Some(p) => p,
+        None => return Err("attachment base64 body does not decode".into()),
+    };
+    crate::media::store(bytes.as_slice(), mime, MAX_ATTACHMENT_BYTES)
+}
+
 /// Validate, persist and fan out one channel message. The audience is every
 /// member of the channel's server (including the sender's own sockets, which is
 /// how the sender receives its echo).
@@ -336,10 +349,13 @@ pub fn post_channel_message(
         return Err("you are timed out and cannot post messages".into());
     }
     let created_at = now_millis();
-    let attachment_rows = attachments
+    // Move every attachment's bytes into the media store only now, after the
+    // sender is authorized, and before touching the DB: the rows (and the
+    // broadcast frame) carry the `/media/…` path, never image bytes.
+    let media_rows = attachments
         .into_iter()
-        .map(|a| (a.filename, a.mime, a.data))
-        .collect::<Vec<(String, String, String)>>();
+        .map(|a| media_store_attachment(&a.data, &a.mime).map(|url| (a.filename, a.mime, url)))
+        .collect::<Result<Vec<(String, String, String)>, String>>()?;
     let (message_id, attachment_ids) = db
         .insert_message_with_attachments(
             channel_id,
@@ -347,7 +363,7 @@ pub fn post_channel_message(
             content,
             created_at,
             reply_to_message_id,
-            &attachment_rows,
+            &media_rows,
         )
         .map_err(|e| e.to_string())?;
     let mentioned_user_ids = resolve_mentions(db, server_id, content);
@@ -365,12 +381,12 @@ pub fn post_channel_message(
     // sent rows so the frame carries the full persisted attachment record.
     let wire_attachments = attachment_ids
         .into_iter()
-        .zip(attachment_rows)
-        .map(|(id, (filename, mime, data))| crate::server_settings::MessageAttachment {
+        .zip(media_rows)
+        .map(|(id, (filename, mime, url))| crate::server_settings::MessageAttachment {
             id,
             filename,
             mime,
-            data,
+            url,
         })
         .collect();
     hub().publish(
@@ -693,7 +709,7 @@ mod tests {
     #[test]
     fn attachment_only_post_with_one_image_lands_in_history() {
         let (_d, db) = setup();
-        let png = "data:image/png;base64,iVBORw0KGgo=";
+        let png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAACXBIWXMAAAABAAAAAQBPJcTWAAAAEUlEQVR4nGOQjVqOFTEMLQkAzd1HgU4BMj8AAAAASUVORK5CYII=";
         let att = crate::server_settings::AttachmentInput {
             filename: "dot.png".into(),
             mime: "image/png".into(),
@@ -708,7 +724,7 @@ mod tests {
         let a = &msgs[0].attachments[0];
         assert_eq!(a.filename, "dot.png");
         assert_eq!(a.mime, "image/png");
-        assert_eq!(a.data, png);
+        assert!(a.url.starts_with("/media/"), "attachment comes back pathified");
         assert!(a.id > 0, "the persisted attachment id rides the history row");
     }
 
@@ -718,7 +734,7 @@ mod tests {
         let good = crate::server_settings::AttachmentInput {
             filename: "dot.png".into(),
             mime: "image/png".into(),
-            data: "data:image/png;base64,iVBORw0KGgo=".into(),
+            data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAACXBIWXMAAAABAAAAAQBPJcTWAAAAEUlEQVR4nGOQjVqOFTEMLQkAzd1HgU4BMj8AAAAASUVORK5CYII=".into(),
         };
         // 5 attachments on one message: rejected (max 4), nothing persisted.
         let five = vec![good.clone(), good.clone(), good.clone(), good.clone(), good.clone()];

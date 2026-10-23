@@ -313,7 +313,7 @@ fn live_dm_row(
     let avatar_chip = if let Some(url) = &avatar_img {
         ui! {
             image(
-                src = url.clone(),
+                src = crate::auth::media_url(url.clone()),
                 alt = format!("{} avatar", name),
                 style = StyleRules {
                     width: Some(px(34.0)),
