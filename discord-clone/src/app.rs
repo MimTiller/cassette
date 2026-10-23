@@ -5345,6 +5345,28 @@ fn app_shell(authed: Signal<bool>) -> Element {
         });
     }
 
+    // A `History` request sent while the gateway is still connecting is
+    // dropped (`send` returns false). After a refresh the auto-enter above
+    // usually selects the restored channel before the socket opens, which
+    // left that channel open with an empty pane until it was clicked again.
+    // So each time the socket reaches `Open` (first connect and every
+    // reconnect), ask again for the open channel's history. History frames
+    // are de-duplicated by message id, so a repeat request is harmless. The
+    // channel is read untracked: channel switches send their own request.
+    {
+        let alc = active_live_channel.clone();
+        runtime_core::effect!({
+            if gateway.status() == server::SocketStatus::Open {
+                if let Some(id) = runtime_core::Reactive::from(alc).get_untracked() {
+                    gateway.send(discord_server::server_settings::WsClientMsg::History {
+                        channel_id: id,
+                        before_id: None,
+                    });
+                }
+            }
+        });
+    }
+
     // Realtime gateway: the signed session token authenticates the connect
     // (the backend verifies it). Declared above (before the auto-enter
     // effect) so that effect can send the restored channel's initial
