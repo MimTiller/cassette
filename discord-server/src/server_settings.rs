@@ -956,7 +956,10 @@ impl ServerSettings {
     // a server.
 
     /// Record that `caller_id` has read up to and including `message_id` in
-    /// `channel_id`.
+    /// `channel_id`. A `message_id` of 0 or less means "everything posted so
+    /// far" (the channel's newest message), which a client can send for a
+    /// channel whose messages it has not loaded (Mark As Read in the channel
+    /// menu).
     ///
     /// The caller must be a member of the server that owns the channel. The
     /// write is monotonic (the stored id only ever moves forward), so marking
@@ -981,6 +984,14 @@ impl ServerSettings {
         if self.db.membership_role(server_id, caller_id).is_none() {
             return Err("permission denied: not a member of this server".into());
         }
+        let message_id = if message_id > 0 {
+            message_id
+        } else {
+            match self.db.latest_message_id(channel_id) {
+                Some(id) => id,
+                None => return Ok(()),
+            }
+        };
         self.db
             .mark_channel_read(caller_id, channel_id, message_id, Self::now_millis())
             .map_err(|e| format!("failed to mark channel read: {e}"))
@@ -2091,6 +2102,18 @@ mod tests {
         // Marking the same channel read again with the same id is a no-op that
         // doesn't error and doesn't move the pointer.
         svc.mark_read(1, 1, last).unwrap();
+        assert_eq!(db.last_read_message_id(1, 1), Some(last));
+    }
+
+    #[test]
+    fn mark_read_with_no_id_reads_up_to_the_newest_message() {
+        let (_dir, db) = setup_db_with_channels();
+        let svc = ServerSettings::new(db.clone());
+        // An empty channel: nothing to read, and no error.
+        svc.mark_read(1, 1, 0).unwrap();
+        assert_eq!(db.last_read_message_id(1, 1), None);
+        let last = post_messages(&db, 1, 1, 4);
+        svc.mark_read(1, 1, 0).unwrap();
         assert_eq!(db.last_read_message_id(1, 1), Some(last));
     }
 

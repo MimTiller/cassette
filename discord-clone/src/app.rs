@@ -1600,7 +1600,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let gateway_effects::GatewayEffectsParts { gateway_status, gateway_incoming_effect, mention_reset_effect } = gateway_effects::build(&s);
     let rail::RailParts { rail_style, server_rows, create_server_section, live_section, rail_actions } = rail::build(&s);
     let modals::ModalsParts { join_el, create_el, discover_el, cc_el, rc_el, dc_el, invite_el, ss_el } = modals::build(&s);
-    let user_popups::UserPopupsParts { user_popup_el } = user_popups::build(&s);
+    let user_popups::UserPopupsParts { user_popup_el, chan_menu_catcher_el } = user_popups::build(&s);
     let sidebar::SidebarParts { sidebar } = sidebar::build(&s);
     let messages::MessagesParts { header, slowmode_el, sent_messages, typing_row } = messages::build(&s);
     let composer::ComposerParts { composer_area } = composer::build(&s, slowmode_el);
@@ -1821,6 +1821,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 notif_toast_title,
                 notif_toast_body,
             )
+            chan_menu_catcher_el
             // Profile card / user context menu: last, so it floats above
             // everything else.
             user_popup_el

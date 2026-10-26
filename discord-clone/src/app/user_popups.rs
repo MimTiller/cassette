@@ -100,13 +100,14 @@ fn place(x: f32, y: f32, w: f32, h: f32) -> (f32, f32) {
 
 pub(super) struct UserPopupsParts {
     pub(super) user_popup_el: Element,
+    pub(super) chan_menu_catcher_el: Element,
 }
 
 pub(super) fn build(s: &ShellState) -> UserPopupsParts {
     let ShellState {
         active_live_server, composer, live_ban_confirm, live_dm_active, live_dm_messages,
         live_dm_mode, live_dm_revision, live_dms, live_kick_confirm, live_members, live_timeout_confirm,
-        profile_mode, user_popup, user_profile, ..
+        profile_mode, user_popup, user_profile, live_chan_menu, ..
     } = s.clone();
     let ctx = UserPopupCtx { popup: user_popup, profile: user_profile, server: active_live_server };
     // Open (or start) the DM with a user and show the DM screen.
@@ -155,7 +156,34 @@ pub(super) fn build(s: &ShellState) -> UserPopupsParts {
             }
         },
     );
-    UserPopupsParts { user_popup_el }
+    // The channel menu (`action_menu`) floats without a backdrop; while it
+    // is open this transparent full-window layer under it closes it on any
+    // press elsewhere (a right-click on another channel just closes it).
+    let chan_menu_catcher_el = switch(
+        move || live_chan_menu.get().is_some(),
+        move |open: &bool| {
+            if !*open {
+                return ui! { view(style = StyleRules { width: Some(px(0.0)), height: Some(px(0.0)), ..Default::default() }) {} };
+            }
+            ui! {
+                view(style = StyleRules {
+                    position: Some(Position::Absolute),
+                    left: Some(px(0.0)),
+                    top: Some(px(0.0)),
+                    width: Some(pct(100.0)),
+                    height: Some(pct(100.0)),
+                    ..Default::default()
+                }) {}
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Began {
+                        live_chan_menu.set(None);
+                    }
+                    TouchResponse::CONSUMED
+                })
+            }
+        },
+    );
+    UserPopupsParts { user_popup_el, chan_menu_catcher_el }
 }
 
 const CARD_W: f32 = 300.0;

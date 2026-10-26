@@ -910,6 +910,18 @@ impl Db {
         .flatten()
     }
 
+    /// The newest message id in `channel_id` (`None` for an empty channel).
+    pub fn latest_message_id(&self, channel_id: i64) -> Option<i64> {
+        let c = self.lock().ok()?;
+        c.query_row(
+            "SELECT MAX(id) FROM messages WHERE channel_id = ?1",
+            rusqlite::params![channel_id],
+            |r| r.get::<_, Option<i64>>(0),
+        )
+        .ok()
+        .flatten()
+    }
+
     /// Record that `user_id` has read up to and including message id
     /// `message_id` in `channel_id`. Upserts: a new channel read is created, an
     /// existing one is advanced. The id is monotonic, so this never moves the

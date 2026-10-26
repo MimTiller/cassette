@@ -1058,6 +1058,18 @@ pub(super) fn message_row_with_actions(
             }
         }
         .on_hover(move |on| hovered.set(on))
+        // Right-click anywhere on the message opens its menu (the same one
+        // the hover bar's "more" button opens). Other presses pass through.
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Began
+                && runtime_shared::touch::pointer_button().opens_context_menu()
+            {
+                hovered.set(true);
+                menu_open.set(true);
+                return TouchResponse::CONSUMED;
+            }
+            TouchResponse::IGNORED
+        })
     }
 }
 

@@ -351,6 +351,31 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                         let menu_items: Vec<(String, bool, Rc<dyn Fn()>)> = {
                             let mut items: Vec<(String, bool, Rc<dyn Fn()>)> =
                                 Vec::<(String, bool, Rc<dyn Fn()>)>::new();
+                            // Everyone: mark the whole channel read (message id
+                            // 0 = up to its newest message, so it works for a
+                            // channel whose messages were never loaded) and
+                            // copy its id. The badge clears optimistically.
+                            let unread = live_unread_map.clone();
+                            items.push((
+                                "Mark As Read".to_string(),
+                                false,
+                                Rc::new(move || {
+                                    unread.borrow_mut().insert(cid, (0, 0));
+                                    live_unread_rev.set(live_unread_rev.get() + 1);
+                                    runtime_core::driver::spawn_async(async move {
+                                        let _ = crate::servers::mark_read(cid, 0).await;
+                                    });
+                                }),
+                            ));
+                            items.push((
+                                "Copy Channel ID".to_string(),
+                                false,
+                                Rc::new(move || {
+                                    runtime_core::driver::spawn_async(async move {
+                                        let _ = clipboard::set_text(&cid.to_string()).await;
+                                    });
+                                }),
+                            ));
                             if my_role >= 1 {
                                 items.push((
                                     "Rename".to_string(),
@@ -549,6 +574,15 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                         { actions }
                                     }
                                     .on_touch(move |ev| {
+                                        // Right-click: the channel menu (a
+                                        // secondary press only ever delivers
+                                        // `Began`).
+                                        if ev.phase == TouchPhase::Began
+                                            && runtime_shared::touch::pointer_button().opens_context_menu()
+                                        {
+                                            chan_menu.set(Some(cid));
+                                            return TouchResponse::CONSUMED;
+                                        }
                                         if ev.phase == TouchPhase::Ended {
                                             live_sel.set(Some(cid));
                                             // Persist THIS channel (and its
@@ -597,6 +631,14 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                     }
                                     .bind(row_ref)
                                     .on_hover(move |on| hovered.set(on))
+                                    .on_touch(move |ev| {
+                                        if ev.phase == TouchPhase::Began
+                                            && runtime_shared::touch::pointer_button().opens_context_menu()
+                                        {
+                                            chan_menu.set(Some(cid));
+                                        }
+                                        TouchResponse::CONSUMED
+                                    })
                                 }
                             };
                             row
