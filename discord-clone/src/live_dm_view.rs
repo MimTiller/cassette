@@ -84,7 +84,7 @@ fn current_user_id() -> i64 {
 /// Open the DM with `user_id`, starting it if needed, and select it.
 /// `start_dm` is idempotent (an existing conversation comes back as-is); the
 /// history is then fetched into `msgs` the same way a list-row tap does.
-fn open_dm_with(
+pub(crate) fn open_dm_with(
     user_id: i64,
     live_dms: Signal<Vec<Dm>>,
     active: Signal<Option<i64>>,
@@ -732,6 +732,7 @@ fn live_dm_conversation(
                     crate::app::format_full_when(ts_s),
                     edited_at.is_some(),
                     grouped,
+                    None,
                 ));
                 prev = Some((author.clone(), ts_s));
             }

@@ -11,7 +11,7 @@ pub(super) struct MessagesParts {
 }
 
 pub(super) fn build(s: &ShellState) -> MessagesParts {
-    let ShellState { active_channel, active_live_channel, active_server, gateway, has_more_earlier, is_real_user, live_at_bottom, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_invite_mode, live_messages, live_revision, live_typing, live_typing_rev, load_busy, moderation_mode, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, revision, sent, translate_key, .. } = s.clone();
+    let ShellState { active_channel, active_live_channel, active_live_server, active_server, gateway, has_more_earlier, is_real_user, live_at_bottom, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_invite_mode, live_messages, live_revision, live_typing, live_typing_rev, load_busy, moderation_mode, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, revision, sent, translate_key, user_popup, user_profile, .. } = s.clone();
     // --- main view -------------------------------------------------------
     let header_style = StyleRules {
         padding_top: Some(px(10.0)),
@@ -404,6 +404,11 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                 // buffer is oldest-first): the previous row's author label +
                 // timestamp, for the `same_group` test below.
                 let mut prev: Option<(String, i64)> = None;
+                let popup_ctx = user_popups::UserPopupCtx {
+                    popup: user_popup,
+                    profile: user_profile,
+                    server: active_live_server,
+                };
                 for m in mine.iter() {
                     let (mid, aid, author, body, ts, edited_at, reply_to) = m;
                     let when = format_when(*ts, now);
@@ -483,6 +488,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         pin_visible_k,
                         pin_c,
                         trans_l,
+                        Some(Rc::new(popup_ctx.on_press(*aid))),
                     ));
                     // Image attachments render UNDER the body: the persisted
                     // list the gateway effect stored for this wire id (empty
@@ -553,6 +559,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                     on_pin,
                     None,
                     None,
+                    None,
                 ));
                 // Reaction strip under each mock row, keyed by this row's
                 // rendered-list position (seed messages first, so index `i`).
@@ -599,6 +606,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                     pin_visible_k,
                     translate_key_k,
                     on_pin,
+                    None,
                     None,
                     None,
                 ));

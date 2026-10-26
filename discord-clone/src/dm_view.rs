@@ -454,6 +454,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
                     crate::app::format_full_when(ts),
                     false,
                     grouped,
+                    None,
                 ));
                 prev = Some((m.author, ts));
             }
@@ -479,6 +480,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
                     crate::app::format_full_when(*ts),
                     false,
                     grouped,
+                    None,
                 );
                 // Read receipt: Discord's "seen" double-check is a DM
                 // convention (not a server-channel one), shown on the most

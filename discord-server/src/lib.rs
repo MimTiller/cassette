@@ -57,6 +57,9 @@ pub mod friends;
 // by default; only the DB-backed `BlockService` is gated
 // `#[cfg(feature = "server")]` inside the module.
 pub mod blocks;
+// Not feature-gated (like `friends` above): `get_user_profile` compiles to a
+// client RPC stub; the DB-backed `ProfileService` is server-only.
+pub mod profiles;
 
 #[cfg(feature = "server")]
 pub mod db;

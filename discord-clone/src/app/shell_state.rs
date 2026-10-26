@@ -142,4 +142,6 @@ pub(super) struct ShellState {
     pub(super) join_busy: Signal<bool>,
     pub(super) discover_open: Signal<bool>,
     pub(super) live_collapsed: Signal<Vec<i64>>,
+    pub(super) user_popup: Signal<Option<super::user_popups::UserPopup>>,
+    pub(super) user_profile: Signal<Option<discord_server::profiles::UserProfile>>,
 }

@@ -590,6 +590,11 @@ pub(super) fn link_preview_props(body: &str) -> Option<(String, String)> {
 /// + 40px avatar + 10px gap), with no right margin (a body that wide is
 /// full-width by construction). `same_group` computes the flag at each call
 /// site.
+/// A press handler for a message author's avatar and name (the live channel
+/// passes one that opens the profile card / user menu; DM and demo rows pass
+/// `None`).
+pub(crate) type AuthorPress = Rc<dyn Fn(&TouchEvent) -> TouchResponse>;
+
 pub(crate) fn message_row(
     author: &str,
     color: &str,
@@ -598,6 +603,7 @@ pub(crate) fn message_row(
     full: String,
     edited: bool,
     grouped: bool,
+    on_author: Option<AuthorPress>,
 ) -> Element {
     let row_style = StyleRules {
         padding_top: Some(px(8.0)),
@@ -711,12 +717,24 @@ pub(crate) fn message_row(
     // anti-pattern). `site_name` + `title` are parsed from the URL; the
     // description is a small mock line.
     let link = link_preview_props(body);
+    // With a press handler the avatar and the name open the author's
+    // profile card (click) or user menu (right-click).
+    let (avatar_el, name_el): (Element, Element) = match on_author {
+        Some(press) => {
+            let press2 = press.clone();
+            (
+                ui! { view { { avatar_chip } }.on_touch(move |ev| (press)(ev)) },
+                ui! { view { text(style = author_style) { author.to_string() } }.on_touch(move |ev| (press2)(ev)) },
+            )
+        }
+        None => (avatar_chip, ui! { text(style = author_style) { author.to_string() } }),
+    };
     ui! {
         view(style = row_style) {
-            { avatar_chip }
+            { avatar_el }
             view(style = stack_style) {
                 view(style = meta_style) {
-                    text(style = author_style) { author.to_string() }
+                    { name_el }
                     if author == "miri" { VerifiedBadge() }
                     // The relative "when" label is a real hover target now:
                     // `message_timestamp_tooltip` shows the short label at rest
@@ -919,10 +937,11 @@ pub(super) fn message_row_with_actions(
     // message-action set lives in this one hover-gated surface.
     on_edit: Option<Rc<dyn Fn()>>,
     on_delete: Option<Rc<dyn Fn()>>,
+    on_author: Option<AuthorPress>,
 ) -> Element {
     let hovered = signal(false);
     let menu_open = signal(false);
-    let base = message_row(author, color, body, when, full, edited, grouped);
+    let base = message_row(author, color, body, when, full, edited, grouped, on_author);
 
     // Reply context: author name + a short snippet of the body. `Signal` is
     // `Copy`, so each `move` handler captures its own copy; the `String`s are
@@ -1105,6 +1124,7 @@ pub(super) fn live_edit_row(
     pin_visible: Signal<bool>,
     on_pin: Rc<dyn Fn()>,
     translate_key: Signal<Option<MessageKey>>,
+    on_author: Option<AuthorPress>,
 ) -> Element {
     // Owner-only overflow-menu entries (Edit / Delete) — the same actions the
     // old always-visible inline Edit/Delete buttons did, now living inside the
@@ -1158,6 +1178,7 @@ pub(super) fn live_edit_row(
         on_pin,
         menu_edit,
         menu_delete,
+        on_author,
     );
     if !is_mine {
         return base;

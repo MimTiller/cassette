@@ -139,6 +139,7 @@ use shell_state::ShellState;
 mod gateway_effects;
 mod rail;
 mod modals;
+mod user_popups;
 mod sidebar;
 mod messages;
 mod composer;
@@ -679,6 +680,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // app_shell-owned signal: a per-category signal created inside the
     // sidebar's render would be freed on the next rebuild.
     let live_collapsed: Signal<Vec<i64>> = signal(Vec::new());
+    // The open profile card / user context menu and the profile it shows
+    // (see `user_popups`); the async profile fetch writes here.
+    let user_popup: Signal<Option<user_popups::UserPopup>> = signal(None);
+    let user_profile: Signal<Option<discord_server::profiles::UserProfile>> = signal(None);
     {
         let s = active_server.get();
         if let Some(server) = SERVERS.iter().find(|x| x.id == s) {
@@ -1451,6 +1456,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
 
     // Everything the section builders below read, gathered once.
     let s = ShellState {
+        user_popup: user_popup.clone(),
+        user_profile: user_profile.clone(),
         live_collapsed: live_collapsed.clone(),
         server_rail: server_rail.clone(),
         dynamic_servers: dynamic_servers.clone(),
@@ -1593,6 +1600,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let gateway_effects::GatewayEffectsParts { gateway_status, gateway_incoming_effect, mention_reset_effect } = gateway_effects::build(&s);
     let rail::RailParts { rail_style, server_rows, create_server_section, live_section, rail_actions } = rail::build(&s);
     let modals::ModalsParts { join_el, create_el, discover_el, cc_el, rc_el, dc_el, invite_el, ss_el } = modals::build(&s);
+    let user_popups::UserPopupsParts { user_popup_el } = user_popups::build(&s);
     let sidebar::SidebarParts { sidebar } = sidebar::build(&s);
     let messages::MessagesParts { header, slowmode_el, sent_messages, typing_row } = messages::build(&s);
     let composer::ComposerParts { composer_area } = composer::build(&s, slowmode_el);
@@ -1813,6 +1821,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 notif_toast_title,
                 notif_toast_body,
             )
+            // Profile card / user context menu: last, so it floats above
+            // everything else.
+            user_popup_el
         }
     }
 }
