@@ -66,7 +66,6 @@ use crate::icon_change_confirm::IconChangeConfirm;
 use crate::ban_reason_input::BanReasonInput;
 use crate::delete_account_warning::DeleteAccountWarning;
 
-use crate::user_bio_block::UserBioBlock;
 use crate::audit_log_row::AuditLogRow;
 use crate::blocked_user_row::BlockedUserRow;
 use crate::server_region_selector::ServerRegionSelector;

@@ -35,7 +35,6 @@ use crate::style_helpers::{col, pct, px};
 use crate::category_filter_chips::CategoryFilterChips;
 use crate::server_discovery_card::ServerDiscoveryCard;
 use crate::server_event_card::ServerEventCard;
-use crate::server_stats_card::ServerStatsCard;
 use crate::server_folder_group::ServerFolderGroup;
 use crate::server_template_card::ServerTemplateCard;
 use crate::template_gallery_grid::TemplateGalleryGrid;
