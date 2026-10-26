@@ -816,6 +816,31 @@ impl ServerSettings {
         Ok(())
     }
 
+    /// `caller_id` leaves `server_id`. Any member may leave except the owner,
+    /// who must transfer ownership first (the server would be orphaned).
+    ///
+    /// # Errors
+    /// - `server not found`, `not a member of this server`
+    /// - `the owner can't leave (transfer ownership first)`
+    pub fn leave(&self, caller_id: i64, server_id: i64) -> Result<(), String> {
+        let (_sid, _name, owner_id, _icon_url) = self
+            .db
+            .server_by_id(server_id)
+            .ok_or("server not found")?;
+        if caller_id == owner_id {
+            return Err("the owner can't leave (transfer ownership first)".into());
+        }
+        let removed = self
+            .db
+            .remove_membership(server_id, caller_id)
+            .map_err(|e| format!("failed to leave: {e}"))?;
+        if removed == 0 {
+            return Err("not a member of this server".into());
+        }
+        crate::realtime::announce_membership(&self.db, server_id, caller_id, false);
+        Ok(())
+    }
+
     /// Ban a member from `server_id`: remove them AND bar rejoining. Admin+
     /// (owner or admin) — a ban is more severe than a kick, so it clears a
     /// higher bar than `remove_member` (moderator+). The owner can never be
@@ -1290,6 +1315,16 @@ pub async fn remove_member(input: RemoveMemberInput) -> Result<MemberResult, Ser
     Ok(MemberResult { server_id: input.server_id, user_id: input.user_id, role: String::new() })
 }
 
+/// Leave a server. Any member except the owner may.
+#[server]
+pub async fn leave_server(input: LeaveServerInput) -> Result<(), ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    ServerSettings::new(db)
+        .leave(caller, input.server_id)
+        .map_err(ServerError::failed)
+}
+
 /// Ban a member from a server: remove them AND bar rejoining (invite
 /// redemption or a direct add). Owner or admin may call (a ban clears a
 /// higher bar than a kick). The server owner can't be banned. `reason` is an
@@ -1538,6 +1573,11 @@ pub struct AddMemberInput {
 }
 
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]
+pub struct LeaveServerInput {
+    pub server_id: i64,
+}
+
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 pub struct RemoveMemberInput {
     pub server_id: i64,
     pub user_id: i64,
@@ -1764,6 +1804,18 @@ mod tests {
         drop(c);
 
         (dir, db)
+    }
+
+    #[test]
+    fn a_member_can_leave_but_the_owner_cannot() {
+        let (_dir, db) = setup_db();
+        let svc = ServerSettings::new(db.clone());
+        svc.leave(2, 1).unwrap();
+        assert_eq!(db.membership_role(1, 2), None);
+        assert_eq!(svc.leave(2, 1).unwrap_err(), "not a member of this server");
+        assert_eq!(svc.leave(1, 1).unwrap_err(), "the owner can't leave (transfer ownership first)");
+        assert_eq!(db.membership_role(1, 1).as_deref(), Some("owner"));
+        assert_eq!(svc.leave(3, 99).unwrap_err(), "server not found");
     }
 
     /// On top of `setup_db`, seed two text channels (ids 1 and 2) into server 1

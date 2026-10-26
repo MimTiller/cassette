@@ -109,7 +109,8 @@ pub(super) fn build(s: &ShellState) -> UserPopupsParts {
     let ShellState {
         active_live_server, composer, live_ban_confirm, live_dm_active, live_dm_messages,
         live_dm_mode, live_dm_revision, live_dms, live_kick_confirm, live_members, live_timeout_confirm,
-        profile_mode, user_popup, user_profile, live_chan_menu, blocked_users, live_revision, ..
+        profile_mode, user_popup, user_profile, live_chan_menu, blocked_users, live_revision,
+        server_menu_open, ..
     } = s.clone();
     let ctx = UserPopupCtx {
         popup: user_popup,
@@ -164,11 +165,11 @@ pub(super) fn build(s: &ShellState) -> UserPopupsParts {
             }
         },
     );
-    // The channel menu (`action_menu`) floats without a backdrop; while it
-    // is open this transparent full-window layer under it closes it on any
-    // press elsewhere (a right-click on another channel just closes it).
+    // The channel menu (`action_menu`) and the server dropdown float without
+    // a backdrop; while either is open this transparent full-window layer
+    // under it closes it on any press elsewhere.
     let chan_menu_catcher_el = switch(
-        move || live_chan_menu.get().is_some(),
+        move || live_chan_menu.get().is_some() || server_menu_open.get(),
         move |open: &bool| {
             if !*open {
                 return ui! { view(style = StyleRules { width: Some(px(0.0)), height: Some(px(0.0)), ..Default::default() }) {} };
@@ -185,6 +186,7 @@ pub(super) fn build(s: &ShellState) -> UserPopupsParts {
                 .on_touch(move |ev| {
                     if ev.phase == TouchPhase::Began {
                         live_chan_menu.set(None);
+                        server_menu_open.set(false);
                     }
                     TouchResponse::CONSUMED
                 })

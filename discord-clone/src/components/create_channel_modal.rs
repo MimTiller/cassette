@@ -229,8 +229,11 @@ pub fn CreateChannelModal(
     // reference (`seg_style`, `on_create`) captures only `Copy` signals, so it
     // is itself `Fn` + `Copy` and can be captured by the `move` render closure.
     let body = switch(
-        move || (error.get().clone(), busy.get()),
-        move |(err, _busy): &(String, bool)| {
+        // `kind == "category"` is in the key: a category gets its own title
+        // and no Text/Voice toggle (the server menu's Create Category opens
+        // this modal with that kind preset).
+        move || (error.get().clone(), busy.get(), k.get() == "category"),
+        move |(err, _busy, is_category): &(String, bool, bool)| {
             // Kind segments: each sets `kind`; the active fill reads `kind`
             // reactively (the style closure re-runs on toggle).
             let text_seg = ui! {
@@ -260,6 +263,17 @@ pub fn CreateChannelModal(
             // `if/else` returning `&str` inside `text { … }` is parsed as a
             // structural child, not text content, so it is pre-computed.
             let create_label = if b.get() { "Creating…".to_string() } else { "Create".to_string() };
+            let (title, sub, placeholder) = if *is_category {
+                ("New Category", "Group channels under a heading", "Category name")
+            } else {
+                ("New Channel", "Add a channel to this server", "Channel name")
+            };
+            let kind_row = || -> Element {
+                if *is_category {
+                    return ui! { view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {} };
+                }
+                ui! { view(style = seg_row_style.clone()) { { text_seg } { voice_seg } } }
+            };
             let create_btn = ui! {
                 view(style = create_btn_style.clone(), test_id = "create-channel-create") {
                     text(style = btn_label_style.clone()) { create_label }
@@ -274,19 +288,18 @@ pub fn CreateChannelModal(
             if !err.is_empty() {
                 ui! {
                     view(style = card_style.clone()) {
-                        text(style = title_style.clone()) { "New Channel".to_string() }
-                        text(style = sub_style.clone()) { "Add a channel to this server".to_string() }
-                        text_input(
-                            value = name.clone(),
-                            on_change = on_name_change.clone(),
-                            placeholder = "Channel name",
-                            style = input_style.clone(),
-                            test_id = "create-channel-name-input",
-                        )
-                        view(style = seg_row_style.clone()) {
-                            { text_seg }
-                            { voice_seg }
+                        text(style = title_style.clone()) { title.to_string() }
+                        text(style = sub_style.clone()) { sub.to_string() }
+                        view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) {
+                            text_input(
+                                value = name.clone(),
+                                on_change = on_name_change.clone(),
+                                placeholder = placeholder.to_string(),
+                                style = input_style.clone(),
+                                test_id = "create-channel-name-input",
+                            )
                         }
+                        { kind_row() }
                         text(style = err_style.clone()) { err.clone() }
                         { create_btn }
                     }
@@ -294,19 +307,18 @@ pub fn CreateChannelModal(
             } else {
                 ui! {
                     view(style = card_style.clone()) {
-                        text(style = title_style.clone()) { "New Channel".to_string() }
-                        text(style = sub_style.clone()) { "Add a channel to this server".to_string() }
-                        text_input(
-                            value = name.clone(),
-                            on_change = on_name_change.clone(),
-                            placeholder = "Channel name",
-                            style = input_style.clone(),
-                            test_id = "create-channel-name-input",
-                        )
-                        view(style = seg_row_style.clone()) {
-                            { text_seg }
-                            { voice_seg }
+                        text(style = title_style.clone()) { title.to_string() }
+                        text(style = sub_style.clone()) { sub.to_string() }
+                        view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) {
+                            text_input(
+                                value = name.clone(),
+                                on_change = on_name_change.clone(),
+                                placeholder = placeholder.to_string(),
+                                style = input_style.clone(),
+                                test_id = "create-channel-name-input",
+                            )
                         }
+                        { kind_row() }
                         { create_btn }
                     }
                 }

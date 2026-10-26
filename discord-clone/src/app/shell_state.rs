@@ -146,4 +146,5 @@ pub(super) struct ShellState {
     pub(super) user_profile: Signal<Option<discord_server::profiles::UserProfile>>,
     pub(super) blocked_users: Signal<Vec<crate::blocks::BlockedUser>>,
     pub(super) revealed_blocked: Signal<Vec<i64>>,
+    pub(super) server_menu_open: Signal<bool>,
 }

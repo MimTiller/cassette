@@ -8,7 +8,7 @@ pub(super) struct SidebarParts {
 }
 
 pub(super) fn build(s: &ShellState) -> SidebarParts {
-    let ShellState { active_channel, active_live_channel, active_live_server, active_server, authed, bug_reports_mode, cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, is_real_user, joined_voice, live_at_bottom, live_chan_menu, live_channels, live_collapsed, live_members, live_mention_rev, live_scroll_handle, live_servers, live_unread, live_unread_rev, member_panel_width, muted, notif_mode, profile_mode, rc_busy, rc_cid, rc_err, rc_name, rc_open, shortcuts_mode, sidebar_width, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, user_status, .. } = s.clone();
+    let ShellState { active_channel, active_live_channel, active_live_server, active_server, authed, bug_reports_mode, cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, is_real_user, joined_voice, live_at_bottom, live_chan_menu, live_channels, live_collapsed, live_members, live_mention_rev, live_scroll_handle, live_servers, live_unread, live_unread_rev, member_panel_width, muted, notif_mode, profile_mode, rc_busy, rc_cid, rc_err, rc_name, rc_open, server_menu_open, shortcuts_mode, sidebar_width, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, user_status, .. } = s.clone();
     // --- channel sidebar -------------------------------------------------
     // Width is driven by the `sidebar_width` signal (a thin drag handle on the
     // sidebar's right edge resizes it). A rules *closure* so the width
@@ -47,11 +47,6 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
         font_size: Some(px(16.0)),
         font_weight: Some(FontWeight::SemiBold),
         color: Some(col(TEXT)),
-        ..Default::default()
-    };
-    let chevron_style = StyleRules {
-        font_size: Some(px(11.0)),
-        color: Some(col(TEXT_MUTED)),
         ..Default::default()
     };
     // Category section header: the small uppercase "TEXT CHANNELS" label.
@@ -170,7 +165,6 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
             }
             let sidebar_header_style = sidebar_header_style.clone();
             let sidebar_title_style = sidebar_title_style.clone();
-            let chevron_style = chevron_style.clone();
             let cat_style = cat_style.clone();
             let bug_reports_open = bug_reports_mode.clone();
             let channel = active_channel;
@@ -754,17 +748,77 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                         muted,
                         deafened,
                     );
+                    // The header: the server's name and a chevron; a click
+                    // toggles the server dropdown below it.
+                    let header_name = move || {
+                        let sid = active_live_server.get();
+                        live_servers
+                            .get()
+                            .into_iter()
+                            .find(|s| Some(s.id) == sid)
+                            .map(|s| s.name)
+                            .unwrap_or_default()
+                    };
+                    let server_menu = server_dropdown(
+                        server_menu_open,
+                        active_live_server,
+                        live_servers,
+                        live_members,
+                        live_channels,
+                        active_live_channel,
+                        Rc::new(move || {
+                            invite_expiry.set(0);
+                            invite_created.set(None);
+                            invite_err.set(String::new());
+                            invite_mode.set(true);
+                        }),
+                        Rc::new(move || {
+                            if let Some(active_id) = active_live_server.get() {
+                                if let Some(s) = live_servers.get().into_iter().find(|s| s.id == active_id) {
+                                    ss_name.set(s.name.clone());
+                                    ss_icon.set(s.icon_url.clone().unwrap_or_default());
+                                }
+                            }
+                            ss_owner.set(String::new());
+                            ss_add_user_id.set(String::new());
+                            ss_add_role.set("member".to_string());
+                            ss_busy.set(false);
+                            ss_err.set(String::new());
+                            ss_open.set(true);
+                        }),
+                        Rc::new(move |kind: &str| {
+                            cc_name.set(String::new());
+                            cc_kind.set(kind.to_string());
+                            cc_busy.set(false);
+                            cc_err.set(String::new());
+                            cc_open.set(true);
+                        }),
+                    );
                     ui! {
                         view(style = sidebar_style.clone()) {
-                            view(style = sidebar_header_style.clone()) {
-                                view(style = sidebar_title_style.clone()) {
-                                    text(style = cat_style.clone()) {
-                                        "SERVER".to_string()
-                                    }
-                                    text(style = chevron_style.clone()) {
-                                        "⌃".to_string()
-                                    }
+                            view(style = StyleRules { position: Some(Position::Relative), ..sidebar_header_style.clone() }) {
+                                view(style = StyleRules {
+                                    flex_direction: Some(FlexDirection::Row),
+                                    align_items: Some(AlignItems::Center),
+                                    gap: Some(px(6.0)),
+                                    flex_shrink: Some(runtime_core::Tokenized::Literal(1.0)),
+                                    overflow: Some(runtime_core::Overflow::Hidden),
+                                    ..Default::default()
+                                }, test_id = "server-header") {
+                                    text(style = StyleRules {
+                                        font_size: Some(px(15.0)),
+                                        font_weight: Some(FontWeight::SemiBold),
+                                        color: Some(col(TEXT)),
+                                        ..Default::default()
+                                    }) { move || header_name() }
+                                    icon(CHEVRON_DOWN).color(|| Color::from(TEXT_MUTED)).size(14.0)
                                 }
+                                .on_touch(move |ev| {
+                                    if ev.phase == TouchPhase::Ended {
+                                        server_menu_open.set(!server_menu_open.get());
+                                    }
+                                    TouchResponse::CONSUMED
+                                })
                                 view(style = StyleRules {
                                     flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
                                     ..Default::default()
@@ -772,6 +826,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                 { invite_btn }
                                 { gear_btn }
                                 { add_btn }
+                                { server_menu }
                             }
                             // Channel list fills the available vertical space
                             // (flex_grow:1), pinning the user profile bar to
@@ -1041,4 +1096,130 @@ fn live_category_header(id: i64, name: String, collapsed: Signal<Vec<i64>>) -> E
             TouchResponse::CONSUMED
         })
     }
+}
+
+/// The live server dropdown under the sidebar header (Discord's server
+/// menu): Invite People, Server Settings, Create Channel, Create Category,
+/// and Leave Server (not for the owner; a second click confirms). `invite`,
+/// `settings` and `create` open the existing modals with their per-open
+/// resets; a press anywhere else closes it (the catcher in `user_popups`).
+#[allow(clippy::too_many_arguments)]
+fn server_dropdown(
+    open: Signal<bool>,
+    server: Signal<Option<i64>>,
+    servers: Signal<Vec<crate::servers::ServerSummary>>,
+    members: Signal<Vec<crate::moderation::MemberInfo>>,
+    channels: Signal<Vec<crate::servers::ChannelSummary>>,
+    channel: Signal<Option<i64>>,
+    invite: Rc<dyn Fn()>,
+    settings: Rc<dyn Fn()>,
+    create: Rc<dyn Fn(&str)>,
+) -> Element {
+    let confirm_leave = signal(false);
+    switch(
+        move || (open.get(), confirm_leave.get()),
+        move |(is_open, confirming): &(bool, bool)| {
+            if !*is_open {
+                return ui! { view(style = StyleRules { width: Some(px(0.0)), height: Some(px(0.0)), ..Default::default() }) {} };
+            }
+            let self_id = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+            let my_rank = role_rank(acting_role(&members.get(), self_id));
+            let is_owner = my_rank >= 3;
+            // (label, red, close after, action); `None` is a divider.
+            let mut items: Vec<Option<(String, bool, bool, Rc<dyn Fn()>)>> = Vec::new();
+            items.push(Some(("Invite People".to_string(), false, true, invite.clone())));
+            if my_rank >= 2 {
+                items.push(Some(("Server Settings".to_string(), false, true, settings.clone())));
+            }
+            if my_rank >= 1 {
+                let (c1, c2) = (create.clone(), create.clone());
+                items.push(Some(("Create Channel".to_string(), false, true, Rc::new(move || (c1)("text")))));
+                items.push(Some(("Create Category".to_string(), false, true, Rc::new(move || (c2)("category")))));
+            }
+            if !is_owner {
+                items.push(None);
+                let label = if *confirming { "Click again to leave" } else { "Leave Server" };
+                items.push(Some((label.to_string(), true, *confirming, Rc::new(move || {
+                    if !confirm_leave.get() {
+                        confirm_leave.set(true);
+                        return;
+                    }
+                    confirm_leave.set(false);
+                    let Some(sid) = server.get() else { return };
+                    runtime_core::driver::spawn_async(async move {
+                        let input = discord_server::server_settings::LeaveServerInput { server_id: sid };
+                        if discord_server::server_settings::leave_server(input).await.is_ok() {
+                            server.set(None);
+                            channel.set(None);
+                            channels.set(Vec::new());
+                            if let Ok(list) = crate::servers::list_servers().await {
+                                servers.set(list);
+                            }
+                        }
+                    });
+                }))));
+            }
+            let rows: Vec<Element> = items.into_iter().map(|item| match item {
+                None => ui! {
+                    view(style = StyleRules { height: Some(px(1.0)), margin_top: Some(px(4.0)), margin_bottom: Some(px(4.0)), margin_left: Some(px(8.0)), margin_right: Some(px(8.0)), background: Some(col(BORDER)), ..Default::default() }) {}
+                },
+                Some((label, red, close_after, action)) => {
+                    let hovered = signal(false);
+                    ui! {
+                        view(style = move || StyleRules {
+                            height: Some(px(32.0)),
+                            padding_left: Some(px(8.0)),
+                            padding_right: Some(px(8.0)),
+                            margin_left: Some(px(6.0)),
+                            margin_right: Some(px(6.0)),
+                            flex_direction: Some(FlexDirection::Row),
+                            align_items: Some(AlignItems::Center),
+                            background: Some(col(if hovered.get() { if red { "#da373c" } else { "#4752c4" } } else { "transparent" })),
+                            border_top_left_radius: Some(px(4.0)),
+                            border_top_right_radius: Some(px(4.0)),
+                            border_bottom_left_radius: Some(px(4.0)),
+                            border_bottom_right_radius: Some(px(4.0)),
+                            ..Default::default()
+                        }) {
+                            text(style = move || StyleRules {
+                                font_size: Some(px(14.0)),
+                                font_weight: Some(FontWeight::SemiBold),
+                                color: Some(col(if red && !hovered.get() { "#f23f43" } else { TEXT })),
+                                ..Default::default()
+                            }) { label.clone() }
+                        }
+                        .on_hover(move |on| hovered.set(on))
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                (action)();
+                                if close_after || !red {
+                                    open.set(false);
+                                }
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                    }
+                }
+            }).collect();
+            ui! {
+                view(style = StyleRules {
+                    position: Some(Position::Absolute),
+                    left: Some(px(8.0)),
+                    top: Some(px(50.0)),
+                    width: Some(px(220.0)),
+                    z_index: Some(50),
+                    flex_direction: Some(FlexDirection::Column),
+                    padding_top: Some(px(6.0)),
+                    padding_bottom: Some(px(6.0)),
+                    background: Some(col("#111214")),
+                    border_top_left_radius: Some(px(6.0)),
+                    border_top_right_radius: Some(px(6.0)),
+                    border_bottom_left_radius: Some(px(6.0)),
+                    border_bottom_right_radius: Some(px(6.0)),
+                    ..Default::default()
+                }) { rows }
+                .on_touch(|_| TouchResponse::CONSUMED)
+            }
+        },
+    )
 }

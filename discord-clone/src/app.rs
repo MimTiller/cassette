@@ -681,6 +681,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // to reveal this session (see `crate::blocks`).
     let blocked_users: Signal<Vec<crate::blocks::BlockedUser>> = signal(Vec::new());
     let revealed_blocked: Signal<Vec<i64>> = signal(Vec::new());
+    // The live sidebar header's server dropdown.
+    let server_menu_open: Signal<bool> = signal(false);
     if is_real_user {
         crate::blocks::load(blocked_users, live_revision);
     }
@@ -1458,6 +1460,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let s = ShellState {
         user_popup: user_popup.clone(),
         blocked_users: blocked_users.clone(),
+        server_menu_open: server_menu_open.clone(),
         revealed_blocked: revealed_blocked.clone(),
         user_profile: user_profile.clone(),
         live_collapsed: live_collapsed.clone(),
