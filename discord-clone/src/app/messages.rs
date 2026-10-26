@@ -404,6 +404,11 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                 // buffer is oldest-first): the previous row's author label +
                 // timestamp, for the `same_group` test below.
                 let mut prev: Option<(String, i64)> = None;
+                // Local calendar day of the previous message — a new day gets
+                // a `date_divider` row above the message and breaks any
+                // continuation group (the first row also has `None`, so the
+                // first loaded message gets a divider too).
+                let mut prev_day: Option<i64> = None;
                 let popup_ctx = user_popups::UserPopupCtx {
                     popup: user_popup,
                     profile: user_profile,
@@ -434,6 +439,15 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                     let full = format_full_when(*ts);
                     let is_mine = self_id != 0 && *aid == self_id;
                     let lkey = MessageKey::Live { id: *mid };
+                    // Day divider: when this row's local calendar day differs
+                    // from the previous row's (or there is no previous row —
+                    // the first loaded message), a date-divider row sits
+                    // above it and any continuation group is broken.
+                    let cur_day = local_day_clock(*ts).0;
+                    let new_day = prev_day != Some(cur_day);
+                    if new_day {
+                        rows.push(date_divider(format_day_label(*ts)));
+                    }
                     // Grouped with the row above? (same author, within the
                     // window). Edited messages keep their own header: an
                     // `(edited)` marker on a headerless row would be
@@ -442,7 +456,8 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         .as_ref()
                         .map(|(pa, pts)| same_group(pa, *pts, author.as_str(), *ts))
                         .unwrap_or(false)
-                        && edited_at.is_none();
+                        && edited_at.is_none()
+                        && !new_day;
                     // Feature 5: a row with a `reply_to_message_id` gets the
                     // quoted reference strip rendered above it. The original's
                     // author + body are resolved from the already-loaded buffer
@@ -526,6 +541,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         picker_l,
                     ));
                     prev = Some((author.clone(), *ts));
+                    prev_day = Some(cur_day);
                 }
                 if !hidden_run.is_empty() {
                     rows.push(crate::blocks::hidden_run_row(hidden_run, revealed_blocked, live_revision));

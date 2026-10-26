@@ -91,4 +91,40 @@ pub(crate) fn format_full_when(unix_secs: i64) -> String {
     format!("{weekday}, {month} {d}, {y} at {h12}:{m:02} {suffix}")
 }
 
+/// Discord's date-divider label: the calendar DAY as "October 20, 2026" —
+/// the month name, day number, and full year, no weekday or clock. Built
+/// from the same `local_day_clock` / `civil_ymd_from_day` pair.
+pub(crate) fn format_day_label(unix_secs: i64) -> String {
+    let (day, _, _) = local_day_clock(unix_secs);
+    let (y, mo, d) = civil_ymd_from_day(day);
+    let month = [
+        "January", "February", "March", "April", "May", "June", "July", "August",
+        "September", "October", "November", "December",
+    ][(mo - 1) as usize];
+    format!("{month} {d}, {y}")
+}
+
+#[cfg(test)]
+mod day_label_tests {
+    // Noon-ish UTC instants so the label is TZ-stable for any sane local
+    // offset: these epochs land mid-day in both UTC and US Central.
+    #[test]
+    fn october_20_2026() {
+        assert_eq!(crate::app::time_fmt::format_day_label(1_792_515_600), "October 20, 2026");
+    }
+
+    #[test]
+    fn month_boundary() {
+        // 2026-12-31 07:00 local (noon UTC), so the label is TZ-stable:
+        // Dec -> Jan flips the month name and the year.
+        assert_eq!(crate::app::time_fmt::format_day_label(1_798_722_000), "December 31, 2026");
+    }
+
+    #[test]
+    fn leap_year_edge() {
+        // 2026-02-28 local (2026 is not a leap year).
+        assert_eq!(crate::app::time_fmt::format_day_label(1_772_301_600), "February 28, 2026");
+    }
+}
+
 // --- small reusable rows -----------------------------------------------------

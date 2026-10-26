@@ -205,6 +205,43 @@ pub(super) fn channel_anchor(channel_name: &str) -> Element {
     }
 }
 
+/// Discord's date divider: a 1px line in the border color across the message
+/// column with the calendar day ("October 20, 2026") centered ON the line —
+/// muted ~12px semibold label sitting above the rule, 16px/8px vertical
+/// margins, and the same 16px side padding as the message rows so the rule
+/// spans exactly the message area. Pushed before the first message of each
+/// local calendar day (see the live loop in `messages.rs`).
+pub(super) fn date_divider(label: String) -> Element {
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Column),
+            align_items: Some(AlignItems::Center),
+            padding_left: Some(px(16.0)),
+            padding_right: Some(px(16.0)),
+            margin_top: Some(px(16.0)),
+            margin_bottom: Some(px(8.0)),
+            ..Default::default()
+        }) {
+            text(style = StyleRules {
+                font_size: Some(px(12.0)),
+                font_weight: Some(FontWeight::SemiBold),
+                color: Some(col(TEXT_MUTED)),
+                margin_bottom: Some(px(4.0)),
+                ..Default::default()
+            }) { label }
+            // The 1px rule: a zero-height view with a 1px bottom border spans
+            // the divider's padded width (the message column).
+            view(style = StyleRules {
+                height: Some(px(0.0)),
+                width: Some(pct(100.0)),
+                border_bottom_width: Some(border_width(1.0)),
+                border_bottom_color: Some(col(BORDER)),
+                ..Default::default()
+            })
+        }
+    }
+}
+
 
 /// The inline content of a message body, split on Discord spoiler markers.
 /// Discord marks spoiler text with `||…||`; everything between a pair of
