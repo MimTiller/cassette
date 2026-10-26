@@ -4,6 +4,10 @@
 
 use super::*;
 
+/// The live member row's avatar chip size (px): the same 32px circle the
+/// mock `member_row` and the user panel draw.
+const MEMBER_CHIP_SIZE: f32 = 32.0;
+
 /// One member row: avatar chip with the status dot overlaid on its
 /// bottom-right corner, then the name — tinted by the member's role color
 /// (Discord colors the username by role; there is no separate role badge in
@@ -731,29 +735,53 @@ pub(super) fn live_member_panel(
         // any value the backend doesn't send are both rendered as the offline
         // grey. The colors mirror the mock `Status::color()` convention so the
         // live panel reads like the mock one: green online, amber away (the
-        // server's idle state), grey offline. A standalone filled circle — the
-        // live rows carry no avatar chip, so this is the plain dot, not the
-        // ring-on-avatar variant the mock `member_row` uses.
+        // server's idle state), grey offline.
         let presence_color = match presence.get(&member_id).map(|s| s.as_str()) {
             Some("online") => "#23a559",
             Some("away") => "#f0b232",
             Some("offline") => "#80848e",
             _ => "#80848e",
         };
-        // Snapshot the member's avatar from the shared client registry before
-        // the row closure: the ui! body cannot hold a `let`, and the `if
-        // let Some(...)` child branch reads this plain local.
-        let member_avatar: Option<String> =
-            crate::auth::avatar_for(member.username.as_str());
-        let dot_style = StyleRules {
-            width: Some(px(10.0)),
-            height: Some(px(10.0)),
-            background: Some(col(presence_color)),
-            border_top_left_radius: Some(px(5.0)),
-            border_top_right_radius: Some(px(5.0)),
-            border_bottom_left_radius: Some(px(5.0)),
-            border_bottom_right_radius: Some(px(5.0)),
+        // The row's avatar: the shared `avatar_chip` helper — uploaded image
+        // when the client registry has one, else the letter chip — in a
+        // `Position::Relative` wrapper carrying the presence dot absolutely at
+        // the bottom-right corner with a panel-bg ring (same structure as the
+        // mock `member_row` and the user panel's status dot).
+        let chip = crate::avatar_chip::avatar_chip(
+            member.username.as_str(),
+            BUTTON,
+            MEMBER_CHIP_SIZE,
+            MEMBER_CHIP_SIZE / 2.0,
+        );
+        let avatar_wrap_style = StyleRules {
+            position: Some(Position::Relative),
+            width: Some(px(MEMBER_CHIP_SIZE)),
+            height: Some(px(MEMBER_CHIP_SIZE)),
             flex_shrink: Some(grow(0.0)),
+            ..Default::default()
+        };
+        // Presence ring matches the panel background so the dot reads as
+        // "cut out" of the avatar edge (Discord's look).
+        let ring_bg = BG_SIDEBAR;
+        let dot_style = StyleRules {
+            position: Some(Position::Absolute),
+            right: Some(px(0.0)),
+            bottom: Some(px(0.0)),
+            width: Some(px(11.0)),
+            height: Some(px(11.0)),
+            background: Some(col(presence_color)),
+            border_top_width: Some(border_width(2.0)),
+            border_right_width: Some(border_width(2.0)),
+            border_bottom_width: Some(border_width(2.0)),
+            border_left_width: Some(border_width(2.0)),
+            border_top_color: Some(col(ring_bg)),
+            border_right_color: Some(col(ring_bg)),
+            border_bottom_color: Some(col(ring_bg)),
+            border_left_color: Some(col(ring_bg)),
+            border_top_left_radius: Some(px(6.0)),
+            border_top_right_radius: Some(px(6.0)),
+            border_bottom_left_radius: Some(px(6.0)),
+            border_bottom_right_radius: Some(px(6.0)),
             ..Default::default()
         };
 
@@ -798,30 +826,13 @@ pub(super) fn live_member_panel(
                 gap: Some(px(8.0)),
                 ..Default::default()
             }) {
-                // Live presence dot (green/amber/grey from the `live_presence`
-                // map; grey when no `Presence` frame has landed for this member
-                // yet). Placed first so it leads the row.
-                view(style = dot_style) {}
-                // The member's avatar when the shared client registry has one
-                // (fed by `list_members` / login / gateway frames): a 22px
-                // round-cropped image. Members without an uploaded avatar
-                // keep the plain dot-led row (the pre-existing look).
-                if let Some(avatar) = &member_avatar {
-                    image(
-                        src = crate::auth::media_url(avatar.clone()),
-                        alt = format!("{} avatar", member.username),
-                        style = StyleRules {
-                            width: Some(px(22.0)),
-                            height: Some(px(22.0)),
-                            flex_shrink: Some(grow(0.0)),
-                            object_fit: Some(ObjectFit::Cover),
-                            border_top_left_radius: Some(px(11.0)),
-                            border_top_right_radius: Some(px(11.0)),
-                            border_bottom_left_radius: Some(px(11.0)),
-                            border_bottom_right_radius: Some(px(11.0)),
-                            ..Default::default()
-                        },
-                    )
+                // The member's avatar chip: uploaded image when the client
+                // registry has one, otherwise the letter chip, with the
+                // presence dot overlaid at its bottom-right corner (ring in
+                // the panel bg color), like the mock member row / user panel.
+                view(style = avatar_wrap_style.clone()) {
+                    { chip }
+                    view(style = dot_style.clone()) {}
                 }
                 // Name (+ a "(you)" tag on the signed-in user's own row).
                 // flex_shrink 0 + min content: the wrapper must NEVER collapse
