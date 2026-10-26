@@ -161,7 +161,7 @@ fn notifications_tab(selected: Signal<u32>) -> Element {
 /// The **Account** tab: change display name (handle) and password, both against
 /// the real auth backend. Local field signals + a shared message line
 /// (error red / success green) surface the backend's result inline.
-fn account_tab() -> Element {
+fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signal<u32>) -> Element {
     let name = signal(String::new());
     let cur_pw = signal(String::new());
     let new_pw = signal(String::new());
@@ -261,6 +261,57 @@ fn account_tab() -> Element {
         ..borderless_input()
     };
 
+    let blocked_list = switch(
+        move || blocked.get(),
+        move |list: &Vec<crate::blocks::BlockedUser>| {
+            if list.is_empty() {
+                return ui! {
+                    text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(TEXT_MUTED)), ..Default::default() }) {
+                        "You haven't blocked anyone.".to_string()
+                    }
+                };
+            }
+            let rows: Vec<Element> = list.iter().map(|b| {
+                let user_id = b.user_id;
+                ui! {
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Row),
+                        align_items: Some(AlignItems::Center),
+                        gap: Some(px(10.0)),
+                        padding_top: Some(px(6.0)),
+                        padding_bottom: Some(px(6.0)),
+                        ..Default::default()
+                    }) {
+                        { crate::avatar_chip::avatar_chip(b.username.as_str(), "#5865f2", 28.0, 14.0) }
+                        text(style = StyleRules { flex_grow: Some(runtime_core::Tokenized::Literal(1.0)), font_size: Some(px(14.0)), color: Some(col(TEXT)), ..Default::default() }) { b.username.clone() }
+                        view(style = StyleRules {
+                            height: Some(px(28.0)),
+                            padding_left: Some(px(12.0)),
+                            padding_right: Some(px(12.0)),
+                            align_items: Some(AlignItems::Center),
+                            justify_content: Some(JustifyContent::Center),
+                            background: Some(col("#4e5058")),
+                            border_top_left_radius: Some(px(4.0)),
+                            border_top_right_radius: Some(px(4.0)),
+                            border_bottom_left_radius: Some(px(4.0)),
+                            border_bottom_right_radius: Some(px(4.0)),
+                            ..Default::default()
+                        }) {
+                            text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(TEXT)), ..Default::default() }) { "Unblock".to_string() }
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                crate::blocks::set_blocked(user_id, false, blocked, live_rev, || {});
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                    }
+                }
+            }).collect();
+            ui! { view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) { rows } }
+        },
+    );
+
     ui! {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Column),
@@ -355,6 +406,17 @@ fn account_tab() -> Element {
                     }) { move || msg.get().to_string() }
                 }
             }
+
+            // ── Blocked users ── (the account's real block list; Unblock
+            // takes effect at once, and their messages show again)
+            text(style = StyleRules {
+                font_size: Some(px(12.0)),
+                font_weight: Some(runtime_core::FontWeight::Bold),
+                color: Some(col(TEXT_MUTED)),
+                margin_top: Some(px(24.0)),
+                ..Default::default()
+            }) { "BLOCKED USERS".to_string() }
+            { blocked_list }
         }
     }
 }
@@ -451,7 +513,11 @@ fn appearance_tab(accent: Signal<String>) -> Element {
 /// picker change is live for the next message without a re-open.
 #[component]
 #[allow(non_snake_case)]
-pub fn UserSettings(notif_mode: Signal<u32>) -> Element {
+pub fn UserSettings(
+    notif_mode: Signal<u32>,
+    blocked: Signal<Vec<crate::blocks::BlockedUser>>,
+    live_rev: Signal<u32>,
+) -> Element {
     let active = signal(0usize);
     // The accent is owned here (the gateway doesn't read it) and seeded from
     // storage (default Discord blurple). `Signal` is `Copy`, so each `move`
@@ -472,7 +538,7 @@ pub fn UserSettings(notif_mode: Signal<u32>) -> Element {
         move |tab: &usize| {
             match *tab {
                 0 => notifications_tab(notif_mode),
-                1 => account_tab(),
+                1 => account_tab(blocked, live_rev),
                 _ => appearance_tab(accent),
             }
         },

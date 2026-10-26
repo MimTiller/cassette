@@ -26,6 +26,8 @@ pub(crate) struct UserPopupCtx {
     pub(crate) popup: Signal<Option<UserPopup>>,
     pub(crate) profile: Signal<Option<UserProfile>>,
     pub(crate) server: Signal<Option<i64>>,
+    pub(crate) blocked: Signal<Vec<crate::blocks::BlockedUser>>,
+    pub(crate) live_rev: Signal<u32>,
 }
 
 impl UserPopupCtx {
@@ -107,9 +109,15 @@ pub(super) fn build(s: &ShellState) -> UserPopupsParts {
     let ShellState {
         active_live_server, composer, live_ban_confirm, live_dm_active, live_dm_messages,
         live_dm_mode, live_dm_revision, live_dms, live_kick_confirm, live_members, live_timeout_confirm,
-        profile_mode, user_popup, user_profile, live_chan_menu, ..
+        profile_mode, user_popup, user_profile, live_chan_menu, blocked_users, live_revision, ..
     } = s.clone();
-    let ctx = UserPopupCtx { popup: user_popup, profile: user_profile, server: active_live_server };
+    let ctx = UserPopupCtx {
+        popup: user_popup,
+        profile: user_profile,
+        server: active_live_server,
+        blocked: blocked_users,
+        live_rev: live_revision,
+    };
     // Open (or start) the DM with a user and show the DM screen.
     let open_dm: Rc<dyn Fn(i64)> = {
         let msgs = live_dm_messages.clone();
@@ -369,15 +377,7 @@ fn friend_action(relationship: &str, user_id: i64, username: String, ctx: UserPo
 }
 
 fn block_action(block: bool, user_id: i64, ctx: UserPopupCtx) {
-    runtime_core::driver::spawn_async(async move {
-        let input = discord_server::blocks::BlockUserInput { user_id };
-        let _ = if block {
-            discord_server::blocks::block_user(input).await
-        } else {
-            discord_server::blocks::unblock_user(input).await
-        };
-        ctx.refresh(user_id);
-    });
+    crate::blocks::set_blocked(user_id, block, ctx.blocked, ctx.live_rev, move || ctx.refresh(user_id));
 }
 
 const MENU_W: f32 = 220.0;

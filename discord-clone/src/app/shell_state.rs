@@ -144,4 +144,6 @@ pub(super) struct ShellState {
     pub(super) live_collapsed: Signal<Vec<i64>>,
     pub(super) user_popup: Signal<Option<super::user_popups::UserPopup>>,
     pub(super) user_profile: Signal<Option<discord_server::profiles::UserProfile>>,
+    pub(super) blocked_users: Signal<Vec<crate::blocks::BlockedUser>>,
+    pub(super) revealed_blocked: Signal<Vec<i64>>,
 }

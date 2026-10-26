@@ -11,7 +11,7 @@ pub(super) struct MessagesParts {
 }
 
 pub(super) fn build(s: &ShellState) -> MessagesParts {
-    let ShellState { active_channel, active_live_channel, active_live_server, active_server, gateway, has_more_earlier, is_real_user, live_at_bottom, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_invite_mode, live_messages, live_revision, live_typing, live_typing_rev, load_busy, moderation_mode, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, revision, sent, translate_key, user_popup, user_profile, .. } = s.clone();
+    let ShellState { active_channel, active_live_channel, active_live_server, active_server, blocked_users, gateway, has_more_earlier, is_real_user, live_at_bottom, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_invite_mode, live_messages, live_revision, live_typing, live_typing_rev, load_busy, moderation_mode, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, revealed_blocked, revision, sent, translate_key, user_popup, user_profile, .. } = s.clone();
     // --- main view -------------------------------------------------------
     let header_style = StyleRules {
         padding_top: Some(px(10.0)),
@@ -408,9 +408,28 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                     popup: user_popup,
                     profile: user_profile,
                     server: active_live_server,
+                    blocked: blocked_users,
+                    live_rev: live_revision,
                 };
+                // Messages from blocked users collapse into one "N Blocked
+                // Messages — Show" row per consecutive run, unless revealed.
+                let blocked_now = blocked_users.get();
+                let revealed_now = revealed_blocked.get();
+                let mut hidden_run: Vec<i64> = Vec::new();
                 for m in mine.iter() {
                     let (mid, aid, author, body, ts, edited_at, reply_to) = m;
+                    if crate::blocks::is_blocked(&blocked_now, *aid) && !revealed_now.contains(mid) {
+                        hidden_run.push(*mid);
+                        continue;
+                    }
+                    if !hidden_run.is_empty() {
+                        rows.push(crate::blocks::hidden_run_row(
+                            std::mem::take(&mut hidden_run),
+                            revealed_blocked,
+                            live_revision,
+                        ));
+                        prev = None;
+                    }
                     let when = format_when(*ts, now);
                     let full = format_full_when(*ts);
                     let is_mine = self_id != 0 && *aid == self_id;
@@ -507,6 +526,9 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         picker_l,
                     ));
                     prev = Some((author.clone(), *ts));
+                }
+                if !hidden_run.is_empty() {
+                    rows.push(crate::blocks::hidden_run_row(hidden_run, revealed_blocked, live_revision));
                 }
                 return ui! {
                     view(style = StyleRules {

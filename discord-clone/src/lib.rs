@@ -40,6 +40,8 @@ mod live_dm_view;
 // + the live friends panel view.
 mod friends;
 mod friends_view;
+// Blocked list + block/unblock + the blocked-message placeholder.
+mod blocks;
 
 // Standalone component, not wired into any screen yet — same "declared so it
 // compiles, referenced by nothing" shape as `profile_settings`. Lives under

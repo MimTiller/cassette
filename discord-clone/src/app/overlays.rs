@@ -16,7 +16,7 @@ pub(super) struct OverlaysParts {
 }
 
 pub(super) fn build(s: &ShellState) -> OverlaysParts {
-    let ShellState { active_live_server, active_server, bug_reports_mode, dm_active, dm_mode, dm_revision, dm_sent, dm_unread, dm_unread_rev, friends_add_error, friends_add_username, friends_entry, friends_open, friends_snap, friends_tab, gateway, live_dm_active, live_dm_messages, live_dm_mode, live_dm_new_id, live_dm_revision, live_dms, live_invite_code, live_invite_error, live_invite_mode, live_members, live_presence, live_presence_rev, moderation_mode, notif_level, notif_mode, on_dm_message, profile_mode, selected_member, shortcuts_mode, .. } = s.clone();
+    let ShellState { active_live_server, active_server, blocked_users, bug_reports_mode, dm_active, dm_mode, dm_revision, dm_sent, dm_unread, dm_unread_rev, friends_add_error, friends_add_username, friends_entry, friends_open, friends_snap, friends_tab, gateway, live_dm_active, live_dm_messages, live_dm_mode, live_dm_new_id, live_dm_revision, live_dms, live_invite_code, live_invite_error, live_invite_mode, live_members, live_presence, live_presence_rev, live_revision, moderation_mode, notif_level, notif_mode, on_dm_message, profile_mode, selected_member, shortcuts_mode, .. } = s.clone();
 
     // Profile Settings screen (built once; its fields are bound to local
     // component state). Rendered as a full-screen overlay on top of the rest
@@ -176,7 +176,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         view(style = notif_wrap) {
             notif_header
             view(style = StyleRules { flex_grow: Some(grow(1.0)), background: Some(col(BG_MAIN)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
-                scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { UserSettings(notif_mode = notif_level.clone()) }
+                scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { UserSettings(notif_mode = notif_level.clone(), blocked = blocked_users, live_rev = live_revision) }
             }
         }
     };

@@ -684,6 +684,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // (see `user_popups`); the async profile fetch writes here.
     let user_popup: Signal<Option<user_popups::UserPopup>> = signal(None);
     let user_profile: Signal<Option<discord_server::profiles::UserProfile>> = signal(None);
+    // The signed-in user's blocked list, and the blocked messages they chose
+    // to reveal this session (see `crate::blocks`).
+    let blocked_users: Signal<Vec<crate::blocks::BlockedUser>> = signal(Vec::new());
+    let revealed_blocked: Signal<Vec<i64>> = signal(Vec::new());
+    if is_real_user {
+        crate::blocks::load(blocked_users, live_revision);
+    }
     {
         let s = active_server.get();
         if let Some(server) = SERVERS.iter().find(|x| x.id == s) {
@@ -1457,6 +1464,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // Everything the section builders below read, gathered once.
     let s = ShellState {
         user_popup: user_popup.clone(),
+        blocked_users: blocked_users.clone(),
+        revealed_blocked: revealed_blocked.clone(),
         user_profile: user_profile.clone(),
         live_collapsed: live_collapsed.clone(),
         server_rail: server_rail.clone(),
