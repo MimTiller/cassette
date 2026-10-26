@@ -20,6 +20,11 @@ use super::*;
 // client live.
 pub(super) type Reaction = (String, u32, bool);
 
+// Module-level marker: bumped alongside the reaction_strip gating change so the
+// dev server does a FULL rebuild (not a jump-table hotpatch) and the new
+// "add button only with pills" behavior actually lands in the served bundle.
+const REACTION_STRIP_GATED: bool = true;
+
 /// The identity key for per-message session-local state (the reaction `picker`,
 /// the `reactions` pill map, and the `translate_key`). MOCK rows key by their
 /// `(channel_id, rendered-list-index)` — the pre-existing stable-enough key —
@@ -109,9 +114,11 @@ pub(super) fn apply_reaction(
 }
 
 /// The reaction strip under one message row: existing reaction pills on the
-/// left, a spacer, and an always-visible "add reaction" button (the Lucide
-/// SMILE_PLUS glyph) on the right. Tapping the add button opens the picker for
-/// this message; tapping a pill toggles the current user's reaction on it
+/// left, a spacer, and an "add reaction" button (the Lucide SMILE_PLUS glyph)
+/// on the right — the add button only appears when the message already has at
+/// least one reaction (Discord's behavior); a message with no reactions gets
+/// an empty zero-height strip so rows sit closer together. Tapping the add
+/// button opens the picker for this message; tapping a pill toggles the current user's reaction on it
 /// (increment + highlight, or decrement + un-highlight, dropping the pill at 0).
 /// Each clickable node is a `view(...)` builder with `.on_touch` chained on the
 /// builder inside `ui!` (the `ac_el` / composer-emoji-cell idiom) — `Element`
@@ -259,6 +266,13 @@ pub(super) fn reaction_area(
             TouchResponse::CONSUMED
         })
     };
+
+    // Discord shows the add-reaction button only next to existing pills: with
+    // no reactions the strip is an empty zero-size view (takes no height), so
+    // unreacted messages sit closer together.
+    if pills.is_empty() {
+        return ui! { view(style = StyleRules { ..Default::default() }) {} };
+    }
 
     // The strip: pills left, spacer, add button right. `padding_left` of 66
     // aligns it with the message body (row padding 16 + avatar 40 + gap 10) so
