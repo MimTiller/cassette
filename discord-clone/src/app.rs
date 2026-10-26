@@ -6633,6 +6633,28 @@ fn app_shell(authed: Signal<bool>) -> Element {
             };
             let rows: Vec<Element> = servers.iter().map(|s| {
                 let initial = s.name.chars().next().unwrap_or('?').to_string();
+                // The uploaded icon fills the 48px tile with the tile's own
+                // rounding; servers without one keep the initial letter.
+                let face = match s.icon_url.clone().filter(|u| !u.is_empty()) {
+                    Some(url) => ui! {
+                        image(
+                            src = crate::auth::media_url(url),
+                            alt = s.name.clone(),
+                            style = StyleRules {
+                                width: Some(px(48.0)),
+                                height: Some(px(48.0)),
+                                flex_shrink: Some(grow(0.0)),
+                                object_fit: Some(ObjectFit::Cover),
+                                border_top_left_radius: Some(px(16.0)),
+                                border_top_right_radius: Some(px(16.0)),
+                                border_bottom_left_radius: Some(px(16.0)),
+                                border_bottom_right_radius: Some(px(16.0)),
+                                ..Default::default()
+                            },
+                        )
+                    },
+                    None => ui! { text(style = initial_style.clone()) { initial } },
+                };
                 let sid = s.id;
                 let active_live = active_live_server.clone();
                 let live_ch = live_channels.clone();
@@ -6668,7 +6690,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             })),
                             ..Default::default()
                         }) {}
-                        text(style = initial_style.clone()) { initial }
+                        { face }
                     }
                     // Enter live mode: select this real server and pull its
                     // channels (async `#[server]` RPC, same pattern as the

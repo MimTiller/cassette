@@ -180,10 +180,16 @@ fn accepted_mime(mime: &str, bytes: &[u8]) -> Option<&'static str> {
 /// cap) and encode into the data URL the backend stores. `Err` carries the
 /// message shown inline on the screen.
 fn validate_and_encode(mime: &str, bytes: &[u8]) -> Result<String, String> {
+    validate_and_encode_small_image(mime, bytes, "avatar")
+}
+
+/// The avatar-cap validate + encode, with `what` naming the image in the
+/// too-large message. Server icons share the avatar cap on the backend.
+pub(crate) fn validate_and_encode_small_image(mime: &str, bytes: &[u8], what: &str) -> Result<String, String> {
     let kind = accepted_mime(mime, bytes).ok_or("Not a PNG/JPEG/WebP/GIF image — pick an image file")?;
     let url = format!("data:{};base64,{}", kind, b64_encode(bytes));
     if url.len() > AVATAR_URL_MAX_BYTES {
-        return Err("avatar too large (max 256 KB)".to_string());
+        return Err(format!("{what} too large (max 256 KB)"));
     }
     Ok(url)
 }

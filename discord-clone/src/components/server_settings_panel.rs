@@ -1,5 +1,5 @@
 //! `server_settings_panel` — the LIVE server's own settings overlay: rename the
-//! server, set/clear its icon (a URL, empty clears), add (or re-role) a member
+//! server, upload/remove its icon, add (or re-role) a member
 //! by numeric user id, and transfer ownership to another member by numeric user
 //! id.
 //!
@@ -33,8 +33,9 @@
 //! user's own row in `live_members` (`role == "owner"`).
 use runtime_core::{
     component, switch, ui, AlignItems, Element, FlexDirection, FontWeight,
-    JustifyContent, Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
+    JustifyContent, ObjectFit, Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
 };
+use file_picker::{FilePicker, MediaKind, PickOutcome, PickRequest};
 
 use crate::style_helpers::{borderless_input, col, pct, px, section_label};
 use crate::audit_log_row::AuditLogRow;
@@ -282,17 +283,17 @@ pub fn ServerSettingsPanel(
             b2.set(false);
         });
     };
-    let do_icon = move || {
+    // Upload: pick one image (the avatar flow's picker + encode, against the
+    // same 256 KB cap the backend applies to icons) and save it. `ic` holds the
+    // stored `/media/…` path the preview shows. Remove clears it. A dismissed
+    // picker is not an error.
+    let do_icon = move |upload: bool| {
         let Some(sid0) = sid.get() else {
             return;
         };
-        let raw = ic.get();
-        let trimmed = raw.trim();
-        let icon_opt: Option<String> = if trimmed.is_empty() {
-            None
-        } else {
-            Some(trimmed.to_string())
-        };
+        if b.get() {
+            return;
+        }
         e.set(String::new());
         b.set(true);
         let b2 = b;
@@ -300,6 +301,38 @@ pub fn ServerSettingsPanel(
         let srv2 = srv;
         let ic2 = ic;
         runtime_core::driver::spawn_async(async move {
+            let icon_opt = if upload {
+                let picked = match FilePicker::new().pick(PickRequest::media(MediaKind::Images)).await {
+                    Ok(PickOutcome::Picked(files)) => files,
+                    Ok(_) => {
+                        b2.set(false);
+                        return;
+                    }
+                    Err(err) => {
+                        e2.set(format!("file picker: {err}"));
+                        b2.set(false);
+                        return;
+                    }
+                };
+                let Some(file) = picked.get(0) else {
+                    b2.set(false);
+                    return;
+                };
+                let encoded = match file.read_all().await {
+                    Ok(bytes) => crate::profile_settings::validate_and_encode_small_image(file.mime(), &bytes, "icon"),
+                    Err(err) => Err(format!("could not read the file: {err}")),
+                };
+                match encoded {
+                    Ok(url) => Some(url),
+                    Err(msg) => {
+                        e2.set(msg);
+                        b2.set(false);
+                        return;
+                    }
+                }
+            } else {
+                None
+            };
             match crate::servers::set_server_icon(sid0, icon_opt).await {
                 Ok(r) => {
                     if let Ok(list) = crate::servers::list_servers().await {
@@ -419,7 +452,7 @@ pub fn ServerSettingsPanel(
                 .iter()
                 .any(|m| m.user_id == self_id && m.role == "owner");
             let rename_label = if *busy { "Renaming…" } else { "Save name" };
-            let icon_label = if *busy { "Saving…" } else { "Save icon" };
+            let icon_label = if *busy { "Saving…" } else { "Upload icon" };
             let transfer_label = if *busy { "Transferring…" } else { "Transfer" };
             let add_label = if *busy { "Adding…" } else { "Add member" };
             let rename_btn = ui! {
@@ -433,17 +466,68 @@ pub fn ServerSettingsPanel(
                     TouchResponse::CONSUMED
                 })
             };
+            let icon_btn_style = StyleRules {
+                padding_left: Some(px(14.0)),
+                padding_right: Some(px(14.0)),
+                ..save_btn_style.clone()
+            };
             let icon_btn = ui! {
-                view(style = save_btn_style.clone(), test_id = "server-icon-save") {
+                view(style = icon_btn_style.clone(), test_id = "server-icon-save") {
                     text(style = btn_label_style.clone()) { icon_label.to_string() }
                 }
                 .on_touch(move |ev| {
                     if ev.phase == TouchPhase::Ended {
-                        do_icon();
+                        do_icon(true);
                     }
                     TouchResponse::CONSUMED
                 })
             };
+            let icon_remove_btn = ui! {
+                view(style = icon_btn_style.clone(), test_id = "server-icon-remove") {
+                    text(style = btn_label_style.clone()) { "Remove".to_string() }
+                }
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        do_icon(false);
+                    }
+                    TouchResponse::CONSUMED
+                })
+            };
+            // The current icon (or the server's initial), keyed on `ic` so it
+            // follows the caller's seed when the panel opens and every save.
+            let icon_preview = switch(
+                move || ic.get(),
+                move |url: &String| {
+                    let tile = StyleRules {
+                        width: Some(px(64.0)),
+                        height: Some(px(64.0)),
+                        align_items: Some(AlignItems::Center),
+                        justify_content: Some(JustifyContent::Center),
+                        background: Some(col(INPUT)),
+                        object_fit: Some(ObjectFit::Cover),
+                        border_top_left_radius: Some(px(20.0)),
+                        border_top_right_radius: Some(px(20.0)),
+                        border_bottom_left_radius: Some(px(20.0)),
+                        border_bottom_right_radius: Some(px(20.0)),
+                        ..Default::default()
+                    };
+                    if url.is_empty() {
+                        let initial = nm.get().chars().next().unwrap_or('?').to_string();
+                        ui! {
+                            view(style = tile) {
+                                text(style = StyleRules {
+                                    font_size: Some(px(24.0)),
+                                    font_weight: Some(FontWeight::Bold),
+                                    color: Some(col(TEXT)),
+                                    ..Default::default()
+                                }) { initial }
+                            }
+                        }
+                    } else {
+                        ui! { image(src = crate::auth::media_url(url.clone()), alt = "Server icon".to_string(), style = tile) }
+                    }
+                },
+            );
             let transfer_btn = ui! {
                 view(style = transfer_btn_style.clone(), test_id = "server-transfer-confirm") {
                     text(style = btn_label_style.clone()) { transfer_label.to_string() }
@@ -477,9 +561,12 @@ pub fn ServerSettingsPanel(
             };
             let icon_row = ui! {
                 view(style = row_col()) {
-                    text(style = label_style.clone()) { "Server icon (URL)".to_string() }
-                    text_input(value = ic, placeholder = "https://… (empty to clear)", style = input_style.clone())
-                    icon_btn
+                    text(style = label_style.clone()) { "Server icon".to_string() }
+                    view(style = row_row()) {
+                        { icon_preview }
+                        icon_btn
+                        icon_remove_btn
+                    }
                 }
             };
             let transfer_row = ui! {
