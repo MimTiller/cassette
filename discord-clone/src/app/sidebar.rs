@@ -8,7 +8,7 @@ pub(super) struct SidebarParts {
 }
 
 pub(super) fn build(s: &ShellState) -> SidebarParts {
-    let ShellState { active_channel, active_live_channel, active_live_server, active_server, authed, bug_reports_mode, cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, is_real_user, joined_voice, live_at_bottom, live_chan_menu, live_channels, live_members, live_mention_rev, live_scroll_handle, live_servers, live_unread, live_unread_rev, member_panel_width, muted, notif_mode, profile_mode, rc_busy, rc_cid, rc_err, rc_name, rc_open, shortcuts_mode, sidebar_width, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, user_status, .. } = s.clone();
+    let ShellState { active_channel, active_live_channel, active_live_server, active_server, authed, bug_reports_mode, cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, is_real_user, joined_voice, live_at_bottom, live_chan_menu, live_channels, live_collapsed, live_members, live_mention_rev, live_scroll_handle, live_servers, live_unread, live_unread_rev, member_panel_width, muted, notif_mode, profile_mode, rc_busy, rc_cid, rc_err, rc_name, rc_open, shortcuts_mode, sidebar_width, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, user_status, .. } = s.clone();
     // --- channel sidebar -------------------------------------------------
     // Width is driven by the `sidebar_width` signal (a thin drag handle on the
     // sidebar's right edge resizes it). A rules *closure* so the width
@@ -97,6 +97,9 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                     .map(|(id, sig)| (*id, sig.get()))
                     .collect();
                 v.sort_by_key(|(id, _)| *id);
+                // Collapsed live categories ride the same key (high bit set so
+                // they never collide with a mock category id).
+                v.extend(live_collapsed.get().iter().map(|id| (0x8000_0000 | *id as u32, true)));
                 v
             };
             (
@@ -430,9 +433,28 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                             }
                         }
                     };
-                    let live_rows: Vec<Element> = live
+                    // Discord's order: channels outside any category first,
+                    // then each category's header followed by its own
+                    // channels (left out while the category is collapsed).
+                    let is_cat = |c: &&crate::servers::ChannelSummary| c.kind == "category";
+                    let cat_ids: Vec<i64> = live.iter().filter(is_cat).map(|c| c.id).collect();
+                    let collapsed_cats = live_collapsed.get();
+                    let mut ordered: Vec<&crate::servers::ChannelSummary> = live
                         .iter()
+                        .filter(|c| !is_cat(c) && !c.parent_channel_id.is_some_and(|p| cat_ids.contains(&p)))
+                        .collect();
+                    for cat in live.iter().filter(is_cat) {
+                        ordered.push(cat);
+                        if !collapsed_cats.contains(&cat.id) {
+                            ordered.extend(live.iter().filter(|c| !is_cat(c) && c.parent_channel_id == Some(cat.id)));
+                        }
+                    }
+                    let live_rows: Vec<Element> = ordered
+                        .into_iter()
                         .map(|c| {
+                            if c.kind == "category" {
+                                return live_category_header(c.id, c.name.clone(), live_collapsed);
+                            }
                             // '#' for text channels, a speaker icon for voice —
                             // the same icons the mock rows use below.
                             let name = c.name.clone();
@@ -933,4 +955,48 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
     );
 
     SidebarParts { sidebar }
+}
+
+/// A live channel category: a small uppercase name with a chevron. Clicking
+/// it collapses or expands the category's channels (its id joins or leaves
+/// `collapsed`, which the sidebar's key reads).
+fn live_category_header(id: i64, name: String, collapsed: Signal<Vec<i64>>) -> Element {
+    let is_collapsed = collapsed.get().contains(&id);
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            gap: Some(px(2.0)),
+            padding_top: Some(px(16.0)),
+            padding_bottom: Some(px(4.0)),
+            padding_left: Some(px(8.0)),
+            padding_right: Some(px(16.0)),
+            ..Default::default()
+        }, test_id = "live-category") {
+            icon(if is_collapsed { CHEVRON_RIGHT } else { CHEVRON_DOWN })
+                .color(|| Color::from(TEXT_MUTED))
+                .size(12.0)
+            text(style = StyleRules {
+                font_size: Some(px(12.0)),
+                font_weight: Some(FontWeight::SemiBold),
+                color: Some(col(TEXT_MUTED)),
+                letter_spacing: Some(Tokenized::Literal(0.3)),
+                text_transform: Some(TextTransform::Uppercase),
+                ..Default::default()
+            }) { name }
+        }
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                let mut ids = collapsed.get();
+                match ids.iter().position(|c| *c == id) {
+                    Some(i) => {
+                        ids.remove(i);
+                    }
+                    None => ids.push(id),
+                }
+                collapsed.set(ids);
+            }
+            TouchResponse::CONSUMED
+        })
+    }
 }

@@ -141,4 +141,5 @@ pub(super) struct ShellState {
     pub(super) join_error: Signal<String>,
     pub(super) join_busy: Signal<bool>,
     pub(super) discover_open: Signal<bool>,
+    pub(super) live_collapsed: Signal<Vec<i64>>,
 }

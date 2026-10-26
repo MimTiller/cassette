@@ -46,7 +46,7 @@ use runtime_core::primitives::portal::{AnchorTarget, ElementAlign, ElementSide};
 // picked file through `stage_attachment` (the same encode as avatars).
 use file_picker::{FilePicker, PickRequest, PickOutcome, MediaKind};
 use icons_lucide::{
-    CHEVRON_DOWN, CHEVRON_UP, CIRCLE_HELP, COMPASS, GAVEL, GLOBE, HASH, HEADPHONES, MAIL,
+    CHEVRON_DOWN, CHEVRON_RIGHT, CHEVRON_UP, CIRCLE_HELP, COMPASS, GAVEL, GLOBE, HASH, HEADPHONES, MAIL,
     MIC, MIC_OFF, PIN, PLUS, SETTINGS, SMILE, SMILE_PLUS,
     USER_PLUS, USERS, VOLUME_2,
 };
@@ -675,6 +675,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // The map lives in `app_shell` scope, so state survives `switch` rebuilds
     // across server/channel/voice changes.
     let collapsed: Rc<RefCell<HashMap<u32, Signal<bool>>>> = Rc::new(RefCell::new(HashMap::new()));
+    // The live sidebar's collapsed categories (channel ids). Plain data in one
+    // app_shell-owned signal: a per-category signal created inside the
+    // sidebar's render would be freed on the next rebuild.
+    let live_collapsed: Signal<Vec<i64>> = signal(Vec::new());
     {
         let s = active_server.get();
         if let Some(server) = SERVERS.iter().find(|x| x.id == s) {
@@ -1447,6 +1451,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
 
     // Everything the section builders below read, gathered once.
     let s = ShellState {
+        live_collapsed: live_collapsed.clone(),
         server_rail: server_rail.clone(),
         dynamic_servers: dynamic_servers.clone(),
         next_id: next_id.clone(),
