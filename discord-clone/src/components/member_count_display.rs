@@ -37,7 +37,8 @@ const GREEN_ONLINE: &str = "#23a559";
 /// numbers are inline props with hardcoded defaults so the component compiles
 /// standalone.
 #[component]
-pub fn member_count_display(
+#[allow(non_snake_case)]
+pub fn MemberCountDisplay(
     #[prop(default = 12)] online_count: i64,
     #[prop(default = 48)] total_count: i64,
 ) -> Element {

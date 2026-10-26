@@ -39,7 +39,8 @@ const TEXT_MUTED: &str = "#949ba4";
 /// numbers are inline props with hardcoded defaults so the component
 /// compiles standalone.
 #[component]
-pub fn server_stats_card(
+#[allow(non_snake_case)]
+pub fn ServerStatsCard(
     #[prop(default = 512)] total_members: i64,
     #[prop(default = 48)] online_now: i64,
     #[prop(default = 1204)] messages_today: i64,

@@ -50,7 +50,7 @@ use icons_lucide::{
     MESSAGE_CIRCLE, MIC, MIC_OFF, PIN, PLUS, SETTINGS, SMILE, SMILE_PLUS,
     USER_PLUS, USERS, VOLUME_2,
 };
-use crate::idle_timer_badge::idle_timer_badge;
+use crate::idle_timer_badge::IdleTimerBadge;
 use crate::server_settings_panel::ServerSettingsPanel;
 
 use runtime_shared::time::local_offset_minutes;
@@ -66,7 +66,7 @@ use crate::icon_change_confirm::IconChangeConfirm;
 use crate::ban_reason_input::BanReasonInput;
 use crate::delete_account_warning::DeleteAccountWarning;
 
-use crate::user_bio_block::user_bio_block;
+use crate::user_bio_block::UserBioBlock;
 use crate::audit_log_row::AuditLogRow;
 use crate::blocked_user_row::BlockedUserRow;
 use crate::server_region_selector::ServerRegionSelector;
@@ -75,7 +75,7 @@ use crate::category_header::CategoryHeader;
 use crate::mic_selector::MicSelector;
 
 use crate::link_embed_preview::LinkEmbedPreview;
-use crate::code_block::code_block;
+use crate::code_block::CodeBlock;
 use crate::screen_share_indicator::ScreenShareIndicator;
 use crate::two_factor_toggle::TwoFactorToggle;
 
@@ -88,10 +88,10 @@ use crate::connection_quality_indicator::ConnectionQualityIndicator;
 use crate::voice_join_button::VoiceJoinButton;
 use crate::volume_slider::VolumeSlider;
 use crate::soundboard_button::SoundboardButton;
-use crate::edited_label::edited_label;
+use crate::edited_label::EditedLabel;
 use crate::settings_suite::UserSettings;
 use crate::keyboard_shortcuts_overlay::keyboard_shortcuts_overlay;
-use crate::profile_settings::profile_settings;
+use crate::profile_settings::ProfileSettings;
 use crate::dm_view::dm_screen;
 use crate::style_helpers::{borderless_input, col, pct, px, section_label};
 use crate::join_modal::JoinServerModal;
@@ -109,7 +109,7 @@ use crate::emoji_picker::EmojiPicker;
 use crate::settings_tab_bar::SettingsTabBar;
 use crate::setup_checklist_item::SetupChecklistDemo;
 use crate::emoji_upload_slot::EmojiUploadSlot;
-use crate::rules_accept_checkbox::rules_accept_checkbox;
+use crate::rules_accept_checkbox::RulesAcceptCheckbox;
 use crate::nickname_edit_field::NicknameEditField;
 use crate::custom_status_input::CustomStatusInput;
 use crate::notification_permission_prompt::NotificationPermissionPrompt;

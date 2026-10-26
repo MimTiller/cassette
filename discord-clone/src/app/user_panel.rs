@@ -728,7 +728,7 @@ pub(super) fn user_panel(
             // (the component's correct home is this control row, not the
             // message list).
             let idle_status = user_status.clone();
-            let idle_btn = idle_timer_badge(idle_status);
+            let idle_btn = IdleTimerBadge(idle_status);
             // Row 2: the icon buttons left, the pills (plus Leave, voice only)
             // pushed to the right. Its own gap (6px, not the identity row's
             // 8px) is deliberate — the extra 2px per gap is part of what lets

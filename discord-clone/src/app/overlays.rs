@@ -23,7 +23,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
     // of the app: when `profile_mode` is off it collapses to zero size, when
     // on it fills the whole window. A "Done" pill in the header flips
     // `profile_mode` back off to close it.
-    let profile_el = profile_settings();
+    let profile_el = ProfileSettings();
     let profile_close = profile_mode.clone();
     let profile_header = ui! {
         view(style = StyleRules {
@@ -97,7 +97,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
                     SettingsTabBar()
                     SetupChecklistDemo()
                     EmojiUploadSlot()
-                    rules_accept_checkbox()
+                    RulesAcceptCheckbox()
                 }
             }
         }

@@ -32,14 +32,14 @@ use crate::style_helpers::{col, pct, px};
 // the category filter chips (Gaming / Music / Education — the list's filter
 // row). All are self-contained (local state, no props required), so they
 // render verbatim — see the note at each call site.
-use crate::category_filter_chips::category_filter_chips;
-use crate::server_discovery_card::server_discovery_card;
+use crate::category_filter_chips::CategoryFilterChips;
+use crate::server_discovery_card::ServerDiscoveryCard;
 use crate::server_event_card::ServerEventCard;
-use crate::server_stats_card::server_stats_card;
-use crate::server_folder_group::server_folder_group;
-use crate::server_template_card::server_template_card;
+use crate::server_stats_card::ServerStatsCard;
+use crate::server_folder_group::ServerFolderGroup;
+use crate::server_template_card::ServerTemplateCard;
 use crate::template_gallery_grid::TemplateGalleryGrid;
-use crate::server_tag_chips::server_tag_chips;
+use crate::server_tag_chips::ServerTagChips;
 use crate::featured_server_banner::FeaturedServerBanner;
 
 // Discord dark palette (kept local so the component is self-contained).
@@ -262,14 +262,14 @@ fn discover_panel(open: Signal<bool>, on_join: Rc<dyn Fn(String)>) -> Element {
                 margin_top: Some(px(14.0)),
                 ..Default::default()
             }) {
-                server_stats_card(512.into(), 48.into(), 1204.into())
+                crate::server_stats_card::ServerStatsCard(512.into(), 48.into(), 1204.into())
             }
             view(style = StyleRules {
                 width: Some(pct(100.0)),
                 margin_top: Some(px(8.0)),
                 ..Default::default()
             }) {
-                server_discovery_card()
+                ServerDiscoveryCard()
             }
             view(style = StyleRules {
                 width: Some(pct(100.0)),
@@ -287,7 +287,7 @@ fn discover_panel(open: Signal<bool>, on_join: Rc<dyn Fn(String)>) -> Element {
                 margin_top: Some(px(10.0)),
                 ..Default::default()
             }) {
-                category_filter_chips()
+                CategoryFilterChips()
             }
             // More discovery browsing content, relocated here from the server
             // rail during a later review (same reasoning as the four cards
@@ -300,14 +300,14 @@ fn discover_panel(open: Signal<bool>, on_join: Rc<dyn Fn(String)>) -> Element {
                 margin_top: Some(px(10.0)),
                 ..Default::default()
             }) {
-                server_folder_group()
+                ServerFolderGroup()
             }
             view(style = StyleRules {
                 width: Some(pct(100.0)),
                 margin_top: Some(px(8.0)),
                 ..Default::default()
             }) {
-                server_template_card()
+                ServerTemplateCard()
             }
             view(style = StyleRules {
                 width: Some(pct(100.0)),
@@ -321,7 +321,7 @@ fn discover_panel(open: Signal<bool>, on_join: Rc<dyn Fn(String)>) -> Element {
                 margin_top: Some(px(8.0)),
                 ..Default::default()
             }) {
-                server_tag_chips()
+                ServerTagChips()
             }
             view(style = StyleRules {
                 width: Some(pct(100.0)),

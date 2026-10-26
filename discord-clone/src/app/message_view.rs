@@ -635,7 +635,7 @@ pub(crate) fn message_row(
                 // SDK; a plain body is one `text` run at the same 15px/TEXT
                 // styling, so grouped consecutive rows keep their tight look.
                 { message_body(body) }
-                if edited { edited_label() }
+                if edited { EditedLabel() }
             }
         };
     }
@@ -664,7 +664,7 @@ pub(crate) fn message_row(
                 // click-to-reveal). Content-dependent — a marker-less body is a
                 // single plain run (the previous rendering).
                 { message_body(body) }
-                if edited { edited_label() }
+                if edited { EditedLabel() }
                 // The link preview card, only when the body carries a URL.
                 if let Some((host, title)) = &link {
                     crate::link_embed_preview::LinkEmbedPreview(

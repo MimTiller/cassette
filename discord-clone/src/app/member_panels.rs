@@ -217,7 +217,7 @@ pub(super) fn member_profile_panel(selected: Signal<Option<&'static str>>) -> El
                         gap: Some(px(12.0)),
                         ..Default::default()
                     }) {
-                        user_bio_block(prof.bio.to_string().into())
+                        crate::user_bio_block::UserBioBlock(prof.bio.to_string().into())
                         NicknameEditField(default_nickname = prof.nickname.to_string())
                     }
                 };

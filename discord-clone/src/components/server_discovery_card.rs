@@ -51,7 +51,8 @@ const DESCRIPTION: &str = "A place for gamers";
 /// shows (pressing it sets `joined`), and once `joined` is set the "Joined!"
 /// text renders in its place.
 #[component]
-pub fn server_discovery_card() -> Element {
+#[allow(non_snake_case)]
+pub fn ServerDiscoveryCard() -> Element {
     let joined = signal(false);
 
     // Join: flip the `joined` signal to `true` on press. `joined` is `Copy`,

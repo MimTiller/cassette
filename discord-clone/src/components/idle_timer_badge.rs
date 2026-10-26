@@ -47,7 +47,8 @@ const IDLE: &str = "#f0b232"; // the active idle glyph (Discord's idle dot color
 /// the user is idle, muted otherwise; a tap goes idle (or cycles on, if
 /// already idle), driven through the app's shared `status` signal.
 #[component]
-pub fn idle_timer_badge(status: runtime_core::Signal<Status>) -> Element {
+#[allow(non_snake_case)]
+pub fn IdleTimerBadge(status: runtime_core::Signal<Status>) -> Element {
     // The idle glyph swaps to amber while `status` is `Idle`; a tap sets it to
     // `Idle`, or (already idle) advances it one step so a second tap clears
     // idle — the same cycle the profile-strip avatar uses. `status` is `Copy`,

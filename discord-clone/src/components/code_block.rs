@@ -45,7 +45,8 @@ const MONO: &str = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 /// distinct background, with a "Copy" button; pressing the button sets the
 /// local `copied` signal to `true`, which mounts the "Copied!" label.
 #[component]
-pub fn code_block() -> Element {
+#[allow(non_snake_case)]
+pub fn CodeBlock() -> Element {
     let copied = signal(false);
 
     // Copy: flip `copied` to true on every press. `copied` is `Copy`, so the

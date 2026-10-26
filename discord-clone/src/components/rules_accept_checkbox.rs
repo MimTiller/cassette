@@ -58,7 +58,8 @@ const RULES_SUMMARY: [&str; 4] = [
 /// local `accepted` signal (starts unchecked), and a "Continue" button that is
 /// disabled until the checkbox is ticked.
 #[component]
-pub fn rules_accept_checkbox() -> Element {
+#[allow(non_snake_case)]
+pub fn RulesAcceptCheckbox() -> Element {
     let accepted = signal(false);
 
     ui! {

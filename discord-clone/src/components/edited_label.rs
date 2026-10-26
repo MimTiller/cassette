@@ -28,7 +28,8 @@ const TEXT_MUTED: &str = "#949ba4";
 /// `was_edited` signal is set (hardcoded `true` for now); otherwise it
 /// renders nothing.
 #[component]
-pub fn edited_label() -> Element {
+#[allow(non_snake_case)]
+pub fn EditedLabel() -> Element {
     let was_edited = signal(true);
 
     ui! {
