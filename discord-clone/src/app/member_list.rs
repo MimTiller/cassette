@@ -8,7 +8,7 @@ pub(super) struct MemberListParts {
 }
 
 pub(super) fn build(s: &ShellState) -> MemberListParts {
-    let ShellState { active_channel, active_live_channel, active_live_server, active_server, is_real_user, live_ban_confirm, live_kick_confirm, live_member_error, live_member_menu, live_members, live_messages, live_presence, live_presence_rev, live_revision, live_timeout_confirm, live_timeout_duration, member_panel_width, revision, selected_member, sent, sidebar_width, user_status, .. } = s.clone();
+    let ShellState { active_channel, active_live_channel, active_live_server, active_server, is_real_user, live_ban_confirm, live_kick_confirm, live_member_error, live_member_menu, live_members, live_messages, live_presence, live_presence_rev, live_revision, live_timeout_confirm, live_timeout_duration, member_panel_width, revision, selected_member, sent, sidebar_width, user_popup, user_profile, user_status, .. } = s.clone();
     // --- member list (right side) ----------------------------------------
     // Rebuilds when the active server changes (each server has its own
     // roster) AND when the signed-in user's live status changes — the user
@@ -34,10 +34,6 @@ pub(super) fn build(s: &ShellState) -> MemberListParts {
     let live_timeout_panel = live_timeout_confirm.clone();
     let live_timeout_dur_panel = live_timeout_duration.clone();
     let live_presence_panel = live_presence.clone();
-    // The member row's tap-popup state (which member's Kick/Ban/Timeout menu
-    // is open, `None` = closed). In the `members_switch` key so opening the
-    // menu from a row tap rebuilds the panel and mounts the portal.
-    let live_member_menu_panel = live_member_menu.clone();
     // The message-search corpus the mock member panel's `MessageSearchBar`
     // filters over: the active channel's seed messages plus this session's
     // sends, as `(author, text)` rows. A `memo` keyed on the same signals the
@@ -141,7 +137,11 @@ pub(super) fn build(s: &ShellState) -> MemberListParts {
                     // clone the handle each render.
                     live_presence_panel.clone(),
                     live_search_corpus_panel.read_only(),
-                    live_member_menu_panel.clone(),
+                    super::user_popups::UserPopupCtx {
+                        popup: user_popup,
+                        profile: user_profile,
+                        server: active_live_server,
+                    },
                 );
             }
             if *real_user {

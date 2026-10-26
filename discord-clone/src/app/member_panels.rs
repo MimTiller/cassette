@@ -548,7 +548,7 @@ pub(super) fn live_member_panel(
     timeout_duration: Signal<i64>,
     presence: Rc<RefCell<HashMap<i64, String>>>,
     search_corpus: ReadSignal<Vec<(String, String)>>,
-    member_menu: Signal<Option<i64>>,
+    popup: super::user_popups::UserPopupCtx,
 ) -> Element {
     // Snapshot of the current roster. The panel is rebuilt (by the caller's
     // `switch` keyed on this signal) whenever the roster changes — including
@@ -680,13 +680,6 @@ pub(super) fn live_member_panel(
     // Each row is a `move` closure: `server_id` (i64) and `member_id` (i64) are
     // `Copy`, and the three `Signal`s it captures are `Copy`, so every closure
     // owns a fresh copy and stays `Fn` across rebuilds.
-    // Client-side permission bars mirror the backend's role checks (the backend
-    // stays the enforcer — this only decides which menu rows RENDER): the
-    // acting user's own role from the roster gates whether the Kick/Ban/Timeout
-    // popup menu shows at all, and rank decides which entries it carries.
-    let acting_rank = role_rank(acting_role(&roster, self_id));
-    let can_kick = acting_rank >= 1;
-    let can_ban = acting_rank >= 2;
     let mut rows: Vec<Element> = Vec::new();
     for member in roster.iter() {
         let member_id = member.user_id;
@@ -784,36 +777,6 @@ pub(super) fn live_member_panel(
             border_bottom_right_radius: Some(px(6.0)),
             ..Default::default()
         };
-
-        // The row's anchored-popup state: the row view fills this handle at
-        // mount, and the row's tap handler opens `action_menu` below it.
-        let row_ref: Ref<ViewHandle> = Ref::<ViewHandle>::new();
-        // The row's menu entries, gated by the ACTING user's role (mirrors the
-        // backend bars: Kick = moderator+; Ban + Timeout = admin+). Handlers
-        // only ARM the existing inline two-step confirms — permission checks
-        // and confirm steps stay exactly as before.
-        let on_kick = Rc::new(move || { kick.set(Some(member_id)); });
-        let on_ban = Rc::new(move || { ban.set(Some(member_id)); });
-        let on_timeout = Rc::new(move || { timeout.set(Some(member_id)); });
-        let menu_items: Vec<(String, bool, Rc<dyn Fn()>)> = {
-            let mut items: Vec<(String, bool, Rc<dyn Fn()>)> =
-                Vec::<(String, bool, Rc<dyn Fn()>)>::new();
-            if !is_self {
-                if can_kick {
-                    items.push((
-                        "Kick".to_string(),
-                        true,
-                        on_kick,
-                    ));
-                }
-                if can_ban {
-                    items.push(("Ban".to_string(), true, on_ban));
-                    items.push(("Timeout".to_string(), false, on_timeout));
-                }
-            }
-            items
-        };
-        let menu = action_menu(member_menu, member_id, row_ref, menu_items);
 
         let row = ui! {
             view(style = StyleRules {
@@ -1074,28 +1037,26 @@ pub(super) fn live_member_panel(
             if !error.get().is_empty() {
                 text(style = error_style.clone()) { move || error.get().clone() }
             }
-            // The row's tap popup menu, anchored below this row's own box
-            // (the row is Position::Relative and fills its handle ref). Only
-            // this row's menu mounts — `action_menu`'s switch key matches on
-            // the shared `member_menu` signal's `Some(member_id)`.
-            { menu }
         }
-        .bind(row_ref)
+        // A click opens the member's profile card and a right-click the user
+        // menu (which carries Kick / Timeout / Ban for permitted users), both
+        // at the press. A click while one of this row's two-step confirms is
+        // showing dismisses the confirm instead (the re-tap-cancel idiom).
         .on_touch(move |ev| {
-            if ev.phase == TouchPhase::Ended && !is_self {
-                // Tapping a member row: a pending confirm for THIS row is
-                // dismissed (the old re-tap-cancel idiom — the two-step stays);
-                // otherwise the row's action menu opens (permitted users only;
-                // `menu` is empty — a zero-size view — for everyone else).
-                if confirming.get().is_some()
-                    || banning.get().is_some()
-                    || timing.get().is_some()
+            let secondary = runtime_shared::touch::pointer_button().opens_context_menu();
+            let at = ev.window_position;
+            if ev.phase == TouchPhase::Began && secondary {
+                popup.open(member_id, at.x, at.y, true);
+            } else if ev.phase == TouchPhase::Ended && !secondary {
+                if confirming.get() == Some(member_id)
+                    || banning.get() == Some(member_id)
+                    || timing.get() == Some(member_id)
                 {
                     confirming.set(None);
                     banning.set(None);
                     timing.set(None);
-                } else if can_kick || can_ban {
-                    member_menu.set(Some(member_id));
+                } else {
+                    popup.open(member_id, at.x, at.y, false);
                 }
             }
             TouchResponse::CONSUMED
