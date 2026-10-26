@@ -12,7 +12,7 @@ pub(super) struct RailParts {
 }
 
 pub(super) fn build(s: &ShellState) -> RailParts {
-    let ShellState { active_channel, active_live_channel, active_live_server, active_server, create_busy, create_error, create_name, create_open, discover_open, dm_mode, dynamic_servers, gateway, is_real_user, join_busy, join_code, join_error, join_open, join_result, joined_voice, live_ban_confirm, live_channels, live_dm_active, live_dm_mode, live_dms, live_kick_confirm, live_member_error, live_members, live_servers, live_timeout_confirm, live_unread_rev, notif_mode, rail_unread, server_rail, .. } = s.clone();
+    let ShellState { active_channel, active_live_channel, active_live_server, active_server, create_busy, create_error, create_name, create_open, discover_open, dm_mode, dynamic_servers, friends_snap, gateway, is_real_user, join_busy, join_code, join_error, join_open, join_result, joined_voice, live_ban_confirm, live_channels, live_dm_active, live_dm_mode, live_dms, live_kick_confirm, live_member_error, live_members, live_servers, live_timeout_confirm, live_unread_rev, notif_mode, rail_unread, server_rail, .. } = s.clone();
     // --- server rail -----------------------------------------------------
     let rail_style = StyleRules {
         width: Some(px(72.0)),
@@ -585,62 +585,46 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                 }
                 TouchResponse::CONSUMED
             })
-            // Direct Messages (LIVE / backend): a separate, independent entry
-            // point from the mock DM button below. Toggling it open fetches
-            // the signed-in user's real DMs via `list_dms` (the same
-            // `spawn_async` + `#[server]` RPC idiom as the `live_servers`
-            // fetch) the first time it's opened; subsequent opens re-fetch so
-            // the list stays current. Per-open state (`live_dm_active`,
-            // `live_dm_messages`, `live_dm_revision`) is owned in `app_shell`
-            // scope, so a re-open keeps the selected conversation and its
-            // fetched history (the same persistence as the mock DM screen).
-            // Moved up from the old bottom slot (which must be DM + Settings
-            // only) so the live-DM feature stays reachable.
-            view(style = circle_style.clone(), test_id = "rail-live-direct-messages") {
-                icon(MESSAGE_CIRCLE).color(|| Color::from(TEXT_MUTED)).size(20.0)
-            }
-            .on_touch(move |ev| {
-                if ev.phase == TouchPhase::Ended {
-                    let now_open = !live_dm_mode.get();
-                    live_dm_mode.set(now_open);
-                    if now_open {
-                        // Persist the open conversation as this user's last
-                        // view (DM form) so a refresh re-opens the DM panel on
-                        // their own last conversation. None (nothing selected
-                        // yet this visit) clears nothing; the DM row's select
-                        // handler keeps the value current on every tap.
-                        if let Some(dm_id) = live_dm_active.get() {
-                            crate::auth::save_last_view_dm(dm_id);
-                        }
-                        // Re-fetch on every open so the list reflects the backend's
-                        // current state (mirrors how a live channel is re-fetched
-                        // when its server is re-selected).
-                        let list = live_dms.clone();
-                        runtime_core::driver::spawn_async(async move {
-                            if let Ok(dms) = crate::dms::list_dms().await {
-                                list.set(dms);
-                            }
-                        });
-                    }
-                }
-                TouchResponse::CONSUMED
-            })
             // The divider between the top (server-related) cluster and the
             // bottom (DM + Settings) row — Discord's rail separator.
             view(style = divider_style) {}
-            // --- Bottom row: Direct Messages (mock) + Settings -------------
+            // --- Bottom row: Direct Messages + Settings --------------------
             // Real Discord's bottom rail row is DM + Settings only.
             view(style = circle_style.clone(), test_id = "rail-direct-messages") {
                 icon(MAIL).color(|| Color::from(TEXT_MUTED)).size(20.0)
             }
-            // Direct Messages (mock): toggle the full-screen `dm_screen` overlay.
-            // No per-open state to reset — `dm_active` / `dm_sent` / `dm_revision`
-            // are owned in `app_shell` scope and persist across toggles, so a
-            // re-open keeps the previously-selected conversation and any DMs
-            // sent this session (the same persistence as the channel `sent` log).
+            // Direct Messages. A signed-in account gets its REAL DMs (the live
+            // DM screen); a guest has no backend identity, so it keeps the
+            // demo DM screen (`dm_screen`).
+            //
+            // Live: every open re-fetches the conversation list and the friend
+            // list (the "Find or start a conversation" search reads it), and
+            // records the open conversation as the last view so a refresh
+            // re-opens it. Per-open state (`live_dm_active`, the fetched
+            // history) lives in `app_shell` scope and survives a close.
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
-                    dm_open.set(!dm_open.get());
+                    if !is_real_user {
+                        dm_open.set(!dm_open.get());
+                        return TouchResponse::CONSUMED;
+                    }
+                    let now_open = !live_dm_mode.get();
+                    live_dm_mode.set(now_open);
+                    if now_open {
+                        if let Some(dm_id) = live_dm_active.get() {
+                            crate::auth::save_last_view_dm(dm_id);
+                        }
+                        let list = live_dms.clone();
+                        let friends = friends_snap.clone();
+                        runtime_core::driver::spawn_async(async move {
+                            if let Ok(dms) = crate::dms::list_dms().await {
+                                list.set(dms);
+                            }
+                            if let Ok(f) = crate::friends::list_friends().await {
+                                friends.set(crate::friends_view::snapshot(f));
+                            }
+                        });
+                    }
                 }
                 TouchResponse::CONSUMED
             })

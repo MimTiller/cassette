@@ -16,7 +16,7 @@ pub(super) struct OverlaysParts {
 }
 
 pub(super) fn build(s: &ShellState) -> OverlaysParts {
-    let ShellState { active_live_server, active_server, bug_reports_mode, dm_active, dm_mode, dm_revision, dm_sent, dm_unread, dm_unread_rev, friends_add_error, friends_add_username, friends_entry, friends_open, friends_snap, friends_tab, gateway, live_dm_active, live_dm_messages, live_dm_mode, live_dm_new_id, live_dm_revision, live_dms, live_invite_code, live_invite_error, live_invite_mode, live_presence, live_presence_rev, moderation_mode, notif_level, notif_mode, on_dm_message, profile_mode, selected_member, shortcuts_mode, .. } = s.clone();
+    let ShellState { active_live_server, active_server, bug_reports_mode, dm_active, dm_mode, dm_revision, dm_sent, dm_unread, dm_unread_rev, friends_add_error, friends_add_username, friends_entry, friends_open, friends_snap, friends_tab, gateway, live_dm_active, live_dm_messages, live_dm_mode, live_dm_new_id, live_dm_revision, live_dms, live_invite_code, live_invite_error, live_invite_mode, live_members, live_presence, live_presence_rev, moderation_mode, notif_level, notif_mode, on_dm_message, profile_mode, selected_member, shortcuts_mode, .. } = s.clone();
 
     // Profile Settings screen (built once; its fields are bound to local
     // component state). Rendered as a full-screen overlay on top of the rest
@@ -355,6 +355,8 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         live_dm_messages,
         live_dm_revision,
         live_dm_new_id,
+        friends_snap,
+        live_members,
         gateway.incoming(),
         friends_entry,
         friends_open,
@@ -380,7 +382,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
                 font_weight: Some(FontWeight::Bold),
                 color: Some(col(TEXT)),
                 ..Default::default()
-            }) { "Direct Messages (Live)".to_string() }
+            }) { "Direct Messages".to_string() }
             view(style = StyleRules {
                 height: Some(px(26.0)),
                 padding_left: Some(px(12.0)),

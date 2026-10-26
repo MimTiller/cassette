@@ -1,8 +1,8 @@
 //! `live_dm_view` — the LIVE direct-messages surface: a list of the
 //! signed-in user's real DM conversations (fetched from the backend's
 //! `list_dms`) plus a conversation view with a working composer (sends via
-//! `send_dm_message`) and a "start a new DM" row (calls `start_dm` by the
-//! other user's numeric id).
+//! `send_dm_message`) and a "Find or start a conversation" search that
+//! starts a DM with a friend or a member of the open server (`start_dm`).
 //!
 //! This is separate from the mock `dm_view` module (which renders the
 //! `&'static` data in `crate::data`) and is a *new, independent* entry
@@ -81,146 +81,206 @@ fn current_user_id() -> i64 {
 
 // --- conversation list -------------------------------------------------------
 
-/// The "Start a new DM" row at the top of the live DM list: a numeric user-id
-/// input (the backend's `start_dm` takes `user_id: i64` — there is no
-/// username-lookup endpoint) + a Go button that calls `start_dm` and then
-/// selects the resulting conversation (idempotent: an existing DM is returned
-/// as-is).
-///
-/// `id_text` is owned in `app_shell` scope (not here) so the draft survives a
-/// list rebuild: when `start_dm` lands, `live_dms` is updated and the list
-/// `switch` re-runs its arm, re-creating this row — an in-row signal would
-/// drop the typed id at that exact moment.
-fn live_dm_new_row(
+/// Open the DM with `user_id`, starting it if needed, and select it.
+/// `start_dm` is idempotent (an existing conversation comes back as-is); the
+/// history is then fetched into `msgs` the same way a list-row tap does.
+fn open_dm_with(
+    user_id: i64,
     live_dms: Signal<Vec<Dm>>,
     active: Signal<Option<i64>>,
     msgs: Rc<RefCell<Vec<LiveDmMsg>>>,
     rev: Signal<u32>,
-    id_text: Signal<String>,
+) {
+    runtime_core::driver::spawn_async(async move {
+        let Ok(dm) = dms::start_dm(user_id).await else {
+            return;
+        };
+        let dm_id = dm.channel_id;
+        if !live_dms.get().iter().any(|d| d.channel_id == dm_id) {
+            let mut list = live_dms.get();
+            list.insert(0, dm);
+            live_dms.set(list);
+        }
+        active.set(Some(dm_id));
+        crate::auth::save_last_view_dm(dm_id);
+        if let Ok(history) = dms::list_dm_messages(dm_id, None).await {
+            msgs.borrow_mut().clear();
+            msgs.borrow_mut().extend(history.into_iter().map(|msg| {
+                (msg.author_username, msg.content, msg.created_at, msg.edited_at)
+            }));
+            rev.set(rev.get() + 1);
+        }
+    });
+}
+
+/// The people the signed-in user can start a DM with: accepted friends
+/// first, then members of the open server, without duplicates or themselves.
+fn dm_candidates(
+    friends: &[crate::friends_view::FriendRow],
+    members: &[crate::moderation::MemberInfo],
+) -> Vec<(i64, String)> {
+    let me = current_user_id();
+    let friend_rows = friends.iter().filter(|f| f.0 == 2).map(|f| (f.1, f.2.clone()));
+    let member_rows = members.iter().map(|m| (m.user_id, m.username.clone()));
+    let mut out: Vec<(i64, String)> = Vec::new();
+    for (id, name) in friend_rows.chain(member_rows) {
+        if id != me && !out.iter().any(|(seen, _)| *seen == id) {
+            out.push((id, name));
+        }
+    }
+    out
+}
+
+/// The candidates whose name contains `query` (case-insensitive), at most
+/// `limit` of them.
+fn dm_matches(candidates: &[(i64, String)], query: &str, limit: usize) -> Vec<(i64, String)> {
+    let q = query.trim().to_lowercase();
+    candidates
+        .iter()
+        .filter(|(_, name)| name.to_lowercase().contains(&q))
+        .take(limit)
+        .cloned()
+        .collect()
+}
+
+/// "Find or start a conversation" at the top of the DM list: typing filters
+/// friends and members of the open server, and tapping a match opens (or
+/// starts) the DM with them and clears the box.
+///
+/// `query` is owned in `app_shell` scope (not here) so the draft survives a
+/// list rebuild: when a DM starts, `live_dms` changes and the list `switch`
+/// re-runs its arm, re-creating this row.
+fn live_dm_find_row(
+    live_dms: Signal<Vec<Dm>>,
+    active: Signal<Option<i64>>,
+    msgs: Rc<RefCell<Vec<LiveDmMsg>>>,
+    rev: Signal<u32>,
+    query: Signal<String>,
+    friends: Signal<Vec<crate::friends_view::FriendRow>>,
+    members: Signal<Vec<crate::moderation::MemberInfo>>,
 ) -> Element {
     let on_change = move |s: String| {
-        id_text.set(s);
-    };
-    let row_style = StyleRules {
-        height: Some(px(48.0)),
-        margin_left: Some(px(8.0)),
-        margin_right: Some(px(8.0)),
-        margin_top: Some(px(6.0)),
-        margin_bottom: Some(px(6.0)),
-        padding_left: Some(px(10.0)),
-        padding_right: Some(px(10.0)),
-        align_items: Some(AlignItems::Center),
-        gap: Some(px(6.0)),
-        background: Some(col(BG_HOVER)),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        query.set(s);
     };
     let input_style = StyleRules {
-        flex_grow: Some(grow(1.0)),
         height: Some(px(30.0)),
         padding_left: Some(px(8.0)),
         padding_right: Some(px(8.0)),
-        background: Some(col(COMPOSER)),
+        background: Some(col(BORDER)),
         color: Some(col(TEXT)),
-        border_top_left_radius: Some(px(6.0)),
-        border_top_right_radius: Some(px(6.0)),
-        border_bottom_left_radius: Some(px(6.0)),
-        border_bottom_right_radius: Some(px(6.0)),
+        font_size: Some(px(13.0)),
+        border_top_left_radius: Some(px(4.0)),
+        border_top_right_radius: Some(px(4.0)),
+        border_bottom_left_radius: Some(px(4.0)),
+        border_bottom_right_radius: Some(px(4.0)),
         ..borderless_input()
     };
-    let go_style = StyleRules {
-        height: Some(px(30.0)),
-        padding_left: Some(px(12.0)),
-        padding_right: Some(px(12.0)),
-        background: Some(col(BUTTON)),
-        color: Some(col(TEXT)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(6.0)),
-        border_top_right_radius: Some(px(6.0)),
-        border_bottom_left_radius: Some(px(6.0)),
-        border_bottom_right_radius: Some(px(6.0)),
-        ..Default::default()
-    };
-
-    // One action shared by the Go button and the input's Enter key: parse the
-    // id, call `start_dm`, then select the resulting DM (fetching its history,
-    // the same idiom as `live_dm_row`'s touch handler).
-    let id_read = id_text.clone();
-    let do_start = Rc::new(move || {
-        let raw = id_read.get();
-        match raw.trim().parse::<i64>() {
-            Ok(user_id) if user_id > 0 => {
-                let dms_sig = live_dms.clone();
-                let act = active.clone();
-                let m = msgs.clone();
-                let r = rev.clone();
-                runtime_core::driver::spawn_async(async move {
-                    match dms::start_dm(user_id).await {
-                        Ok(dm) => {
-                            // Idempotent: the backend returns the existing DM
-                            // if one is already open with this user, so we can
-                            // always just select the returned channel id.
-                            let dm_id = dm.channel_id;
-                            if !dms_sig.get().iter().any(|d| d.channel_id == dm_id) {
-                                let mut list = dms_sig.get();
-                                list.insert(0, dm);
-                                dms_sig.set(list);
-                            }
-                            act.set(Some(dm_id));
-                            crate::auth::save_last_view_dm(dm_id);
-                            if let Ok(history) = dms::list_dm_messages(dm_id, None).await {
-                                m.borrow_mut().clear();
-                                m.borrow_mut()
-                                    .extend(history.into_iter().map(|msg| {
-                                        (
-                                            msg.author_username,
-                                            msg.content,
-                                            msg.created_at,
-                                            msg.edited_at,
-                                        )
-                                    }));
-                                r.set(r.get() + 1);
-                            }
-                        }
-                        Err(_) => {
-                            // A failed start (unknown user, self-DM) leaves the
-                            // selection untouched; the id draft is kept so the
-                            // user can correct it.
-                        }
+    let results = switch(
+        move || query.get(),
+        move |q: &String| {
+            if q.trim().is_empty() {
+                return ui! { view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {} };
+            }
+            let found = dm_matches(&dm_candidates(&friends.get(), &members.get()), q, 8);
+            if found.is_empty() {
+                return ui! {
+                    text(style = StyleRules {
+                        font_size: Some(px(12.0)),
+                        color: Some(col(TEXT_MUTED)),
+                        padding_top: Some(px(6.0)),
+                        padding_left: Some(px(4.0)),
+                        ..Default::default()
+                    }) { "No friends or members match".to_string() }
+                };
+            }
+            let rows: Vec<Element> = found.into_iter().map(|(user_id, name)| {
+                let (dms_sig, act, m, r) = (live_dms, active, msgs.clone(), rev);
+                ui! {
+                    view(style = StyleRules {
+                        height: Some(px(34.0)),
+                        flex_direction: Some(FlexDirection::Row),
+                        align_items: Some(AlignItems::Center),
+                        gap: Some(px(8.0)),
+                        padding_left: Some(px(6.0)),
+                        padding_right: Some(px(6.0)),
+                        border_top_left_radius: Some(px(4.0)),
+                        border_top_right_radius: Some(px(4.0)),
+                        border_bottom_left_radius: Some(px(4.0)),
+                        border_bottom_right_radius: Some(px(4.0)),
+                        ..Default::default()
+                    }, test_id = "live-dm-find-result") {
+                        { crate::avatar_chip::avatar_chip(name.as_str(), BUTTON, 24.0, 12.0) }
+                        text(style = StyleRules {
+                            font_size: Some(px(14.0)),
+                            color: Some(col(TEXT)),
+                            ..Default::default()
+                        }) { name.clone() }
                     }
-                });
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            open_dm_with(user_id, dms_sig, act, m.clone(), r);
+                            query.set(String::new());
+                        }
+                        TouchResponse::CONSUMED
+                    })
+                }
+            }).collect();
+            ui! {
+                view(style = StyleRules {
+                    flex_direction: Some(FlexDirection::Column),
+                    padding_top: Some(px(4.0)),
+                    ..Default::default()
+                }) { rows }
             }
-            _ => {
-                // Not a valid id: ignore (the input keeps the draft so the
-                // user can fix it — no separate error element, to keep the
-                // row a stable single-line layout).
-            }
-        }
-    });
-    let on_click = {
-        let start = do_start.clone();
-        move || (start)()
-    };
-    let on_enter = {
-        let start = do_start.clone();
-        move |ev: &KeyEvent| {
-            if ev.key == "Enter" && !ev.shift && !ev.ctrl && !ev.alt && !ev.meta {
-                (start)();
-                KeyOutcome::PreventDefault
-            } else {
-                KeyOutcome::Default
-            }
-        }
-    };
+        },
+    );
     ui! {
-        view(style = row_style) {
-            text_input(value = id_text, on_change = on_change, placeholder = "user id", style = input_style, test_id = "live-dm-new-id").on_key_down(on_enter)
-            button(label = "Go".to_string(), on_click = on_click, style = go_style, test_id = "live-dm-new-go")
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Column),
+            padding_top: Some(px(10.0)),
+            padding_bottom: Some(px(8.0)),
+            padding_left: Some(px(10.0)),
+            padding_right: Some(px(10.0)),
+            border_bottom_width: Some(border_width(1.0)),
+            border_bottom_color: Some(col(BORDER)),
+            ..Default::default()
+        }) {
+            text_input(value = query, on_change = on_change, placeholder = "Find or start a conversation", style = input_style, test_id = "live-dm-find")
+            results
         }
+    }
+}
+
+#[cfg(test)]
+mod dm_find_tests {
+    use super::{dm_candidates, dm_matches};
+
+    fn member(user_id: i64, username: &str) -> crate::moderation::MemberInfo {
+        crate::moderation::MemberInfo {
+            user_id,
+            username: username.to_string(),
+            role: "member".to_string(),
+            avatar_url: None,
+        }
+    }
+
+    #[test]
+    fn friends_come_first_and_pending_requests_are_left_out() {
+        let friends = vec![
+            (2u8, 7, "zed".to_string(), None),
+            (0u8, 8, "incoming".to_string(), None),
+            (1u8, 9, "outgoing".to_string(), None),
+        ];
+        let members = vec![member(3, "amy"), member(7, "zed")];
+        assert_eq!(dm_candidates(&friends, &members), vec![(7, "zed".to_string()), (3, "amy".to_string())]);
+    }
+
+    #[test]
+    fn matching_is_a_case_insensitive_substring_with_a_limit() {
+        let all = vec![(1, "Blake".to_string()), (2, "casey".to_string()), (3, "blakely".to_string())];
+        assert_eq!(dm_matches(&all, " BLA ", 8), vec![(1, "Blake".to_string()), (3, "blakely".to_string())]);
+        assert_eq!(dm_matches(&all, "a", 2).len(), 2);
+        assert!(dm_matches(&all, "zz", 8).is_empty());
     }
 }
 
@@ -385,7 +445,9 @@ fn live_dm_list(
     active: Signal<Option<i64>>,
     _msgs: Rc<RefCell<Vec<LiveDmMsg>>>,
     rev: Signal<u32>,
-    new_id: Signal<String>,
+    query: Signal<String>,
+    friends: Signal<Vec<crate::friends_view::FriendRow>>,
+    members: Signal<Vec<crate::moderation::MemberInfo>>,
     friends_entry: Rc<dyn Fn() -> Element>,
 ) -> Element {
     let column_style = StyleRules {
@@ -413,12 +475,14 @@ fn live_dm_list(
             // moving them out (the whiteboard idiom, cf. `app.rs`'s sidebar).
             let column_style = column_style.clone();
             let section_style = section_style.clone();
-            let new_row = live_dm_new_row(
+            let find_row = live_dm_find_row(
                 live_dms.clone(),
                 active.clone(),
                 _msgs.clone(),
                 rev.clone(),
-                new_id.clone(),
+                query,
+                friends,
+                members,
             );
             let rows: Vec<Element> = dms
                 .iter()
@@ -428,9 +492,9 @@ fn live_dm_list(
             let entry = (friends_entry)();
             ui! {
                 view(style = column_style) {
-                    text(style = section_style) { "Direct Messages".to_string() }
+                    { find_row }
                     { entry }
-                    new_row
+                    text(style = section_style) { "Direct Messages".to_string() }
                     view(style = StyleRules {
                         flex_grow: Some(grow(1.0)),
                         overflow: Some(Overflow::Hidden),
@@ -795,7 +859,8 @@ pub fn dm_incoming_effect(
 ///
 /// `live_dms` is the fetched conversation list, `active` the selected DM id,
 /// `msgs`/`rev` the fetched-history buffer + rebuild counter, `new_id` the
-/// "start a new DM" draft, and `frame_seq` the gateway's per-frame value
+/// "Find or start a conversation" draft, `friends`/`members` the people it
+/// searches, and `frame_seq` the gateway's per-frame value
 /// signal (the effect watches it for `DmMessage` frames). All are owned in
 /// `app_shell` scope so state survives a close/re-open.
 pub fn live_dm_screen(
@@ -804,6 +869,8 @@ pub fn live_dm_screen(
     msgs: Rc<RefCell<Vec<LiveDmMsg>>>,
     rev: Signal<u32>,
     new_id: Signal<String>,
+    friends: Signal<Vec<crate::friends_view::FriendRow>>,
+    members: Signal<Vec<crate::moderation::MemberInfo>>,
     frame_seq: Signal<Option<discord_server::server_settings::WsServerMsg>>,
     friends_entry: Rc<dyn Fn() -> Element>,
     friends_open: Signal<bool>,
@@ -842,7 +909,7 @@ pub fn live_dm_screen(
             overflow: Some(Overflow::Hidden),
             ..Default::default()
         }) {
-            live_dm_list(live_dms.clone(), active.clone(), msgs.clone(), rev.clone(), new_id, friends_entry)
+            live_dm_list(live_dms.clone(), active.clone(), msgs.clone(), rev.clone(), new_id, friends, members, friends_entry)
             main
             effect
         }
