@@ -8,6 +8,9 @@ use super::*;
 /// mock `member_row` and the user panel draw.
 const MEMBER_CHIP_SIZE: f32 = 32.0;
 
+/// Offline rows render at this opacity (Discord dims offline members).
+const MEMBER_OFFLINE_OPACITY: f32 = 0.5;
+
 /// One member row: avatar chip with the status dot overlaid on its
 /// bottom-right corner, then the name — tinted by the member's role color
 /// (Discord colors the username by role; there is no separate role badge in
@@ -571,13 +574,6 @@ pub(super) fn live_member_panel(
     // Shared styles (built once per rebuild; `StyleRules` is not `Copy`, so the
     // per-row styles are written INLINE inside the loop, the `member_role_list`
     // idiom — nothing non-`Copy` is captured across the loop boundary).
-    let header_style = StyleRules {
-        padding_top: Some(px(14.0)),
-        padding_bottom: Some(px(6.0)),
-        padding_left: Some(px(12.0)),
-        padding_right: Some(px(12.0)),
-        ..section_label()
-    };
     // The message-search bar, same position as the mock `member_panel`:
     // 12px-padded at the top of the panel, above the member list. The corpus
     // is the active live channel's gateway buffer (see the caller's
@@ -680,7 +676,12 @@ pub(super) fn live_member_panel(
     // Each row is a `move` closure: `server_id` (i64) and `member_id` (i64) are
     // `Copy`, and the three `Signal`s it captures are `Copy`, so every closure
     // owns a fresh copy and stays `Fn` across rebuilds.
-    let mut rows: Vec<Element> = Vec::new();
+    // Discord groups the roster into ONLINE / OFFLINE sections. Online = any
+    // presence status other than offline (idle and DND count as online); a
+    // member missing from the presence snapshot is offline. Rows go into two
+    // buckets; each keeps the roster's existing order (push order).
+    let mut online_rows: Vec<Element> = Vec::<Element>::new();
+    let mut offline_rows: Vec<Element> = Vec::<Element>::new();
     for member in roster.iter() {
         let member_id = member.user_id;
         let is_self = member_id == self_id;
@@ -729,6 +730,17 @@ pub(super) fn live_member_panel(
         // grey. The colors mirror the mock `Status::color()` convention so the
         // live panel reads like the mock one: green online, amber away (the
         // server's idle state), grey offline.
+        // Grouping: a member is OFFLINE only when their status string is
+        // "offline" or absent from the snapshot; every other status (online,
+        // away/idle, dnd) counts as online, like Discord.
+        let is_offline = match presence.get(&member_id).map(|s| s.as_str()) {
+            Some("online") => false,
+            Some("away") => false,
+            Some("idle") => false,
+            Some("dnd") => false,
+            Some("do_not_disturb") => false,
+            _ => true,
+        };
         let presence_color = match presence.get(&member_id).map(|s| s.as_str()) {
             Some("online") => "#23a559",
             Some("away") => "#f0b232",
@@ -787,6 +799,8 @@ pub(super) fn live_member_panel(
                 flex_direction: Some(FlexDirection::Row),
                 align_items: Some(AlignItems::Center),
                 gap: Some(px(8.0)),
+                // Discord dims offline rows (~50%) but keeps them clickable.
+                opacity: Some(Tokenized::Literal(if is_offline { MEMBER_OFFLINE_OPACITY } else { 1.0 })),
                 ..Default::default()
             }) {
                 // The member's avatar chip: uploaded image when the client
@@ -1062,8 +1076,45 @@ pub(super) fn live_member_panel(
             TouchResponse::CONSUMED
         })
         };
-        rows.push(row);
+        if is_offline {
+            offline_rows.push(row);
+        } else {
+            online_rows.push(row);
+        }
     }
+
+    // Section headers: same treatment as the mock panel's group labels
+    // (uppercase, small, muted, semibold via section_label()) — one per
+    // non-empty group, each carrying its count. The old single "MEMBERS — N"
+    // header is now redundant (the two group counts sum to it), so it's gone.
+    let section_header_style = StyleRules {
+        padding_top: Some(px(10.0)),
+        padding_bottom: Some(px(2.0)),
+        padding_left: Some(px(12.0)),
+        ..section_label()
+    };
+    let online_header = ui! {
+        text(style = section_header_style.clone()) {
+            format!("ONLINE — {}", online_rows.len())
+        }
+    };
+    let offline_header = ui! {
+        text(style = section_header_style) {
+            format!("OFFLINE — {}", offline_rows.len())
+        }
+    };
+    let section_children: Vec<Element> = {
+        let mut secs: Vec<Element> = Vec::<Element>::new();
+        if !online_rows.is_empty() {
+            secs.push(online_header);
+            secs.extend(online_rows.into_iter());
+        }
+        if !offline_rows.is_empty() {
+            secs.push(offline_header);
+            secs.extend(offline_rows.into_iter());
+        }
+        secs
+    };
 
     ui! {
         view(style = StyleRules {
@@ -1075,14 +1126,11 @@ pub(super) fn live_member_panel(
             overflow: Some(Overflow::Hidden),
             ..Default::default()
         }) {
-            text(style = header_style) {
-                format!("MEMBERS — {}", roster.len())
-            }
             search_block
             scroll_view(style = StyleRules {
                 flex_grow: Some(grow(1.0)),
                 ..Default::default()
-            }) { rows }
+            }) { section_children }
         }
     }
 }
