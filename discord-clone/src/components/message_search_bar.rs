@@ -74,8 +74,15 @@ pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>) -> Element {
         flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Center),
         height: Some(px(40.0)),
+        // Flex-grow into the row's remaining width — with min_width 0 so the
+        // input can SHRINK below its content width, the fix for the input
+        // running past the member panel's right edge (clipped at the window).
         flex_grow: Some(Tokenized::Literal(1.0)),
-        padding_left: Some(px(10.0)),
+        flex_shrink: Some(Tokenized::Literal(1.0)),
+        min_width: Some(px(0.0)),
+        // Symmetric padding on both sides (was 10/12 — asymmetric padding
+        // read as the box hugging/crossing the panel edge).
+        padding_left: Some(px(12.0)),
         padding_right: Some(px(12.0)),
         background: Some(col(COMPOSER)),
         color: Some(col(TEXT)),

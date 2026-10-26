@@ -153,14 +153,24 @@ pub fn dm_list(
     list
 }
 
+/// Clamp a string to ONE visual line: keep at most `max` characters, cut
+/// with an ellipsis. With the web backend ignoring a `max_lines` style,
+/// truncating the string is what keeps DM previews on one line (no wrapping,
+/// no row overlap).
+pub(crate) fn one_line(s: String, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s
+    }
+    s.chars().take(max - 1).collect::<String>() + "…"
+}
+
 /// One DM row: avatar chip (with a status dot), the participant's name, a
-/// preview of their last message, the last-message time, and an unread badge
-/// (read from the shared reactive `unread` map).
-fn dm_row(
-    dm_id: u32,
-    active: Signal<u32>,
-    unread: Rc<RefCell<HashMap<u32, u32>>>,
-) -> Element {
+/// preview of their last message (clamped to ONE line, cut with an
+/// ellipsis), the last-message time (narrow column), and an unread badge
+/// (read from the shared reactive `unread` map). All text is fixed-height
+/// per line so the whole stack fits the 56px row — nothing spills into the
+/// rows above or below.
+fn dm_row(dm_id: u32, active: Signal<u32>, unread: Rc<RefCell<HashMap<u32, u32>>>) -> Element {
     // `find_dm` is total over the `ordered` ids, so this is safe.
     let dm = find_dm(dm_id).expect("dm id came from DMS");
     let name = dm.user.name.to_string();
@@ -179,6 +189,10 @@ fn dm_row(
             }
         })
         .unwrap_or_else(|| "No messages yet".to_string());
+    // Clamp to ONE line (the web backend does not emit a `max_lines` style,
+    // so cutting the string with "…" is the fix): an unwrapped single line
+    // cannot spill past the fixed-height row into its neighbours.
+    let preview = one_line(preview, 16);
     let when = {
         let now = now_secs();
         format_when(dm.messages.last().map(|m| m.ts_secs(now)).unwrap_or(now), now)
@@ -197,6 +211,8 @@ fn dm_row(
             margin_right: Some(px(8.0)),
             padding_left: Some(px(10.0)),
             padding_right: Some(px(10.0)),
+            // Positioning ancestor for the absolute unread pill.
+            position: Some(runtime_core::Position::Relative),
             flex_direction: Some(FlexDirection::Row),
             align_items: Some(AlignItems::Center),
             gap: Some(px(10.0)),
@@ -262,40 +278,42 @@ fn dm_row(
     let stack_style = StyleRules {
         flex_direction: Some(FlexDirection::Column),
         flex_grow: Some(grow(1.0)),
-        gap: Some(px(3.0)),
+        gap: Some(px(2.0)),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
     };
     let name_style = move || StyleRules {
-        font_size: Some(px(15.0)),
+        font_size: Some(px(14.0)),
         font_weight: Some(if active.get() == dm_id {
             FontWeight::SemiBold
         } else {
             FontWeight::Normal
         }),
         color: Some(col(TEXT)),
-        ..Default::default()
-    };
-    let meta_style = StyleRules {
-        flex_direction: Some(FlexDirection::Row),
-        align_items: Some(AlignItems::Baseline),
-        gap: Some(px(6.0)),
+        max_lines: Some(1u32),
+        min_width: Some(px(0.0)),
+        flex_shrink: Some(grow(1.0)),
         ..Default::default()
     };
     let preview_style = StyleRules {
-        font_size: Some(px(13.0)),
+        font_size: Some(px(12.0)),
         color: Some(col(TEXT_MUTED)),
-        flex_grow: Some(grow(1.0)),
-        // Clip to a single line (the `ui!` text primitive wraps; a fixed-height
-        // row + overflow hidden keeps it to the line).
+        min_width: Some(px(0.0)),
+        flex_shrink: Some(grow(1.0)),
         ..Default::default()
     };
     let when_style = StyleRules {
-        font_size: Some(px(11.0)),
+        font_size: Some(px(10.0)),
         color: Some(col(TEXT_MUTED)),
         ..Default::default()
     };
     let unread_style = StyleRules {
+        // Discord-style: the unread pill floats at the row's right edge — an
+        // absolute overlay so it never eats the meta row's width (which is
+        // what squeezed the time column and made everything wrap).
+        position: Some(runtime_core::Position::Absolute),
+        right: Some(px(2.0)),
+        top: Some(px(6.0)),
         min_width: Some(px(18.0)),
         height: Some(px(18.0)),
         padding_left: Some(px(5.0)),
@@ -322,13 +340,11 @@ fn dm_row(
             }
             view(style = stack_style) {
                 text(style = name_style) { name }
-                view(style = meta_style) {
-                    text(style = preview_style) { preview }
-                    text(style = when_style) { when }
-                    if unread > 0 {
-                        text(style = unread_style) { unread_label }
-                    }
-                }
+                text(style = preview_style) { preview }
+                text(style = when_style) { when }
+            }
+            if unread > 0 {
+                text(style = unread_style) { unread_label }
             }
         }
         .on_touch(move |ev| {

@@ -187,10 +187,15 @@ pub fn DeleteChannelModal(
     // one moved into an `Fn` render closure is gone after the first rebuild
     // (E0507). `on_delete` / `close` capture only `Copy` signals, so the
     // closures stay `Fn` + `Copy`.
+    // The `switch` must be keyed on BOTH the error and the channel name: the
+    // name is picked when the channel gear menu opens the dialog (possibly
+    // after a page load with the modal already built), so reading `nm.get()`
+    // inside the render closure of a name-blind key renders the stale load-
+    // time name ("Delete ?"). Keying on the name re-keys (and re-renders) the
+    // body the moment the name is set, and the closure uses the keyed value.
     let body = switch(
-        move || error.get().clone(),
-        move |err: &String| {
-            let name = nm.get();
+        move || (error.get().clone(), nm.get()),
+        move |(err, name): &(String, String)| {
             let cancel_btn = ui! {
                 view(style = cancel_btn_style.clone(), test_id = "delete-channel-cancel") {
                     text(style = btn_label_style.clone()) { "Cancel".to_string() }

@@ -365,6 +365,10 @@ fn live_dm_row(
         font_weight: Some(FontWeight::SemiBold),
         color: Some(col(TEXT)),
         flex_grow: Some(grow(1.0)),
+        // Let a long username give up width instead of wrapping past the
+        // fixed-height row (the mock dm_row's one-line preview fix).
+        min_width: Some(px(0.0)),
+        flex_shrink: Some(grow(1.0)),
         ..Default::default()
     };
 
