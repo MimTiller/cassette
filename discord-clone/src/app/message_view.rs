@@ -215,6 +215,50 @@ pub(super) fn channel_anchor(channel_name: &str) -> Element {
 /// the body. A body with no `||…||` marker renders exactly as one plain text
 /// run (the previous behavior), so this is a content-dependent upgrade, not an
 /// unconditional per-row widget.
+/// Message text size, and the emoji sizes Discord-style: emoji among text
+/// at ~1.5x, a message that is nothing but emoji at 2x.
+const BODY_PX: f32 = 15.0;
+const INLINE_EMOJI_PX: f32 = 22.0;
+const EMOJI_ONLY_PX: f32 = 30.0;
+
+/// Whether `c` draws as (part of) an emoji: the pictographic blocks, plus
+/// the joiners, variation selectors, skin tones, keycap and tag characters
+/// that glue a multi-codepoint emoji together.
+fn is_emoji_char(c: char) -> bool {
+    matches!(c as u32,
+        0x1F000..=0x1FAFF   // pictographs, emoticons, transport, flags, symbols
+        | 0x2600..=0x27BF   // misc symbols + dingbats (☀ ✨ ❤ …)
+        | 0x2B05..=0x2B07 | 0x2B1B | 0x2B1C | 0x2B50 | 0x2B55
+        | 0x200D | 0xFE0F | 0x20E3 // ZWJ, VS16, keycap
+        | 0xE0020..=0xE007F)        // tag sequences (subdivision flags)
+}
+
+/// Split plain text into alternating (is_emoji, run) pieces.
+pub(super) fn emoji_runs(text: &str) -> Vec<(bool, String)> {
+    let mut out: Vec<(bool, String)> = Vec::new();
+    for c in text.chars() {
+        let e = is_emoji_char(c);
+        match out.last_mut() {
+            Some((kind, run)) if *kind == e => run.push(c),
+            _ => out.push((e, c.to_string())),
+        }
+    }
+    out
+}
+
+/// A body made only of emoji (and spaces): it gets the bigger size.
+pub(super) fn is_emoji_only(text: &str) -> bool {
+    let mut any = false;
+    for c in text.chars() {
+        if is_emoji_char(c) {
+            any = true;
+        } else if !c.is_whitespace() {
+            return false;
+        }
+    }
+    any
+}
+
 pub(super) fn message_body(body: &str) -> Element {
     // A body that carries real Markdown syntax (emphasis, code, links, quotes,
     // lists…) renders the WHOLE thing through the `markdown` SDK — one scene
@@ -280,16 +324,17 @@ pub(super) fn message_body(body: &str) -> Element {
         runs.push((false, String::new()));
     }
 
+    let emoji_px = if is_emoji_only(body) { EMOJI_ONLY_PX } else { INLINE_EMOJI_PX };
     let runs_el: Vec<Element> = runs
         .iter()
-        .map(|(is_spoiler, text)| {
+        .flat_map(|(is_spoiler, text)| -> Vec<Element> {
             if *is_spoiler {
                 // The click-to-reveal spoiler. The generated component fn takes
                 // a `Reactive<String>` `text` prop; `String: Into<Reactive<String>>`
                 // (the `From<T> for Reactive<T>` impl), so `…into()` bakes a
                 // static prop. (The `text = …` named-prop form only parses
                 // inside `ui!`; here we call the fn directly, positionally.)
-                ui! {
+                vec![ui! {
                     view(style = StyleRules {
                         margin_left: Some(px(2.0)),
                         margin_right: Some(px(2.0)),
@@ -297,17 +342,21 @@ pub(super) fn message_body(body: &str) -> Element {
                     }) {
                         { crate::spoiler_tag::SpoilerTag(text.to_string().into()) }
                     }
-                }
+                }]
             } else {
-                // Plain run: an inline text node in the same flow as the
+                // Plain run: inline text nodes in the same flow as the
                 // spoilers, so the row stays on one visual line when it fits.
-                ui! {
-                    text(style = StyleRules {
-                        font_size: Some(px(15.0)),
-                        color: Some(col(TEXT)),
-                        ..Default::default()
-                    }) { text.to_string() }
-                }
+                // Emoji pieces get the bigger size.
+                emoji_runs(text)
+                    .into_iter()
+                    .map(|(is_emoji, piece)| ui! {
+                        text(style = StyleRules {
+                            font_size: Some(px(if is_emoji { emoji_px } else { BODY_PX })),
+                            color: Some(col(TEXT)),
+                            ..Default::default()
+                        }) { piece }
+                    })
+                    .collect()
             }
         })
         .collect();
@@ -316,9 +365,36 @@ pub(super) fn message_body(body: &str) -> Element {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Row),
             flex_wrap: Some(FlexWrap::Wrap),
+            // Text and the bigger emoji share a baseline.
+            align_items: Some(AlignItems::Baseline),
             flex_grow: Some(grow(1.0)),
             ..Default::default()
         }) { runs_el }
+    }
+}
+
+#[cfg(test)]
+mod emoji_size_tests {
+    use super::{emoji_runs, is_emoji_only};
+
+    #[test]
+    fn emoji_split_from_text_and_multi_codepoint_emoji_stay_whole() {
+        assert_eq!(
+            emoji_runs("hi 👋 there"),
+            vec![(false, "hi ".to_string()), (true, "👋".to_string()), (false, " there".to_string())]
+        );
+        // A ZWJ family and a flag each stay one emoji run.
+        assert_eq!(emoji_runs("👨‍👩‍👧"), vec![(true, "👨‍👩‍👧".to_string())]);
+        assert_eq!(emoji_runs("🇺🇸!"), vec![(true, "🇺🇸".to_string()), (false, "!".to_string())]);
+    }
+
+    #[test]
+    fn emoji_only_means_nothing_but_emoji_and_spaces() {
+        assert!(is_emoji_only("😂"));
+        assert!(is_emoji_only(" 🔥 ❤️ "));
+        assert!(!is_emoji_only("lol 😂"));
+        assert!(!is_emoji_only("   "));
+        assert!(!is_emoji_only("plain text"));
     }
 }
 
