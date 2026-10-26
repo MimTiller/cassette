@@ -17,25 +17,59 @@ pub(super) const GROUP_WINDOW_SECS: i64 = 420;
 pub(crate) fn same_group(prev_author: &str, prev_ts: i64, cur_author: &str, cur_ts: i64) -> bool {
     prev_author == cur_author && cur_ts >= prev_ts && cur_ts - prev_ts < GROUP_WINDOW_SECS
 }
+/// The largest box a single attachment is shown in. Smaller images keep
+/// their own size (never upscaled); larger ones shrink to fit, keeping their
+/// shape.
+const ATTACHMENT_MAX_W: f32 = 520.0;
+const ATTACHMENT_MAX_H: f32 = 360.0;
+/// With two or more images in one message, each fits a smaller square, so a
+/// pair sits side by side.
+const ATTACHMENT_GRID_MAX: f32 = 256.0;
+
+/// The on-screen size of an image of `size` pixels inside a `max_w` x `max_h`
+/// box: scaled down to fit, never up. An unknown size (a legacy attachment or
+/// an older server) gets the whole box, and the image is letterboxed in it.
+pub(super) fn attachment_box(size: Option<(u32, u32)>, max_w: f32, max_h: f32) -> (f32, f32) {
+    match size {
+        Some((w, h)) if w > 0 && h > 0 => {
+            let (w, h) = (w as f32, h as f32);
+            let scale = (max_w / w).min(max_h / h).min(1.0);
+            ((w * scale).round().max(1.0), (h * scale).round().max(1.0))
+        }
+        _ => (max_w, max_h),
+    }
+}
+
 /// The images attached to one live message, rendered as a row UNDER the
-/// body: each image sits in a definite 400x300 box with `object_fit`
-/// Contain preserving the aspect ratio (the same definite-box sizing the
-/// avatar chips use — width/height + object_fit + no flex_shrink drift).
-/// A reactive style fed from the image's `on_load` natural size is NOT
-/// used: that never took effect in the live app (the node rendered 0x0).
+/// body and lined up with its text (the same 66px inset as the reaction
+/// strip). Each image gets a definite box from the pixel size the server
+/// reports (`attachment_box`), with `object_fit` Contain as a guard. The
+/// size comes from the server because a reactive style fed from the image's
+/// `on_load` natural size never took effect in the live app (the node
+/// rendered 0x0).
 pub(super) fn attachment_row(atts: &[discord_server::server_settings::MessageAttachment]) -> Element {
+    let (max_w, max_h) = if atts.len() > 1 {
+        (ATTACHMENT_GRID_MAX, ATTACHMENT_GRID_MAX)
+    } else {
+        (ATTACHMENT_MAX_W, ATTACHMENT_MAX_H)
+    };
     let cells: Vec<Element> = atts.iter().map(|a| {
         let data = crate::auth::media_url(a.url.clone());
         let name = a.filename.clone();
+        let (w, h) = attachment_box(a.width.zip(a.height), max_w, max_h);
         ui! {
             image(
                 src = data,
                 alt = name,
                 style = StyleRules {
-                    width: Some(px(400.0)),
-                    height: Some(px(300.0)),
+                    width: Some(px(w)),
+                    height: Some(px(h)),
                     flex_shrink: Some(grow(0.0)),
                     object_fit: Some(ObjectFit::Contain),
+                    border_top_left_radius: Some(px(8.0)),
+                    border_top_right_radius: Some(px(8.0)),
+                    border_bottom_left_radius: Some(px(8.0)),
+                    border_bottom_right_radius: Some(px(8.0)),
                     ..Default::default()
                 },
             )
@@ -44,12 +78,42 @@ pub(super) fn attachment_row(atts: &[discord_server::server_settings::MessageAtt
     ui! {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Row),
-            align_items: Some(AlignItems::Center),
+            flex_wrap: Some(FlexWrap::Wrap),
+            align_items: Some(AlignItems::FlexStart),
             gap: Some(px(8.0)),
-            margin_top: Some(px(6.0)),
+            margin_top: Some(px(4.0)),
             margin_bottom: Some(px(6.0)),
+            padding_left: Some(px(66.0)),
+            padding_right: Some(px(16.0)),
             ..Default::default()
         }) { cells }
+    }
+}
+
+#[cfg(test)]
+mod attachment_size_tests {
+    use super::attachment_box;
+
+    #[test]
+    fn small_images_keep_their_size() {
+        assert_eq!(attachment_box(Some((320, 180)), 520.0, 360.0), (320.0, 180.0));
+        assert_eq!(attachment_box(Some((16, 16)), 520.0, 360.0), (16.0, 16.0));
+    }
+
+    #[test]
+    fn large_images_shrink_to_fit_keeping_their_shape() {
+        // Wide: limited by width.
+        assert_eq!(attachment_box(Some((2600, 1300)), 520.0, 360.0), (520.0, 260.0));
+        // Tall: limited by height.
+        assert_eq!(attachment_box(Some((1000, 2000)), 520.0, 360.0), (180.0, 360.0));
+        // A long thin strip never collapses to zero.
+        assert_eq!(attachment_box(Some((8000, 4)), 520.0, 360.0), (520.0, 1.0));
+    }
+
+    #[test]
+    fn unknown_size_fills_the_box() {
+        assert_eq!(attachment_box(None, 520.0, 360.0), (520.0, 360.0));
+        assert_eq!(attachment_box(Some((0, 10)), 256.0, 256.0), (256.0, 256.0));
     }
 }
 

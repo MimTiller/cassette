@@ -382,11 +382,8 @@ pub fn post_channel_message(
     let wire_attachments = attachment_ids
         .into_iter()
         .zip(media_rows)
-        .map(|(id, (filename, mime, url))| crate::server_settings::MessageAttachment {
-            id,
-            filename,
-            mime,
-            url,
+        .map(|(id, (filename, mime, url))| {
+            crate::server_settings::MessageAttachment::stored(id, filename, mime, url)
         })
         .collect();
     hub().publish(

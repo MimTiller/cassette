@@ -79,6 +79,30 @@ pub struct MessageAttachment {
     pub filename: String,
     pub mime: String,
     pub url: String,
+    /// The stored image's pixel size, which the client sizes the attachment
+    /// box from. `None` when unknown (a legacy inline value, an unreadable
+    /// file, or a server from before this field).
+    #[serde(default)]
+    pub width: Option<u32>,
+    #[serde(default)]
+    pub height: Option<u32>,
+}
+
+#[cfg(feature = "server")]
+impl MessageAttachment {
+    /// The wire record for a stored attachment, with its pixel size read from
+    /// the media file (`media::dimensions`).
+    pub fn stored(id: i64, filename: String, mime: String, url: String) -> Self {
+        let size = crate::media::dimensions(&url);
+        MessageAttachment {
+            id,
+            filename,
+            mime,
+            url,
+            width: size.map(|(w, _)| w),
+            height: size.map(|(_, h)| h),
+        }
+    }
 }
 
 /// Inbound frames the client sends.
@@ -381,12 +405,9 @@ pub async fn message_gateway(
                                 // are the same record shape, re-typed.
                                 attachments: m.attachments
                                     .into_iter()
-                                    .map(|a| crate::server_settings::MessageAttachment {
-                                        id: a.id,
-                                        filename: a.filename,
-                                        mime: a.mime,
-                                        url: a.url,
-                                    })
+                                    .map(|a| crate::server_settings::MessageAttachment::stored(
+                                        a.id, a.filename, a.mime, a.url,
+                                    ))
                                     .collect(),
                                 })
                             .await;

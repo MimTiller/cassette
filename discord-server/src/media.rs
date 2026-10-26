@@ -35,7 +35,9 @@ use sha2::{Digest, Sha256};
 use std::io::Cursor;
 use std::path::PathBuf;
 
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 use std::fs::{create_dir_all, exists, read, remove_file, rename, write};
 
@@ -249,6 +251,32 @@ pub fn store_in(
     write_content(dir, bytes, ext)
 }
 
+/// Pixel size `(width, height)` of a stored image, read from its file header
+/// (no full decode). The client sizes an attachment's box from it. Files are
+/// content-addressed, so a path's bytes never change and each path is read
+/// once, then cached. `None` for a legacy inline `data:` value, a name that
+/// fails [`media_filename_ok`], or a missing or unreadable file.
+pub fn dimensions(url: &str) -> Option<(u32, u32)> {
+    dimensions_in(media_dir(), url)
+}
+
+/// [`dimensions`] against an explicit media directory (tests).
+pub fn dimensions_in(dir: PathBuf, url: &str) -> Option<(u32, u32)> {
+    let name = url.strip_prefix(MEDIA_PREFIX)?;
+    if !media_filename_ok(name) {
+        return None;
+    }
+    let path = dir.join(name);
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, (u32, u32)>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Some(dims) = cache.lock().ok()?.get(&path) {
+        return Some(*dims);
+    }
+    let dims = ImageReader::open(&path).ok()?.with_guessed_format().ok()?.into_dimensions().ok()?;
+    cache.lock().ok()?.insert(path, dims);
+    Some(dims)
+}
+
 /// Store bytes with NO format validation, extension from the (already
 /// recognized) mime — the one-time legacy pass: old inline values are
 /// preserved byte-for-byte even when malformed, so no user data is lost.
@@ -399,6 +427,29 @@ mod tests {
             assert_eq!(name[..64], content_hash(&bytes));
             assert_eq!(std::fs::read(dir.path().join(name)).unwrap(), bytes);
         }
+    }
+
+    #[test]
+    fn dimensions_come_from_the_stored_file() {
+        use image::ImageEncoder;
+        // Not square, so a swapped width/height would show.
+        let mut wide = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut wide)
+            .write_image(&vec![0u8; 12 * 5], 12, 5, image::ExtendedColorType::L8)
+            .map(|_| ())
+            .unwrap_or_else(|e| panic!("encode: {e}"));
+        let dir = tempfile::tempdir().unwrap();
+        let png = store_in(dir.path().into(), &wide, "image/png", CAP).unwrap();
+        assert_eq!(dimensions_in(dir.path().into(), &png), Some((12, 5)));
+        // Cached: still answered after the file is gone.
+        std::fs::remove_file(dir.path().join(&png[MEDIA_PREFIX.len()..])).unwrap();
+        assert_eq!(dimensions_in(dir.path().into(), &png), Some((12, 5)));
+        let jpg = store_in(dir.path().into(), JPG, "image/jpeg", CAP).unwrap();
+        assert_eq!(dimensions_in(dir.path().into(), &jpg), Some((8, 8)));
+        assert_eq!(dimensions_in(dir.path().into(), &data_url("image/png", PNG)), None);
+        assert_eq!(dimensions_in(dir.path().into(), "/media/../discord.db"), None);
+        let missing = format!("{MEDIA_PREFIX}{}.png", "0".repeat(64));
+        assert_eq!(dimensions_in(dir.path().into(), &missing), None);
     }
 
     #[test]
