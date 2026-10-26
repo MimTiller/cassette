@@ -139,6 +139,7 @@ mod shell_state;
 use shell_state::ShellState;
 mod gateway_effects;
 mod rail;
+mod modals;
 mod sidebar;
 mod messages;
 mod composer;
@@ -1393,8 +1394,73 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let ss_busy: Signal<bool> = signal(false);
     let ss_err: Signal<String> = signal(String::new());
 
+    // Shared by the rail's buttons and the modal dialogs they open.
+    // Reactive list of the mock servers shown in the rail. Seeded with the
+    // static `SERVERS` ids; the "Add a server" (+) flow appends new ids, and
+    // the rail `switch` below rebuilds on that signal so new rows appear.
+    let server_rail: Signal<Vec<u32>> = signal(SERVERS.iter().map(|s| s.id).collect());
+
+    // --- "Create a Server" reactive plumbing -------------------------------
+    // `dynamic_servers` holds the servers the user creates this session
+    // (leaked `&'static` behind an id — the same heap-leak trick the static
+    // seed in `data.rs` uses). `next_id` mints fresh ids above the static max.
+    // `server_rail` (seeded with the static ids above) is the rail's re-render
+    // trigger: appending a new id makes the `switch` below rebuild and add the
+    // row. Both the `Cell` and the `HashMap` live behind an `Rc` so the
+    // `on_create` closure (a `Fn`) can mutate them through interior
+    // mutability.
+    let dynamic_servers: Rc<RefCell<HashMap<u32, &'static Server>>> =
+        Rc::new(RefCell::new(HashMap::new()));
+    let next_id: Rc<Cell<u32>> = Rc::new(Cell::new(
+        SERVERS.iter().map(|s| s.id).max().map(|m| m + 1).unwrap_or(1),
+    ));
+    let create_open: Signal<bool> = signal(false);
+    let create_name: Signal<String> = signal(String::new());
+
+    // The create modal's inline error (the backend's own rejection wording)
+    // and in-flight busy guard. Both owned by the app (like the join modal's
+    // `join_error` / `join_busy`) and reset on re-open below.
+    let create_error: Signal<String> = signal(String::new());
+    let create_busy: Signal<bool> = signal(false);
+
+    // --- "Join a Server" (redeem an invite code) ---------------------------
+    // Entry point is the rail's green PLUS circle (Discord's Add-a-Server
+    // affordance). The modal's state lives here in `app_shell` scope so it
+    // survives rail rebuilds; `join_open` gates the overlay, `join_code` is the
+    // typed code, `join_result`/`join_error`/`join_busy` are the three state
+    // signals the modal switches on (the `invite_modal.rs` ownership idiom).
+    // On a successful redeem the backend membership is persisted, so we
+    // re-fetch `live_servers` (the same RPC the rail's live section already
+    // uses) to make the newly-joined server appear without a reload.
+    let join_open: Signal<bool> = signal(false);
+    let join_code: Signal<String> = signal(String::new());
+    let join_result: Signal<Option<discord_server::invites::RedeemResult>> = signal(None);
+    let join_error: Signal<String> = signal(String::new());
+    let join_busy: Signal<bool> = signal(false);
+
+    // --- "Discover Servers" overlay ----------------------------------------
+    // Trigger is a third rail circle (GLOBE) below the PLUS and COMPASS
+    // circles — both existing icons are taken (Join / Create). `on_join`
+    // mints the suggested server the same way Create does: `create_server` +
+    // append to `server_rail` (the rail's re-render trigger), then close the
+    // overlay. The mock list itself is static; no join backend.
+    let discover_open: Signal<bool> = signal(false);
+
     // Everything the section builders below read, gathered once.
     let s = ShellState {
+        server_rail: server_rail.clone(),
+        dynamic_servers: dynamic_servers.clone(),
+        next_id: next_id.clone(),
+        create_open: create_open.clone(),
+        create_name: create_name.clone(),
+        create_error: create_error.clone(),
+        create_busy: create_busy.clone(),
+        join_open: join_open.clone(),
+        join_code: join_code.clone(),
+        join_result: join_result.clone(),
+        join_error: join_error.clone(),
+        join_busy: join_busy.clone(),
+        discover_open: discover_open.clone(),
         active_channel: active_channel.clone(),
         active_live_channel: active_live_channel.clone(),
         active_live_server: active_live_server.clone(),
@@ -1521,7 +1587,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
     };
 
     let gateway_effects::GatewayEffectsParts { gateway_status, gateway_incoming_effect, mention_reset_effect } = gateway_effects::build(&s);
-    let rail::RailParts { rail_style, server_rows, create_server_section, live_section, join_el, create_el, discover_el, cc_el, rc_el, dc_el, invite_el, ss_el, rail_actions } = rail::build(&s);
+    let rail::RailParts { rail_style, server_rows, create_server_section, live_section, rail_actions } = rail::build(&s);
+    let modals::ModalsParts { join_el, create_el, discover_el, cc_el, rc_el, dc_el, invite_el, ss_el } = modals::build(&s);
     let sidebar::SidebarParts { sidebar } = sidebar::build(&s);
     let messages::MessagesParts { header, slowmode_el, sent_messages, typing_row } = messages::build(&s);
     let composer::ComposerParts { composer_area } = composer::build(&s, slowmode_el);

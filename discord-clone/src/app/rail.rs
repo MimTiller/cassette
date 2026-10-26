@@ -8,19 +8,11 @@ pub(super) struct RailParts {
     pub(super) server_rows: Vec<Element>,
     pub(super) create_server_section: Element,
     pub(super) live_section: Element,
-    pub(super) join_el: Element,
-    pub(super) create_el: Element,
-    pub(super) discover_el: Element,
-    pub(super) cc_el: Element,
-    pub(super) rc_el: Element,
-    pub(super) dc_el: Element,
-    pub(super) invite_el: Element,
-    pub(super) ss_el: Element,
     pub(super) rail_actions: Element,
 }
 
 pub(super) fn build(s: &ShellState) -> RailParts {
-    let ShellState { active_channel, active_live_channel, active_live_server, active_server, cc_busy, cc_err, cc_kind, cc_name, cc_open, dc_busy, dc_cid, dc_err, dc_name, dc_open, dm_mode, gateway, invite_created, invite_err, invite_expiry, invite_mode, is_real_user, joined_voice, live_ban_confirm, live_channels, live_dm_active, live_dm_mode, live_dms, live_kick_confirm, live_member_error, live_members, live_servers, live_timeout_confirm, live_unread, live_unread_rev, notif_mode, rail_unread, rc_busy, rc_cid, rc_err, rc_name, rc_open, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, .. } = s.clone();
+    let ShellState { active_channel, active_live_channel, active_live_server, active_server, create_busy, create_error, create_name, create_open, discover_open, dm_mode, dynamic_servers, gateway, is_real_user, join_busy, join_code, join_error, join_open, join_result, joined_voice, live_ban_confirm, live_channels, live_dm_active, live_dm_mode, live_dms, live_kick_confirm, live_member_error, live_members, live_servers, live_timeout_confirm, live_unread_rev, notif_mode, rail_unread, server_rail, .. } = s.clone();
     // --- server rail -----------------------------------------------------
     let rail_style = StyleRules {
         width: Some(px(72.0)),
@@ -32,11 +24,6 @@ pub(super) fn build(s: &ShellState) -> RailParts {
         overflow: Some(Overflow::Hidden),
         ..Default::default()
     };
-
-    // Reactive list of the mock servers shown in the rail. Seeded with the
-    // static `SERVERS` ids; the "Add a server" (+) flow appends new ids, and
-    // the rail `switch` below rebuilds on that signal so new rows appear.
-    let server_rail: Signal<Vec<u32>> = signal(SERVERS.iter().map(|s| s.id).collect());
 
     // [Feature 16] The mock demo servers are guest-only rail content. A real
     // account sees only its own live servers (the live section below) plus the
@@ -179,28 +166,6 @@ pub(super) fn build(s: &ShellState) -> RailParts {
         }
     }).collect()
     };
-
-    // --- "Create a Server" reactive plumbing -------------------------------
-    // `dynamic_servers` holds the servers the user creates this session
-    // (leaked `&'static` behind an id — the same heap-leak trick the static
-    // seed in `data.rs` uses). `next_id` mints fresh ids above the static max.
-    // `server_rail` (seeded with the static ids above) is the rail's re-render
-    // trigger: appending a new id makes the `switch` below rebuild and add the
-    // row. Both the `Cell` and the `HashMap` live behind an `Rc` so the
-    // `on_create` closure (a `Fn`) can mutate them through interior
-    // mutability.
-    let dynamic_servers: Rc<RefCell<HashMap<u32, &'static Server>>> =
-        Rc::new(RefCell::new(HashMap::new()));
-    let next_id: Rc<Cell<u32>> = Rc::new(Cell::new(
-        SERVERS.iter().map(|s| s.id).max().map(|m| m + 1).unwrap_or(1),
-    ));
-    let create_open: Signal<bool> = signal(false);
-    let create_name: Signal<String> = signal(String::new());
-    // The create modal's inline error (the backend's own rejection wording)
-    // and in-flight busy guard. Both owned by the app (like the join modal's
-    // `join_error` / `join_busy`) and reset on re-open below.
-    let create_error: Signal<String> = signal(String::new());
-    let create_busy: Signal<bool> = signal(false);
 
     // Dynamically created servers — a separate section below the mock rows.
     // Rebuilt whenever `server_rail` changes (a new id appended). Each row
@@ -525,256 +490,6 @@ pub(super) fn build(s: &ShellState) -> RailParts {
         },
     );
 
-    // --- "Join a Server" (redeem an invite code) ---------------------------
-    // Entry point is the rail's green PLUS circle (Discord's Add-a-Server
-    // affordance). The modal's state lives here in `app_shell` scope so it
-    // survives rail rebuilds; `join_open` gates the overlay, `join_code` is the
-    // typed code, `join_result`/`join_error`/`join_busy` are the three state
-    // signals the modal switches on (the `invite_modal.rs` ownership idiom).
-    // On a successful redeem the backend membership is persisted, so we
-    // re-fetch `live_servers` (the same RPC the rail's live section already
-    // uses) to make the newly-joined server appear without a reload.
-    let join_open: Signal<bool> = signal(false);
-    let join_code: Signal<String> = signal(String::new());
-    let join_result: Signal<Option<discord_server::invites::RedeemResult>> = signal(None);
-    let join_error: Signal<String> = signal(String::new());
-    let join_busy: Signal<bool> = signal(false);
-    // The `#[component]` `name = expr` call form is only parsed inside `ui!`,
-    // so the modal is wrapped in a `view` (the wrapper is a positioned
-    // ancestor for the full-screen overlay, like the Profile/notif regions).
-    let join_el = ui! {
-        view {
-            JoinServerModal(
-                open = join_open,
-                code = join_code,
-                result = join_result,
-                error = join_error,
-                busy = join_busy,
-                servers = live_servers,
-            )
-        }
-    };
-
-    // --- "Create a Server" modal ------------------------------------------
-    // Trigger is the rail's COMPASS circle (the green PLUS is taken by the
-    // Join flow). `on_create` mints a REAL backend server via the
-    // `crate::servers::create_server` RPC (the backend seeds the owner's
-    // membership row plus a default `#general` text channel, so the fresh
-    // server is immediately usable), then re-fetches `live_servers` so the new
-    // server appears in the rail's live section (the same refresh the Join
-    // modal uses) and auto-enters it (selects it + pulls its channels, the
-    // enter-live pattern below). `Signal` is `Copy`, so the captured `set`
-    // stays `Fn`.
-    let create_on_create: Rc<dyn Fn(String)> = Rc::new({
-        let live_servers = live_servers.clone();
-        let active_live_server = active_live_server.clone();
-        let active_live_channel = active_live_channel.clone();
-        let live_channels = live_channels.clone();
-        let live_members = live_members.clone();
-        let live_member_error = live_member_error.clone();
-        let live_kick_confirm = live_kick_confirm.clone();
-        let live_unread = live_unread.clone();
-        let live_unread_rev = live_unread_rev.clone();
-        let create_open = create_open;
-        let create_error = create_error;
-        let create_busy = create_busy;
-        move |name: String| {
-            let name_owned = name.clone();
-            // Clone the `Rc` in the `Fn` body (not inside the `async move`):
-            // the `async move` block would otherwise try to move the captured
-            // `Rc` out of the `Fn` closure (E0507) — the enter-live handler
-            // uses the same `let unread_buf = unread_buf.clone()` idiom.
-            let buf = live_unread.clone();
-            let c_err = create_error;
-            let c_busy = create_busy;
-            runtime_core::driver::spawn_async(async move {
-                // Clear any prior rejection and mark in-flight; the modal's
-                // Create button shows "Creating…" while this runs (the busy
-                // guard also stops a fast double-tap from minting two).
-                c_err.set(String::new());
-                c_busy.set(true);
-                match crate::servers::create_server(&name_owned).await {
-                    Ok(summary) => {
-                        // The backend persisted the server + default channel;
-                        // re-fetch the live server list (the same RPC the rail's
-                        // live section uses) so the new server appears without a
-                        // reload.
-                        if let Ok(list) = crate::servers::list_servers().await {
-                            live_servers.set(list);
-                        }
-                        // Auto-enter the new server, mirroring the enter-live
-                        // handler: select it, reset any stale channel/moderation
-                        // state, and pull its channels + roster + unread counts.
-                        active_live_server.set(Some(summary.id));
-                        active_live_channel.set(None);
-                        live_kick_confirm.set(None);
-                        live_member_error.set(String::new());
-                        live_members.set(Vec::new());
-                        let sid = summary.id;
-                        if let Ok(channels) = crate::servers::list_channels(sid).await {
-                            // Auto-select the first text channel (same as the
-                            // enter-live tile handler): the main panes key on
-                            // `active_live_channel`, so a freshly created server
-                            // would otherwise sit on a stale / mock main pane
-                            // until a channel row is tapped.
-                            let first = channels
-                                .iter()
-                                .find(|c| c.kind == "text")
-                                .map(|c| c.id);
-                            live_channels.set(channels);
-                            if let Some(id) = first {
-                                active_live_channel.set(Some(id));
-                                // Persist the landing spot for this account so
-                                // a refresh re-enters the just-created server's
-                                // first channel.
-                                crate::auth::save_last_view_channel(summary.id, id);
-                                // See the enter-live tile handler's identical
-                                // fix: auto-selecting doesn't fetch history on
-                                // its own, so send it explicitly or the fresh
-                                // server sits on an empty pane until a channel
-                                // row is manually re-tapped.
-                                gateway.send(
-                                    discord_server::server_settings::WsClientMsg::History {
-                                        channel_id: id,
-                                        before_id: None,
-                                    },
-                                );
-                            }
-                        }
-                        if let Ok(members) = crate::moderation::list_members(sid).await {
-                            live_members.set(members);
-                        }
-                        if let Ok(counts) = crate::servers::unread_counts(sid).await {
-                            let rev = live_unread_rev;
-                            buf.borrow_mut()
-                                .extend(counts.into_iter().map(|c| {
-                                    (c.channel_id, (c.count, c.unread_mentions))
-                                }));
-                            rev.set(rev.get() + 1);
-                        }
-                        // Success: the server exists and we're auto-entering
-                        // it, so close the modal. (On the error path below the
-                        // modal stays open so the inline message is visible and
-                        // the name field can be corrected and resubmitted.)
-                        create_open.set(false);
-                    }
-                    Err(msg) => {
-                        // Surface the backend's own rejection inline in the
-                        // modal (e.g. an empty name -> "server name must not
-                        // be empty"). The modal stays open; the name field is
-                        // still editable so the user can correct it and hit
-                        // Create again. We do NOT close here — closing on
-                        // failure would hide the very message we just set.
-                        eprintln!("create_server failed: {msg}");
-                        c_err.set(msg);
-                    }
-                }
-                c_busy.set(false);
-            });
-        }
-    });
-    let create_modal_el: Element =
-        create_server_modal(create_open, create_name, create_error, create_busy, create_on_create);
-    let create_el = ui! {
-        view {
-            { create_modal_el }
-        }
-    };
-
-    // --- "Discover Servers" overlay ----------------------------------------
-    // Trigger is a third rail circle (GLOBE) below the PLUS and COMPASS
-    // circles — both existing icons are taken (Join / Create). `on_join`
-    // mints the suggested server the same way Create does: `create_server` +
-    // append to `server_rail` (the rail's re-render trigger), then close the
-    // overlay. The mock list itself is static; no join backend.
-    let discover_open: Signal<bool> = signal(false);
-    let discover_on_join: Rc<dyn Fn(String)> = Rc::new({
-        let next_id = next_id.clone();
-        let dynamic_servers = dynamic_servers.clone();
-        let server_rail = server_rail.clone();
-        let discover_open = discover_open;
-        move |name: String| {
-            let new_id = create_server(&name, &*next_id, &dynamic_servers);
-            let mut ids = server_rail.get();
-            ids.push(new_id);
-            server_rail.set(ids);
-            discover_open.set(false);
-        }
-    });
-    let discover_modal_el: Element = discover_servers_modal(discover_open, discover_on_join);
-    let discover_el = ui! {
-        view {
-            { discover_modal_el }
-        }
-    };
-
-    let cc_el = ui! {
-        view {
-            CreateChannelModal(
-                open = cc_open,
-                server_id = active_live_server,
-                name = cc_name,
-                kind = cc_kind,
-                busy = cc_busy,
-                error = cc_err,
-                channels = live_channels,
-            )
-        }
-    };
-    let rc_el = ui! {
-        view {
-            RenameChannelModal(
-                open = rc_open,
-                server_id = active_live_server,
-                channel_id = rc_cid,
-                name = rc_name,
-                busy = rc_busy,
-                error = rc_err,
-                channels = live_channels,
-            )
-        }
-    };
-    let dc_el = ui! {
-        view {
-            DeleteChannelModal(
-                open = dc_open,
-                server_id = active_live_server,
-                channel_id = dc_cid,
-                channel_name = dc_name,
-                busy = dc_busy,
-                error = dc_err,
-                channels = live_channels,
-            )
-        }
-    };
-    let invite_el = ui! {
-        view {
-            InviteModal(
-                open = invite_mode,
-                server_id = active_live_server,
-                expiry = invite_expiry,
-                created = invite_created,
-                created_err = invite_err,
-            )
-        }
-    };
-    let ss_el = ui! {
-        view {
-            ServerSettingsPanel(
-                open = ss_open,
-                server_id = active_live_server,
-                name = ss_name,
-                icon = ss_icon,
-                new_owner_id = ss_owner,
-                busy = ss_busy,
-                error = ss_err,
-                servers = live_servers,
-                members = live_members,
-                add_member_user_id = ss_add_user_id,
-                add_member_role = ss_add_role,
-            )
-        }
-    };
     // (Live channel action cluster + new-channel "+" builder live inside the
     // live arm of the sidebar `switch` render closure — see there. They need
     // the render closure's owned copies of the modal `Signal`s, which a
@@ -951,5 +666,5 @@ pub(super) fn build(s: &ShellState) -> RailParts {
         }
     };
 
-    RailParts { rail_style, server_rows, create_server_section, live_section, join_el, create_el, discover_el, cc_el, rc_el, dc_el, invite_el, ss_el, rail_actions }
+    RailParts { rail_style, server_rows, create_server_section, live_section, rail_actions }
 }
