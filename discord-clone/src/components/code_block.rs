@@ -35,7 +35,6 @@ const BG_CODE: &str = "#1e1f22";
 const BG_BUTTON: &str = "#404249";
 const TEXT_CODE: &str = "#f2f3f5";
 const TEXT_MUTED: &str = "#949ba4";
-const TEXT: &str = "#f2f3f5";
 
 /// A CSS-style monospace stack, passed verbatim to the platform's font lookup
 /// (web's `font-family`). Lowered to `FontFamily::System` by `From<String>`.

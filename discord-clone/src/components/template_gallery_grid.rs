@@ -50,7 +50,6 @@ const BG_ROW: &str = "#313338"; // row surface (Discord sidebar gray)
 const BG_CARD: &str = "#2b2d31"; // card surface (Discord sidebar panel)
 const TEXT: &str = "#f2f3f5"; // primary text (template name)
 const BUTTON_BG: &str = "#5865f2"; // preview button fill (Discord blurple)
-const BUTTON_TEXT: &str = "#ffffff"; // white label on the blurple fill
 const BORDER_IDLE: &str = "#4e5058"; // idle card outline (muted)
 const BORDER_PREVIEW: &str = "#5865f2"; // previewing card ring (blurple accent)
 

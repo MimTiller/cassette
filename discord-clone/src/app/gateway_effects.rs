@@ -70,7 +70,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
     // a 0-height view (nothing), so the layout is unchanged in the healthy
     // state. The socket auto-reconnects (`message_gateway` owns the loop), so
     // this is a passive "you're disconnected" indicator, not a retry button.
-    let conn_lost_banner = switch(
+    let _conn_lost_banner = switch(
         move || format!("{:?}", gateway.status()),
         move |status: &String| {
             let lost = status == "Closed" || status == "Error";

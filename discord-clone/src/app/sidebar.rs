@@ -519,7 +519,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                 })),
                                 ..live_row_style()
                             };
-                            let glyph_style = move || StyleRules {
+                            let _glyph_style = move || StyleRules {
                                 font_weight: Some(if live_sel.get() == Some(cid) {
                                     FontWeight::SemiBold
                                 } else {

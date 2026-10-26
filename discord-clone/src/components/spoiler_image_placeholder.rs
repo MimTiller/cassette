@@ -32,7 +32,6 @@ use runtime_core::{
 // Discord dark palette + labels — kept local so the component is self-contained.
 const BG_HIDDEN: &str = "#404249"; // spoiler cover (subtle gray)
 const BG_REVEALED: &str = "#5865f2"; // revealed fill (Discord accent)
-const TEXT: &str = "#f2f3f5"; // primary text
 const LABEL_HIDDEN: &str = "Click to view spoiler";
 const LABEL_REVEALED: &str = "Image revealed";
 

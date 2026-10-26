@@ -64,7 +64,7 @@ pub(super) fn voice_section(
             })),
             ..Default::default()
         };
-        let label = v.name.clone();
+        let label = v.name;
         let row = ui! {
             view(style = row_style, test_id = voice_test_id(v.id)) {
                 icon(VOLUME_2)
@@ -658,7 +658,7 @@ pub(super) fn user_panel(
                 flex_shrink: Some(grow(0.0)),
                 ..Default::default()
             };
-            let mut muted_state = muted.clone();
+            let muted_state = muted.clone();
             let mic_btn = ui! {
                 view(style = icon_btn_style.clone(), test_id = "user-mic") {
                     if muted_state.get() {
@@ -674,7 +674,7 @@ pub(super) fn user_panel(
                     TouchResponse::CONSUMED
                 })
             };
-            let mut deafened_state = deafened.clone();
+            let deafened_state = deafened.clone();
             let deafen_btn = ui! {
                 view(style = icon_btn_style.clone(), test_id = "user-deafen") {
                     if deafened_state.get() {

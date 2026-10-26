@@ -46,7 +46,7 @@ use runtime_core::primitives::portal::{AnchorTarget, ElementAlign, ElementSide};
 // picked file through `stage_attachment` (the same encode as avatars).
 use file_picker::{FilePicker, PickRequest, PickOutcome, MediaKind};
 use icons_lucide::{
-    CHEVRON_DOWN, CHEVRON_RIGHT, CHEVRON_UP, CIRCLE_HELP, COMPASS, GAVEL, GLOBE, HASH, HEADPHONES, MAIL,
+    CHEVRON_DOWN, CHEVRON_RIGHT, CIRCLE_HELP, COMPASS, GAVEL, GLOBE, HASH, HEADPHONES, MAIL,
     MIC, MIC_OFF, PIN, PLUS, SETTINGS, SMILE, SMILE_PLUS,
     USER_PLUS, USERS, VOLUME_2,
 };
@@ -66,15 +66,10 @@ use crate::icon_change_confirm::IconChangeConfirm;
 use crate::ban_reason_input::BanReasonInput;
 use crate::delete_account_warning::DeleteAccountWarning;
 
-use crate::audit_log_row::AuditLogRow;
 use crate::blocked_user_row::BlockedUserRow;
-use crate::server_region_selector::ServerRegionSelector;
-use crate::server_icon_upload_placeholder::ServerIconUploadPlaceholder;
 use crate::category_header::CategoryHeader;
 use crate::mic_selector::MicSelector;
 
-use crate::link_embed_preview::LinkEmbedPreview;
-use crate::code_block::CodeBlock;
 use crate::screen_share_indicator::ScreenShareIndicator;
 use crate::two_factor_toggle::TwoFactorToggle;
 
@@ -111,8 +106,6 @@ use crate::emoji_upload_slot::EmojiUploadSlot;
 use crate::rules_accept_checkbox::RulesAcceptCheckbox;
 use crate::nickname_edit_field::NicknameEditField;
 use crate::custom_status_input::CustomStatusInput;
-use crate::notification_permission_prompt::NotificationPermissionPrompt;
-use crate::channel_topic_banner::ChannelTopicBanner;
 use crate::char_counter::CharCounter;
 use crate::kick_confirm_dialog::KickConfirmDialog;
 use crate::delete_message_confirm::DeleteMessageConfirm;
@@ -252,12 +245,12 @@ pub(crate) fn stage_attachment(
     }
 }
 
-/// Robot test hook (`attach.stage`): stage one composer image attachment
-/// from base64 bytes — the file-picker callback's validate → encode path
-/// (`stage_attachment` above, which the picker's async callback runs),
-/// callable through the robot bridge so an E2E test can attach a real
-/// image without driving the native file-open dialog (which no in-page
-/// tool can tap). Compiled only into robot builds.
+// Robot test hook (`attach.stage`): stage one composer image attachment
+// from base64 bytes — the file-picker callback's validate → encode path
+// (`stage_attachment` above, which the picker's async callback runs),
+// callable through the robot bridge so an E2E test can attach a real
+// image without driving the native file-open dialog (which no in-page
+// tool can tap). Compiled only into robot builds.
 runtime_vocabulary::robot_only! {
 use runtime_vocabulary::robot_fn::{RobotArg, RobotCall, RobotFunction, RobotReply, register as robot_register};
 use runtime_shared::__serde_json as robot_json;
@@ -649,7 +642,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // content height (that is `on_end_reached`'s job), so "scrolled up from
     // the bottom" is detected as `y < max_seen - threshold`, not as
     // `y > content - viewport`.
-    let live_max_offset: Rc<RefCell<f32>> = Rc::new(RefCell::new(0.0));
+    let _live_max_offset: Rc<RefCell<f32>> = Rc::new(RefCell::new(0.0));
     // Per-message edit mode: the wire `message_id` whose row currently shows
     // the inline edit input (None = none). One at a time — switching rows
     // just overwrites it, and the list rebuild (keyed on `live_revision` and

@@ -11,7 +11,7 @@
 //! channel's server — Discord parity. A guest (no session token) gets
 //! `Err("unauthenticated")`.
 
-pub use discord_server::server_settings::{ReactionInput, ReactionResult};
+pub use discord_server::server_settings::{ReactionResult};
 
 /// React to a message with an emoji. Persists a `(message, user, emoji)` row
 /// server-side and broadcasts the new per-emoji count to every connected

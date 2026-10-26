@@ -30,12 +30,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use runtime_core::{
-    AlignItems, Color, Element, FlexDirection, FlexWrap, FontWeight, JustifyContent, KeyEvent,
-    KeyOutcome, ObjectFit, Overflow, Position, Signal, StyleRules, TextTransform, Tokenized,
+    AlignItems, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent,
+    KeyOutcome, ObjectFit, Overflow, Signal, StyleRules, Tokenized,
     TouchPhase, TouchResponse, signal, switch, ui,
 };
-use runtime_core::icon;
-use icons_lucide::{PLUS, SMILE};
 
 use crate::app::{format_when, message_row, same_group};
 use crate::dms::{self, Dm};
@@ -795,7 +793,7 @@ pub fn dm_incoming_effect(
         move || frame_seq.get(),
         move |frame: &Option<discord_server::server_settings::WsServerMsg>| {
             if let Some(discord_server::server_settings::WsServerMsg::DmMessage {
-                message_id,
+                message_id: _,
                 dm_id,
                 author_username,
                 author_avatar,

@@ -52,7 +52,6 @@ const PLAYING_MS: i32 = 600;
 // Discord palette (kept local so the component is self-contained).
 const BUTTON: &str = "#5865f2"; // normal button (Discord blurple accent)
 const PLAYING: &str = "#57f287"; // "now playing" highlight (Discord online green)
-const TEXT: &str = "#f2f3f5"; // primary text (near-white)
 
 /// A soundboard trigger. Renders one `button` labelled with the hardcoded
 /// local sound name. While the local `playing` signal is `false` the button

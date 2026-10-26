@@ -12,7 +12,7 @@
 //! every returned participant are pushed into the shared client avatar registry
 //! so the friends rows draw uploaded images on a cold load.
 
-pub use discord_server::friends::{FriendList, FriendUser};
+pub use discord_server::friends::{FriendList};
 
 /// Pull every participant of a list into the shared client avatar registry.
 fn remember_avatars(list: FriendList) {

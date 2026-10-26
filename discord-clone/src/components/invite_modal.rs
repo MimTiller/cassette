@@ -32,12 +32,8 @@ use crate::style_helpers::{col, pct, px};
 
 // Discord dark palette (kept local so the component is self-contained).
 const BG_MAIN: &str = "#313338";
-const BG_CARD: &str = "#2b2d31";
-const BG_ACTIVE: &str = "#404249";
-const BG_HOVER: &str = "#35373c";
 const BUTTON: &str = "#5865f2";
 const TEXT: &str = "#f2f3f5";
-const TEXT_MUTED: &str = "#949ba4";
 
 const MIN_30_SECS: i64 = 30 * 60;
 const DAY_SECS: i64 = 24 * 60 * 60;

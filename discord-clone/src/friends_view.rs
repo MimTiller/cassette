@@ -48,8 +48,8 @@ use runtime_core::icon;
 use icons_lucide::{PLUS, USERS};
 
 use crate::avatar_chip::{avatar_chip, registered_avatar, mountable_avatar_url};
-use crate::friends::{self, FriendList, FriendUser};
-use crate::style_helpers::{borderless_input, col, pct, px};
+use crate::friends::{FriendList};
+use crate::style_helpers::{borderless_input, col, px};
 
 // --- palette (same Discord dark palette as live_dm_view.rs) ------------------
 const BG_SIDEBAR: &str = "#2b2d31";

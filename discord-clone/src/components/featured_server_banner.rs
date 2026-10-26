@@ -37,7 +37,6 @@ const BG_BANNER: &str = "#5865f2"; // solid banner background (Discord blurple)
 const BG_BUTTON: &str = "#ffffff"; // the "View" button surface on the blurple
 const TEXT: &str = "#ffffff"; // primary text on the colored block
 const TEXT_MUTED: &str = "#c9cdfb"; // tagline, slightly muted white
-const TEXT_ON_BUTTON: &str = "#5865f2"; // button label on the white surface
 
 /// The hardcoded server name (no props for now).
 const SERVER_NAME: &str = "Indie Devs";

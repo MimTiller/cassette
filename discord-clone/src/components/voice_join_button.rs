@@ -35,7 +35,6 @@ use runtime_core::{
 // Discord palette (kept local so the component is self-contained).
 const JOIN: &str = "#5865f2"; // "Join Voice" (Discord blurple accent)
 const LEAVE: &str = "#f23f43"; // "Leave Voice" (Discord danger red, a distinct color)
-const TEXT: &str = "#f2f3f5"; // primary text (near-white)
 
 /// A voice join/leave trigger. Renders one `button` bound to a local
 /// `connected` signal. While the signal is `false` the button shows "Join

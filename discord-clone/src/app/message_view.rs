@@ -927,7 +927,7 @@ pub(super) fn message_row_with_actions(
     // display half (author + snippet) lives in `reply_ctx`, read by the
     // preview bar; this carries only the id the server needs.
     reply_target: Signal<Option<i64>>,
-    pin_visible: Signal<bool>,
+    _pin_visible: Signal<bool>,
     translate_key: Signal<Option<MessageKey>>,
     on_pin: Rc<dyn Fn()>,
     // Optional owner-only menu entries (Edit / Delete). The caller passes them
