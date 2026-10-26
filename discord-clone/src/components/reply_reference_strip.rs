@@ -1,7 +1,10 @@
-//! `reply_reference_strip` — the per-message "replying to …" caption for the
+//! `reply_reference_strip` — the per-message "replying to …" line for the
 //! Discord clone. Rendered ABOVE a received message that has a
-//! `reply_to_message_id`, showing the quoted author and a short snippet of the
-//! original message.
+//! `reply_to_message_id`, the way Discord does it: one compact line, no
+//! background bar, indented to the message TEXT column — a thin L-shaped
+//! connector (a "┌" hairline) sitting in the avatar column above the reply's
+//! own avatar, then a small round chip of the original author, the author's
+//! name, and the original message on one muted line.
 //!
 //! Deliberately distinct from [`reply_preview_bar`]: that bar lives above the
 //! *composer* ("Replying to …", dismissable with an ×) and reads the live
@@ -11,45 +14,76 @@
 //! client's already-loaded message buffer and calls this only when the row has
 //! a reply reference.
 use crate::style_helpers::{col, px};
-use runtime_core::{ui, AlignItems, Element, FlexDirection, StyleRules};
+// The quote chip reuses the shared avatar component (a registered avatar when
+// the author has one, otherwise a tinted initial — exactly Discord's chip).
+use crate::avatar_chip::{avatar_chip as reply_avatar_chip};
+use runtime_core::{ui, AlignItems, Element, FlexDirection, FontWeight, Overflow, Position, StyleRules, Tokenized};
 
-// Discord palette — kept local so the component is self-contained, matching the
-// muted "quoted" tone of the composer bar.
-const BG_BAR: &str = "#2b2d31"; // the reference strip's fill
-const QUOTE_BAR: &str = "#404249"; // the small left "quote" accent
-const TEXT: &str = "#949ba4"; // muted (quoted) text tone
+// Palette — kept local so the component is self-contained.
+const CONNECTOR: &str = "#565a64"; // the "┌" hairline (muted grey)
+const CHIP_TINT: &str = "#4b4d54"; // fallback avatar-chip fill
+const NAME: &str = "#c6c9d1";      // semibold muted-white author name
+const SNIPPET: &str = "#949ba4";   // muted original-message excerpt
 
-/// A compact, left-accented reference to the message being replied to.
+/// A compact reference to the message being replied to: connector + chip +
+/// name + one-line snippet, aligned to the row's text column.
 ///
 /// `author` — the original message's author display name.
 /// `snippet` — a short (already-truncated) excerpt of the original body.
 pub fn reply_reference_strip(author: String, snippet: String) -> Element {
     ui! {
         view(style = StyleRules {
+            position: Some(Position::Relative),
             flex_direction: Some(FlexDirection::Row),
             align_items: Some(AlignItems::Center),
-            padding_left: Some(px(12.0)),
-            padding_right: Some(px(12.0)),
-            padding_top: Some(px(4.0)),
-            padding_bottom: Some(px(4.0)),
-            gap: Some(px(6.0)),
-            background: Some(col(BG_BAR)),
             ..Default::default()
         }) {
-            // The small left "quote" accent bar.
+            // The connector: a 2px L (down, then right) anchored in the
+            // message row's avatar column — the reply's own avatar sits at
+            // x=16..56 (16px padding + 40px avatar), so the vertical stroke
+            // runs at that column's center (x=36) and turns right toward the
+            // quote chip. Radius rounds the elbow.
             view(style = StyleRules {
-                width: Some(px(3.0)),
-                height: Some(px(14.0)),
-                background: Some(col(QUOTE_BAR)),
+                position: Some(Position::Absolute),
+                left: Some(px(35.0)),
+                top: Some(px(0.0)),
+                width: Some(px(30.0)),
+                height: Some(px(18.0)),
+                flex_shrink: Some(Tokenized::Literal(0.0)),
+                border_left_width: Some(Tokenized::Literal(2.0)),
+                border_bottom_width: Some(Tokenized::Literal(2.0)),
+                border_bottom_right_radius: Some(px(6.0)),
+                border_left_color: Some(col(CONNECTOR)),
+                border_bottom_color: Some(col(CONNECTOR)),
                 ..Default::default()
             }) {}
-            // The "<author>: <snippet>" line, built with `format!` from the two
-            // owned `String`s (this component is invoked fresh per row).
-            text(style = StyleRules {
-                font_size: Some(px(12.0)),
-                color: Some(col(TEXT)),
+            // Spacer: the message row's 16px padding + 40px avatar + 10px
+            // gap, so the quote line starts at the 66px text column.
+            view(style = StyleRules { width: Some(px(66.0)), ..Default::default() }) {}
+            // The quote line: 16px round chip, semibold muted-white name,
+            // one muted line of the original.
+            view(style = StyleRules {
+                flex_direction: Some(FlexDirection::Row),
+                align_items: Some(AlignItems::Center),
+                gap: Some(px(6.0)),
                 ..Default::default()
-            }) { format!("{}: {}", author, snippet) }
+            }) {
+                { reply_avatar_chip(author.as_str(), CHIP_TINT, 16.0, 8.0) }
+                text(style = StyleRules {
+                    font_size: Some(px(14.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    color: Some(col(NAME)),
+                    ..Default::default()
+                }) { author }
+                text(style = StyleRules {
+                    font_size: Some(px(14.0)),
+                    color: Some(col(SNIPPET)),
+                    max_width: Some(px(540.0)),
+                    height: Some(px(18.0)),
+                    overflow: Some(Overflow::Hidden),
+                    ..Default::default()
+                }) { snippet }
+            }
         }
     }
 }
