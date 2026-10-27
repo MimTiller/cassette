@@ -1055,7 +1055,9 @@ pub(super) fn live_member_panel(
         // A click opens the member's profile card and a right-click the user
         // menu (which carries Kick / Timeout / Ban for permitted users), both
         // at the press. A click while one of this row's two-step confirms is
-        // showing dismisses the confirm instead (the re-tap-cancel idiom).
+        // showing dismisses the confirm instead (the re-tap-cancel idiom); a
+        // click on ANOTHER row while a confirm is pending clears that pending
+        // confirm first and opens the clicked row's card in the same click.
         .on_touch(move |ev| {
             let secondary = runtime_shared::touch::pointer_button().opens_context_menu();
             let at = ev.window_position;
@@ -1070,6 +1072,17 @@ pub(super) fn live_member_panel(
                     banning.set(None);
                     timing.set(None);
                 } else {
+                    // A pending two-step confirm on ANOTHER row is dismissed by
+                    // this click too (one click closes A's confirm and opens
+                    // B's card), then the card opens in the same click.
+                    if confirming.get().is_some()
+                        || banning.get().is_some()
+                        || timing.get().is_some()
+                    {
+                        confirming.set(None);
+                        banning.set(None);
+                        timing.set(None);
+                    }
                     popup.open(member_id, at.x, at.y, false);
                 }
             }
