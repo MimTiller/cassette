@@ -342,8 +342,8 @@ pub(super) fn reaction_picker_overlay(
                     close.set(None);
                 }
             });
-            // Opaque full-window backdrop (dismiss-on-outside-tap) with the full
-            // emoji picker card centered.
+            // Transparent full-window layer (dismiss-on-outside-tap) with the
+            // full emoji picker card centered; the chat stays visible behind it.
             let backdrop_close = picker;
             ui! {
                 view(style = StyleRules {
@@ -352,7 +352,7 @@ pub(super) fn reaction_picker_overlay(
                     top: Some(px(0.0)),
                     width: Some(pct(100.0)),
                     height: Some(pct(100.0)),
-                    background: Some(col(BG_RAIL)),
+                    background: Some(col("transparent")),
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
                     ..Default::default()
