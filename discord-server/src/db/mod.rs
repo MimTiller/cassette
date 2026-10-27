@@ -33,29 +33,84 @@ use sha2::Sha256;
 #[cfg(feature = "server")]
 type HmacSha256 = Hmac<Sha256>;
 
-/// PBKDF2 iterations for password storage. High enough to slow offline
-/// brute-force of a leaked DB; low enough that login stays snappy (~10ms).
+/// PBKDF2 iterations for new password hashes (OWASP's current figure for
+/// PBKDF2-HMAC-SHA256). Each stored hash records its own count, so older
+/// 100k hashes still verify and are upgraded at the next successful login
+/// (`password_needs_rehash`).
 #[cfg(feature = "server")]
-const PBKDF2_ITERATIONS: u32 = 100_000;
+const PBKDF2_ITERATIONS: u32 = 600_000;
 
 /// Derive a key from `password` using PBKDF2-HMAC-SHA256.
+///
+/// HMAC's keyed inner and outer SHA-256 states are computed once; each of
+/// the (600k) rounds is then exactly two single-block compressions through
+/// `sha2::compress256`. That function is not generic, so it runs at the
+/// `sha2` crate's own optimization level (raised for dev builds in
+/// Cargo.toml) instead of this crate's unoptimized debug build, which keeps a
+/// login fast on the dev servers.
 #[cfg(feature = "server")]
 fn pbkdf2(password: &[u8], salt: &[u8], iterations: u32, dk_len: usize) -> Vec<u8> {
-    // HMAC-SHA256 output is fixed at 32 bytes (SHA256's digest size).
+    use sha2::digest::generic_array::GenericArray;
+    use sha2::Digest;
+
+    const IV: [u32; 8] = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ];
+    fn compress(state: &mut [u32; 8], block: &[u8; 64]) {
+        sha2::compress256(state, &[*GenericArray::from_slice(block)]);
+    }
+    fn to_bytes(state: &[u32; 8]) -> [u8; 32] {
+        let mut out = [0u8; 32];
+        for (chunk, word) in out.chunks_exact_mut(4).zip(state) {
+            chunk.copy_from_slice(&word.to_be_bytes());
+        }
+        out
+    }
+    // The state after absorbing one 64-byte pad block (key XOR 0x36/0x5c).
+    let mut key = [0u8; 64];
+    if password.len() > 64 {
+        key[..32].copy_from_slice(&Sha256::digest(password));
+    } else {
+        key[..password.len()].copy_from_slice(password);
+    }
+    let keyed_state = |pad: u8| {
+        let mut block = [0u8; 64];
+        for (b, k) in block.iter_mut().zip(key.iter()) {
+            *b = k ^ pad;
+        }
+        let mut state = IV;
+        compress(&mut state, &block);
+        state
+    };
+    let (inner, outer) = (keyed_state(0x36), keyed_state(0x5c));
+    // HMAC of a 32-byte message: one block of message + SHA-256 padding for a
+    // total length of 64 + 32 bytes (768 bits), through each keyed state.
+    let mut block = [0u8; 64];
+    block[32] = 0x80;
+    block[62..].copy_from_slice(&768u16.to_be_bytes());
+    let mut hmac32 = |msg: &[u8; 32]| {
+        block[..32].copy_from_slice(msg);
+        let mut s = inner;
+        compress(&mut s, &block);
+        block[..32].copy_from_slice(&to_bytes(&s));
+        let mut s = outer;
+        compress(&mut s, &block);
+        to_bytes(&s)
+    };
+
     let mac_len = 32usize;
     let blocks = dk_len.div_ceil(mac_len);
     let mut out = Vec::with_capacity(blocks * mac_len);
-    for block in 1..=blocks as u32 {
-        // U1 = PRF(password, salt || INT_32_BE(block))
+    for index in 1..=blocks as u32 {
+        // U1 = PRF(password, salt || INT_32_BE(index)): arbitrary length, so
+        // it goes through the generic HMAC once.
         let mut mac = <HmacSha256 as Mac>::new_from_slice(password).expect("hmac key any size");
         mac.update(salt);
-        mac.update(&block.to_be_bytes());
-        let mut u: Vec<u8> = mac.finalize().into_bytes().to_vec();
-        let mut result = u.clone();
+        mac.update(&index.to_be_bytes());
+        let mut u: [u8; 32] = mac.finalize().into_bytes().into();
+        let mut result = u;
         for _ in 1..iterations {
-            let mut mac = <HmacSha256 as Mac>::new_from_slice(password).expect("hmac key any size");
-            mac.update(&u);
-            u = mac.finalize().into_bytes().to_vec();
+            u = hmac32(&u);
             for (r, x) in result.iter_mut().zip(u.iter()) {
                 *r ^= *x;
             }
@@ -117,6 +172,24 @@ pub fn hash_password(password: &str) -> String {
     rand::thread_rng().fill_bytes(&mut salt);
     let dk = pbkdf2(password.as_bytes(), &salt, PBKDF2_ITERATIONS, 32);
     format!("pbkdf2-sha256${}${}${}", PBKDF2_ITERATIONS, b64encode(&salt), b64encode(&dk))
+}
+
+/// Whether `stored` was hashed with fewer iterations than new hashes use
+/// (or is unreadable), so a successful login should store a fresh hash.
+#[cfg(feature = "server")]
+pub fn password_needs_rehash(stored: &str) -> bool {
+    stored
+        .split('$')
+        .nth(1)
+        .and_then(|i| i.parse::<u32>().ok())
+        .map_or(true, |i| i < PBKDF2_ITERATIONS)
+}
+
+/// Spend the same time as checking a real password, for a username that
+/// doesn't exist, so a login's timing doesn't reveal which accounts exist.
+#[cfg(feature = "server")]
+pub fn burn_password_check(password: &str) {
+    let _ = pbkdf2(password.as_bytes(), b"no-such-account!", PBKDF2_ITERATIONS, 32);
 }
 
 /// Constant-time compare a candidate password against a stored hash. Returns
@@ -394,6 +467,27 @@ impl Db {
             |r| r.get::<_, String>(0),
         )
         .ok()
+    }
+
+    /// The account's current session-token version, or `None` when there is
+    /// no such account (a deleted account's tokens stop verifying).
+    pub fn token_version(&self, user_id: i64) -> Option<i64> {
+        let c = self.lock().ok()?;
+        c.query_row(
+            "SELECT token_version FROM users WHERE id = ?1",
+            rusqlite::params![user_id],
+            |r| r.get::<_, i64>(0),
+        )
+        .ok()
+    }
+
+    /// Invalidate every session token issued to `user_id` so far.
+    pub fn bump_token_version(&self, user_id: i64) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        c.execute(
+            "UPDATE users SET token_version = token_version + 1 WHERE id = ?1",
+            rusqlite::params![user_id],
+        )
     }
 
     /// Replace the stored password hash for user `id`. Returns the number of
@@ -2255,3 +2349,48 @@ pub fn mention_tokens(text: &str) -> Vec<String> {
     }
     out
 }
+
+#[cfg(all(test, feature = "server"))]
+mod pbkdf2_vectors {
+    fn hex(b: &[u8]) -> String {
+        b.iter().map(|x| format!("{x:02x}")).collect()
+    }
+
+    #[test]
+    fn matches_published_pbkdf2_sha256_vectors() {
+        let cases: [(&[u8], &[u8], u32, usize, &str); 4] = [
+            (b"password", b"salt", 1, 32, "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b"),
+            (b"password", b"salt", 2, 32, "ae4d0c95af6b46d32d0adff928f06dd02a303f8ef3c251dfd6e2d85a95474c43"),
+            (b"password", b"salt", 4096, 32, "c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134a"),
+            (
+                b"passwordPASSWORDpassword",
+                b"saltSALTsaltSALTsaltSALTsaltSALTsalt",
+                4096,
+                40,
+                "348c89dbcbd32b2f32d814b8116e84cf2b17347ebc1800181c4e2a1fb8dd53e1c635518c7dac47e9",
+            ),
+        ];
+        for (pw, salt, iters, len, want) in cases {
+            assert_eq!(hex(&super::pbkdf2(pw, salt, iters, len)), want, "{iters} iterations");
+        }
+        // A key longer than the 64-byte block (HMAC hashes it first) agrees
+        // with plain HMAC rounds.
+        use hmac::Mac;
+        let long = [7u8; 100];
+        let prf = |m: &[u8]| -> [u8; 32] {
+            let mut mac = <super::HmacSha256 as Mac>::new_from_slice(&long).unwrap();
+            mac.update(m);
+            mac.finalize().into_bytes().into()
+        };
+        let mut u = prf(&[b"s".as_slice(), &1u32.to_be_bytes()].concat());
+        let mut want = u;
+        for _ in 1..3 {
+            u = prf(&u);
+            for (w, x) in want.iter_mut().zip(u.iter()) {
+                *w ^= *x;
+            }
+        }
+        assert_eq!(super::pbkdf2(&long, b"s", 3, 32), want.to_vec());
+    }
+}
+

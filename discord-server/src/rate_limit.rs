@@ -122,6 +122,23 @@ impl RateLimiter {
     }
 }
 
+/// Count one attempt by `key` against `limiter`; past the limit, the error
+/// a throttled request answers with.
+pub fn throttle(limiter: &RateLimiter, key: &str) -> Result<(), String> {
+    limiter
+        .check(key)
+        .map_err(|wait| format!("too many attempts — try again in {} seconds", wait.as_secs().max(1)))
+}
+
+/// [`throttle`] keyed by a client IP address. Loopback peers (tooling on the
+/// server's own host, such as the browser test scripts) are not counted.
+pub fn throttle_ip(limiter: &RateLimiter, ip: &str) -> Result<(), String> {
+    if ip.parse::<std::net::IpAddr>().is_ok_and(|a| a.is_loopback()) {
+        return Ok(());
+    }
+    throttle(limiter, ip)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,5 +180,15 @@ mod tests {
         assert!(rl.check("y").is_err());
         rl.reset("y");
         assert!(rl.check("y").is_ok(), "reset restored budget");
+    }
+
+    #[test]
+    fn loopback_peers_are_not_ip_throttled() {
+        let l = RateLimiter::new(1, Duration::from_secs(60));
+        assert!(throttle_ip(&l, "192.168.0.49").is_ok());
+        assert!(throttle_ip(&l, "192.168.0.49").is_err());
+        assert!(throttle_ip(&l, "127.0.0.1").is_ok());
+        assert!(throttle_ip(&l, "127.0.0.1").is_ok());
+        assert!(throttle_ip(&l, "::1").is_ok());
     }
 }

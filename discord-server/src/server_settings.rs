@@ -251,6 +251,10 @@ pub enum WsServerMsg {
 #[cfg(feature = "server")]
 const PRESENCE_IDLE_SECS: u64 = 30;
 
+/// How often an open gateway socket re-verifies its session token.
+#[cfg(feature = "server")]
+const SESSION_RECHECK_SECS: u64 = 30;
+
 /// The realtime message gateway. Mounted at `GET /_srv/_ws/message_gateway`.
 ///
 /// `token` is a wire arg (encoded into the connect URL's `?args=` query by the
@@ -280,12 +284,13 @@ pub async fn message_gateway(
     // browser replays on the upgrade handshake — the web path, where JS never
     // sees the token. Both are HMAC-verified; a client-supplied user id is
     // never trusted.
-    let cookie_user =
-        cookies.get("session").and_then(|c| crate::session::verify_token(c));
-    let user_id =
-        crate::session::verify_token(&token).or(cookie_user);
-    let user_id =
-        user_id.ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let credential = [Some(token.clone()), cookies.get("session").map(|c| c.to_string())]
+        .into_iter()
+        .flatten()
+        .find(|t| crate::session::verify_token(t).is_some())
+        .ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let user_id = crate::session::verify_token(&credential)
+        .ok_or_else(|| ServerError::failed("unauthenticated"))?;
 
     let hub = hub();
     let (conn_id, mut events) = hub.register(user_id);
@@ -301,6 +306,10 @@ pub async fn message_gateway(
     // Only inbound client frames count as activity (events pushed to this
     // socket must not keep an idle user "online").
     let mut last_activity = tokio::time::Instant::now();
+    // The credential is re-checked periodically: an expired or revoked
+    // session (password changed, account deleted) closes the socket.
+    let mut recheck = tokio::time::interval(std::time::Duration::from_secs(SESSION_RECHECK_SECS));
+    recheck.tick().await;
     loop {
         let idle_at = last_activity + std::time::Duration::from_secs(PRESENCE_IDLE_SECS);
         let frame = tokio::select! {
@@ -313,6 +322,12 @@ pub async fn message_gateway(
                         }
                     }
                     None => break,
+                }
+                continue;
+            }
+            _ = recheck.tick() => {
+                if crate::session::verify_token(&credential) != Some(user_id) {
+                    break;
                 }
                 continue;
             }
@@ -350,7 +365,7 @@ pub async fn message_gateway(
                         channel_id,
                         &content,
                         reply_to_message_id,
-                        attachments.clone(),
+                        attachments,
                     )
                 {
                     let _ = ch.send(WsServerMsg::Error { reason }).await;

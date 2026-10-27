@@ -27,9 +27,22 @@ use std::path::PathBuf;
 use axum::Router;
 use tower_http::services::ServeDir;
 
-use axum::extract::Path;
+use axum::extract::{ConnectInfo, Path, Request};
+use axum::http::HeaderValue;
+use axum::middleware::Next;
 use axum::response::Response;
 use axum::routing::get;
+
+/// Stamp the TCP peer's IP on every request as `session::PEER_IP_HEADER`,
+/// replacing any value the client sent, so the API's per-IP throttles key on
+/// an address the client can't choose. (Behind a reverse proxy this would be
+/// the proxy's address; this server is reached directly.)
+async fn tag_peer_ip(ConnectInfo(peer): ConnectInfo<SocketAddr>, mut req: Request, next: Next) -> Response {
+    if let Ok(v) = HeaderValue::from_str(&peer.ip().to_string()) {
+        req.headers_mut().insert(discord_server::session::PEER_IP_HEADER, v);
+    }
+    next.run(req).await
+}
 
 /// GET /media/{name}: serve ONLY content-addressed names (see
 /// [`discord_server::media::http_response`] — anything else, including
@@ -75,6 +88,10 @@ async fn main() {
         );
     }
 
+    // Session tokens carry the account's token_version (see `session`).
+    let versions_db = db.clone();
+    discord_server::session::init_token_versions(move |user_id| versions_db.token_version(user_id));
+
     // Install the shared state the `#[server]` fns read via `use_state::<Db>()`.
     server::install_state(db);
 
@@ -111,7 +128,8 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .unwrap_or_else(|e| panic!("failed to bind {addr}: {e}"));
-    axum::serve(listener, app)
+    let app = app.layer(axum::middleware::from_fn(tag_peer_ip));
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .await
         .unwrap_or_else(|e| panic!("server failed: {e}"));
 }

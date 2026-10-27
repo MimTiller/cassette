@@ -13,8 +13,16 @@
 //! server secret — whether it arrived as a bearer header or as the session
 //! cookie.
 //!
-//! Token format: `v1.<user_id>.<expires_unix_secs>.<hex hmac-sha256>` where the
-//! MAC covers the `v1.<user_id>.<expires>` prefix.
+//! Token format: `v2.<user_id>.<token_version>.<expires_unix_secs>.<hex
+//! hmac-sha256>` where the MAC covers everything before the last `.`. A token
+//! verifies only while its `token_version` equals the account's current one
+//! (`users.token_version`, read through [`init_token_versions`]), so bumping
+//! the column (a password change) revokes every session of that account, and
+//! a deleted account's tokens stop working. Older `v1` tokens are rejected.
+//!
+//! [`client_ip`] is the connecting peer's address, which the server bin
+//! stamps on every request as [`PEER_IP_HEADER`] (overwriting any copy the
+//! client sent), for per-IP throttling.
 //!
 //! The legacy `x-user-id` header (the old stand-in session) is REJECTED by
 //! default. Set `DISCORD_ALLOW_USER_ID_HEADER=1` to accept it for local
@@ -35,6 +43,34 @@ type HmacSha256 = Hmac<Sha256>;
 const TOKEN_TTL_SECS: i64 = 12 * 60 * 60;
 
 static SECRET: OnceLock<Vec<u8>> = OnceLock::new();
+
+/// The request header the server bin sets to the TCP peer's IP address.
+pub const PEER_IP_HEADER: &str = "x-cassette-peer-ip";
+
+type VersionLookup = Box<dyn Fn(i64) -> Option<i64> + Send + Sync>;
+
+/// Where an account's current token version comes from (the server bin
+/// installs a DB lookup). Unset, every account is at version 0.
+static TOKEN_VERSIONS: OnceLock<VersionLookup> = OnceLock::new();
+
+/// Install the per-account token-version source.
+pub fn init_token_versions(lookup: impl Fn(i64) -> Option<i64> + Send + Sync + 'static) {
+    let _ = TOKEN_VERSIONS.set(Box::new(lookup));
+}
+
+/// The account's current token version; `None` = no such account.
+fn current_version(user_id: i64) -> Option<i64> {
+    match TOKEN_VERSIONS.get() {
+        Some(lookup) => lookup(user_id),
+        None => Some(0),
+    }
+}
+
+/// The connecting peer's IP address (see [`PEER_IP_HEADER`]), or
+/// `"unknown"` outside the server bin (every such request shares one bucket).
+pub fn client_ip() -> String {
+    server::use_request_header(PEER_IP_HEADER).unwrap_or_else(|| "unknown".to_string())
+}
 
 /// Test hook: 0 = follow the environment, 1 = allow the legacy header,
 /// 2 = reject it.
@@ -143,24 +179,30 @@ pub fn issue_token(user_id: i64) -> String {
 }
 
 fn issue_token_at(user_id: i64, now: i64) -> String {
-    let body = format!("v1.{user_id}.{}", now + TOKEN_TTL_SECS);
+    let version = current_version(user_id).unwrap_or(0);
+    let body = format!("v2.{user_id}.{version}.{}", now + TOKEN_TTL_SECS);
     let sig = sign(&body);
     format!("{body}.{sig}")
 }
 
 /// The user id a token authenticates, or `None` if it is malformed, forged,
-/// or expired.
+/// expired, or revoked (its version is behind the account's).
 pub fn verify_token(token: &str) -> Option<i64> {
     verify_token_at(token, now_secs())
 }
 
 fn verify_token_at(token: &str, now: i64) -> Option<i64> {
+    verify_token_with(token, now, &current_version)
+}
+
+fn verify_token_with(token: &str, now: i64, version_of: &dyn Fn(i64) -> Option<i64>) -> Option<i64> {
     let (body, sig_hex) = token.rsplit_once('.')?;
     let mut parts = body.split('.');
-    if parts.next()? != "v1" {
+    if parts.next()? != "v2" {
         return None;
     }
     let user_id: i64 = parts.next()?.parse().ok()?;
+    let version: i64 = parts.next()?.parse().ok()?;
     let expires: i64 = parts.next()?.parse().ok()?;
     if parts.next().is_some() {
         return None;
@@ -171,6 +213,9 @@ fn verify_token_at(token: &str, now: i64) -> Option<i64> {
     // Constant-time comparison.
     mac.verify_slice(&sig).ok()?;
     if now >= expires {
+        return None;
+    }
+    if version_of(user_id)? != version {
         return None;
     }
     Some(user_id)
@@ -280,14 +325,14 @@ mod tests {
     fn token_round_trips() {
         let t = issue_token(42);
         assert_eq!(verify_token(&t), Some(42));
-        assert!(t.starts_with("v1.42."));
+        assert!(t.starts_with("v2.42.0."));
     }
 
     #[test]
     fn tampered_or_forged_tokens_are_rejected() {
         let t = issue_token(7);
         // Flip the user id but keep the old signature.
-        let forged = t.replacen("v1.7.", "v1.8.", 1);
+        let forged = t.replacen("v2.7.", "v2.8.", 1);
         assert_eq!(verify_token(&forged), None);
         // Flip a signature character.
         let mut bad = t.clone();
@@ -298,9 +343,23 @@ mod tests {
         assert_eq!(verify_token(""), None);
         assert_eq!(verify_token("garbage"), None);
         assert_eq!(verify_token("v2.1.9999999999.00"), None);
+        assert_eq!(verify_token("v2.1.0.9999999999.00"), None);
         assert_eq!(verify_token(&format!("{t}.extra")), None);
         // A hand-built token with a made-up signature.
         assert_eq!(verify_token("v1.1.9999999999.deadbeef"), None);
+    }
+
+    #[test]
+    fn old_format_and_revoked_tokens_are_rejected() {
+        // A correctly signed v1 token (the pre-version format) no longer counts.
+        let body = format!("v1.5.{}", now_secs() + 60);
+        assert_eq!(verify_token(&format!("{body}.{}", sign(&body))), None);
+        // A token verifies only while its version is the account's current one.
+        let t = issue_token_at(5, 1_000);
+        assert_eq!(verify_token_with(&t, 1_001, &|_| Some(0)), Some(5));
+        assert_eq!(verify_token_with(&t, 1_001, &|_| Some(1)), None);
+        // A deleted account (no version) is unauthenticated.
+        assert_eq!(verify_token_with(&t, 1_001, &|_| None), None);
     }
 
     #[test]

@@ -64,16 +64,17 @@ fn now_secs() -> i64 {
 //
 // A readable, unambiguous alphabet: consonants + a few vowels, excluding the
 // characters most easily confused (0/O, 1/l/I, etc.) and the ones that make a
-// bare token look like a reserved word. 22 symbols over 4 characters is
-// ~234k distinct codes — far more than any server needs, and short enough to
-// type. `rand` is a server-only dep (pulled in by the `server` feature), and
+// bare token look like a reserved word. 25 symbols over 8 characters is
+// ~1.5e11 distinct codes, so guessing a live one is impractical, all the more
+// with redemption throttled (`redeem_invite`). Codes minted before the move
+// from 4 characters keep working until they expire. `rand` is a server-only dep (pulled in by the `server` feature), and
 // code generation is a server-only concern (only `InviteService` mints codes),
 // so this block is gated.
 
 #[cfg(feature = "server")]
 const CODE_ALPHABET: &[u8] = b"aeikmnoqrstuwyzbcdfgjlhpv";
 #[cfg(feature = "server")]
-const CODE_LEN: usize = 4;
+const CODE_LEN: usize = 8;
 
 #[cfg(feature = "server")]
 fn gen_code() -> String {
@@ -382,9 +383,26 @@ pub async fn create_invite(input: CreateInviteInput) -> Result<Invite, ServerErr
 pub async fn redeem_invite(input: RedeemInviteInput) -> Result<RedeemResult, ServerError> {
     let db = db_from_state()?;
     let user = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let [per_user, per_ip] = redeem_limiters();
+    crate::rate_limit::throttle(per_user, &user.to_string()).map_err(ServerError::failed)?;
+    crate::rate_limit::throttle_ip(per_ip, &crate::session::client_ip()).map_err(ServerError::failed)?;
     InviteService::new(db)
         .redeem_invite(user, &input.code)
         .map_err(ServerError::failed)
+}
+
+/// Redemption attempts (valid or not): per user, and per peer IP so one
+/// client can't spread guesses over many accounts.
+#[cfg(feature = "server")]
+fn redeem_limiters() -> [&'static crate::rate_limit::RateLimiter; 2] {
+    use std::sync::OnceLock;
+    static PER_USER: OnceLock<crate::rate_limit::RateLimiter> = OnceLock::new();
+    static PER_IP: OnceLock<crate::rate_limit::RateLimiter> = OnceLock::new();
+    let window = std::time::Duration::from_secs(600);
+    [
+        PER_USER.get_or_init(|| crate::rate_limit::RateLimiter::new(10, window)),
+        PER_IP.get_or_init(|| crate::rate_limit::RateLimiter::new(30, window)),
+    ]
 }
 
 /// Pull the shared `Db` out of server state (installed at startup by the

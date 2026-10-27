@@ -209,6 +209,11 @@ impl AuthService {
         self.db
             .set_password_hash(user_id, &hash)
             .map_err(|e| format!("failed to change password: {e}"))?;
+        // Log out every existing session (a stolen token dies with the old
+        // password); the caller re-issues one for the session that asked.
+        self.db
+            .bump_token_version(user_id)
+            .map_err(|e| format!("failed to change password: {e}"))?;
         Ok(())
     }
 }
@@ -220,10 +225,36 @@ impl AuthService {
 /// is rejected with a clear error.
 #[server]
 pub async fn signup(input: SignupInput) -> Result<SignupResult, ServerError> {
+    crate::rate_limit::throttle_ip(signup_limiter(), &crate::session::client_ip()).map_err(ServerError::failed)?;
     let db = db_from_state()?;
     AuthService::new(db)
         .signup(&input.username, &input.password)
         .map_err(ServerError::failed)
+}
+
+// ── throttles ───────────────────────────────────────────────────────────────
+//
+// Per peer IP (see `session::client_ip`), on top of the per-account lockout
+// below: the lockout alone doesn't slow one client trying a few passwords
+// against many accounts. Every attempt counts, successful or not; loopback
+// peers are exempt (`rate_limit::throttle_ip`).
+
+#[cfg(feature = "server")]
+fn signup_limiter() -> &'static crate::rate_limit::RateLimiter {
+    static L: std::sync::OnceLock<crate::rate_limit::RateLimiter> = std::sync::OnceLock::new();
+    L.get_or_init(|| crate::rate_limit::RateLimiter::new(5, std::time::Duration::from_secs(3600)))
+}
+
+/// Login attempts per IP: a burst limit and an hourly one.
+#[cfg(feature = "server")]
+fn login_limiters() -> [&'static crate::rate_limit::RateLimiter; 2] {
+    use std::sync::OnceLock;
+    static BURST: OnceLock<crate::rate_limit::RateLimiter> = OnceLock::new();
+    static HOURLY: OnceLock<crate::rate_limit::RateLimiter> = OnceLock::new();
+    [
+        BURST.get_or_init(|| crate::rate_limit::RateLimiter::new(10, std::time::Duration::from_secs(60))),
+        HOURLY.get_or_init(|| crate::rate_limit::RateLimiter::new(60, std::time::Duration::from_secs(3600))),
+    ]
 }
 
 // ── login ───────────────────────────────────────────────────────────────────
@@ -289,10 +320,12 @@ impl AuthService {
     ///   record a failure when the account exists) so the endpoint never
     ///   leaks which usernames are registered.
     pub fn login(&self, username: &str, password: &str) -> Result<LoginResult, String> {
-        let (user_id, stored_username, stored_hash) = self
-            .db
-            .user_by_username_creds(username)
-            .ok_or_else(|| "invalid username or password".to_string())?;
+        let Some((user_id, stored_username, stored_hash)) = self.db.user_by_username_creds(username) else {
+            // Take as long as a real check, so timing doesn't reveal which
+            // usernames exist.
+            crate::db::burn_password_check(password);
+            return Err("invalid username or password".to_string());
+        };
 
         // Lockout is checked BEFORE the password is verified: a locked
         // account rejects everything, even the right password, so probing
@@ -317,6 +350,10 @@ impl AuthService {
         self.db
             .clear_login_failures(user_id)
             .map_err(|e| format!("failed to clear login failures: {e}"))?;
+        // Upgrade a hash made with fewer iterations than new ones use.
+        if crate::db::password_needs_rehash(&stored_hash) {
+            let _ = self.db.set_password_hash(user_id, &hash_password(password));
+        }
         Ok(LoginResult {
             user_id,
             token: crate::session::issue_token(user_id),
@@ -417,6 +454,10 @@ impl AuthService {
 /// clears the account's failure log.
 #[server]
 pub async fn login(input: LoginInput) -> Result<LoginResult, ServerError> {
+    let ip = crate::session::client_ip();
+    for limiter in login_limiters() {
+        crate::rate_limit::throttle_ip(limiter, &ip).map_err(ServerError::failed)?;
+    }
     let db = db_from_state()?;
     let result = AuthService::new(db)
         .login(&input.username, &input.password)
@@ -484,8 +525,10 @@ pub async fn change_password(
     let user = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
     AuthService::new(db)
         .change_password(user, &input.current_password, &input.new_password)
-        .map(|_| ChangePasswordResult {})
-        .map_err(|e| ServerError::failed(e))
+        .map_err(|e| ServerError::failed(e))?;
+    // Every older session was just revoked; keep this one signed in.
+    server::set_cookie(session_cookie(&crate::session::issue_token(user), request_is_https()));
+    Ok(ChangePasswordResult {})
 }
 
 /// Set (or clear) the signed-in account's avatar. The acting user is resolved

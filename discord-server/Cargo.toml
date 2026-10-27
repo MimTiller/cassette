@@ -105,7 +105,7 @@ futures-util = { version = "0.3.32", optional = true }
 # PBKDF2 over `hmac`+`sha2` (the `pbkdf2` crate isn't in the local registry) and
 # use `rand` for the per-password salt. All three are already vendored. Gated by
 # `server` so the wasm client build never pulls a native crypto dep.
-sha2 = { version = "0.10.9", optional = true }
+sha2 = { version = "0.10.9", features = ["compress"], optional = true }
 hmac = { version = "0.12.1", optional = true }
 rand = { version = "0.8.6", optional = true }
 
@@ -143,6 +143,12 @@ web-sys = { version = "0.3.99", features = ["Window", "Location"] }
 [dev-dependencies]
 tempfile = "3"
 tokio-tungstenite = "0.24"
+
+# Password hashing runs 600k PBKDF2 rounds of SHA-256; unoptimized, one login
+# takes seconds in a debug build (the dev servers and the tests). Optimizing
+# just the hash crate keeps it to a fraction of a second.
+[profile.dev.package.sha2]
+opt-level = 3
 
 # The full-stack API + static-server binary. Only compiles with `server`.
 [[bin]]
