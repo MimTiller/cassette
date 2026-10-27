@@ -75,7 +75,8 @@ pub fn notify_message(
         author.to_string()
     };
     let body_text: String = {
-        let mut b = content.to_string();
+        // A GIF message reads as "GIF" in the toast, not its media URL.
+        let mut b = crate::reply_reference_strip::excerpt_text(content);
         if b.chars().count() > 80 {
             b.truncate(80);
         }

@@ -284,7 +284,8 @@ fn pin_row(
     };
 
     let author = m.author_username.clone();
-    let content = m.content.clone();
+    // A GIF body shows as "GIF" in a pinned row, not its media URL.
+    let content = crate::reply_reference_strip::excerpt_text(m.content.as_str());
     let _edited = m.edited_at.is_some();
     ui! {
         view(style = StyleRules {

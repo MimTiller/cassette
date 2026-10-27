@@ -72,9 +72,11 @@ pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>, server_name: 
         if needle.trim().is_empty() {
             return Vec::new();
         }
+        // A GIF message is matched and shown as "GIF", not its media URL.
         corpus
             .get()
             .into_iter()
+            .map(|(author, text)| (author, crate::reply_reference_strip::excerpt_text(&text)))
             .filter(|(author, text)| text.to_lowercase().contains(&needle) || author.to_lowercase().contains(&needle))
             .collect()
     });
