@@ -35,7 +35,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_CARD: &str = "#2b2d31"; // card surface
 const BG_ROW: &str = "#313338"; // elevated surface (rows, tab bar)
 const BG_BAR: &str = "#313338"; // tab bar background
 const BG_TAB_ACTIVE: &str = "#5865f2"; // active tab fill (Discord blurple)

@@ -49,6 +49,7 @@ const CHANNELS: [&str; 2] = ["general", "random"];
 /// replaced by a text line reading `"Forwarded to {name}"`. No props, no
 /// backend.
 #[component]
+#[allow(dead_code)] // declared but not wired into any screen yet
 pub fn ForwardMessageDialog() -> Element {
     // Local result state: `None` until a row is tapped. Both the per-row
     // `.on_touch` handlers and the reactive `if let` below read/write the

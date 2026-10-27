@@ -54,20 +54,14 @@ use crate::style_helpers::{borderless_input, col, px};
 // --- palette (same Discord dark palette as live_dm_view.rs) ------------------
 const BG_SIDEBAR: &str = "#2b2d31";
 const BG_MAIN: &str = "#313338";
-const BG_ACTIVE: &str = "#404249";
 const COMPOSER: &str = "#383a40";
 const TEXT: &str = "#f2f3f5";
 const TEXT_MUTED: &str = "#949ba4";
-const BORDER: &str = "#26272b";
 const BUTTON: &str = "#5865f2";
 const ERROR_RED: &str = "#e45c5c";
 
 fn grow(v: f32) -> Tokenized<f32> {
     Tokenized::Literal(v)
-}
-
-fn border_width(px: f32) -> Tokenized<f32> {
-    Tokenized::Literal(px)
 }
 
 /// One row of the panel snapshot: `(tag, user_id, username, avatar_url)` with

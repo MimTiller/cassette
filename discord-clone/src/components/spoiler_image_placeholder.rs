@@ -40,6 +40,7 @@ const LABEL_REVEALED: &str = "Image revealed";
 /// label between "Click to view spoiler" and "Image revealed". No props, no
 /// backend.
 #[component]
+#[allow(dead_code)] // declared but not wired into any screen yet
 pub fn SpoilerImagePlaceholder() -> Element {
     // Whether the spoiler has been revealed. Local only.
     let revealed = signal(false);
