@@ -1084,7 +1084,9 @@ pub(super) fn message_row_with_actions(
     // `Copy`, so each `move` handler captures its own copy; the `String`s are
     // cloned per press so the handlers stay `Fn`.
     let author_owned = author.to_string();
-    let snippet: String = {
+    let snippet: String = if discord_server::gifs::gif_body(body).is_some() {
+        "GIF".to_string()
+    } else {
         let s: String = body.chars().take(48).collect();
         if body.chars().count() > 48 {
             format!("{s}…")

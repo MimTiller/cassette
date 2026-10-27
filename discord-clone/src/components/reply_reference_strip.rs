@@ -91,6 +91,10 @@ pub fn reply_reference_strip(author: String, snippet: String) -> Element {
 /// Truncate a message body into a short single-line snippet for the strip:
 /// whitespace collapsed, trimmed, capped at 64 chars with an ellipsis.
 pub fn reply_snippet(body: &str) -> String {
+    // A GIF message quotes as "GIF", not its media URL.
+    if discord_server::gifs::gif_body(body).is_some() {
+        return "GIF".to_string();
+    }
     let flat: String = body
         .chars()
         .map(|c| if c.is_whitespace() { ' ' } else { c })

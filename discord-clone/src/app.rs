@@ -1677,6 +1677,37 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // scrolls the message list back to the bottom — `ScrollViewHandle` has no
     // `scroll_to_bottom`, but the web backend's `scroll_to` clamps `scrollTop` to
     // the scrollable range, so a large `y` lands exactly on the last message.
+    // Follow the newest message: after each list update, scroll to the
+    // bottom when the reader was already there (the jump pill hidden), when
+    // they just sent something (`request_scroll_to_latest`), or when the
+    // channel changed. A reader scrolled up into history stays put.
+    let follow_el = {
+        let scroll = msg_scroll_ref.clone();
+        let away = msg_show_jump;
+        let last_channel: Rc<Cell<Option<(Option<i64>, u32)>>> = Rc::new(Cell::new(None));
+        switch(
+            move || (live_revision.get(), revision.get(), active_live_channel.get(), active_channel.get()),
+            move |(_, _, live_cid, mock_cid): &(u32, u32, Option<i64>, u32)| {
+                let channel = (*live_cid, *mock_cid);
+                let switched = last_channel.replace(Some(channel)) != Some(channel);
+                let forced = FOLLOW_LATEST.with(|f| f.replace(false));
+                // Detached timers: a dropped `after_animation_frame` handle
+                // cancels its callback. The first pass runs once the rebuilt
+                // list has laid out; a channel open or a send gets a second
+                // pass for rows that settle late.
+                if switched || forced || !away.get() {
+                    let passes: &[i32] = if switched || forced { &[30, 300] } else { &[30] };
+                    for &ms in passes {
+                        let scroll = scroll.clone();
+                        runtime_core::after_ms_detached(ms, move || {
+                            scroll.with(|h| h.scroll_to(0.0, 1_000_000.0));
+                        });
+                    }
+                }
+                ui! { view(style = StyleRules { width: Some(px(0.0)), height: Some(px(0.0)), ..Default::default() }) {} }
+            },
+        )
+    };
     let msg_scroll_handle = msg_scroll_ref.clone();
     let msg_jump_el = JumpToBottomButton(
         msg_show_jump.clone(),
@@ -1720,7 +1751,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // to its content, so its measured height is the total
                     // scrollable height. The `sent_messages` switch is the only
                     // real child (the graveyard WelcomeBanner is gone).
-                    scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {
+                    // No visible scrollbar (Discord-style); the wheel,
+                    // trackpad and keyboard still scroll it.
+                    scroll_view(style = StyleRules {
+                        flex_grow: Some(grow(1.0)),
+                        scrollbar: Some(runtime_core::ScrollbarVisibility::Hidden),
+                        ..Default::default()
+                    }) {
                         view(style = StyleRules {
                             flex_direction: Some(FlexDirection::Column),
                             ..Default::default()
@@ -1737,6 +1774,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // shown only while the reader is away from the newest
                     // messages.
                     msg_jump_el
+                    follow_el
                 }.bind(msg_viewport_ref)
                 typing_row
                 // Positioning ancestor for the @-mention dropdown and the
@@ -1832,4 +1870,15 @@ fn app_shell(authed: Signal<bool>) -> Element {
             user_popup_el
         }
     }
+}
+
+thread_local! {
+    /// Set by a send; the message list's follow effect scrolls to the newest
+    /// message on its next update even if the reader had scrolled up.
+    static FOLLOW_LATEST: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Scroll the message list to the newest message on its next update.
+pub(crate) fn request_scroll_to_latest() {
+    FOLLOW_LATEST.with(|f| f.set(true));
 }

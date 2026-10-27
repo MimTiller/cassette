@@ -88,6 +88,7 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
         // Live/real mode: send over the gateway socket to the live channel.
         // The server echoes it back as a `Message` frame, which the incoming
         // effect buffers and bumps `live_revision`, rebuilding the list.
+        crate::app::request_scroll_to_latest();
         if let Some(live_cid) = live_chan.get() {
             gateway_send.send(discord_server::server_settings::WsClientMsg::Send {
                 channel_id: live_cid,
@@ -597,6 +598,7 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
             let pick_cb: Rc<dyn Fn(discord_server::gifs::Gif)> = Rc::new(move |gif: discord_server::gifs::Gif| {
                 gif_open.set(false);
                 let Some(live_cid) = active_live_channel.get() else { return };
+                crate::app::request_scroll_to_latest();
                 gateway.send(discord_server::server_settings::WsClientMsg::Send {
                     channel_id: live_cid,
                     content: discord_server::gifs::gif_message(&gif),
