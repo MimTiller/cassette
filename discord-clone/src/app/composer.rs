@@ -2,6 +2,7 @@
 //! through `ShellState`; returns the elements the final layout places.
 
 use super::*;
+use crate::gif_picker::GifPicker;
 
 pub(super) struct ComposerParts {
     pub(super) composer_area: Element,
@@ -580,6 +581,44 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
         },
     );
 
+    // GIF popover: the same float as the emoji popover. Picking a GIF sends
+    // it at once as its own message (the draft stays in the composer), as a
+    // reply when one is active. Live channels only; the mock path has no
+    // gateway to send through.
+    let gif_open: Signal<bool> = signal(false);
+    let gif_popover = switch(
+        move || gif_open.get(),
+        move |open: &bool| {
+            if !open {
+                return ui! {
+                    view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
+                };
+            }
+            let pick_cb: Rc<dyn Fn(discord_server::gifs::Gif)> = Rc::new(move |gif: discord_server::gifs::Gif| {
+                gif_open.set(false);
+                let Some(live_cid) = active_live_channel.get() else { return };
+                gateway.send(discord_server::server_settings::WsClientMsg::Send {
+                    channel_id: live_cid,
+                    content: discord_server::gifs::gif_message(&gif),
+                    reply_to_message_id: reply_target.get(),
+                    attachments: Vec::new(),
+                });
+                reply_ctx.set(None);
+                reply_target.set(None);
+            });
+            ui! {
+                view(style = StyleRules {
+                    position: Some(Position::Absolute),
+                    right: Some(px(16.0)),
+                    bottom: Some(px(76.0)),
+                    ..Default::default()
+                }) {
+                    GifPicker(on_pick = Some(pick_cb))
+                }
+            }
+        },
+    );
+
     // Layer the autocomplete key handler in front of the send (`on_enter`)
     // handler: autocomplete runs first and returns `Default` whenever the
     // dropdown is closed, so the send path still receives the key otherwise.
@@ -616,6 +655,7 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
             reply_preview(reply_ctx, reply_target)
             attach_chip
             emoji_popover
+            gif_popover
             ac_el
             // Per-channel slowmode indicator (gated): the channel-keyed
             // `slowmode_el` above resolves the active channel's
@@ -645,6 +685,41 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
                     TouchResponse::CONSUMED
                 })
                 text_input(value = composer, on_change = update_on_type, placeholder_reactive = composer_placeholder.read_only(), style = input_style, test_id = "composer").on_key_down(composer_key)
+                // GIF = open/close the GIF picker (closing the emoji one).
+                view(style = StyleRules {
+                    height: Some(px(22.0)),
+                    padding_left: Some(px(5.0)),
+                    padding_right: Some(px(5.0)),
+                    align_items: Some(AlignItems::Center),
+                    justify_content: Some(JustifyContent::Center),
+                    border_top_width: Some(border_width(2.0)),
+                    border_right_width: Some(border_width(2.0)),
+                    border_bottom_width: Some(border_width(2.0)),
+                    border_left_width: Some(border_width(2.0)),
+                    border_top_color: Some(col(TEXT_MUTED)),
+                    border_right_color: Some(col(TEXT_MUTED)),
+                    border_bottom_color: Some(col(TEXT_MUTED)),
+                    border_left_color: Some(col(TEXT_MUTED)),
+                    border_top_left_radius: Some(px(4.0)),
+                    border_top_right_radius: Some(px(4.0)),
+                    border_bottom_left_radius: Some(px(4.0)),
+                    border_bottom_right_radius: Some(px(4.0)),
+                    ..Default::default()
+                }, test_id = "gif-button") {
+                    text(style = StyleRules {
+                        font_size: Some(px(11.0)),
+                        font_weight: Some(FontWeight::Bold),
+                        color: Some(col(TEXT_MUTED)),
+                        ..Default::default()
+                    }) { "GIF".to_string() }
+                }
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        emoji_open.set(false);
+                        gif_open.set(!gif_open.get());
+                    }
+                    TouchResponse::CONSUMED
+                })
                 view(style = icon_button_style) {
                     icon(SMILE).color(|| Color::from(TEXT_MUTED)).size(16.0)
                 }
@@ -652,6 +727,7 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
                 // on `emoji_open`, mirroring the attachment button).
                 .on_touch(move |ev| {
                     if ev.phase == TouchPhase::Ended {
+                        gif_open.set(false);
                         emoji_open.set(!emoji_open.get());
                     }
                     TouchResponse::CONSUMED

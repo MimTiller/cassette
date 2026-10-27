@@ -297,6 +297,30 @@ pub(super) fn is_emoji_only(text: &str) -> bool {
 }
 
 pub(super) fn message_body(body: &str) -> Element {
+    // A body that is just a Giphy media link (a GIF sent from the picker, or
+    // a pasted one) shows as the animated image, sized from the link's
+    // `#WxH` fragment like an attachment.
+    if let Some((url, size)) = discord_server::gifs::gif_body(body) {
+        let (w, h) = attachment_box(size, ATTACHMENT_MAX_W, ATTACHMENT_MAX_H);
+        return ui! {
+            image(
+                src = url,
+                alt = "GIF".to_string(),
+                style = StyleRules {
+                    width: Some(px(w)),
+                    height: Some(px(h)),
+                    flex_shrink: Some(grow(0.0)),
+                    object_fit: Some(ObjectFit::Contain),
+                    margin_top: Some(px(2.0)),
+                    border_top_left_radius: Some(px(8.0)),
+                    border_top_right_radius: Some(px(8.0)),
+                    border_bottom_left_radius: Some(px(8.0)),
+                    border_bottom_right_radius: Some(px(8.0)),
+                    ..Default::default()
+                },
+            )
+        };
+    }
     // A body that carries real Markdown syntax (emphasis, code, links, quotes,
     // lists…) renders the WHOLE thing through the `markdown` SDK — one scene
     // payload whose caps-generic handler builds the semantic DOM (styled runs,
@@ -829,7 +853,7 @@ pub(crate) fn message_row(
     // the one link-bearing seed message, NOT a per-row widget (the graveyard
     // anti-pattern). `site_name` + `title` are parsed from the URL; the
     // description is a small mock line.
-    let link = link_preview_props(body);
+    let link = if discord_server::gifs::gif_body(body).is_some() { None } else { link_preview_props(body) };
     // With a press handler the avatar and the name open the author's
     // profile card (click) or user menu (right-click).
     let (avatar_el, name_el): (Element, Element) = match on_author {

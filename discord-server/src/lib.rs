@@ -61,6 +61,9 @@ pub mod blocks;
 // client RPC stub; the DB-backed `ProfileService` is server-only.
 pub mod profiles;
 
+// GIF search for the composer's GIF picker (Giphy, key kept server-side).
+pub mod gifs;
+
 #[cfg(feature = "server")]
 pub mod db;
 #[cfg(feature = "server")]

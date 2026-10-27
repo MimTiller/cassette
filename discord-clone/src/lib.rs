@@ -210,6 +210,8 @@ mod member_count_display;
 mod slash_command_dropdown;
 #[path = "components/emoji_picker.rs"]
 pub mod emoji_picker;
+#[path = "components/gif_picker.rs"]
+pub mod gif_picker;
 #[path = "components/settings_tab_bar.rs"]
 mod settings_tab_bar;
 

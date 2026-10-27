@@ -4,3 +4,4 @@
 *.db-wal
 *.session-secret
 media/
+giphy.key

@@ -56,6 +56,7 @@ server = [
     "dep:rand",
     "dep:image",
     "dep:base64",
+    "dep:reqwest",
 ]
 sidecar = ["dep:dev-server"]
 
@@ -113,6 +114,10 @@ rand = { version = "0.8.6", optional = true }
 # lands in the server binary) and `base64` for the client's `data:` URLs.
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"], optional = true }
 base64 = { version = "0.22.1", optional = true }
+
+# Server-only: the GIF picker's Giphy search (`gifs.rs`) calls Giphy from the
+# server so the API key never reaches the browser.
+reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls", "json"], optional = true }
 
 # Pin the wasm-bindgen family to exactly what the installed `wasm-bindgen-cli`
 # (0.2.122, matching the parent repo's lockfile) produces. `idealyst build
