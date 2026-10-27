@@ -44,6 +44,7 @@ const MONO: &str = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
 /// distinct background, with a "Copy" button; pressing the button sets the
 /// local `copied` signal to `true`, which mounts the "Copied!" label.
 #[component]
+#[allow(dead_code)] // component is declared but not wired into any screen yet
 #[allow(non_snake_case)]
 pub fn CodeBlock() -> Element {
     let copied = signal(false);

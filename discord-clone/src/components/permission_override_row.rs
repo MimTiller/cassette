@@ -66,6 +66,7 @@ fn border_width(px: f32) -> Tokenized<f32> {
 /// `state` signal renders active (filled + ringed) and the other two render
 /// inactive (dim pill + muted ring). No props, no backend.
 #[component]
+#[allow(dead_code)] // declared but not wired into any screen yet
 pub fn PermissionOverrideRow() -> Element {
     // Which override is active: an index into `OVERRIDES`. Starts on Neutral
     // (index 1) — Discord's default for a freshly added override. Local only.

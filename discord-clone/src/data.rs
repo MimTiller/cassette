@@ -244,6 +244,7 @@ impl User {
 /// Each mock member carries distinct values here — different activity, role,
 /// boost tier, bio, and nickname — so no two profiles render byte-for-byte
 /// identical. (Previously every profile re-used one hardcoded literal.)
+#[allow(dead_code)] // pub mock data: fields ship with the profile fixture set
 pub struct MemberProfile {
     /// The rich-presence status verb, e.g. "Playing", "Listening to".
     pub activity_verb: &'static str,

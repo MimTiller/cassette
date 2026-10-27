@@ -41,6 +41,7 @@ const ENABLE: &str = "#5865f2"; // "Enable" button (Discord brand blurple)
 /// replaced by a text line showing the result (`"dismissed"` /
 /// `"enabled"`).
 #[component]
+#[allow(dead_code)] // declared but not wired into any screen yet
 pub fn NotificationPermissionPrompt() -> Element {
     // Local result state: `None` until a button is pressed. Both button
     // closures and the reactive `if let` below read/write the same signal.

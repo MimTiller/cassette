@@ -198,7 +198,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 // strictly older than the loaded tail — stacks in at the front,
                 // while a live frame (the newest) sorts to the end, all through
                 // the same write path. Duplicate `message_id`s are skipped.
-                let mut changed = false;
+                let changed: bool; // set exactly once by the block below
                 {
                     let mut buf = live_buf.borrow_mut();
                     let v = buf.entry(*channel_id).or_default();

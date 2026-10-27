@@ -603,7 +603,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
     // The mock emoji set: 12 common glyphs as a wrapped grid. A local `let`
     // (not a module const) so the popover stays self-contained in the DM
     // conversation (same idiom as the channel composer).
-    let EMOJIS: [&str; 12] = [
+    let emojis: [&str; 12] = [
         "\u{1F600}", "\u{1F60A}", "\u{1F602}", "\u{1F60D}", "\u{1F60E}", "\u{1F914}",
         "\u{1F44D}", "\u{1F389}", "\u{1F680}", "\u{2764}\u{FE0F}", "\u{1F64C}", "\u{1F355}",
     ];
@@ -713,7 +713,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
             // and splatted below; each cell's `on_touch` gets fresh `Copy`
             // handles (`c`/`eo`) per iteration so it never moves the outer
             // closure's captured signals.
-            let cells: Vec<Element> = EMOJIS.iter().enumerate().map(|(_, g)| {
+            let cells: Vec<Element> = emojis.iter().enumerate().map(|(_, g)| {
                 let glyph = g.to_string();
                 let glyph_close = glyph.clone();
                 let c = composer_e;

@@ -2012,15 +2012,6 @@ pub fn find(glyph: &str) -> Option<&'static Emoji> {
     all_emojis().find(|e| e.glyph == glyph)
 }
 
-/// The tab label of the category holding `e`.
-pub fn category_of(e: &Emoji) -> &'static str {
-    CATEGORIES
-        .iter()
-        .find(|c| c.emojis.iter().any(|x| x.glyph == e.glyph))
-        .map(|c| c.label)
-        .unwrap_or("Symbols")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
