@@ -32,7 +32,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use runtime_core::{
-    after_animation_frame, after_ms_detached, AlignItems, AlignSelf, Color, Cursor, Element,
+    after_ms_detached, AlignItems, AlignSelf, Color, Cursor, Element,
     FlexDirection, FlexWrap, FontFamily, FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow,
     PanEvent, PanRecognizer, Position, Ref, ReadSignal, ScrollViewHandle, Signal, StyleRules,
     TextAlign, TextTransform, Tokenized, TouchEvent, TouchPhase, TouchResponse, ViewHandle, memo,
@@ -1667,8 +1667,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // `None` then), so it reads "at the bottom" (content_h 0) — the correct
     // pill-hidden state. Nudge once after layout so the measured sizes settle
     // even if the reader's initial offset is non-zero (e.g. a channel that
-    // restores a scroll position).
-    after_animation_frame({
+    // restores a scroll position). A dropped `after_animation_frame` handle
+    // cancels its callback, so this is a detached 50 ms timer.
+    after_ms_detached(50, {
         let r = msg_recompute_jump.clone();
         move || r(0.0)
     });
