@@ -9,7 +9,7 @@ pub(super) struct ComposerParts {
 }
 
 pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
-    let ShellState { active_channel, active_live_channel, active_server, attach_busy, attach_error, attach_next_key, composer, emoji_open, gateway, live_channels, live_messages, pending_attachment, reply_ctx, reply_target, revision, send_failed, sent, .. } = s.clone();
+    let ShellState { active_channel, active_live_channel, active_server, attach_busy, attach_error, attach_next_key, composer, emoji_open, gateway, gif_open, live_channels, live_messages, pending_attachment, reply_ctx, reply_target, revision, send_failed, sent, .. } = s.clone();
     // --- composer --------------------------------------------------------
     let composer_style = StyleRules {
         padding_top: Some(px(12.0)),
@@ -574,6 +574,7 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
                     position: Some(Position::Absolute),
                     right: Some(px(16.0)),
                     bottom: Some(px(76.0)),
+                    z_index: Some(super::popups::POPUP_Z),
                     ..Default::default()
                 }) {
                     EmojiPicker(on_pick = Some(pick_cb))
@@ -586,7 +587,6 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
     // it at once as its own message (the draft stays in the composer), as a
     // reply when one is active. Live channels only; the mock path has no
     // gateway to send through.
-    let gif_open: Signal<bool> = signal(false);
     let gif_popover = switch(
         move || gif_open.get(),
         move |open: &bool| {
@@ -613,6 +613,7 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
                     position: Some(Position::Absolute),
                     right: Some(px(16.0)),
                     bottom: Some(px(76.0)),
+                    z_index: Some(super::popups::POPUP_Z),
                     ..Default::default()
                 }) {
                     GifPicker(on_pick = Some(pick_cb))

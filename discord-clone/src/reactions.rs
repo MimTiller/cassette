@@ -25,7 +25,7 @@ pub async fn add_reaction(message_id: i64, emoji: String) -> Result<ReactionResu
     };
     discord_server::server_settings::add_reaction(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }
 
 /// Drop the caller's own emoji reaction from a message. Idempotent (removing
@@ -39,5 +39,5 @@ pub async fn remove_reaction(message_id: i64, emoji: String) -> Result<ReactionR
     };
     discord_server::server_settings::remove_reaction(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }

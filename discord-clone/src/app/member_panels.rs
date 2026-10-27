@@ -267,7 +267,7 @@ pub(super) fn member_panel(
     selected: Signal<Option<&'static str>>,
     width: Signal<f32>,
     sidebar: Signal<f32>,
-    search_corpus: ReadSignal<Vec<(String, String)>>,
+    _search_corpus: ReadSignal<Vec<(String, String)>>,
 ) -> Element {
     let mut body: Vec<Element> = Vec::new();
     // Header: "MEMBER COUNT — N" where N is the roster plus the signed-in
@@ -288,25 +288,6 @@ pub(super) fn member_panel(
         text_transform: Some(TextTransform::Uppercase),
         ..Default::default()
     };
-    // Message-search bar lives at the top of the right member panel (Discord's
-    // "far right" position) instead of in the channel header row. Wrap it in a
-    // 12px-padded `view` so it isn't flush against the panel's edges — the bar's
-    // own input is flex-sized to this width, so 240px − 24px padding (216px) fits
-    // comfortably (the bar's fixed 288px width used to overflow the header's
-    // 180px slot and would clip the 240px panel).
-    body.push(
-        ui! {
-            view(style = StyleRules {
-                padding_top: Some(px(12.0)),
-                padding_bottom: Some(px(12.0)),
-                padding_left: Some(px(12.0)),
-                padding_right: Some(px(12.0)),
-                ..Default::default()
-            }) {
-                MessageSearchBar(corpus = search_corpus, server_name = String::new())
-            }
-        },
-    );
     body.push(ui! { text(style = header_style) { header } });
 
     // Status groups in Discord order: Online, Idle, DND, Offline. The
@@ -550,9 +531,7 @@ pub(super) fn live_member_panel(
     timeout_confirm: Signal<Option<i64>>,
     timeout_duration: Signal<i64>,
     presence: Rc<RefCell<HashMap<i64, String>>>,
-    search_corpus: ReadSignal<Vec<(String, String)>>,
     popup: super::user_popups::UserPopupCtx,
-    server_name: String,
 ) -> Element {
     // Snapshot of the current roster. The panel is rebuilt (by the caller's
     // `switch` keyed on this signal) whenever the roster changes — including
@@ -575,21 +554,6 @@ pub(super) fn live_member_panel(
     // Shared styles (built once per rebuild; `StyleRules` is not `Copy`, so the
     // per-row styles are written INLINE inside the loop, the `member_role_list`
     // idiom — nothing non-`Copy` is captured across the loop boundary).
-    // The message-search bar, same position as the mock `member_panel`:
-    // 12px-padded at the top of the panel, above the member list. The corpus
-    // is the active live channel's gateway buffer (see the caller's
-    // `live_search_corpus` memo).
-    let search_block = ui! {
-        view(style = StyleRules {
-            padding_top: Some(px(12.0)),
-            padding_bottom: Some(px(12.0)),
-            padding_left: Some(px(12.0)),
-            padding_right: Some(px(12.0)),
-            ..Default::default()
-        }) {
-            MessageSearchBar(corpus = search_corpus, server_name = server_name.clone())
-        }
-    };
     let name_style = StyleRules {
         font_size: Some(px(14.0)),
         font_weight: Some(FontWeight::SemiBold),
@@ -1140,7 +1104,6 @@ pub(super) fn live_member_panel(
             overflow: Some(Overflow::Hidden),
             ..Default::default()
         }) {
-            search_block
             scroll_view(style = StyleRules {
                 flex_grow: Some(grow(1.0)),
                 ..Default::default()

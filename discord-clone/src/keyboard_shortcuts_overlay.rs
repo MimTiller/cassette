@@ -199,3 +199,13 @@ pub fn keyboard_shortcuts_overlay(open: Signal<bool>) -> Element {
         }
     }
 }
+
+/// The shortcut rows alone, for User Settings' Keybinds section.
+pub fn shortcuts_list() -> Element {
+    ui! {
+        view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) {
+            for s in SHORTCUTS { shortcut_row(s) }
+        }
+    }
+}
+

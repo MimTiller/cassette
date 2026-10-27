@@ -11,7 +11,7 @@ pub(super) struct MessagesParts {
 }
 
 pub(super) fn build(s: &ShellState) -> MessagesParts {
-    let ShellState { active_channel, active_live_channel, active_live_server, active_server, blocked_users, gateway, has_more_earlier, is_real_user, live_at_bottom, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_invite_mode, live_messages, live_revision, live_typing, live_typing_rev, load_busy, moderation_mode, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, revealed_blocked, revision, sent, translate_key, user_popup, user_profile, .. } = s.clone();
+    let ShellState { active_channel, active_live_channel, active_live_server, active_server, blocked_users, gateway, has_more_earlier, is_real_user, live_at_bottom, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_invite_mode, live_messages, live_revision, live_servers, live_typing, live_typing_rev, load_busy, members_pref, moderation_mode, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, revealed_blocked, revision, sent, translate_key, user_popup, user_profile, .. } = s.clone();
     // --- main view -------------------------------------------------------
     let header_style = StyleRules {
         padding_top: Some(px(10.0)),
@@ -60,6 +60,20 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     // in scope, so the invite flow lives here — the mock moderation panel has
     // no real server to mint against.
     let live_invite_open = live_invite_mode.clone();
+    // The header search's corpus: the active live channel's buffered
+    // messages, (author, text). `live_messages` is not reactive, so
+    // `live_revision` (bumped on every gateway message or scrollback page)
+    // is read to subscribe.
+    let search_messages = live_messages.clone();
+    let search_corpus = memo(move || -> Vec<(String, String)> {
+        let _rev = live_revision.get();
+        let Some(cid) = active_live_channel.get() else { return Vec::new() };
+        search_messages
+            .borrow()
+            .get(&cid)
+            .map(|msgs| msgs.iter().map(|m| (m.2.clone(), m.3.clone())).collect())
+            .unwrap_or_default()
+    });
     let header = switch(
         move || {
             (
@@ -75,6 +89,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
             let title_style = title_style.clone();
             let topic_style = topic_style.clone();
             let moderation_style = moderation_style.clone();
+            let search_server_name = live_servers.get().into_iter().find(|x| Some(x.id) == active_live_server.get()).map(|x| x.name).unwrap_or_default();
             // [Feature 16] Real account with no live channel: don't fall
             // through to the mock header (it would show the demo `SERVERS[0]`
             // channel). Show a neutral onboarding title during the login ->
@@ -187,13 +202,24 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         }
                         // Invite: opens the live "Invite People" overlay, which
                         // mints a real invite for this live server.
-                        view(style = moderation_style, test_id = "invite-live") {
+                        view(style = moderation_style.clone(), test_id = "invite-live") {
                             icon(USER_PLUS).color(|| Color::from(TEXT_MUTED)).size(15.0)
                         }
                         .on_touch(move |_ev| {
                             live_invite_open.set(true);
                             TouchResponse::CONSUMED
                         })
+                        // Show / hide the member list.
+                        view(style = moderation_style.clone(), test_id = "toggle-members") {
+                            icon(USERS).color(move || Color::from(if super::members_visible(members_pref) { "#f2f3f5" } else { TEXT_MUTED })).size(15.0)
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                members_pref.set(Some(!super::members_visible(members_pref)));
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                        MessageSearchBar(corpus = search_corpus.read_only(), server_name = search_server_name.clone())
                     }
                 };
             }

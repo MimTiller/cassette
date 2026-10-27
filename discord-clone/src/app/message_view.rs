@@ -912,7 +912,7 @@ pub(crate) fn message_row(
 /// toast; `on_translate` reveals the message's translate control; every entry
 /// closes the menu on tap.
 pub(super) fn message_overflow_menu(
-    open: Signal<bool>,
+    open: super::popups::MenuHandle,
     on_copy: Rc<dyn Fn()>,
     on_pin: Rc<dyn Fn()>,
     on_translate: Rc<dyn Fn()>,
@@ -945,7 +945,7 @@ pub(super) fn message_overflow_menu(
             // end, then the menu closes. (The earlier `MoreMenuAction` enum
             // hard-coded the two shared actions; Edit/Delete arrived after, so
             // the row now takes its handler directly.)
-            let menu_row = |label: &'static str, action: Rc<dyn Fn()>, open: Signal<bool>| -> Element {
+            let menu_row = |label: &'static str, action: Rc<dyn Fn()>, open: super::popups::MenuHandle| -> Element {
                 let row_style = StyleRules {
                     padding_top: Some(px(8.0)),
                     padding_bottom: Some(px(8.0)),
@@ -981,6 +981,7 @@ pub(super) fn message_overflow_menu(
                     top: Some(px(40.0)),
                     right: Some(px(12.0)),
                     width: Some(px(190.0)),
+                    z_index: Some(super::popups::POPUP_Z),
                     flex_direction: Some(FlexDirection::Column),
                     // Clip, don't scroll: this is a short fixed list (3–5 rows)
                     // that must never scroll; `hidden` keeps the surface from
@@ -1077,7 +1078,7 @@ pub(super) fn message_row_with_actions(
     on_author: Option<AuthorPress>,
 ) -> Element {
     let hovered = signal(false);
-    let menu_open = signal(false);
+    let menu_open = super::popups::MenuHandle { key };
     let base = message_row(author, color, body, when, full, edited, grouped, on_author);
 
     // Reply context: author name + a short snippet of the body. `Signal` is

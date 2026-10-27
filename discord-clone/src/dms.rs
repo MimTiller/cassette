@@ -13,7 +13,7 @@ pub use discord_server::dms::{Dm, DmMessage};
 /// registry (`crate::auth::remember_avatar`) so the DM rail rows draw the
 /// uploaded image.
 pub async fn list_dms() -> Result<Vec<Dm>, String> {
-    let list = discord_server::dms::list_dms().await.map_err(|e| e.to_string())?;
+    let list = discord_server::dms::list_dms().await.map_err(|e| crate::errors::friendly(&e))?;
     for dm in list.iter() {
         for p in dm.participants.iter() {
             crate::auth::remember_avatar(p.username.as_str(), p.avatar_url.clone());
@@ -26,7 +26,7 @@ pub async fn list_dms() -> Result<Vec<Dm>, String> {
 /// and that user already share a DM, the existing channel is returned).
 pub async fn start_dm(user_id: i64) -> Result<Dm, String> {
     let input = discord_server::dms::StartDmInput { user_id };
-    let dm = discord_server::dms::start_dm(input).await.map_err(|e| e.to_string())?;
+    let dm = discord_server::dms::start_dm(input).await.map_err(|e| crate::errors::friendly(&e))?;
     for p in dm.participants.iter() {
         crate::auth::remember_avatar(p.username.as_str(), p.avatar_url.clone());
     }
@@ -44,7 +44,7 @@ pub async fn send_dm_message(dm_id: i64, content: String) -> Result<DmMessage, S
     };
     let result = discord_server::dms::send_dm_message(input)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::errors::friendly(&e))?;
     Ok(result.message)
 }
 
@@ -59,7 +59,7 @@ pub async fn list_dm_messages(dm_id: i64, limit: Option<i64>) -> Result<Vec<DmMe
     };
     let history = discord_server::dms::list_dm_messages(input)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::errors::friendly(&e))?;
     for m in history.iter() {
         crate::auth::remember_avatar(m.author_username.as_str(), m.author_avatar.clone());
     }

@@ -26,7 +26,7 @@ pub async fn set_avatar(avatar: Option<String>) -> Result<Option<String>, String
     discord_server::auth::set_avatar(input)
         .await
         .map(|r| r.avatar_url)
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }
 
 /// Authenticate with a username + password and return the account's numeric
@@ -76,7 +76,7 @@ pub async fn login(username: &str, password: &str) -> Result<i64, String> {
             }
             Ok(result.user_id)
         }
-        Err(error) => Err(error.to_string()),
+        Err(error) => Err(crate::errors::friendly(&error)),
     }
 }
 
@@ -112,7 +112,7 @@ pub async fn signup(username: &str, password: &str) -> Result<i64, String> {
             // the signed session token in [`CURRENT_TOKEN`].
             login(username, password).await
         }
-        Err(error) => Err(error.to_string()),
+        Err(error) => Err(crate::errors::friendly(&error)),
     }
 }
 
@@ -143,7 +143,7 @@ pub async fn change_username(new_username: &str) -> Result<String, String> {
                 result.username.clone();
             Ok(result.username)
         }
-        Err(error) => Err(error.to_string()),
+        Err(error) => Err(crate::errors::friendly(&error)),
     }
 }
 
@@ -170,7 +170,7 @@ pub async fn change_password(current_password: &str, new_password: &str) -> Resu
 
     match discord_server::auth::change_password(input).await {
         Ok(_) => Ok(()),
-        Err(error) => Err(error.to_string()),
+        Err(error) => Err(crate::errors::friendly(&error)),
     }
 }
 

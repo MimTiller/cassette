@@ -58,7 +58,7 @@ pub async fn create_invite(
     };
     discord_server::invites::create_invite(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }
 
 /// Join a server by redeeming an invite `code` (the code alone names the
@@ -74,7 +74,7 @@ pub async fn redeem_invite(
     };
     discord_server::invites::redeem_invite(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }
 
 #[cfg(test)]

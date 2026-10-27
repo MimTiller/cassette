@@ -1,8 +1,10 @@
-//! `settings_suite` — the full-screen user-settings screen opened by the gear,
-//! replacing the lone `notification_settings::NotificationSettings` screen.
+//! `settings_suite` — the full-screen User Settings screen opened by the gear
+//! (and by "Profile"), laid out like Discord's: a section sidebar on the left
+//! (My Account, Profile, Appearance, Notifications, Keybinds, then Log Out), the
+//! selected section in a centred column, and a close button with "ESC" on the
+//! right (Escape closes it too, see `app::popups`).
 //!
-//! It is a three-tab suite (the `settings_tab_bar` idiom, but bound to the real
-//! tabs "Notifications" / "Account" / "Appearance"):
+//! Sections:
 //!
 //! - **Notifications** — the same three-level picker ("All messages" /
 //!   "Mentions only" / "Nothing") the old screen had, now WIRE-D to the
@@ -37,13 +39,14 @@ use runtime_core::{
 // Discord dark palette (kept local so the component is self-contained).
 const BG_CARD: &str = "#2b2d31"; // card surface
 const BG_ROW: &str = "#313338"; // elevated surface (rows, tab bar)
-const BG_BAR: &str = "#313338"; // tab bar background
 const BG_TAB_ACTIVE: &str = "#5865f2"; // active tab fill (Discord blurple)
-const BG_TAB_INACTIVE: &str = "#3a3d44"; // inactive tab ghost fill (a hair above the bar so every tab shares the same pill box)
 const TEXT: &str = "#f2f3f5"; // primary text
 const TEXT_MUTED: &str = "#949ba4"; // muted text
 const LABEL: &str = "#dbdee1"; // option label
 const TITLE: &str = "#f2f3f5"; // heading
+const DIVIDER: &str = "#3f4147"; // sidebar divider
+const NAV_HOVER: &str = "#35373c"; // sidebar row hover
+const NAV_SELECTED: &str = "#404249"; // selected sidebar row
 const DOT_ON: &str = "#5865f2"; // selected radio glyph
 const DOT_OFF: &str = "#80848e"; // unselected radio glyph
 const ERROR: &str = "#f23f43"; // error line (Discord danger red)
@@ -53,7 +56,17 @@ const OK: &str = "#23a559"; // success line (Discord green)
 const ACCENTS: [&str; 5] = ["#5865f2", "#23a559", "#f23f43", "#f0b232", "#eb459e"];
 
 /// The three settings tabs, in order (the tab-bar index keys).
-const TABS: [&str; 3] = ["Notifications", "Account", "Appearance"];
+/// Sidebar entries in order: (group heading, or "" to continue the group; label).
+const SECTIONS: [(&str, &str); 5] = [
+    ("USER SETTINGS", "My Account"),
+    ("", "Profile"),
+    ("APP SETTINGS", "Appearance"),
+    ("", "Notifications"),
+    ("", "Keybinds"),
+];
+
+/// The Profile section's index, for openers that land on it.
+pub const SECTION_PROFILE: usize = 1;
 
 /// Build one radio-style option row (the `notification_settings` shape): a dot
 /// glyph (filled when `selected == idx`) and the label; pressing it sets
@@ -338,6 +351,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                 label = "Save name".to_string(),
                 on_click = do_name,
                 style = StyleRules {
+                    align_self: Some(runtime_core::AlignSelf::FlexStart),
                     height: Some(px(28.0)),
                     padding_left: Some(px(14.0)),
                     padding_right: Some(px(14.0)),
@@ -375,6 +389,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                 label = "Update password".to_string(),
                 on_click = do_pw,
                 style = StyleRules {
+                    align_self: Some(runtime_core::AlignSelf::FlexStart),
                     height: Some(px(28.0)),
                     padding_left: Some(px(14.0)),
                     padding_right: Some(px(14.0)),
@@ -561,121 +576,222 @@ pub fn UserSettings(
     notif_mode: Signal<u32>,
     blocked: Signal<Vec<crate::blocks::BlockedUser>>,
     live_rev: Signal<u32>,
+    active: Signal<usize>,
+    on_close: Option<Rc<dyn Fn()>>,
+    on_logout: Option<Rc<dyn Fn()>>,
 ) -> Element {
-    let active = signal(0usize);
     // The accent is owned here (the gateway doesn't read it) and seeded from
-    // storage (default Discord blurple). `Signal` is `Copy`, so each `move`
-    // closure in the `switch` below captures its own copy.
+    // storage (default Discord blurple).
     let accent = signal(crate::notify::load_accent().unwrap_or_else(|| "#5865f2".to_string()));
 
-    // The active panel: `switch` keyed on `active` mounts exactly one tab's
-    // panel, rebuilding it when the tab changes. (Not `if/else if` over
-    // pre-built `Element`s — that form lowers to an `Fn` closure that would
-    // move each owned `Element` out on every reactive re-evaluation, which
-    // Rust forbids; `switch`'s render closure rebuilds fresh, so no
-    // move-out-of-capture.) `notif_mode` is the SHARED notification level
-    // (owned by `app_shell`, read by the gateway effect on every inbound
-    // message) — `Signal` is `Copy`, so the arm captures its own copy and the
-    // picker writes the same level the gateway reads.
+    // The selected section, rebuilt when `active` changes. `notif_mode` is
+    // the SHARED notification level the gateway reads on every message.
     let panel = switch(
         move || active.get(),
         move |tab: &usize| {
-            match *tab {
-                0 => notifications_tab(notif_mode),
-                1 => account_tab(blocked, live_rev),
-                _ => appearance_tab(accent),
+            let body = match *tab {
+                0 => account_tab(blocked, live_rev),
+                1 => crate::profile_settings::ProfileSettings(),
+                2 => appearance_tab(accent),
+                3 => notifications_tab(notif_mode),
+                _ => crate::keyboard_shortcuts_overlay::shortcuts_list(),
+            };
+            let title = SECTIONS.get(*tab).map(|(_, l)| *l).unwrap_or_default().to_string();
+            ui! {
+                view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) {
+                    text(style = StyleRules {
+                        font_size: Some(px(20.0)),
+                        font_weight: Some(runtime_core::FontWeight::SemiBold),
+                        color: Some(col(TITLE)),
+                        margin_bottom: Some(px(20.0)),
+                        ..Default::default()
+                    }) { title }
+                    { body }
+                }
             }
         },
     );
 
+    // Sidebar rows: group headings, the sections, a divider, Log Out.
+    let mut nav: Vec<Element> = Vec::new();
+    for (i, (group, label)) in SECTIONS.iter().enumerate() {
+        if !group.is_empty() {
+            nav.push(ui! {
+                text(style = StyleRules {
+                    font_size: Some(px(12.0)),
+                    font_weight: Some(runtime_core::FontWeight::Bold),
+                    color: Some(col(TEXT_MUTED)),
+                    padding_left: Some(px(10.0)),
+                    padding_top: Some(px(if i == 0 { 0.0 } else { 16.0 })),
+                    padding_bottom: Some(px(6.0)),
+                    ..Default::default()
+                }) { group.to_string() }
+            });
+        }
+        nav.push(nav_row(label, false, active, i, None));
+    }
+    nav.push(ui! {
+        view(style = StyleRules {
+            height: Some(px(1.0)),
+            background: Some(col(DIVIDER)),
+            margin_top: Some(px(8.0)),
+            margin_bottom: Some(px(8.0)),
+            margin_left: Some(px(10.0)),
+            margin_right: Some(px(10.0)),
+            ..Default::default()
+        }) {}
+    });
+    nav.push(nav_row("Log Out", true, active, usize::MAX, on_logout));
+
+    let close = on_close;
     ui! {
         view(style = StyleRules {
             width: Some(pct(100.0)),
-            flex_direction: Some(FlexDirection::Column),
+            height: Some(pct(100.0)),
+            flex_direction: Some(FlexDirection::Row),
             ..Default::default()
         }) {
-            // The tab bar (its own reactive active-pill styling). A `#[component]`
-            // is called by tag INSIDE `ui!` — `UserTabBar(active = …)` — not as
-            // a bare fn call (the macro generates the `BuildElement` glue).
-            UserTabBar(active = active.clone())
-
-            // The active panel: pre-built above with `let panel = switch(…)` so the
-            // `ui!` macro doesn't have to parse a trailing-closure `switch(…)` as a
-            // child (the app.rs auth form uses the same `let … = switch(…)` +
-            // bare-identifier-splat idiom, see `form` at ~line 2812). The panel
-            // rebuilds when `active` changes — `switch`'s key closure reads it.
-            panel
+            // Left: the sidebar, right-aligned in its half like Discord's.
+            view(style = StyleRules {
+                flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
+                flex_shrink: Some(runtime_core::Tokenized::Literal(0.0)),
+                flex_basis: Some(px(218.0)),
+                flex_direction: Some(FlexDirection::Row),
+                justify_content: Some(JustifyContent::FlexEnd),
+                background: Some(col(BG_CARD)),
+                ..Default::default()
+            }) {
+                scroll_view(style = StyleRules {
+                    width: Some(px(218.0)),
+                    scrollbar: Some(runtime_core::ScrollbarVisibility::Hidden),
+                    ..Default::default()
+                }) {
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Column),
+                        gap: Some(px(2.0)),
+                        padding_top: Some(px(60.0)),
+                        padding_bottom: Some(px(60.0)),
+                        padding_left: Some(px(6.0)),
+                        padding_right: Some(px(6.0)),
+                        ..Default::default()
+                    }) { nav }
+                }
+            }
+            // Right: the section in a centred column, and the close button.
+            view(style = StyleRules {
+                flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
+                flex_shrink: Some(runtime_core::Tokenized::Literal(1.0)),
+                flex_basis: Some(px(800.0)),
+                flex_direction: Some(FlexDirection::Row),
+                background: Some(col(BG_ROW)),
+                ..Default::default()
+            }) {
+                scroll_view(style = StyleRules {
+                    flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
+                    ..Default::default()
+                }) {
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Column),
+                        max_width: Some(px(740.0)),
+                        padding_top: Some(px(60.0)),
+                        padding_bottom: Some(px(80.0)),
+                        padding_left: Some(px(40.0)),
+                        padding_right: Some(px(40.0)),
+                        ..Default::default()
+                    }) { panel }
+                }
+                view(style = StyleRules {
+                    width: Some(px(72.0)),
+                    flex_shrink: Some(runtime_core::Tokenized::Literal(0.0)),
+                    padding_top: Some(px(60.0)),
+                    flex_direction: Some(FlexDirection::Column),
+                    align_items: Some(AlignItems::Center),
+                    gap: Some(px(6.0)),
+                    ..Default::default()
+                }) {
+                    view(style = StyleRules {
+                        width: Some(px(36.0)),
+                        height: Some(px(36.0)),
+                        align_items: Some(AlignItems::Center),
+                        justify_content: Some(JustifyContent::Center),
+                        border_top_width: Some(runtime_core::Tokenized::Literal(2.0)),
+                        border_right_width: Some(runtime_core::Tokenized::Literal(2.0)),
+                        border_bottom_width: Some(runtime_core::Tokenized::Literal(2.0)),
+                        border_left_width: Some(runtime_core::Tokenized::Literal(2.0)),
+                        border_top_color: Some(col(TEXT_MUTED)),
+                        border_right_color: Some(col(TEXT_MUTED)),
+                        border_bottom_color: Some(col(TEXT_MUTED)),
+                        border_left_color: Some(col(TEXT_MUTED)),
+                        border_top_left_radius: Some(px(18.0)),
+                        border_top_right_radius: Some(px(18.0)),
+                        border_bottom_left_radius: Some(px(18.0)),
+                        border_bottom_right_radius: Some(px(18.0)),
+                        ..Default::default()
+                    }, test_id = "settings-close") {
+                        text(style = StyleRules { font_size: Some(px(16.0)), color: Some(col(TEXT_MUTED)), ..Default::default() }) { "✕".to_string() }
+                    }
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            if let Some(c) = &close {
+                                c();
+                            }
+                        }
+                        TouchResponse::CONSUMED
+                    })
+                    text(style = StyleRules {
+                        font_size: Some(px(13.0)),
+                        font_weight: Some(runtime_core::FontWeight::SemiBold),
+                        color: Some(col(TEXT_MUTED)),
+                        ..Default::default()
+                    }) { "ESC".to_string() }
+                }
+            }
         }
     }
 }
 
-/// The three-tab bar (the `settings_tab_bar` shape, bound to `active`). Tapping
-/// a tab sets `active` to that tab's index; the active tab renders highlighted
-/// (blurple fill + white bold label). `active` is a `Signal` prop (stays a
-/// `Signal` in the body — the macro does not wrap `Signal`/`ReadSignal`/
-/// `WriteSignal` props), so the `move` closures read `active.get()` reactively.
-#[component]
-#[allow(non_snake_case)]
-pub fn UserTabBar(active: Signal<usize>) -> Element {
+/// One sidebar row: a section (selects `index`), or with `danger` the Log
+/// Out row (runs `action`). Hover lightens it; the selected section is
+/// filled.
+fn nav_row(label: &str, danger: bool, active: Signal<usize>, index: usize, action: Option<Rc<dyn Fn()>>) -> Element {
+    let hovered = signal(false);
+    let label = label.to_string();
     ui! {
-        view(style = StyleRules {
-            flex_direction: Some(FlexDirection::Row),
-            align_items: Some(AlignItems::Center),
-            gap: Some(px(4.0)),
-            background: Some(col(BG_BAR)),
-            padding_top: Some(px(6.0)),
-            padding_bottom: Some(px(6.0)),
-            // Match the tab pills to the panel body's content margin (the tab
-            // views below use padding_left 16) so the active pill never
-            // overhangs to the left of the content it labels.
-            padding_left: Some(px(16.0)),
-            padding_right: Some(px(16.0)),
-            border_top_left_radius: Some(px(8.0)),
-            border_top_right_radius: Some(px(8.0)),
-            border_bottom_left_radius: Some(px(8.0)),
-            border_bottom_right_radius: Some(px(8.0)),
-            margin_bottom: Some(px(12.0)),
-            ..Default::default()
-        }) {
-            for (i, label) in TABS.iter().enumerate() {
-                // Reactive pill: `on = i == active.get()` flips fill + weight.
-                view(style = move || {
-                    let on = i == active.get();
-                    StyleRules {
-                        height: Some(px(32.0)),
-                        padding_left: Some(px(16.0)),
-                        padding_right: Some(px(16.0)),
-                        flex_direction: Some(FlexDirection::Row),
-                        align_items: Some(AlignItems::Center),
-                        background: Some(col(if on { BG_TAB_ACTIVE } else { BG_TAB_INACTIVE })),
-                        border_top_left_radius: Some(px(6.0)),
-                        border_top_right_radius: Some(px(6.0)),
-                        border_bottom_left_radius: Some(px(6.0)),
-                        border_bottom_right_radius: Some(px(6.0)),
-                        ..Default::default()
-                    }
-                }) {
-                    text(style = move || {
-                        let on = i == active.get();
-                        StyleRules {
-                            font_size: Some(px(14.0)),
-                            font_weight: Some(if on {
-                                runtime_core::FontWeight::SemiBold
-                            } else {
-                                runtime_core::FontWeight::Normal
-                            }),
-                            color: Some(col(if on { "#ffffff" } else { TEXT_MUTED })),
-                            ..Default::default()
-                        }
-                    }) { label.to_string() }
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        active.set(i);
-                    }
-                    TouchResponse::CONSUMED
-                })
+        view(style = move || {
+            let on = active.get() == index;
+            StyleRules {
+                height: Some(px(32.0)),
+                padding_left: Some(px(10.0)),
+                padding_right: Some(px(10.0)),
+                flex_direction: Some(FlexDirection::Row),
+                align_items: Some(AlignItems::Center),
+                background: Some(col(if on { NAV_SELECTED } else if hovered.get() { NAV_HOVER } else { "transparent" })),
+                border_top_left_radius: Some(px(4.0)),
+                border_top_right_radius: Some(px(4.0)),
+                border_bottom_left_radius: Some(px(4.0)),
+                border_bottom_right_radius: Some(px(4.0)),
+                ..Default::default()
             }
+        }) {
+            text(style = move || {
+                let on = active.get() == index;
+                StyleRules {
+                    font_size: Some(px(15.0)),
+                    font_weight: Some(runtime_core::FontWeight::Medium),
+                    color: Some(col(if danger { ERROR } else if on || hovered.get() { TEXT } else { TEXT_MUTED })),
+                    ..Default::default()
+                }
+            }) { label.clone() }
         }
+        .on_hover(move |on| hovered.set(on))
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                match &action {
+                    Some(a) => a(),
+                    None => active.set(index),
+                }
+            }
+            TouchResponse::CONSUMED
+        })
     }
 }

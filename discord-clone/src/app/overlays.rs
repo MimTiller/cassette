@@ -16,145 +16,33 @@ pub(super) struct OverlaysParts {
 }
 
 pub(super) fn build(s: &ShellState) -> OverlaysParts {
-    let ShellState { active_live_server, active_server, blocked_users, bug_reports_mode, dm_active, dm_mode, dm_revision, dm_sent, dm_unread, dm_unread_rev, friends_add_error, friends_add_username, friends_entry, friends_open, friends_snap, friends_tab, gateway, live_dm_active, live_dm_messages, live_dm_mode, live_dm_new_id, live_dm_revision, live_dms, live_invite_code, live_invite_error, live_invite_mode, live_members, live_presence, live_presence_rev, live_revision, moderation_mode, notif_level, notif_mode, on_dm_message, profile_mode, selected_member, shortcuts_mode, .. } = s.clone();
+    let ShellState { active_live_server, active_server, authed, blocked_users, bug_reports_mode, dm_active, dm_mode, dm_revision, dm_sent, dm_unread, dm_unread_rev, friends_add_error, friends_add_username, friends_entry, friends_open, friends_snap, friends_tab, gateway, live_dm_active, live_dm_messages, live_dm_mode, live_dm_new_id, live_dm_revision, live_dms, live_invite_code, live_invite_error, live_invite_mode, live_members, live_presence, live_presence_rev, live_revision, moderation_mode, notif_level, notif_mode, on_dm_message, profile_mode, selected_member, shortcuts_mode, .. } = s.clone();
 
-    // Profile Settings screen (built once; its fields are bound to local
-    // component state). Rendered as a full-screen overlay on top of the rest
-    // of the app: when `profile_mode` is off it collapses to zero size, when
-    // on it fills the whole window. A "Done" pill in the header flips
-    // `profile_mode` back off to close it.
-    let profile_el = ProfileSettings();
-    let profile_close = profile_mode.clone();
-    let profile_header = ui! {
-        view(style = StyleRules {
-            flex_direction: Some(FlexDirection::Row),
-            align_items: Some(AlignItems::Center),
-            justify_content: Some(JustifyContent::SpaceBetween),
-            padding_top: Some(px(16.0)),
-            padding_bottom: Some(px(16.0)),
-            padding_left: Some(px(16.0)),
-            padding_right: Some(px(16.0)),
-            ..Default::default()
-        }) {
-            text(style = StyleRules {
-                font_size: Some(px(18.0)),
-                font_weight: Some(FontWeight::Bold),
-                color: Some(col(TEXT)),
-                ..Default::default()
-            }) { "Profile".to_string() }
-            view(style = StyleRules {
-                height: Some(px(26.0)),
-                padding_left: Some(px(12.0)),
-                padding_right: Some(px(12.0)),
-                background: Some(col(BG_SIDEBAR)),
-                align_items: Some(AlignItems::Center),
-                justify_content: Some(JustifyContent::Center),
-                border_top_left_radius: Some(px(6.0)),
-                border_top_right_radius: Some(px(6.0)),
-                border_bottom_left_radius: Some(px(6.0)),
-                border_bottom_right_radius: Some(px(6.0)),
-                ..Default::default()
-            }) {
-                text(style = StyleRules {
-                    color: Some(col(TEXT)),
-                    font_size: Some(px(12.0)),
-                    font_weight: Some(FontWeight::SemiBold),
-                    ..Default::default()
-                }) { "Done".to_string() }
+    // User Settings: one full-window screen (see `settings_suite`), shown
+    // while `notif_mode` is on. "Profile" (`profile_mode`) opens it at the
+    // Profile section. Log Out signs out as the user panel's button did.
+    let settings_tab: Signal<usize> = signal(0);
+    let profile_region = switch(
+        move || profile_mode.get(),
+        move |open: &bool| {
+            if *open {
+                after_ms_detached(0, move || {
+                    profile_mode.set(false);
+                    settings_tab.set(crate::settings_suite::SECTION_PROFILE);
+                    notif_mode.set(true);
+                });
             }
-            .on_touch(move |ev| {
-                if ev.phase == TouchPhase::Ended {
-                    profile_close.set(false);
-                }
-                TouchResponse::CONSUMED
-            })
-        }
-    };
-    let profile_open_chk = profile_mode.clone();
-    let profile_wrap = move || StyleRules {
-        position: Some(Position::Absolute),
-        left: Some(px(0.0)),
-        top: Some(px(0.0)),
-        width: Some(if profile_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        height: Some(if profile_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col("rgba(0, 0, 0, 0.55)")),
-        flex_direction: Some(FlexDirection::Column),
-        overflow: Some(Overflow::Hidden),
-        ..Default::default()
-    };
-    let profile_region = ui! {
-        view(style = profile_wrap) {
-            profile_header
-            view(style = StyleRules { flex_grow: Some(grow(1.0)), background: Some(col(BG_MAIN)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
-                scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {
-                    profile_el
-                    NicknameEditField()
-                    CustomStatusInput()
-                    CharCounter()
-                    TwoFactorToggle()
-                    DeleteAccountWarning()
-                    IconChangeConfirm()
-                    SettingsTabBar()
-                    SetupChecklistDemo()
-                    EmojiUploadSlot()
-                    RulesAcceptCheckbox()
-                }
-            }
-        }
-    };
-
-    // User Settings screen (built once, same shape as the Profile overlay
-    // above): collapses to zero size when `notif_mode` is off, fills the
-    // window when on, with a "Done" pill to close it. It is the tabbed
-    // `UserSettings` suite (Notifications / Account / Appearance) — the gear's
-    // target. The notification level it edits is the shared `notif_level`
-    // signal (also read by the gateway effect), passed as a `Signal` prop.
-    let notif_close = notif_mode.clone();
-    let notif_header = ui! {
-        view(style = StyleRules {
-            flex_direction: Some(FlexDirection::Row),
-            align_items: Some(AlignItems::Center),
-            justify_content: Some(JustifyContent::SpaceBetween),
-            padding_top: Some(px(16.0)),
-            padding_bottom: Some(px(16.0)),
-            padding_left: Some(px(16.0)),
-            padding_right: Some(px(16.0)),
-            ..Default::default()
-        }) {
-            text(style = StyleRules {
-                font_size: Some(px(18.0)),
-                font_weight: Some(FontWeight::Bold),
-                color: Some(col(TEXT)),
-                ..Default::default()
-            }) { "User Settings".to_string() }
-            view(style = StyleRules {
-                height: Some(px(26.0)),
-                padding_left: Some(px(12.0)),
-                padding_right: Some(px(12.0)),
-                background: Some(col(BG_SIDEBAR)),
-                align_items: Some(AlignItems::Center),
-                justify_content: Some(JustifyContent::Center),
-                border_top_left_radius: Some(px(6.0)),
-                border_top_right_radius: Some(px(6.0)),
-                border_bottom_left_radius: Some(px(6.0)),
-                border_bottom_right_radius: Some(px(6.0)),
-                ..Default::default()
-            }) {
-                text(style = StyleRules {
-                    color: Some(col(TEXT)),
-                    font_size: Some(px(12.0)),
-                    font_weight: Some(FontWeight::SemiBold),
-                    ..Default::default()
-                }) { "Done".to_string() }
-            }
-            .on_touch(move |ev| {
-                if ev.phase == TouchPhase::Ended {
-                    notif_close.set(false);
-                }
-                TouchResponse::CONSUMED
-            })
-        }
-    };
+            ui! { view(style = StyleRules { width: Some(px(0.0)), height: Some(px(0.0)), ..Default::default() }) {} }
+        },
+    );
+    let on_close: Rc<dyn Fn()> = Rc::new(move || notif_mode.set(false));
+    let on_logout: Rc<dyn Fn()> = Rc::new(move || {
+        crate::auth::clear_session();
+        crate::auth::request_logout();
+        *super::SESSION_NOTE.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        notif_mode.set(false);
+        authed.set(false);
+    });
     let notif_open_chk = notif_mode.clone();
     let notif_wrap = move || StyleRules {
         position: Some(Position::Absolute),
@@ -162,22 +50,20 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         top: Some(px(0.0)),
         width: Some(if notif_open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if notif_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col("rgba(0, 0, 0, 0.55)")),
-        flex_direction: Some(FlexDirection::Column),
+        background: Some(col(BG_MAIN)),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
     };
-    // The `UserSettings` suite is a `#[component]`, so it's called by tag
-    // INSIDE `ui!` (`UserSettings(notif_mode = …)`) — the macro generates the
-    // `BuildElement` glue. It receives the shared `notif_level` signal (the
-    // Notifications tab writes it; the gateway effect reads it). `Signal` is
-    // `Copy`, so `notif_level.clone()` hands the same underlying signal.
     let notif_region = ui! {
         view(style = notif_wrap) {
-            notif_header
-            view(style = StyleRules { flex_grow: Some(grow(1.0)), background: Some(col(BG_MAIN)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
-                scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { UserSettings(notif_mode = notif_level.clone(), blocked = blocked_users, live_rev = live_revision) }
-            }
+            UserSettings(
+                notif_mode = notif_level.clone(),
+                blocked = blocked_users,
+                live_rev = live_revision,
+                active = settings_tab,
+                on_close = Some(on_close),
+                on_logout = Some(on_logout),
+            )
         }
     };
 

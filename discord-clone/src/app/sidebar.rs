@@ -1207,7 +1207,7 @@ fn server_dropdown(
                     left: Some(px(8.0)),
                     top: Some(px(50.0)),
                     width: Some(px(220.0)),
-                    z_index: Some(50),
+                    z_index: Some(super::popups::POPUP_Z),
                     flex_direction: Some(FlexDirection::Column),
                     padding_top: Some(px(6.0)),
                     padding_bottom: Some(px(6.0)),

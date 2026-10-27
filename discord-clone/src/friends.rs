@@ -31,7 +31,7 @@ fn remember_avatars(list: FriendList) {
 pub async fn list_friends() -> Result<FriendList, String> {
     let list = discord_server::friends::list_friends()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::errors::friendly(&e))?;
     remember_avatars(list.clone());
     Ok(list)
 }
@@ -42,7 +42,7 @@ pub async fn send_friend_request(username: String) -> Result<FriendList, String>
     let input = discord_server::friends::SendFriendRequestInput { username };
     discord_server::friends::send_friend_request(input)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::errors::friendly(&e))?;
     list_friends().await
 }
 
@@ -51,7 +51,7 @@ pub async fn accept_friend_request(user_id: i64) -> Result<FriendList, String> {
     let input = discord_server::friends::AcceptFriendRequestInput { user_id };
     discord_server::friends::accept_friend_request(input)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::errors::friendly(&e))?;
     list_friends().await
 }
 
@@ -61,7 +61,7 @@ pub async fn decline_or_cancel(user_id: i64) -> Result<FriendList, String> {
     let input = discord_server::friends::DeclineOrCancelInput { user_id };
     discord_server::friends::decline_or_cancel(input)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::errors::friendly(&e))?;
     list_friends().await
 }
 
@@ -70,6 +70,6 @@ pub async fn remove_friend(user_id: i64) -> Result<FriendList, String> {
     let input = discord_server::friends::RemoveFriendInput { user_id };
     discord_server::friends::remove_friend(input)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::errors::friendly(&e))?;
     list_friends().await
 }

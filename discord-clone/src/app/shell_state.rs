@@ -147,4 +147,7 @@ pub(super) struct ShellState {
     pub(super) blocked_users: Signal<Vec<crate::blocks::BlockedUser>>,
     pub(super) revealed_blocked: Signal<Vec<i64>>,
     pub(super) server_menu_open: Signal<bool>,
+    pub(super) gif_open: Signal<bool>,
+    pub(super) msg_menu: Signal<Option<MessageKey>>,
+    pub(super) members_pref: Signal<Option<bool>>,
 }

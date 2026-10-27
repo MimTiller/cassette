@@ -62,16 +62,13 @@ use crate::ban_list_row::BanListRow;
 use crate::timeout_duration_picker::TimeoutDurationPicker;
 use crate::member_role_list::MemberRoleList;
 use crate::verified_badge::VerifiedBadge;
-use crate::icon_change_confirm::IconChangeConfirm;
 use crate::ban_reason_input::BanReasonInput;
-use crate::delete_account_warning::DeleteAccountWarning;
 
 use crate::blocked_user_row::BlockedUserRow;
 use crate::category_header::CategoryHeader;
 use crate::mic_selector::MicSelector;
 
 use crate::screen_share_indicator::ScreenShareIndicator;
-use crate::two_factor_toggle::TwoFactorToggle;
 
 use crate::send_failed_indicator::SendFailedIndicator;
 use crate::slowmode_indicator::SlowmodeIndicator;
@@ -85,7 +82,6 @@ use crate::soundboard_button::SoundboardButton;
 use crate::edited_label::EditedLabel;
 use crate::settings_suite::UserSettings;
 use crate::keyboard_shortcuts_overlay::keyboard_shortcuts_overlay;
-use crate::profile_settings::ProfileSettings;
 use crate::dm_view::dm_screen;
 use crate::style_helpers::{borderless_input, col, pct, px, section_label};
 use crate::join_modal::JoinServerModal;
@@ -100,13 +96,7 @@ use crate::invite_expiry_selector::InviteExpirySelector;
 use crate::thread_list_row::ThreadListRow;
 use crate::slash_command_dropdown::SlashCommandDropdown;
 use crate::emoji_picker::EmojiPicker;
-use crate::settings_tab_bar::SettingsTabBar;
-use crate::setup_checklist_item::SetupChecklistDemo;
-use crate::emoji_upload_slot::EmojiUploadSlot;
-use crate::rules_accept_checkbox::RulesAcceptCheckbox;
 use crate::nickname_edit_field::NicknameEditField;
-use crate::custom_status_input::CustomStatusInput;
-use crate::char_counter::CharCounter;
 use crate::kick_confirm_dialog::KickConfirmDialog;
 use crate::delete_message_confirm::DeleteMessageConfirm;
 use crate::transfer_ownership_confirm::TransferOwnershipConfirm;
@@ -133,6 +123,7 @@ mod gateway_effects;
 mod rail;
 mod modals;
 mod user_popups;
+mod popups;
 mod sidebar;
 mod messages;
 mod composer;
@@ -681,6 +672,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // to reveal this session (see `crate::blocks`).
     let blocked_users: Signal<Vec<crate::blocks::BlockedUser>> = signal(Vec::new());
     let revealed_blocked: Signal<Vec<i64>> = signal(Vec::new());
+    // The composer's GIF picker, and which message's "⋯" menu is open (see
+    // `popups`).
+    let gif_open: Signal<bool> = signal(false);
+    // The member list: `None` = automatic (shown when the window is wide
+    // enough, see `members_visible`), `Some` = the header toggle's choice.
+    let members_pref: Signal<Option<bool>> = signal(None);
+    let msg_menu: Signal<Option<MessageKey>> = signal(None);
     // The live sidebar header's server dropdown.
     let server_menu_open: Signal<bool> = signal(false);
     if is_real_user {
@@ -1461,6 +1459,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
         user_popup: user_popup.clone(),
         blocked_users: blocked_users.clone(),
         server_menu_open: server_menu_open.clone(),
+        gif_open: gif_open.clone(),
+        members_pref: members_pref.clone(),
+        msg_menu: msg_menu.clone(),
         revealed_blocked: revealed_blocked.clone(),
         user_profile: user_profile.clone(),
         live_collapsed: live_collapsed.clone(),
@@ -1601,11 +1602,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
         translate_key: translate_key.clone(),
         user_status: user_status.clone(),
     };
+    // Before any section builds its rows: they read `popups::msg_menu`.
+    let popups::PopupsParts { catcher_el: popup_catcher_el, exclusive_el: popup_exclusive_el } = popups::build(&s);
 
     let gateway_effects::GatewayEffectsParts { gateway_status, gateway_incoming_effect, mention_reset_effect } = gateway_effects::build(&s);
     let rail::RailParts { rail_style, server_rows, create_server_section, live_section, rail_actions } = rail::build(&s);
     let modals::ModalsParts { join_el, create_el, discover_el, cc_el, rc_el, dc_el, invite_el, ss_el } = modals::build(&s);
-    let user_popups::UserPopupsParts { user_popup_el, chan_menu_catcher_el } = user_popups::build(&s);
+    let user_popups::UserPopupsParts { user_popup_el } = user_popups::build(&s);
     let sidebar::SidebarParts { sidebar } = sidebar::build(&s);
     let messages::MessagesParts { header, slowmode_el, sent_messages, typing_row } = messages::build(&s);
     let composer::ComposerParts { composer_area } = composer::build(&s, slowmode_el);
@@ -1786,8 +1789,17 @@ fn app_shell(authed: Signal<bool>) -> Element {
             }
             // Drag handle on the member panel's left edge: dragging it left
             // resizes `member_panel_width` (left = grow, so sign `-1`).
-            resize_handle(member_panel_width, -1.0, "resize-members")
-            members_switch
+            // The member list and its drag handle, collapsed to nothing while
+            // hidden (the header toggle, or automatically on narrow windows).
+            view(style = move || StyleRules {
+                flex_direction: Some(FlexDirection::Row),
+                width: if members_visible(members_pref) { None } else { Some(px(0.0)) },
+                overflow: Some(Overflow::Hidden),
+                ..Default::default()
+            }) {
+                resize_handle(member_panel_width, -1.0, "resize-members")
+                members_switch
+            }
             // Member profile overlay: full-screen, painted after the member
             // list so it covers the whole window when a row is tapped
             // (collapses to zero size while no member is selected).
@@ -1865,7 +1877,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 notif_toast_title,
                 notif_toast_body,
             )
-            chan_menu_catcher_el
+            // Click-outside layer for open dropdowns, and the one-popup-at-a-
+            // time rule (see `popups`).
+            popup_catcher_el
+            popup_exclusive_el
             // Profile card / user context menu: last, so it floats above
             // everything else.
             user_popup_el
@@ -1882,4 +1897,13 @@ thread_local! {
 /// Scroll the message list to the newest message on its next update.
 pub(crate) fn request_scroll_to_latest() {
     FOLLOW_LATEST.with(|f| f.set(true));
+}
+
+/// Below this window width the member list starts hidden.
+const MEMBERS_AUTO_MIN_WIDTH: f32 = 1200.0;
+
+/// Whether the member list shows: the header toggle's choice, or, until the
+/// toggle is used, whether the window is wide enough.
+pub(super) fn members_visible(pref: Signal<Option<bool>>) -> bool {
+    pref.get().unwrap_or_else(|| viewport_size().get().width >= MEMBERS_AUTO_MIN_WIDTH)
 }

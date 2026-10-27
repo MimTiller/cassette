@@ -8,7 +8,7 @@ pub(super) struct MemberListParts {
 }
 
 pub(super) fn build(s: &ShellState) -> MemberListParts {
-    let ShellState { active_channel, active_live_channel, active_live_server, active_server, blocked_users, is_real_user, live_ban_confirm, live_kick_confirm, live_member_error, live_member_menu, live_members, live_messages, live_presence, live_presence_rev, live_revision, live_timeout_confirm, live_servers, live_timeout_duration, member_panel_width, revision, selected_member, sent, sidebar_width, user_popup, user_profile, user_status, .. } = s.clone();
+    let ShellState { active_channel, active_live_server, active_server, blocked_users, is_real_user, live_ban_confirm, live_kick_confirm, live_member_error, live_member_menu, live_members, live_presence, live_presence_rev, live_revision, live_timeout_confirm, live_timeout_duration, member_panel_width, revision, selected_member, sent, sidebar_width, user_popup, user_profile, user_status, .. } = s.clone();
     // --- member list (right side) ----------------------------------------
     // Rebuilds when the active server changes (each server has its own
     // roster) AND when the signed-in user's live status changes — the user
@@ -66,30 +66,6 @@ pub(super) fn build(s: &ShellState) -> MemberListParts {
         }
         corpus
     });
-    // The LIVE counterpart: the same `(author, text)` shape, but sourced from
-    // the gateway-fed `live_messages` buffer of the active live channel — the
-    // same data the live message list renders, so search hits what the user
-    // can see. `live_messages` is an `Rc<RefCell<…>>` (invisible to the
-    // reactive graph), so `live_revision` is read to subscribe: any gateway
-    // message or scrollback page bumps it (the message list's `switch` is
-    // keyed on the same pair). Switching live channels changes
-    // `active_live_channel` and re-derives over the new buffer.
-    let live_search_corpus = memo(move || -> Vec<(String, String)> {
-        let live_cid = active_live_channel.get();
-        let _rev = live_revision.get();
-        let cid = match live_cid {
-            Some(c) => c,
-            None => return Vec::new(),
-        };
-        live_messages
-            .borrow()
-            .get(&cid)
-            .map(|msgs| msgs.iter().map(|m| (m.2.clone(), m.3.clone())).collect())
-            .unwrap_or_default()
-    });
-    // Dedicated clone for the `members_switch` arm closure below (it moves its
-    // own copy; the `memo` itself is `Copy`).
-    let live_search_corpus_panel = live_search_corpus.clone();
     let members_switch = switch(
         move || {
             (
@@ -136,7 +112,6 @@ pub(super) fn build(s: &ShellState) -> MemberListParts {
                     // `Rc` isn't `Copy`, and this is an `Fn` (re-entrant) closure —
                     // clone the handle each render.
                     live_presence_panel.clone(),
-                    live_search_corpus_panel.read_only(),
                     super::user_popups::UserPopupCtx {
                         popup: user_popup,
                         profile: user_profile,
@@ -144,7 +119,6 @@ pub(super) fn build(s: &ShellState) -> MemberListParts {
                         blocked: blocked_users,
                         live_rev: live_revision,
                     },
-                    live_servers.get().into_iter().find(|s| s.id == ls).map(|s| s.name).unwrap_or_default(),
                 );
             }
             if *real_user {

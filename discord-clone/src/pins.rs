@@ -22,7 +22,7 @@ pub async fn pin_message(message_id: i64) -> Result<PinResult, String> {
     let input = discord_server::server_settings::PinInput { message_id };
     discord_server::server_settings::pin_message(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }
 
 /// Unpin a message in its channel. Idempotent (unpinning an already-unpinned
@@ -32,7 +32,7 @@ pub async fn unpin_message(message_id: i64) -> Result<PinResult, String> {
     let input = discord_server::server_settings::PinInput { message_id };
     discord_server::server_settings::unpin_message(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }
 
 /// List a channel's pinned messages in pin order (oldest pin first), each
@@ -42,7 +42,7 @@ pub async fn list_pinned(channel_id: i64) -> Result<Vec<PinnedMessage>, String> 
     let input = discord_server::server_settings::PinnedChannelInput { channel_id };
     discord_server::server_settings::list_pinned(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }
 
 /// The count of a channel's pinned messages — the value the channel header's
@@ -51,5 +51,5 @@ pub async fn pinned_count(channel_id: i64) -> Result<i64, String> {
     let input = discord_server::server_settings::PinnedChannelInput { channel_id };
     discord_server::server_settings::pinned_count(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }

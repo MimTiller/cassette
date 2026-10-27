@@ -40,6 +40,8 @@ mod live_dm_view;
 // + the live friends panel view.
 mod friends;
 mod friends_view;
+// User-facing text for server-call errors.
+mod errors;
 // Blocked list + block/unblock + the blocked-message placeholder.
 mod blocks;
 
@@ -64,12 +66,6 @@ mod verified_badge;
 mod jump_to_bottom_button;
 #[path = "components/load_earlier_button.rs"]
 mod load_earlier_button;
-#[path = "components/emoji_upload_slot.rs"]
-mod emoji_upload_slot;
-#[path = "components/rules_accept_checkbox.rs"]
-mod rules_accept_checkbox;
-#[path = "components/setup_checklist_item.rs"]
-mod setup_checklist_item;
 #[path = "components/translate_toggle.rs"]
 mod translate_toggle;
 #[path = "components/permission_override_row.rs"]
@@ -110,8 +106,6 @@ mod code_block;
 mod user_bio_block;
 #[path = "components/server_tag_chips.rs"]
 mod server_tag_chips;
-#[path = "components/icon_change_confirm.rs"]
-mod icon_change_confirm;
 #[path = "components/nickname_edit_field.rs"]
 mod nickname_edit_field;
 #[path = "components/pin_count_badge.rs"]
@@ -152,8 +146,6 @@ mod server_icon_upload_placeholder;
 mod kick_confirm_dialog;
 #[path = "components/category_header.rs"]
 mod category_header;
-#[path = "components/custom_status_input.rs"]
-mod custom_status_input;
 #[path = "components/ban_list_row.rs"]
 mod ban_list_row;
 #[path = "components/blocked_user_row.rs"]
@@ -190,16 +182,10 @@ mod voice_join_button;
 mod server_template_card;
 #[path = "components/forward_message_dialog.rs"]
 mod forward_message_dialog;
-#[path = "components/two_factor_toggle.rs"]
-mod two_factor_toggle;
 #[path = "components/server_region_selector.rs"]
 mod server_region_selector;
-#[path = "components/delete_account_warning.rs"]
-mod delete_account_warning;
 #[path = "components/volume_slider.rs"]
 mod volume_slider;
-#[path = "components/char_counter.rs"]
-mod char_counter;
 #[path = "components/slowmode_indicator.rs"]
 mod slowmode_indicator;
 #[path = "components/message_search_bar.rs"]
@@ -212,8 +198,6 @@ mod slash_command_dropdown;
 pub mod emoji_picker;
 #[path = "components/gif_picker.rs"]
 pub mod gif_picker;
-#[path = "components/settings_tab_bar.rs"]
-mod settings_tab_bar;
 
 pub use app::app;
 pub use auth::{login, signup};

@@ -15,7 +15,7 @@ pub async fn create_server(name: &str) -> Result<ServerSummary, String> {
     };
     discord_server::servers::create_server(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }
 
 /// List the servers the caller is a member of.
@@ -23,7 +23,7 @@ pub async fn create_server(name: &str) -> Result<ServerSummary, String> {
 pub async fn list_servers() -> Result<Vec<ServerSummary>, String> {
     discord_server::servers::list_servers(())
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }
 
 /// Join an existing server as a plain member.
@@ -32,7 +32,7 @@ pub async fn join_server(server_id: i64) -> Result<(), String> {
     let input = discord_server::servers::JoinServerInput { server_id };
     discord_server::servers::join_server(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }
 
 /// List a server's channels, in position order.
@@ -40,7 +40,7 @@ pub async fn list_channels(server_id: i64) -> Result<Vec<ChannelSummary>, String
     let input = discord_server::servers::ListChannelsInput { server_id };
     discord_server::servers::list_channels(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }
 
 /// Create a channel in a server. `kind` is `"text"` / `"voice"` /
@@ -62,7 +62,7 @@ pub async fn create_channel(
     };
     discord_server::server_settings::create_channel(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }
 
 /// Rename a channel. Owner, admin, or moderator may call; the backend's
@@ -79,7 +79,7 @@ pub async fn rename_channel(
     };
     discord_server::server_settings::rename_channel(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }
 
 /// Delete a channel. Owner or admin may call; the backend's rejection comes
@@ -94,7 +94,7 @@ pub async fn delete_channel(
     };
     discord_server::server_settings::delete_channel(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }
 
 /// The per-channel unread counts for a server, keyed out as
@@ -105,7 +105,7 @@ pub async fn unread_counts(server_id: i64) -> Result<Vec<UnreadCount>, String> {
     let input = discord_server::server_settings::UnreadCountsInput { server_id };
     discord_server::server_settings::unread_counts(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }
 
 /// Mark a channel read up to (at least) `message_id`. The backend advances
@@ -118,7 +118,7 @@ pub async fn mark_read(channel_id: i64, message_id: i64) -> Result<MarkReadResul
     };
     discord_server::server_settings::mark_read(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }
 
 /// Rename a server. Only the current owner may call (owner-only by policy);
@@ -135,7 +135,7 @@ pub async fn rename_server(
     };
     discord_server::server_settings::rename_server(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }
 
 /// Set (or clear) a server's icon. `icon` is a URL string, or `None` to clear
@@ -148,7 +148,7 @@ pub async fn set_server_icon(
     let input = discord_server::server_settings::SetServerIconInput { server_id, icon };
     discord_server::server_settings::set_server_icon(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }
 
 /// Transfer server ownership to another member. Only the current owner may
@@ -164,5 +164,5 @@ pub async fn transfer_server_ownership(
     };
     discord_server::server_settings::transfer_server_ownership(input)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| crate::errors::friendly(&e))
 }

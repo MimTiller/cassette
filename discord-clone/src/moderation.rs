@@ -18,7 +18,7 @@ pub async fn list_members(server_id: i64) -> Result<Vec<MemberInfo>, String> {
     let input = discord_server::server_settings::ListMembersInput { server_id };
     let members = discord_server::server_settings::list_members(input)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::errors::friendly(&e))?;
     for m in members.iter() {
         crate::auth::remember_avatar(m.username.as_str(), m.avatar_url.clone());
     }
@@ -32,7 +32,7 @@ pub async fn kick_member(server_id: i64, user_id: i64) -> Result<(), String> {
     let input = discord_server::server_settings::RemoveMemberInput { server_id, user_id };
     discord_server::server_settings::remove_member(input)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::errors::friendly(&e))?;
     Ok(())
 }
 
@@ -50,7 +50,7 @@ pub async fn ban_member(server_id: i64, user_id: i64, reason: Option<&str>) -> R
     };
     discord_server::server_settings::ban_member(input)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::errors::friendly(&e))?;
     Ok(())
 }
 
@@ -69,7 +69,7 @@ pub async fn timeout_member(server_id: i64, user_id: i64, duration_secs: i64) ->
     };
     discord_server::server_settings::timeout_member(input)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::errors::friendly(&e))?;
     Ok(())
 }
 
@@ -84,7 +84,7 @@ pub async fn set_member_role(server_id: i64, user_id: i64, role: &str) -> Result
     };
     discord_server::server_settings::set_member_role(input)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::errors::friendly(&e))?;
     Ok(())
 }
 
@@ -100,6 +100,6 @@ pub async fn add_member(server_id: i64, user_id: i64, role: &str) -> Result<(), 
     };
     discord_server::server_settings::add_member(input)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| crate::errors::friendly(&e))?;
     Ok(())
 }

@@ -40,16 +40,15 @@ use crate::style_helpers::{borderless_input, col, px};
 use icons_lucide::SEARCH;
 use runtime_core::{
     component, icon, memo, signal, switch, ui, AlignItems, Color, Element, FlexDirection,
-    JustifyContent, ReadSignal, StyleRules, Tokenized, TouchPhase, TouchResponse,
+    JustifyContent, Overflow, Position, ReadSignal, Shadow, StyleRules, Tokenized, TouchPhase, TouchResponse,
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_MAIN: &str = "#313338"; // screen background
-const COMPOSER: &str = "#383a40"; // input surface
+const FIELD_BG: &str = "#1e1f22"; // the header field
+const CARD_BG: &str = "#2b2d31"; // the results card
 const TEXT: &str = "#f2f3f5"; // primary text (near-white)
 const MUTED: &str = "#949ba4"; // secondary / muted text
-const RESULT_BG: &str = "#2b2d31"; // result-row surface (Discord sidebar gray)
-const ACCENT: &str = "#5865f2"; // author-name accent (Discord blurple)
+const RESULT_BG: &str = "#313338"; // one hit's row
 
 /// A message-search bar that live-filters a caller-provided message corpus.
 /// `corpus` is a `ReadSignal<Vec<(String, String)>>` of `(author, text)` rows
@@ -58,211 +57,161 @@ const ACCENT: &str = "#5865f2"; // author-name accent (Discord blurple)
 /// "no matches" line.
 #[component]
 #[allow(non_snake_case)]
-/// `server_name` titles the bar "Search <server>" (Discord's wording); empty
-/// keeps the generic "Search messages".
+/// The channel header's search field ("Search <server>"). While a query is
+/// typed, the hits drop down in a card under the field (author + text, a hit
+/// count and a "×" that clears the query).
 pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>, server_name: String) -> Element {
-    let title = move || {
-        let name = server_name.get();
-        if name.is_empty() { "Search messages".to_string() } else { format!("Search {name}") }
-    };
-    // Local controlled state: the search query (empty until the user types).
+    let name = server_name.get();
+    let placeholder = if name.is_empty() { "Search".to_string() } else { format!("Search {name}") };
     let query = signal(String::new());
-    // The corpus is `Copy` (it is a `ReadSignal` handle), so the `memo`
-    // closure below captures its own copy and shares it with the input wiring.
     let on_change = move |s: String| query.set(s);
 
-    // The input sits OUTSIDE the reactive results below, so its style is a
-    // plain local (created once). Flat background + corner radius, the same
-    // look as the composer input in `dm_view.rs`. The `text_input` primitive
-    // takes no children, so the leading magnifier is a row sibling to its
-    // left. The input `flex_grow`s to fill the row after the fixed icon + gap.
-    let input_style = StyleRules {
-        flex_direction: Some(FlexDirection::Row),
-        align_items: Some(AlignItems::Center),
-        height: Some(px(40.0)),
-        // Flex-grow into the row's remaining width — with min_width 0 so the
-        // input can SHRINK below its content width, the fix for the input
-        // running past the member panel's right edge (clipped at the window).
-        flex_grow: Some(Tokenized::Literal(1.0)),
-        flex_shrink: Some(Tokenized::Literal(1.0)),
-        min_width: Some(px(0.0)),
-        // Symmetric padding on both sides (was 10/12 — asymmetric padding
-        // read as the box hugging/crossing the panel edge).
-        padding_left: Some(px(12.0)),
-        padding_right: Some(px(12.0)),
-        background: Some(col(COMPOSER)),
-        color: Some(col(TEXT)),
-        font_size: Some(px(15.0)),
-        border_top_left_radius: Some(px(6.0)),
-        border_top_right_radius: Some(px(6.0)),
-        border_bottom_left_radius: Some(px(6.0)),
-        border_bottom_right_radius: Some(px(6.0)),
-        ..borderless_input()
-    };
-
-    // Reactive derivation: `(author, text)` rows of the corpus that the query
-    // matches. Empty query -> the whole corpus; non-empty -> case-insensitive
-    // substring hits on either the text or the author. Reading `query` and
-    // `corpus` inside the memo closure is what subscribes it to both, so the
-    // list rebuilds on a keystroke AND on a corpus change (new channel / new
-    // send), reusing the prior result when neither moved.
+    // Case-insensitive substring hits on the text or the author.
     let matches = memo(move || -> Vec<(String, String)> {
-        let q = query.get();
-        let corpus = corpus.get();
-        let needle = q.to_lowercase();
+        let needle = query.get().to_lowercase();
         if needle.trim().is_empty() {
-            corpus
-        } else {
-            corpus
-                .into_iter()
-                .filter(|(author, text)| {
-                    text.to_lowercase().contains(&needle)
-                        || author.to_lowercase().contains(&needle)
-                })
-                .collect()
+            return Vec::new();
         }
+        corpus
+            .get()
+            .into_iter()
+            .filter(|(author, text)| text.to_lowercase().contains(&needle) || author.to_lowercase().contains(&needle))
+            .collect()
     });
 
-    ui! {
-        view(style = StyleRules {
-            flex_direction: Some(FlexDirection::Column),
-            align_items: Some(AlignItems::Stretch),
-            background: Some(col(BG_MAIN)),
-            padding_top: Some(px(8.0)),
-            padding_bottom: Some(px(8.0)),
-            padding_left: Some(px(12.0)),
-            padding_right: Some(px(12.0)),
-            gap: Some(px(10.0)),
-            ..Default::default()
-        }) {
-            text(style = StyleRules {
-                font_size: Some(px(15.0)),
-                color: Some(col(TEXT)),
-                ..Default::default()
-            }) { move || title() }
-
-            view(style = StyleRules {
-                flex_direction: Some(FlexDirection::Row),
-                align_items: Some(AlignItems::Center),
-                gap: Some(px(8.0)),
-                ..Default::default()
-            }) {
-                // Leading magnifier: fixed size + muted color via the icon
-                // builder, a row sibling left of the input (the `text_input`
-                // primitive takes no children).
-                icon(SEARCH).color(|| Color::from(MUTED)).size(16.0)
-
-                text_input(
-                    value = query.clone(),
-                    on_change = on_change,
-                    placeholder = "Search",
-                    style = input_style,
-                )
+    let results = switch(
+        move || (!query.get().trim().is_empty(), matches.get()),
+        move |(active, rows): &(bool, Vec<(String, String)>)| {
+            if !active {
+                return ui! { view(style = StyleRules { width: Some(px(0.0)), height: Some(px(0.0)), ..Default::default() }) {} };
             }
-
-            // The results card is shown ONLY while a search is active
-            // (query typed and non-blank) — an empty query leaves just the
-            // search field itself, like Discord's blank input before a
-            // search runs. The card carries a "×" close control that clears
-            // the query, and its results live in their own `scroll_view` at a
-            // bounded height, so a long result set scrolls INSIDE the card
-            // instead of growing past the panel/rail it sits in.
-            switch(
-                move || (!query.get().trim().is_empty(), matches.get()),
-                move |(active, rows): &(bool, Vec<(String, String)>)| {
-                    if !active {
-                        // No query: no card at all (zero-size hole).
-                        ui! {
-                            view(style = StyleRules {
-                                width: Some(px(0.0)),
-                                height: Some(px(0.0)),
-                                ..Default::default()
-                            }) {}
+            let count = match rows.len() {
+                0 => "No results".to_string(),
+                1 => "1 result".to_string(),
+                n => format!("{n} results"),
+            };
+            let rows = rows.clone();
+            ui! {
+                view(style = StyleRules {
+                    position: Some(Position::Absolute),
+                    top: Some(px(34.0)),
+                    right: Some(px(0.0)),
+                    width: Some(px(420.0)),
+                    max_height: Some(px(480.0)),
+                    flex_direction: Some(FlexDirection::Column),
+                    background: Some(col(CARD_BG)),
+                    border_top_left_radius: Some(px(8.0)),
+                    border_top_right_radius: Some(px(8.0)),
+                    border_bottom_left_radius: Some(px(8.0)),
+                    border_bottom_right_radius: Some(px(8.0)),
+                    shadow: Some(Shadow { x: 0.0, y: 8.0, blur: 24.0, color: col("#000000") }),
+                    // The shared popup level (`app::popups::POPUP_Z`).
+                    z_index: Some(60),
+                    overflow: Some(Overflow::Hidden),
+                    ..Default::default()
+                }) {
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Row),
+                        align_items: Some(AlignItems::Center),
+                        justify_content: Some(JustifyContent::SpaceBetween),
+                        height: Some(px(40.0)),
+                        padding_left: Some(px(16.0)),
+                        padding_right: Some(px(12.0)),
+                        ..Default::default()
+                    }) {
+                        text(style = StyleRules {
+                            font_size: Some(px(13.0)),
+                            font_weight: Some(runtime_core::FontWeight::SemiBold),
+                            color: Some(col(MUTED)),
+                            ..Default::default()
+                        }) { count }
+                        view(style = StyleRules { padding_left: Some(px(8.0)), padding_right: Some(px(4.0)), ..Default::default() }) {
+                            text(style = StyleRules { font_size: Some(px(18.0)), color: Some(col(MUTED)), ..Default::default() }) { "×".to_string() }
                         }
-                    } else if rows.is_empty() {
-                        // A non-empty query with zero hits: a single muted row.
-                        ui! {
-                            text(style = StyleRules {
-                                font_size: Some(px(13.0)),
-                                color: Some(col(MUTED)),
-                                ..Default::default()
-                            }) { "No matches".to_string() }
-                        }
-                    } else {
-                        let rows = rows.clone();
-                        // The card's "×" close control: tapping clears the query,
-                        // collapsing the card away (built outside the `ui!` so its
-                        // touch handler chains unambiguously to the button node).
-                        let close_btn = ui! {
-                            view(style = StyleRules {
-                                flex_direction: Some(FlexDirection::Row),
-                                justify_content: Some(JustifyContent::FlexEnd),
-                                height: Some(px(24.0)),
-                                ..Default::default()
-                            }) {
-                                text(style = StyleRules {
-                                    font_size: Some(px(15.0)),
-                                    color: Some(col(MUTED)),
-                                    ..Default::default()
-                                }) { "×".to_string() }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                query.set(String::new());
                             }
-                            .on_touch(move |ev| {
-                                if ev.phase == TouchPhase::Ended {
-                                    query.set(String::new());
-                                }
-                                TouchResponse::CONSUMED
-                            })
-                        };
-                        ui! {
-                            // Wrapper view for the row list: an element in ONE
-                            // slot must be one node, and the rows' own styles
-                            // stay untouched inside it.
-                            view(style = StyleRules {
-                                flex_direction: Some(FlexDirection::Column),
-                                gap: Some(px(0.0)),
-                                ..Default::default()
-                            }) {
-                                { close_btn }
-                                // Bounded scroll region: the hits scroll
-                                // inside the card, never past its own box.
-                                scroll_view(style = StyleRules {
-                                    height: Some(px(220.0)),
-                                    flex_grow: Some(Tokenized::Literal(1.0)),
+                            TouchResponse::CONSUMED
+                        })
+                    }
+                    scroll_view(style = StyleRules { flex_shrink: Some(Tokenized::Literal(1.0)), ..Default::default() }) {
+                        view(style = StyleRules {
+                            flex_direction: Some(FlexDirection::Column),
+                            gap: Some(px(8.0)),
+                            padding_left: Some(px(12.0)),
+                            padding_right: Some(px(12.0)),
+                            padding_bottom: Some(px(12.0)),
+                            ..Default::default()
+                        }) {
+                            for (author, text) in rows.into_iter() {
+                                view(style = StyleRules {
+                                    flex_direction: Some(FlexDirection::Column),
+                                    gap: Some(px(4.0)),
+                                    background: Some(col(RESULT_BG)),
+                                    padding_top: Some(px(10.0)),
+                                    padding_bottom: Some(px(10.0)),
+                                    padding_left: Some(px(12.0)),
+                                    padding_right: Some(px(12.0)),
+                                    border_top_left_radius: Some(px(6.0)),
+                                    border_top_right_radius: Some(px(6.0)),
+                                    border_bottom_left_radius: Some(px(6.0)),
+                                    border_bottom_right_radius: Some(px(6.0)),
                                     ..Default::default()
                                 }) {
-                                for (author, text) in rows.into_iter() {
-                                    view(style = StyleRules {
-                                        flex_direction: Some(FlexDirection::Column),
-                                        gap: Some(px(4.0)),
-                                        background: Some(col(RESULT_BG)),
-                                        padding_top: Some(px(10.0)),
-                                        padding_bottom: Some(px(10.0)),
-                                        padding_left: Some(px(12.0)),
-                                        padding_right: Some(px(12.0)),
-                                        border_top_left_radius: Some(px(6.0)),
-                                        border_top_right_radius: Some(px(6.0)),
-                                        border_bottom_left_radius: Some(px(6.0)),
-                                        border_bottom_right_radius: Some(px(6.0)),
+                                    text(style = StyleRules {
+                                        font_size: Some(px(13.0)),
+                                        font_weight: Some(runtime_core::FontWeight::SemiBold),
+                                        color: Some(col(TEXT)),
                                         ..Default::default()
-                                    }) {
-                                        text(style = StyleRules {
-                                            font_size: Some(px(13.0)),
-                                            color: Some(col(ACCENT)),
-                                            ..Default::default()
-                                        }) { author }
-                                        text(style = StyleRules {
-                                            font_size: Some(px(14.0)),
-                                            color: Some(col(TEXT)),
-                                            ..Default::default()
-                                        }) { text }
-                                    }
-                                }
+                                    }) { author }
+                                    text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(TEXT)), ..Default::default() }) { text }
                                 }
                             }
                         }
                     }
-                },
-            )
+                }
+            }
+        },
+    );
+
+    ui! {
+        view(style = StyleRules {
+            position: Some(Position::Relative),
+            width: Some(px(220.0)),
+            ..Default::default()
+        }) {
+            view(style = StyleRules {
+                flex_direction: Some(FlexDirection::Row),
+                align_items: Some(AlignItems::Center),
+                height: Some(px(28.0)),
+                padding_left: Some(px(8.0)),
+                padding_right: Some(px(8.0)),
+                gap: Some(px(6.0)),
+                background: Some(col(FIELD_BG)),
+                border_top_left_radius: Some(px(4.0)),
+                border_top_right_radius: Some(px(4.0)),
+                border_bottom_left_radius: Some(px(4.0)),
+                border_bottom_right_radius: Some(px(4.0)),
+                ..Default::default()
+            }) {
+                text_input(
+                    value = query.clone(),
+                    on_change = on_change,
+                    placeholder = placeholder,
+                    style = StyleRules {
+                        flex_grow: Some(Tokenized::Literal(1.0)),
+                        min_width: Some(px(0.0)),
+                        height: Some(px(28.0)),
+                        background: Some(col(FIELD_BG)),
+                        color: Some(col(TEXT)),
+                        font_size: Some(px(14.0)),
+                        ..borderless_input()
+                    },
+                )
+                icon(SEARCH).color(|| Color::from(MUTED)).size(15.0)
+            }
+            results
         }
     }
 }
