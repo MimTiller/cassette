@@ -13,18 +13,13 @@
 //! the `TouchPhase::Ended` guard. `Signal` is `Copy`, so the `move` closures
 //! capture a copy of the same underlying signal.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, Position, Signal, StyleRules,
     TouchPhase, TouchResponse,
 };
 
-const BG_CARD: &str = "#2b2d31"; // the card surface (Discord sidebar gray)
-const BG_ROW: &str = "#313338"; // one option row (Discord elevated surface)
-const TITLE: &str = "#f2f3f5"; // heading text (Discord header primary)
-const LABEL: &str = "#dbdee1"; // option label (Discord primary text)
-const DOT_ON: &str = "#5865f2"; // selected radio glyph (Discord blurple)
-const DOT_OFF: &str = "#80848e"; // unselected radio glyph (Discord muted)
 
 /// One radio-style option row: a dot glyph (filled when `selected == idx`) and
 /// the label. Pressing it sets `selected` to `idx`, which deselects the others.
@@ -39,7 +34,7 @@ fn option_row(label: &'static str, idx: u32, selected: Signal<u32>) -> Element {
             padding_bottom: Some(px(10.0)),
             padding_left: Some(px(12.0)),
             padding_right: Some(px(12.0)),
-            background: Some(col(BG_ROW)),
+            background: Some(col(theme::BG_PRIMARY)),
             border_top_left_radius: Some(px(6.0)),
             border_top_right_radius: Some(px(6.0)),
             border_bottom_left_radius: Some(px(6.0)),
@@ -49,19 +44,19 @@ fn option_row(label: &'static str, idx: u32, selected: Signal<u32>) -> Element {
             if selected.get() == idx {
                 text(style = StyleRules {
                     font_size: Some(px(16.0)),
-                    color: Some(col(DOT_ON)),
+                    color: Some(col(theme::ACCENT)),
                     ..Default::default()
                 }) { "◉".to_string() }
             } else {
                 text(style = StyleRules {
                     font_size: Some(px(16.0)),
-                    color: Some(col(DOT_OFF)),
+                    color: Some(col(theme::TEXT_FAINT)),
                     ..Default::default()
                 }) { "○".to_string() }
             }
             text(style = StyleRules {
                 font_size: Some(px(14.0)),
-                color: Some(col(LABEL)),
+                color: Some(col(theme::TEXT_NORMAL)),
                 ..Default::default()
             }) { label.to_string() }
         }
@@ -93,7 +88,7 @@ pub fn NotificationSettings() -> Element {
             padding_bottom: Some(px(16.0)),
             padding_left: Some(px(16.0)),
             padding_right: Some(px(16.0)),
-            background: Some(col(BG_CARD)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(8.0)),
             border_top_right_radius: Some(px(8.0)),
             border_bottom_left_radius: Some(px(8.0)),
@@ -102,7 +97,7 @@ pub fn NotificationSettings() -> Element {
         }) {
             text(style = StyleRules {
                 font_size: Some(px(14.0)),
-                color: Some(col(TITLE)),
+                color: Some(col(theme::TEXT_STRONG)),
                 ..Default::default()
             }) { "Notification Settings".to_string() }
             all_messages

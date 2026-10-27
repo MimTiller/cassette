@@ -29,6 +29,7 @@
 //! on_click = …)` for the actions. `Signal` is `Copy`, so `move` closures
 //! capture copies of the same signals and stay `Fn`.
 
+use crate::theme;
 use crate::style_helpers::{borderless_input, col, pct, px};
 use std::rc::Rc;
 use runtime_core::{
@@ -37,23 +38,9 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_CARD: &str = "#2b2d31"; // sidebar surface
-const BG_ROW: &str = "#313338"; // elevated surface (rows, tab bar)
-const BG_TAB_ACTIVE: &str = "#5865f2"; // active tab fill (Discord blurple)
-const TEXT: &str = "#f2f3f5"; // primary text
-const TEXT_MUTED: &str = "#949ba4"; // muted text
-const LABEL: &str = "#dbdee1"; // option label
-const TITLE: &str = "#f2f3f5"; // heading
-const DIVIDER: &str = "#3f4147"; // sidebar divider
-const NAV_HOVER: &str = "#35373c"; // sidebar row hover
-const NAV_SELECTED: &str = "#404249"; // selected sidebar row
-const DOT_ON: &str = "#5865f2"; // selected radio glyph
-const DOT_OFF: &str = "#80848e"; // unselected radio glyph
-const ERROR: &str = "#f23f43"; // error line (Discord danger red)
-const OK: &str = "#23a559"; // success line (Discord green)
 
 // Accent presets (Discord blurple default + a spread for the picker).
-const ACCENTS: [&str; 5] = ["#5865f2", "#23a559", "#f23f43", "#f0b232", "#eb459e"];
+const ACCENTS: [&str; 5] = [theme::ACCENT, theme::SUCCESS, theme::DANGER, theme::WARNING, "#eb459e"];
 
 /// The three settings tabs, in order (the tab-bar index keys).
 /// Sidebar entries in order: (group heading, or "" to continue the group; label).
@@ -82,7 +69,7 @@ fn option_row(label: &str, idx: u32, selected: Signal<u32>, on_pick: Rc<dyn Fn(u
             padding_bottom: Some(px(10.0)),
             padding_left: Some(px(12.0)),
             padding_right: Some(px(12.0)),
-            background: Some(col(BG_ROW)),
+            background: Some(col(theme::BG_PRIMARY)),
             border_top_left_radius: Some(px(6.0)),
             border_top_right_radius: Some(px(6.0)),
             border_bottom_left_radius: Some(px(6.0)),
@@ -92,19 +79,19 @@ fn option_row(label: &str, idx: u32, selected: Signal<u32>, on_pick: Rc<dyn Fn(u
             if selected.get() == idx {
                 text(style = StyleRules {
                     font_size: Some(px(16.0)),
-                    color: Some(col(DOT_ON)),
+                    color: Some(col(theme::ACCENT)),
                     ..Default::default()
                 }) { "◉".to_string() }
             } else {
                 text(style = StyleRules {
                     font_size: Some(px(16.0)),
-                    color: Some(col(DOT_OFF)),
+                    color: Some(col(theme::TEXT_FAINT)),
                     ..Default::default()
                 }) { "○".to_string() }
             }
             text(style = StyleRules {
                 font_size: Some(px(14.0)),
-                color: Some(col(LABEL)),
+                color: Some(col(theme::TEXT_NORMAL)),
                 ..Default::default()
             }) { label.to_string() }
         }
@@ -153,7 +140,7 @@ fn notifications_tab(selected: Signal<u32>) -> Element {
         }) {
             text(style = StyleRules {
                 font_size: Some(px(14.0)),
-                color: Some(col(TITLE)),
+                color: Some(col(theme::TEXT_STRONG)),
                 ..Default::default()
             }) { "Message notifications".to_string() }
             all
@@ -161,7 +148,7 @@ fn notifications_tab(selected: Signal<u32>) -> Element {
             nothing
             text(style = StyleRules {
                 font_size: Some(px(12.0)),
-                color: Some(col(TEXT_MUTED)),
+                color: Some(col(theme::TEXT_MUTED)),
                 ..Default::default()
             }) {
                 "A toast appears for matches while the channel is not open; browser notifications fire once you grant permission."
@@ -262,7 +249,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
     // partial stroke — the same idiom every other `text_input` in the app uses.
     let input_style = StyleRules {
         height: Some(px(32.0)),
-        background: Some(col("#1e1f22")),
+        background: Some(col(theme::BG_TERTIARY)),
         border_top_left_radius: Some(px(6.0)),
         border_top_right_radius: Some(px(6.0)),
         border_bottom_left_radius: Some(px(6.0)),
@@ -270,7 +257,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
         font_size: Some(px(14.0)),
         padding_left: Some(px(10.0)),
         padding_right: Some(px(10.0)),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..borderless_input()
     };
 
@@ -279,7 +266,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
         move |list: &Vec<crate::blocks::BlockedUser>| {
             if list.is_empty() {
                 return ui! {
-                    text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(TEXT_MUTED)), ..Default::default() }) {
+                    text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) {
                         "You haven't blocked anyone.".to_string()
                     }
                 };
@@ -295,22 +282,22 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                         padding_bottom: Some(px(6.0)),
                         ..Default::default()
                     }) {
-                        { crate::avatar_chip::avatar_chip(b.username.as_str(), "#5865f2", 28.0, 14.0) }
-                        text(style = StyleRules { flex_grow: Some(runtime_core::Tokenized::Literal(1.0)), font_size: Some(px(14.0)), color: Some(col(TEXT)), ..Default::default() }) { b.username.clone() }
+                        { crate::avatar_chip::avatar_chip(b.username.as_str(), theme::ACCENT, 28.0, 14.0) }
+                        text(style = StyleRules { flex_grow: Some(runtime_core::Tokenized::Literal(1.0)), font_size: Some(px(14.0)), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { b.username.clone() }
                         view(style = StyleRules {
                             height: Some(px(28.0)),
                             padding_left: Some(px(12.0)),
                             padding_right: Some(px(12.0)),
                             align_items: Some(AlignItems::Center),
                             justify_content: Some(JustifyContent::Center),
-                            background: Some(col("#4e5058")),
+                            background: Some(col(theme::BUTTON_SECONDARY)),
                             border_top_left_radius: Some(px(4.0)),
                             border_top_right_radius: Some(px(4.0)),
                             border_bottom_left_radius: Some(px(4.0)),
                             border_bottom_right_radius: Some(px(4.0)),
                             ..Default::default()
                         }) {
-                            text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(TEXT)), ..Default::default() }) { "Unblock".to_string() }
+                            text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { "Unblock".to_string() }
                         }
                         .on_touch(move |ev| {
                             if ev.phase == TouchPhase::Ended {
@@ -338,7 +325,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
             // ── Display name ──
             text(style = StyleRules {
                 font_size: Some(px(14.0)),
-                color: Some(col(TITLE)),
+                color: Some(col(theme::TEXT_STRONG)),
                 ..Default::default()
             }) { "Display name".to_string() }
             text_input(
@@ -351,11 +338,12 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                 label = "Save name".to_string(),
                 on_click = do_name,
                 style = StyleRules {
+                    color: Some(col(theme::TEXT_ON_ACCENT)),
                     align_self: Some(runtime_core::AlignSelf::FlexStart),
                     height: Some(px(28.0)),
                     padding_left: Some(px(14.0)),
                     padding_right: Some(px(14.0)),
-                    background: Some(col(BG_TAB_ACTIVE)),
+                    background: Some(col(theme::ACCENT)),
                     border_top_left_radius: Some(px(6.0)),
                     border_top_right_radius: Some(px(6.0)),
                     border_bottom_left_radius: Some(px(6.0)),
@@ -370,7 +358,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
             // ── Password ──
             text(style = StyleRules {
                 font_size: Some(px(14.0)),
-                color: Some(col(TITLE)),
+                color: Some(col(theme::TEXT_STRONG)),
                 ..Default::default()
             }) { "Change password".to_string() }
             text_input(
@@ -389,11 +377,12 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                 label = "Update password".to_string(),
                 on_click = do_pw,
                 style = StyleRules {
+                    color: Some(col(theme::TEXT_ON_ACCENT)),
                     align_self: Some(runtime_core::AlignSelf::FlexStart),
                     height: Some(px(28.0)),
                     padding_left: Some(px(14.0)),
                     padding_right: Some(px(14.0)),
-                    background: Some(col(BG_TAB_ACTIVE)),
+                    background: Some(col(theme::ACCENT)),
                     border_top_left_radius: Some(px(6.0)),
                     border_top_right_radius: Some(px(6.0)),
                     border_bottom_left_radius: Some(px(6.0)),
@@ -410,13 +399,13 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                 if msg_kind.get() == 2 {
                     text(style = StyleRules {
                         font_size: Some(px(13.0)),
-                        color: Some(col(OK)),
+                        color: Some(col(theme::SUCCESS)),
                         ..Default::default()
                     }) { move || msg.get().to_string() }
                 } else {
                     text(style = StyleRules {
                         font_size: Some(px(13.0)),
-                        color: Some(col(ERROR)),
+                        color: Some(col(theme::DANGER)),
                         ..Default::default()
                     }) { move || msg.get().to_string() }
                 }
@@ -427,7 +416,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
             text(style = StyleRules {
                 font_size: Some(px(12.0)),
                 font_weight: Some(runtime_core::FontWeight::Bold),
-                color: Some(col(TEXT_MUTED)),
+                color: Some(col(theme::TEXT_MUTED)),
                 margin_top: Some(px(24.0)),
                 ..Default::default()
             }) { "BLOCKED USERS".to_string() }
@@ -438,13 +427,13 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
             text(style = StyleRules {
                 font_size: Some(px(12.0)),
                 font_weight: Some(runtime_core::FontWeight::Bold),
-                color: Some(col(TEXT_MUTED)),
+                color: Some(col(theme::TEXT_MUTED)),
                 margin_top: Some(px(24.0)),
                 ..Default::default()
             }) { "SESSIONS".to_string() }
             text(style = StyleRules {
                 font_size: Some(px(13.0)),
-                color: Some(col(TEXT_MUTED)),
+                color: Some(col(theme::TEXT_MUTED)),
                 margin_top: Some(px(6.0)),
                 margin_bottom: Some(px(8.0)),
                 ..Default::default()
@@ -456,7 +445,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                 align_self: Some(runtime_core::AlignSelf::FlexStart),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
-                background: Some(col("#da373c")),
+                background: Some(col(theme::DANGER_STRONG)),
                 border_top_left_radius: Some(px(4.0)),
                 border_top_right_radius: Some(px(4.0)),
                 border_bottom_left_radius: Some(px(4.0)),
@@ -466,7 +455,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
                     font_weight: Some(runtime_core::FontWeight::SemiBold),
-                    color: Some(col("#ffffff")),
+                    color: Some(col(theme::TEXT_ON_ACCENT)),
                     ..Default::default()
                 }) { "Log out of all devices".to_string() }
             }
@@ -504,10 +493,10 @@ fn accent_swatch(
                 border_right_width: Some(runtime_core::Tokenized::Literal(if on { 3.0 } else { 1.0 })),
                 border_bottom_width: Some(runtime_core::Tokenized::Literal(if on { 3.0 } else { 1.0 })),
                 border_left_width: Some(runtime_core::Tokenized::Literal(if on { 3.0 } else { 1.0 })),
-                border_top_color: Some(col(if on { TEXT } else { DOT_OFF })),
-                border_right_color: Some(col(if on { TEXT } else { DOT_OFF })),
-                border_bottom_color: Some(col(if on { TEXT } else { DOT_OFF })),
-                border_left_color: Some(col(if on { TEXT } else { DOT_OFF })),
+                border_top_color: Some(col(if on { theme::TEXT_STRONG } else { theme::TEXT_FAINT })),
+                border_right_color: Some(col(if on { theme::TEXT_STRONG } else { theme::TEXT_FAINT })),
+                border_bottom_color: Some(col(if on { theme::TEXT_STRONG } else { theme::TEXT_FAINT })),
+                border_left_color: Some(col(if on { theme::TEXT_STRONG } else { theme::TEXT_FAINT })),
                 ..Default::default()
             }
         })
@@ -528,6 +517,7 @@ fn appearance_tab(accent: Signal<String>) -> Element {
     let on_pick = Rc::new(move |hex: String| {
         accent_chk.set(hex.clone());
         crate::notify::save_accent(&hex);
+        crate::theme::set_accent(&hex);
     });
 
     ui! {
@@ -542,12 +532,12 @@ fn appearance_tab(accent: Signal<String>) -> Element {
         }) {
             text(style = StyleRules {
                 font_size: Some(px(14.0)),
-                color: Some(col(TITLE)),
+                color: Some(col(theme::TEXT_STRONG)),
                 ..Default::default()
             }) { "Accent color".to_string() }
             text(style = StyleRules {
                 font_size: Some(px(12.0)),
-                color: Some(col(TEXT_MUTED)),
+                color: Some(col(theme::TEXT_MUTED)),
                 ..Default::default()
             }) { "Picks the highlight color used across the app. A dark/light theme toggle is a follow-up."
                 .to_string() }
@@ -582,7 +572,7 @@ pub fn UserSettings(
 ) -> Element {
     // The accent is owned here (the gateway doesn't read it) and seeded from
     // storage (default Discord blurple).
-    let accent = signal(crate::notify::load_accent().unwrap_or_else(|| "#5865f2".to_string()));
+    let accent = signal(crate::notify::load_accent().unwrap_or_else(|| theme::ACCENT.to_string()));
 
     // The selected section, rebuilt when `active` changes. `notif_mode` is
     // the SHARED notification level the gateway reads on every message.
@@ -602,7 +592,7 @@ pub fn UserSettings(
                     text(style = StyleRules {
                         font_size: Some(px(20.0)),
                         font_weight: Some(runtime_core::FontWeight::SemiBold),
-                        color: Some(col(TITLE)),
+                        color: Some(col(theme::TEXT_STRONG)),
                         margin_bottom: Some(px(20.0)),
                         ..Default::default()
                     }) { title }
@@ -620,7 +610,7 @@ pub fn UserSettings(
                 text(style = StyleRules {
                     font_size: Some(px(12.0)),
                     font_weight: Some(runtime_core::FontWeight::Bold),
-                    color: Some(col(TEXT_MUTED)),
+                    color: Some(col(theme::TEXT_MUTED)),
                     padding_left: Some(px(10.0)),
                     padding_top: Some(px(if i == 0 { 0.0 } else { 16.0 })),
                     padding_bottom: Some(px(6.0)),
@@ -633,7 +623,7 @@ pub fn UserSettings(
     nav.push(ui! {
         view(style = StyleRules {
             height: Some(px(1.0)),
-            background: Some(col(DIVIDER)),
+            background: Some(col(theme::DIVIDER)),
             margin_top: Some(px(8.0)),
             margin_bottom: Some(px(8.0)),
             margin_left: Some(px(10.0)),
@@ -658,7 +648,7 @@ pub fn UserSettings(
                 flex_basis: Some(px(218.0)),
                 flex_direction: Some(FlexDirection::Row),
                 justify_content: Some(JustifyContent::FlexEnd),
-                background: Some(col(BG_CARD)),
+                background: Some(col(theme::BG_SECONDARY)),
                 ..Default::default()
             }) {
                 scroll_view(style = StyleRules {
@@ -683,7 +673,7 @@ pub fn UserSettings(
                 flex_shrink: Some(runtime_core::Tokenized::Literal(1.0)),
                 flex_basis: Some(px(800.0)),
                 flex_direction: Some(FlexDirection::Row),
-                background: Some(col(BG_ROW)),
+                background: Some(col(theme::BG_PRIMARY)),
                 ..Default::default()
             }) {
                 scroll_view(style = StyleRules {
@@ -718,17 +708,17 @@ pub fn UserSettings(
                         border_right_width: Some(runtime_core::Tokenized::Literal(2.0)),
                         border_bottom_width: Some(runtime_core::Tokenized::Literal(2.0)),
                         border_left_width: Some(runtime_core::Tokenized::Literal(2.0)),
-                        border_top_color: Some(col(TEXT_MUTED)),
-                        border_right_color: Some(col(TEXT_MUTED)),
-                        border_bottom_color: Some(col(TEXT_MUTED)),
-                        border_left_color: Some(col(TEXT_MUTED)),
+                        border_top_color: Some(col(theme::TEXT_MUTED)),
+                        border_right_color: Some(col(theme::TEXT_MUTED)),
+                        border_bottom_color: Some(col(theme::TEXT_MUTED)),
+                        border_left_color: Some(col(theme::TEXT_MUTED)),
                         border_top_left_radius: Some(px(18.0)),
                         border_top_right_radius: Some(px(18.0)),
                         border_bottom_left_radius: Some(px(18.0)),
                         border_bottom_right_radius: Some(px(18.0)),
                         ..Default::default()
                     }, test_id = "settings-close") {
-                        text(style = StyleRules { font_size: Some(px(16.0)), color: Some(col(TEXT_MUTED)), ..Default::default() }) { "✕".to_string() }
+                        text(style = StyleRules { font_size: Some(px(16.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { "✕".to_string() }
                     }
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
@@ -741,7 +731,7 @@ pub fn UserSettings(
                     text(style = StyleRules {
                         font_size: Some(px(13.0)),
                         font_weight: Some(runtime_core::FontWeight::SemiBold),
-                        color: Some(col(TEXT_MUTED)),
+                        color: Some(col(theme::TEXT_MUTED)),
                         ..Default::default()
                     }) { "ESC".to_string() }
                 }
@@ -765,7 +755,7 @@ fn nav_row(label: &str, danger: bool, active: Signal<usize>, index: usize, actio
                 padding_right: Some(px(10.0)),
                 flex_direction: Some(FlexDirection::Row),
                 align_items: Some(AlignItems::Center),
-                background: Some(col(if on { NAV_SELECTED } else if hovered.get() { NAV_HOVER } else { "transparent" })),
+                background: Some(col(if on { theme::BG_SELECTED } else if hovered.get() { theme::BG_HOVER } else { "transparent" })),
                 border_top_left_radius: Some(px(4.0)),
                 border_top_right_radius: Some(px(4.0)),
                 border_bottom_left_radius: Some(px(4.0)),
@@ -778,7 +768,7 @@ fn nav_row(label: &str, danger: bool, active: Signal<usize>, index: usize, actio
                 StyleRules {
                     font_size: Some(px(15.0)),
                     font_weight: Some(runtime_core::FontWeight::Medium),
-                    color: Some(col(if danger { ERROR } else if on || hovered.get() { TEXT } else { TEXT_MUTED })),
+                    color: Some(col(if danger { theme::DANGER } else if on || hovered.get() { theme::TEXT_STRONG } else { theme::TEXT_MUTED })),
                     ..Default::default()
                 }
             }) { label.clone() }

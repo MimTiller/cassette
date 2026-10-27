@@ -30,6 +30,7 @@
 //!   their styles INLINE in `style = …` (created fresh per evaluation, never
 //!   captured across the `when` boundary).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, ui, AlignItems, Element, FlexDirection, FontWeight, Signal, StyleRules, TextTransform,
@@ -37,8 +38,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_SIDEBAR: &str = "#2b2d31"; // the surrounding surface (Discord sidebar gray)
-const TEXT_MUTED: &str = "#949ba4"; // the uppercase category label + chevron
 
 /// A channel-category header. The header row (chevron + category name)
 /// toggles the caller-owned `collapsed` signal on click, flipping the chevron
@@ -53,7 +52,7 @@ pub fn CategoryHeader(title: String, collapsed: Signal<bool>) -> Element {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Column),
             align_items: Some(AlignItems::Stretch),
-            background: Some(col(BG_SIDEBAR)),
+            background: Some(col(theme::BG_SECONDARY)),
             ..Default::default()
         }) {
             // The clickable header row: chevron + category name. A click on
@@ -75,20 +74,20 @@ pub fn CategoryHeader(title: String, collapsed: Signal<bool>) -> Element {
                 if collapsed.get() {
                     text(style = StyleRules {
                         font_size: Some(px(11.0)),
-                        color: Some(col(TEXT_MUTED)),
+                        color: Some(col(theme::TEXT_MUTED)),
                         ..Default::default()
                     }) { "▸".to_string() }
                 } else {
                     text(style = StyleRules {
                         font_size: Some(px(11.0)),
-                        color: Some(col(TEXT_MUTED)),
+                        color: Some(col(theme::TEXT_MUTED)),
                         ..Default::default()
                     }) { "▾".to_string() }
                 }
                 text(style = StyleRules {
                     font_size: Some(px(11.0)),
                     font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col(TEXT_MUTED)),
+                    color: Some(col(theme::TEXT_MUTED)),
                     text_transform: Some(TextTransform::Uppercase),
                     ..Default::default()
                 }) { title_text.clone() }

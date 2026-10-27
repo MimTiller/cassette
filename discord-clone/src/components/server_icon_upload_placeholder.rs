@@ -37,6 +37,7 @@
 //!   runtime's `button` helper takes a fixed `label` prop, which doesn't fit
 //!   a styled square area).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, Position,
@@ -44,8 +45,6 @@ use runtime_core::{
 };
 
 // Discord palette — kept local so the component is self-contained.
-const BORDER: &str = "#80848e"; // muted gray (Discord muted / placeholder)
-const CIRCLE: &str = "#5865f2"; // blurple stand-in for an uploaded icon
 
 // The dashed border as 24 absolute-positioned dash cells `(x, y, w, h)` in px,
 // laid out on a 6px grid around a 72px square: a 6×6 of 12px cells where each
@@ -121,7 +120,7 @@ pub fn ServerIconUploadPlaceholder() -> Element {
                     top: Some(px(y)),
                     width: Some(px(w)),
                     height: Some(px(h)),
-                    background: Some(col(BORDER)),
+                    background: Some(col(theme::TEXT_FAINT)),
                     border_top_left_radius: Some(px(1.0)),
                     border_top_right_radius: Some(px(1.0)),
                     border_bottom_left_radius: Some(px(1.0)),
@@ -153,7 +152,7 @@ pub fn ServerIconUploadPlaceholder() -> Element {
                     view(style = StyleRules {
                         width: Some(px(36.0)),
                         height: Some(px(36.0)),
-                        background: Some(col(CIRCLE)),
+                        background: Some(col(theme::ACCENT)),
                         border_top_left_radius: Some(px(18.0)),
                         border_top_right_radius: Some(px(18.0)),
                         border_bottom_left_radius: Some(px(18.0)),
@@ -167,7 +166,7 @@ pub fn ServerIconUploadPlaceholder() -> Element {
                     // 60px box crowded the dashes).
                     text(style = StyleRules {
                         font_size: Some(px(9.0)),
-                        color: Some(col(BORDER)),
+                        color: Some(col(theme::TEXT_FAINT)),
                         ..Default::default()
                     }) { "Click to upload".to_string() }
                 }

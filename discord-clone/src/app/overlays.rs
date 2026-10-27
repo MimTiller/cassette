@@ -1,6 +1,7 @@
 //! `app_shell` section, split out of `app.rs`. Reads the shared state
 //! through `ShellState`; returns the elements the final layout places.
 
+use crate::theme;
 use super::*;
 
 pub(super) struct OverlaysParts {
@@ -126,7 +127,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         top: Some(px(0.0)),
         width: Some(if shortcuts_open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if shortcuts_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col("rgba(0, 0, 0, 0.55)")),
+        background: Some(col(theme::OVERLAY)),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
@@ -202,7 +203,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         top: Some(px(0.0)),
         width: Some(if dm_open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if dm_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col("rgba(0, 0, 0, 0.55)")),
+        background: Some(col(theme::OVERLAY)),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
@@ -304,7 +305,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         top: Some(px(0.0)),
         width: Some(if live_dm_open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if live_dm_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col("rgba(0, 0, 0, 0.55)")),
+        background: Some(col(theme::OVERLAY)),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
@@ -376,7 +377,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         top: Some(px(0.0)),
         width: Some(if moderation_open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if moderation_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col("rgba(0, 0, 0, 0.55)")),
+        background: Some(col(theme::OVERLAY)),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
@@ -507,7 +508,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         top: Some(px(0.0)),
         width: Some(if live_invite_open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if live_invite_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col("rgba(0, 0, 0, 0.55)")),
+        background: Some(col(theme::OVERLAY)),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
@@ -727,7 +728,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         top: Some(px(0.0)),
         width: Some(if bug_reports_open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if bug_reports_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col("rgba(0, 0, 0, 0.55)")),
+        background: Some(col(theme::OVERLAY)),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         ..Default::default()

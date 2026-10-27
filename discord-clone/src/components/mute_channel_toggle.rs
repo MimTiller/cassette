@@ -38,6 +38,7 @@
 //!   `when` boundary); the handler closure IS `Copy`, so both branches
 //!   capture it by copy.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, ui, AlignItems, Element, FlexDirection, JustifyContent, Position, Signal,
@@ -45,10 +46,7 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_BTN: &str = "#313338"; // the icon-button surface (Discord elevated surface)
 const BG_MUTED: &str = "#3f2a2c"; // faint red-tinted surface for the muted state
-const ICON_ON: &str = "#b5bac1"; // unmuted speaker glyph (Discord secondary text)
-const ICON_OFF: &str = "#f23f43"; // muted speaker glyph (Discord danger red)
 
 /// The per-channel mute switch. Renders one 24px icon button. While the
 /// `muted` signal is `false` the button shows a muted-grey `🔊` on the
@@ -88,7 +86,7 @@ pub fn MuteChannelToggle(muted: Signal<bool>) -> Element {
             }, test_id = "chan-mute-muted") {
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(ICON_OFF)),
+                    color: Some(col(theme::DANGER)),
                     ..Default::default()
                 }) { "🔇".to_string() }
             }
@@ -103,7 +101,7 @@ pub fn MuteChannelToggle(muted: Signal<bool>) -> Element {
                 position: Some(Position::Relative),
                 width: Some(px(24.0)),
                 height: Some(px(24.0)),
-                background: Some(col(BG_BTN)),
+                background: Some(col(theme::BG_PRIMARY)),
                 border_top_left_radius: Some(px(6.0)),
                 border_top_right_radius: Some(px(6.0)),
                 border_bottom_left_radius: Some(px(6.0)),
@@ -116,7 +114,7 @@ pub fn MuteChannelToggle(muted: Signal<bool>) -> Element {
             }, test_id = "chan-mute-unmuted") {
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(ICON_ON)),
+                    color: Some(col(theme::INTERACTIVE)),
                     ..Default::default()
                 }) { "🔊".to_string() }
             }

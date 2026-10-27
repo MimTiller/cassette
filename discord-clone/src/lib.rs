@@ -42,6 +42,8 @@ mod friends;
 mod friends_view;
 // User-facing text for server-call errors.
 mod errors;
+// The colour theme: named roles, installed as idealyst tokens.
+pub mod theme;
 // Blocked list + block/unblock + the blocked-message placeholder.
 mod blocks;
 

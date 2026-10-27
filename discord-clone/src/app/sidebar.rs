@@ -1,6 +1,7 @@
 //! `app_shell` section, split out of `app.rs`. Reads the shared state
 //! through `ShellState`; returns the elements the final layout places.
 
+use crate::theme;
 use super::*;
 
 pub(super) struct SidebarParts {
@@ -1174,7 +1175,7 @@ fn server_dropdown(
                             margin_right: Some(px(6.0)),
                             flex_direction: Some(FlexDirection::Row),
                             align_items: Some(AlignItems::Center),
-                            background: Some(col(if hovered.get() { if red { "#da373c" } else { "#4752c4" } } else { "transparent" })),
+                            background: Some(col(if hovered.get() { if red { theme::DANGER_STRONG } else { theme::ACCENT_HOVER } } else { "transparent" })),
                             border_top_left_radius: Some(px(4.0)),
                             border_top_right_radius: Some(px(4.0)),
                             border_bottom_left_radius: Some(px(4.0)),
@@ -1184,7 +1185,7 @@ fn server_dropdown(
                             text(style = move || StyleRules {
                                 font_size: Some(px(14.0)),
                                 font_weight: Some(FontWeight::SemiBold),
-                                color: Some(col(if red && !hovered.get() { "#f23f43" } else { TEXT })),
+                                color: Some(col(if red && !hovered.get() { theme::DANGER } else { TEXT })),
                                 ..Default::default()
                             }) { label.clone() }
                         }
@@ -1211,7 +1212,7 @@ fn server_dropdown(
                     flex_direction: Some(FlexDirection::Column),
                     padding_top: Some(px(6.0)),
                     padding_bottom: Some(px(6.0)),
-                    background: Some(col("#111214")),
+                    background: Some(col(theme::BG_FLOATING)),
                     border_top_left_radius: Some(px(6.0)),
                     border_top_right_radius: Some(px(6.0)),
                     border_bottom_left_radius: Some(px(6.0)),

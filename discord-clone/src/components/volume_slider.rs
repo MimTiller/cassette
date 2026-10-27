@@ -32,6 +32,7 @@
 // "crate-level allow" the other unwired components carry.
 #![allow(dead_code)]
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
@@ -39,9 +40,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_CARD: &str = "#2b2d31"; // the card surface (Discord sidebar gray)
-const BUTTON: &str = "#5865f2"; // the +/- control buttons (Discord blurple accent)
-const TEXT: &str = "#dbdee1"; // the "Volume" label + level numeral (Discord primary text)
 
 /// The one hardcoded starting level — no props, no backend.
 const VOLUME_START: i32 = 50;
@@ -87,7 +85,7 @@ pub fn VolumeSlider() -> Element {
             padding_right: Some(px(12.0)),
             padding_top: Some(px(12.0)),
             padding_bottom: Some(px(12.0)),
-            background: Some(col(BG_CARD)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(10.0)),
             border_top_right_radius: Some(px(10.0)),
             border_bottom_left_radius: Some(px(10.0)),
@@ -99,7 +97,7 @@ pub fn VolumeSlider() -> Element {
             text(style = StyleRules {
                 font_size: Some(px(15.0)),
                 font_weight: Some(FontWeight::SemiBold),
-                color: Some(col(TEXT)),
+                color: Some(col(theme::TEXT_NORMAL)),
                 ..Default::default()
             }) { "Volume".to_string() }
 
@@ -120,7 +118,7 @@ pub fn VolumeSlider() -> Element {
                         height: Some(px(26.0)),
                         padding_left: Some(px(12.0)),
                         padding_right: Some(px(12.0)),
-                        background: Some(col(BUTTON)),
+                        background: Some(col(theme::ACCENT)),
                         border_top_left_radius: Some(px(5.0)),
                         border_top_right_radius: Some(px(5.0)),
                         border_bottom_left_radius: Some(px(5.0)),
@@ -139,7 +137,7 @@ pub fn VolumeSlider() -> Element {
                 text(style = StyleRules {
                     font_size: Some(px(13.0)),
                     font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_NORMAL)),
                     ..Default::default()
                 }) { "{volume}" }
                 // The increment button: its own closure that raises `volume`
@@ -151,7 +149,7 @@ pub fn VolumeSlider() -> Element {
                         height: Some(px(26.0)),
                         padding_left: Some(px(12.0)),
                         padding_right: Some(px(12.0)),
-                        background: Some(col(BUTTON)),
+                        background: Some(col(theme::ACCENT)),
                         border_top_left_radius: Some(px(5.0)),
                         border_top_right_radius: Some(px(5.0)),
                         border_bottom_left_radius: Some(px(5.0)),

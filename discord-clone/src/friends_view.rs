@@ -35,6 +35,7 @@
 //! Send button; the server's error text (`user not found`, `cannot friend
 //! yourself`, ...) shows inline under the input on failure.
 
+use crate::theme;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::collections::HashMap;
@@ -52,13 +53,6 @@ use crate::friends::{FriendList};
 use crate::style_helpers::{borderless_input, col, px};
 
 // --- palette (same Discord dark palette as live_dm_view.rs) ------------------
-const BG_SIDEBAR: &str = "#2b2d31";
-const BG_MAIN: &str = "#313338";
-const COMPOSER: &str = "#383a40";
-const TEXT: &str = "#f2f3f5";
-const TEXT_MUTED: &str = "#949ba4";
-const BUTTON: &str = "#5865f2";
-const ERROR_RED: &str = "#e45c5c";
 
 fn grow(v: f32) -> Tokenized<f32> {
     Tokenized::Literal(v)
@@ -89,8 +83,8 @@ fn pill_style() -> StyleRules {
         height: Some(px(28.0)),
         padding_left: Some(px(14.0)),
         padding_right: Some(px(14.0)),
-        background: Some(col(BG_SIDEBAR)),
-        color: Some(col(TEXT)),
+        background: Some(col(theme::BG_SECONDARY)),
+        color: Some(col(theme::TEXT_STRONG)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         border_top_left_radius: Some(px(8.0)),
@@ -107,8 +101,8 @@ fn action_style() -> StyleRules {
         height: Some(px(26.0)),
         padding_left: Some(px(10.0)),
         padding_right: Some(px(10.0)),
-        background: Some(col(BG_SIDEBAR)),
-        color: Some(col(TEXT)),
+        background: Some(col(theme::BG_SECONDARY)),
+        color: Some(col(theme::TEXT_STRONG)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         border_top_left_radius: Some(px(6.0)),
@@ -146,7 +140,7 @@ fn name_style() -> StyleRules {
     StyleRules {
         font_size: Some(px(15.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         flex_grow: Some(grow(1.0)),
         ..Default::default()
     }
@@ -200,10 +194,10 @@ fn friend_avatar_chip(name: &str, avatar: Option<String>) -> Element {
                 )
             }
         } else {
-            avatar_chip(name, BUTTON, 34.0, 10.0)
+            avatar_chip(name, theme::ACCENT, 34.0, 10.0)
         }
     } else {
-        avatar_chip(name, BUTTON, 34.0, 10.0)
+        avatar_chip(name, theme::ACCENT, 34.0, 10.0)
     }
 }
 
@@ -246,7 +240,7 @@ fn centered_hint(text: String) -> Element {
             text(
                 style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(TEXT_MUTED)),
+                    color: Some(col(theme::TEXT_MUTED)),
                     ..Default::default()
                 },
             ) { text }
@@ -489,7 +483,7 @@ pub fn friends_screen(
                                 gap: Some(px(10.0)),
                                 ..Default::default()
                             }) {
-                                icon(PLUS).color(|| Color::from(TEXT_MUTED)).size(18.0)
+                                icon(PLUS).color(|| Color::from(theme::TEXT_MUTED)).size(18.0)
                                 text_input(
                                     value = add_username,
                                     on_change = move |s: String| {
@@ -500,8 +494,8 @@ pub fn friends_screen(
                                         height: Some(px(32.0)),
                                         padding_left: Some(px(10.0)),
                                         padding_right: Some(px(10.0)),
-                                        background: Some(col(COMPOSER)),
-                                        color: Some(col(TEXT)),
+                                        background: Some(col(theme::BG_INPUT)),
+                                        color: Some(col(theme::TEXT_STRONG)),
                                         border_top_left_radius: Some(px(6.0)),
                                         border_top_right_radius: Some(px(6.0)),
                                         border_bottom_left_radius: Some(px(6.0)),
@@ -520,8 +514,8 @@ pub fn friends_screen(
                                         height: Some(px(32.0)),
                                         padding_left: Some(px(14.0)),
                                         padding_right: Some(px(14.0)),
-                                        background: Some(col(BUTTON)),
-                                        color: Some(col(TEXT)),
+                                        background: Some(col(theme::ACCENT)),
+                                        color: Some(col(theme::TEXT_STRONG)),
                                         align_items: Some(AlignItems::Center),
                                         justify_content: Some(JustifyContent::Center),
                                         border_top_left_radius: Some(px(6.0)),
@@ -540,7 +534,7 @@ pub fn friends_screen(
                                 text(
                                     style = StyleRules {
                                         font_size: Some(px(13.0)),
-                                        color: Some(col(ERROR_RED)),
+                                        color: Some(col(theme::DANGER)),
                                         ..Default::default()
                                     },
                                 ) { err.clone() }
@@ -616,7 +610,7 @@ pub fn friends_screen(
     ui! {
         view(style = StyleRules {
             flex_grow: Some(grow(1.0)),
-            background: Some(col(BG_MAIN)),
+            background: Some(col(theme::BG_PRIMARY)),
             flex_direction: Some(FlexDirection::Column),
             overflow: Some(Overflow::Hidden),
             ..Default::default()
@@ -629,12 +623,12 @@ pub fn friends_screen(
                 padding_bottom: Some(px(8.0)),
                 ..Default::default()
             }) {
-                icon(USERS).color(|| Color::from(TEXT_MUTED)).size(18.0)
+                icon(USERS).color(|| Color::from(theme::TEXT_MUTED)).size(18.0)
                 text(
                     style = StyleRules {
                         font_size: Some(px(16.0)),
                         font_weight: Some(FontWeight::Bold),
-                        color: Some(col(TEXT)),
+                        color: Some(col(theme::TEXT_STRONG)),
                         ..Default::default()
                     },
                 ) { "Friends".to_string() }

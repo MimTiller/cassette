@@ -21,12 +21,11 @@
 //!   inline-props idiom — the macro rewrites them to `Reactive<String>`),
 //!   read once into locals at build so the static text bodies are baked.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{component, ui, AlignItems, Element, FlexDirection, StyleRules};
 
 // Discord dark palette — kept local so the component is self-contained.
-const TEXT: &str = "#f2f3f5"; // primary text
-const TEXT_MUTED: &str = "#949ba4"; // muted timestamp text
 
 /// A single audit-log row. Renders the `text` event line with a muted
 /// `timestamp` next to it on the same line. No backend.
@@ -51,7 +50,7 @@ pub fn AuditLogRow(
             // The readable event line, on the row's left.
             text(style = StyleRules {
                 font_size: Some(px(14.0)),
-                color: Some(col(TEXT)),
+                color: Some(col(theme::TEXT_STRONG)),
                 flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
                 ..Default::default()
             }) { event.to_string() }
@@ -59,7 +58,7 @@ pub fn AuditLogRow(
             // The muted timestamp, right-aligned on the same line.
             text(style = StyleRules {
                 font_size: Some(px(12.0)),
-                color: Some(col(TEXT_MUTED)),
+                color: Some(col(theme::TEXT_MUTED)),
                 flex_shrink: Some(runtime_core::Tokenized::Literal(0.0)),
                 ..Default::default()
             }) { when.to_string() }

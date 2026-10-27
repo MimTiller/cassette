@@ -20,6 +20,7 @@
 //!   No border is used, so none of the `border_*_width` fields — which take
 //!   `Tokenized<f32>`, not `px()` — come into play.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, ui, AlignItems, Element, FlexDirection, FontWeight, StyleRules,
@@ -28,9 +29,7 @@ use runtime_core::{
 // Discord dark palette (kept local so the component is self-contained).
 // `GREEN_ONLINE` matches the `Status::Online` dot color in `data.rs`.
 #[allow(dead_code)]
-const TEXT: &str = "#f2f3f5";
 #[allow(dead_code)]
-const GREEN_ONLINE: &str = "#23a559";
 
 /// The member-count line. Renders a small green status dot followed by a
 /// single plain-text string of the form "12 Online / 48 Members". The two
@@ -50,7 +49,7 @@ pub fn MemberCountDisplay(
     let dot_style = StyleRules {
         width: Some(px(8.0)),
         height: Some(px(8.0)),
-        background: Some(col(GREEN_ONLINE)),
+        background: Some(col(theme::SUCCESS)),
         border_top_left_radius: Some(px(4.0)),
         border_top_right_radius: Some(px(4.0)),
         border_bottom_left_radius: Some(px(4.0)),
@@ -69,7 +68,7 @@ pub fn MemberCountDisplay(
             text(style = StyleRules {
                 font_size: Some(px(13.0)),
                 font_weight: Some(FontWeight::SemiBold),
-                color: Some(col(TEXT)),
+                color: Some(col(theme::TEXT_STRONG)),
                 ..Default::default()
             }) { label.to_string() }
         }

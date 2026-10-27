@@ -31,6 +31,7 @@
 //!   captures a `Copy` of the `status` signal, so it stays `Fn` and merely
 //!   drives the shared state — no backend call.
 
+use crate::theme;
 use crate::data::Status;
 use crate::style_helpers::px;
 use icons_lucide::MOON;
@@ -40,8 +41,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const TEXT_MUTED: &str = "#949ba4"; // the inactive glyph (matches the row's icons)
-const IDLE: &str = "#f0b232"; // the active idle glyph (Discord's idle dot color)
 
 /// The idle control: an 18px icon button holding a `MOON` glyph. Amber while
 /// the user is idle, muted otherwise; a tap goes idle (or cycles on, if
@@ -73,9 +72,9 @@ pub fn IdleTimerBadge(status: runtime_core::Signal<Status>) -> Element {
             ..Default::default()
         }, test_id = "user-idle") {
             if status.get() == Status::Idle {
-                icon(MOON).color(|| Color::from(IDLE)).size(15.0)
+                icon(MOON).color(|| Color::from(theme::WARNING)).size(15.0)
             } else {
-                icon(MOON).color(|| Color::from(TEXT_MUTED)).size(15.0)
+                icon(MOON).color(|| Color::from(theme::TEXT_MUTED)).size(15.0)
             }
         }
         .on_touch(move |ev| {

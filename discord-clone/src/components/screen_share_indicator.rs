@@ -33,6 +33,7 @@
 //!   `style = …` (created fresh per evaluation, never captured across the
 //!   `when` boundary) — the crate's universal style idiom.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, StyleRules, Tokenized,
@@ -47,8 +48,6 @@ fn border_width(px: f32) -> Tokenized<f32> {
 
 // Discord dark palette (kept local so the component is self-contained).
 const TAG_BG: &str = "#2a4034"; // a subtle green-tinted surface — tag, not a filled button
-const TAG_BORDER: &str = "#3ba55d"; // the green outline that marks a live share
-const TAG_TEXT: &str = "#43b581"; // Discord's bright green, for the "Presenting" label
 
 /// The presenting tag. A small, compact "Presenting" tag (tiny label on a
 /// subtle green-tinted, bordered pill) while the local `isSharing` signal is
@@ -86,10 +85,10 @@ pub fn ScreenShareIndicator() -> Element {
                 border_right_width: Some(border_width(1.0)),
                 border_bottom_width: Some(border_width(1.0)),
                 border_left_width: Some(border_width(1.0)),
-                border_top_color: Some(col(TAG_BORDER)),
-                border_right_color: Some(col(TAG_BORDER)),
-                border_bottom_color: Some(col(TAG_BORDER)),
-                border_left_color: Some(col(TAG_BORDER)),
+                border_top_color: Some(col(theme::SUCCESS)),
+                border_right_color: Some(col(theme::SUCCESS)),
+                border_bottom_color: Some(col(theme::SUCCESS)),
+                border_left_color: Some(col(theme::SUCCESS)),
                 border_top_left_radius: Some(px(8.0)),
                 border_top_right_radius: Some(px(8.0)),
                 border_bottom_left_radius: Some(px(8.0)),
@@ -102,7 +101,7 @@ pub fn ScreenShareIndicator() -> Element {
                 text(style = StyleRules {
                     font_size: Some(px(11.0)),
                     font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col(TAG_TEXT)),
+                    color: Some(col(theme::SUCCESS)),
                     ..Default::default()
                 }) { "Presenting".to_string() }
             }

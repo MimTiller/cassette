@@ -23,6 +23,7 @@
 //!   doesn't fit a small square "×" glyph button);
 //! - every style is written INLINE in `style = …` (created fresh per
 //!   evaluation) — the crate's universal style idiom.
+use crate::theme;
 use std::rc::Rc;
 
 use crate::style_helpers::{col, px};
@@ -40,11 +41,6 @@ fn grow(v: f32) -> Tokenized<f32> {
 // Discord palette — kept local so the component is self-contained. The bar
 // sits over the chat surface, so it takes a slightly lighter fill than the
 // chat background with a hairline bottom border to read as an inset strip.
-const BG_BAR: &str = "#2b2d31"; // bar fill (the "hover/active" tone)
-const BG_X: &str = "#404249"; // the "×" control's disc (Discord hover gray)
-const BORDER: &str = "#1e1f22"; // hairline bottom border (the rail's dark tone)
-const TEXT: &str = "#dbdee1"; // the "Replying to …" line (Discord primary text)
-const TEXT_X: &str = "#f2f3f5"; // the "×" glyph (near-white, to stay tappable)
 
 /// The "Replying to <author>: <snippet>" strip with a "×" cancel control.
 /// Shown while `reply` is `Some((author, snippet))`; the "×" calls `on_cancel`
@@ -81,14 +77,14 @@ pub fn reply_preview_bar(
                         padding_top: Some(px(6.0)),
                         padding_bottom: Some(px(6.0)),
                         gap: Some(px(8.0)),
-                        background: Some(col(BG_BAR)),
+                        background: Some(col(theme::BG_SECONDARY)),
                         // A hairline bottom border so the bar reads as an inset
                         // strip above the composer. Border *width* fields are
                         // `Tokenized<f32>` (not a `Length`), so the value goes
                         // through `Tokenized::Literal` rather than the `px`
                         // length helper.
                         border_bottom_width: Some(Tokenized::Literal(1.0)),
-                        border_bottom_color: Some(col(BORDER)),
+                        border_bottom_color: Some(col(theme::BG_TERTIARY)),
                         ..Default::default()
                     }) {
                         // The "Replying to <author>: <snippet>" line. Built with
@@ -98,7 +94,7 @@ pub fn reply_preview_bar(
                         // fresh without any reactive f-string slot.
                         text(style = StyleRules {
                             font_size: Some(px(13.0)),
-                            color: Some(col(TEXT)),
+                            color: Some(col(theme::TEXT_NORMAL)),
                             ..Default::default()
                         }) { format!("Replying to {}: {}", author, snippet) }
 
@@ -119,7 +115,7 @@ pub fn reply_preview_bar(
                             height: Some(px(18.0)),
                             align_items: Some(AlignItems::Center),
                             justify_content: Some(JustifyContent::Center),
-                            background: Some(col(BG_X)),
+                            background: Some(col(theme::BG_SELECTED)),
                             border_top_left_radius: Some(px(9.0)),
                             border_top_right_radius: Some(px(9.0)),
                             border_bottom_left_radius: Some(px(9.0)),
@@ -128,7 +124,7 @@ pub fn reply_preview_bar(
                         }) {
                             text(style = StyleRules {
                                 font_size: Some(px(12.0)),
-                                color: Some(col(TEXT_X)),
+                                color: Some(col(theme::TEXT_STRONG)),
                                 ..Default::default()
                             }) { "×".to_string() }
                         }

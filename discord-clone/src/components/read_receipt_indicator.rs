@@ -23,12 +23,11 @@
 //! - the checks sit in a `flex_direction: Row` so multiple checks line up
 //!   horizontally, mirroring Discord's double-check layout.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{component, ui, AlignItems, Element, FlexDirection, StyleRules};
 
 // Discord dark palette (kept local so the component is self-contained).
-const GRAY: &str = "#80848e"; // muted check for "sent" / "delivered"
-const READ_BLUE: &str = "#5865f2"; // colored check for "read" (blurple)
 
 // The hardcoded local status — "sent", "delivered", or "read". No backend
 // fetch, no props: a fixed value stands in for a live receipt state. "read" is
@@ -51,7 +50,7 @@ pub fn ReadReceiptIndicator() -> Element {
     // The check color: muted gray for "sent" / "delivered", colored blurple
     // for "read". The color is the visual discriminator between a gray
     // double-check (delivered) and a colored one (read). `&str` is Copy.
-    let check_color: &str = if STATUS == "read" { READ_BLUE } else { GRAY };
+    let check_color: &str = if STATUS == "read" { theme::ACCENT } else { theme::TEXT_FAINT };
 
     ui! {
         // Horizontal row so multiple checks line up (Discord's double-check

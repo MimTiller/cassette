@@ -31,15 +31,13 @@
 //!   stays `Fn` across every press; styles are inline so nothing non-`Copy`
 //!   is captured across the `when` boundary.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, StyleRules,
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const TEXT: &str = "#f2f3f5"; // primary text (the username)
-const UNBLOCK_BG: &str = "#5865f2"; // unblock button (Discord blurple)
-const UNBLOCK_TEXT: &str = "#f2f3f5"; // unblock button label (near-white)
 
 // The one hardcoded local blocked user — no backend fetch.
 const USERNAME: &str = "Alex";
@@ -78,7 +76,7 @@ pub fn BlockedUserRow() -> Element {
                 // The blocked username — primary text, a static string literal.
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { USERNAME.to_string() }
 
@@ -93,8 +91,8 @@ pub fn BlockedUserRow() -> Element {
                         height: Some(px(28.0)),
                         padding_left: Some(px(14.0)),
                         padding_right: Some(px(14.0)),
-                        background: Some(col(UNBLOCK_BG)),
-                        color: Some(col(UNBLOCK_TEXT)),
+                        background: Some(col(theme::ACCENT)),
+                        color: Some(col(theme::TEXT_STRONG)),
                         border_top_left_radius: Some(px(6.0)),
                         border_top_right_radius: Some(px(6.0)),
                         border_bottom_left_radius: Some(px(6.0)),

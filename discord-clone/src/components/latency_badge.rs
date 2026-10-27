@@ -28,19 +28,16 @@
 //!   `style = …` (the crate's universal style idiom), never shared as a
 //!   `let` binding.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{component, ui, AlignItems, Element, FlexDirection, FontWeight, StyleRules};
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_PILL: &str = "#2b2d31"; // the pill surface (Discord sidebar gray)
 
 // Latency health colors — the green/amber/red coding Discord uses for
 // connection quality. Green matches `connection_quality_indicator`'s solid
 // bar fill; amber matches `send_failed_indicator`'s warning glyph; red is
 // Discord's danger tone.
-const GREEN: &str = "#23a55a"; // good link (under 50ms)
-const YELLOW: &str = "#f0b232"; // degraded (50–150ms)
-const RED: &str = "#f23f43"; // poor (above 150ms)
 
 // The hardcoded local latency in milliseconds. No backend fetch — this is a
 // self-contained badge, so a fixed value stands in for a live measurement.
@@ -52,11 +49,11 @@ const LATENCY_MS: i32 = 42;
 /// constant-folded at compile time.
 fn latency_color(ms: i32) -> &'static str {
     if ms < 50 {
-        GREEN
+        theme::SUCCESS
     } else if ms <= 150 {
-        YELLOW
+        theme::WARNING
     } else {
-        RED
+        theme::DANGER
     }
 }
 
@@ -78,7 +75,7 @@ pub fn LatencyBadge() -> Element {
             padding_right: Some(px(8.0)),
             padding_top: Some(px(3.0)),
             padding_bottom: Some(px(3.0)),
-            background: Some(col(BG_PILL)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(8.0)),
             border_top_right_radius: Some(px(8.0)),
             border_bottom_left_radius: Some(px(8.0)),

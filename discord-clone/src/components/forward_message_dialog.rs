@@ -25,6 +25,7 @@
 //!   the other when a row sets the signal) — the same shape
 //!   `delete_message_confirm` uses for its button/result swap.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, StyleRules, TouchPhase,
@@ -32,11 +33,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_CARD: &str = "#2b2d31"; // dialog surface (Discord sidebar gray)
-const BG_ROW: &str = "#313338"; // row surface (Discord chat bg)
-const TEXT: &str = "#f2f3f5"; // primary text
-const PROMPT: &str = "#dbdee1"; // prompt line (Discord secondary text)
-const MUTED: &str = "#949ba4"; // channel-hash label (Discord muted)
 
 // The two hardcoded fake channel names — exactly two, local only. Kept as a
 // static slice so the keyed `for` renders one row per entry and the loop index
@@ -67,7 +63,7 @@ pub fn ForwardMessageDialog() -> Element {
             padding_bottom: Some(px(20.0)),
             padding_left: Some(px(20.0)),
             padding_right: Some(px(20.0)),
-            background: Some(col(BG_CARD)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(8.0)),
             border_top_right_radius: Some(px(8.0)),
             border_bottom_left_radius: Some(px(8.0)),
@@ -77,7 +73,7 @@ pub fn ForwardMessageDialog() -> Element {
             // The prompt line — local literal, no lookup, no backend call.
             text(style = StyleRules {
                 font_size: Some(px(16.0)),
-                color: Some(col(PROMPT)),
+                color: Some(col(theme::TEXT_NORMAL)),
                 ..Default::default()
             }) { "Forward this message to:".to_string() }
 
@@ -91,7 +87,7 @@ pub fn ForwardMessageDialog() -> Element {
                 // place of the list. `r` is the chosen channel name.
                 text(style = StyleRules {
                     font_size: Some(px(16.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { format!("Forwarded to {}", r) }
             } else {
@@ -109,7 +105,7 @@ pub fn ForwardMessageDialog() -> Element {
                         padding_right: Some(px(12.0)),
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),
-                        background: Some(col(BG_ROW)),
+                        background: Some(col(theme::BG_PRIMARY)),
                         border_top_left_radius: Some(px(6.0)),
                         border_top_right_radius: Some(px(6.0)),
                         border_bottom_left_radius: Some(px(6.0)),
@@ -120,14 +116,14 @@ pub fn ForwardMessageDialog() -> Element {
                         // reactivity (text content must be a `TextContent`).
                         text(style = StyleRules {
                             font_size: Some(px(15.0)),
-                            color: Some(col(MUTED)),
+                            color: Some(col(theme::TEXT_MUTED)),
                             margin_right: Some(px(6.0)),
                             ..Default::default()
                         }) { "#".to_string() }
                         // The channel name — static per row.
                         text(style = StyleRules {
                             font_size: Some(px(15.0)),
-                            color: Some(col(TEXT)),
+                            color: Some(col(theme::TEXT_STRONG)),
                             ..Default::default()
                         }) { name.to_string() }
                     }.on_touch(move |ev| {

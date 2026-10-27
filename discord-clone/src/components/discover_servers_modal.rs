@@ -17,6 +17,7 @@
 //! bindings so the method chain lives outside the `ui!` child position;
 //! `Signal` is `Copy`, so every `move` closure captures a copy and stays
 //! `Fn`.
+use crate::theme;
 use std::rc::Rc;
 
 use runtime_core::{
@@ -42,11 +43,6 @@ use crate::server_tag_chips::ServerTagChips;
 use crate::featured_server_banner::FeaturedServerBanner;
 
 // Discord dark palette (kept local so the component is self-contained).
-const CARD: &str = "#2b2d31";
-const ROW_BG: &str = "#1e1f22";
-const BTN_BG: &str = "#5865f2";
-const TEXT: &str = "#f2f3f5";
-const TEXT_MUTED: &str = "#949ba4";
 
 /// One suggested mock server: display name + short description. Hardcoded
 /// placeholder data — the join button needs no backend.
@@ -83,7 +79,7 @@ fn suggested_row(s: &SuggestedServer, on_join: Rc<dyn Fn(String)>) -> Element {
         padding_bottom: Some(px(10.0)),
         padding_left: Some(px(12.0)),
         padding_right: Some(px(12.0)),
-        background: Some(col(ROW_BG)),
+        background: Some(col(theme::BG_TERTIARY)),
         border_top_left_radius: Some(px(8.0)),
         border_top_right_radius: Some(px(8.0)),
         border_bottom_left_radius: Some(px(8.0)),
@@ -96,13 +92,13 @@ fn suggested_row(s: &SuggestedServer, on_join: Rc<dyn Fn(String)>) -> Element {
     let name_style = StyleRules {
         font_size: Some(px(15.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         flex_grow: Some(Tokenized::Literal(1.0)),
         ..Default::default()
     };
     let desc_style = StyleRules {
         font_size: Some(px(12.0)),
-        color: Some(col(TEXT_MUTED)),
+        color: Some(col(theme::TEXT_MUTED)),
         margin_top: Some(px(2.0)),
         ..Default::default()
     };
@@ -110,7 +106,7 @@ fn suggested_row(s: &SuggestedServer, on_join: Rc<dyn Fn(String)>) -> Element {
         height: Some(px(32.0)),
         padding_left: Some(px(14.0)),
         padding_right: Some(px(14.0)),
-        background: Some(col(BTN_BG)),
+        background: Some(col(theme::ACCENT)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         border_top_left_radius: Some(px(6.0)),
@@ -122,7 +118,7 @@ fn suggested_row(s: &SuggestedServer, on_join: Rc<dyn Fn(String)>) -> Element {
     let join_label_style = StyleRules {
         font_size: Some(px(13.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
     let name_text = s.name.to_string();
@@ -175,7 +171,7 @@ fn discover_panel(open: Signal<bool>, on_join: Rc<dyn Fn(String)>) -> Element {
         padding_bottom: Some(px(20.0)),
         padding_left: Some(px(20.0)),
         padding_right: Some(px(20.0)),
-        background: Some(col(CARD)),
+        background: Some(col(theme::BG_SECONDARY)),
         border_top_left_radius: Some(px(12.0)),
         border_top_right_radius: Some(px(12.0)),
         border_bottom_left_radius: Some(px(12.0)),
@@ -188,7 +184,7 @@ fn discover_panel(open: Signal<bool>, on_join: Rc<dyn Fn(String)>) -> Element {
     let heading_style = StyleRules {
         font_size: Some(px(18.0)),
         font_weight: Some(FontWeight::Bold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
     let close_btn_style = StyleRules {
@@ -197,7 +193,7 @@ fn discover_panel(open: Signal<bool>, on_join: Rc<dyn Fn(String)>) -> Element {
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         font_size: Some(px(16.0)),
-        color: Some(col(TEXT_MUTED)),
+        color: Some(col(theme::TEXT_MUTED)),
         border_top_left_radius: Some(px(6.0)),
         border_top_right_radius: Some(px(6.0)),
         border_bottom_left_radius: Some(px(6.0)),
@@ -360,7 +356,7 @@ pub fn discover_servers_modal(open: Signal<bool>, on_join: Rc<dyn Fn(String)>) -
         top: Some(px(0.0)),
         width: Some(if open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col("rgba(0, 0, 0, 0.6)")),
+        background: Some(col(theme::OVERLAY)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         overflow: Some(Overflow::Hidden),

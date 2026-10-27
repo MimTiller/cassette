@@ -18,13 +18,13 @@
 //!   `if` `edited_label` uses for its "(edited)" text. There is no `else`
 //!   branch: while unset, the badge simply renders nothing.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{component, signal, ui, Element, StyleRules};
 
 // Discord verified blue (the same blurple the verified check uses in the
 // real client) — deliberately distinct from the muted gray of the surrounding
 // message text. Kept local so the component is self-contained.
-const VERIFIED_BLUE: &str = "#5865f2";
 
 /// The verified checkmark. Renders a small blue "✓" while the local
 /// `isVerified` signal is set (hardcoded `true` for now); otherwise it
@@ -46,7 +46,7 @@ pub fn VerifiedBadge() -> Element {
         if isVerified.get() {
             text(style = StyleRules {
                 font_size: Some(px(14.0)),
-                color: Some(col(VERIFIED_BLUE)),
+                color: Some(col(theme::ACCENT)),
                 ..Default::default()
             }) { "✓".to_string() }
         }

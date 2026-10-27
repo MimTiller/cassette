@@ -22,14 +22,13 @@
 //!   `ui!` `text` slot (a `String` satisfies the text-slot `Display` bound —
 //!   the same shape `welcome_banner.rs` uses for its `format!` greeting).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent, StyleRules,
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_ICON: &str = "#5865f2"; // circle fill (Discord blurple)
-const TEXT: &str = "#f2f3f5"; // initials
 
 // The hardcoded local server name — no backend fetch.
 const SERVER_NAME: &str = "Game Devs United";
@@ -57,7 +56,7 @@ pub fn ServerIconFallback() -> Element {
             flex_direction: Some(FlexDirection::Row),
             align_items: Some(AlignItems::Center),
             justify_content: Some(JustifyContent::Center),
-            background: Some(col(BG_ICON)),
+            background: Some(col(theme::ACCENT)),
             border_top_left_radius: Some(px(24.0)),
             border_top_right_radius: Some(px(24.0)),
             border_bottom_left_radius: Some(px(24.0)),
@@ -67,7 +66,7 @@ pub fn ServerIconFallback() -> Element {
             text(style = StyleRules {
                 font_size: Some(px(18.0)),
                 font_weight: Some(FontWeight::Bold),
-                color: Some(col(TEXT)),
+                color: Some(col(theme::TEXT_STRONG)),
                 ..Default::default()
             }) { initials }
         }

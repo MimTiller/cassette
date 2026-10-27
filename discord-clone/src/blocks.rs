@@ -3,6 +3,7 @@
 //! "blocked message" placeholder the channel list shows instead of a blocked
 //! user's messages. The server side is `discord_server::blocks`.
 
+use crate::theme;
 use runtime_core::{
     ui, AlignItems, Element, FlexDirection, FontWeight, Signal, StyleRules, TouchPhase, TouchResponse,
 };
@@ -70,13 +71,13 @@ pub fn hidden_run_row(ids: Vec<i64>, revealed: Signal<Vec<i64>>, rev: Signal<u32
             padding_left: Some(px(66.0)),
             ..Default::default()
         }) {
-            text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col("#949ba4")), ..Default::default() }) { label }
-            text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col("#949ba4")), ..Default::default() }) { "—".to_string() }
+            text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { label }
+            text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { "—".to_string() }
             view {
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
                     font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col("#00a8fc")),
+                    color: Some(col(theme::TEXT_LINK)),
                     ..Default::default()
                 }) { "Show".to_string() }
             }

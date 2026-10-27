@@ -20,17 +20,13 @@
 //! job (`notify::notify_message` arms it) — this component only owns the
 //! manual "x".
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     ui, AlignItems, Element, FlexDirection, Position, Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const TOAST_BG: &str = "#313338"; // toast surface (Discord sidebar gray)
-const TEXT: &str = "#f2f3f5"; // primary text (title line)
-const BODY: &str = "#dbdee1"; // message preview
-const MUTED_BORDER: &str = "#4e5058"; // close-button ring
-const TEXT_MUTED: &str = "#949ba4"; // close "x" glyph
 
 /// The new-message notification toast. Renders the `title` / `body` banner
 /// while `visible` is `true`; tapping the close "x" clears `visible`. All three
@@ -56,7 +52,7 @@ pub fn notification_toast(
                 padding_bottom: Some(px(14.0)),
                 padding_left: Some(px(16.0)),
                 padding_right: Some(px(16.0)),
-                background: Some(col(TOAST_BG)),
+                background: Some(col(theme::BG_PRIMARY)),
                 border_top_left_radius: Some(px(8.0)),
                 border_top_right_radius: Some(px(8.0)),
                 border_bottom_left_radius: Some(px(8.0)),
@@ -75,12 +71,12 @@ pub fn notification_toast(
                     text(style = StyleRules {
                         font_size: Some(px(14.0)),
                         font_weight: Some(runtime_core::FontWeight::SemiBold),
-                        color: Some(col(TEXT)),
+                        color: Some(col(theme::TEXT_STRONG)),
                         ..Default::default()
                     }) { move || title.get().to_string() }
                     text(style = StyleRules {
                         font_size: Some(px(13.0)),
-                        color: Some(col(BODY)),
+                        color: Some(col(theme::TEXT_NORMAL)),
                         ..Default::default()
                     }) { move || body.get().to_string() }
                 }
@@ -103,15 +99,15 @@ pub fn notification_toast(
                     border_right_width: Some(runtime_core::Tokenized::Literal(1.0)),
                     border_bottom_width: Some(runtime_core::Tokenized::Literal(1.0)),
                     border_left_width: Some(runtime_core::Tokenized::Literal(1.0)),
-                    border_top_color: Some(col(MUTED_BORDER)),
-                    border_right_color: Some(col(MUTED_BORDER)),
-                    border_bottom_color: Some(col(MUTED_BORDER)),
-                    border_left_color: Some(col(MUTED_BORDER)),
+                    border_top_color: Some(col(theme::BUTTON_SECONDARY)),
+                    border_right_color: Some(col(theme::BUTTON_SECONDARY)),
+                    border_bottom_color: Some(col(theme::BUTTON_SECONDARY)),
+                    border_left_color: Some(col(theme::BUTTON_SECONDARY)),
                     ..Default::default()
                 }) {
                     text(style = StyleRules {
                         font_size: Some(px(14.0)),
-                        color: Some(col(TEXT_MUTED)),
+                        color: Some(col(theme::TEXT_MUTED)),
                         ..Default::default()
                     }) { "x".to_string() }
                 }

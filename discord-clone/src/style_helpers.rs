@@ -1,6 +1,7 @@
 //! Short constructors so component files read as property lists,
 //! not walls of `Some(Tokenized::Literal(...))`.
 
+use crate::theme;
 use std::rc::Rc;
 
 use runtime_core::{Color, FontWeight, Length, StyleRules, StyleSheet, TextTransform, Tokenized};
@@ -29,8 +30,10 @@ pub fn pct(v: f32) -> Tokenized<Length> {
     Tokenized::Literal(Length::Percent(v))
 }
 
+/// A colour for a style: a theme role's token when `s` is a role value
+/// (see `crate::theme`), otherwise the literal colour.
 pub fn col(s: &str) -> Tokenized<Color> {
-    Tokenized::Literal(Color(s.into()))
+    crate::theme::color(s)
 }
 
 /// Border-zeroing fragment for text inputs.
@@ -85,7 +88,7 @@ pub fn section_label() -> StyleRules {
     StyleRules {
         font_size: Some(px(11.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col("#949ba4")),
+        color: Some(col(theme::TEXT_MUTED)),
         text_transform: Some(TextTransform::Uppercase),
         letter_spacing: Some(Tokenized::Literal(0.5)),
         ..Default::default()

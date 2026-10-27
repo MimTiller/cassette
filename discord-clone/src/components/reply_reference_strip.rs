@@ -13,6 +13,7 @@
 //! (`live_edit_row` in `app.rs`) resolves the original's author + body from the
 //! client's already-loaded message buffer and calls this only when the row has
 //! a reply reference.
+use crate::theme;
 use crate::style_helpers::{col, px};
 // The quote chip reuses the shared avatar component (a registered avatar when
 // the author has one, otherwise a tinted initial — exactly Discord's chip).
@@ -20,10 +21,6 @@ use crate::avatar_chip::{avatar_chip as reply_avatar_chip};
 use runtime_core::{ui, AlignItems, Element, FlexDirection, FontWeight, Overflow, Position, StyleRules, Tokenized};
 
 // Palette — kept local so the component is self-contained.
-const CONNECTOR: &str = "#565a64"; // the "┌" hairline (muted grey)
-const CHIP_TINT: &str = "#4b4d54"; // fallback avatar-chip fill
-const NAME: &str = "#c6c9d1";      // semibold muted-white author name
-const SNIPPET: &str = "#949ba4";   // muted original-message excerpt
 
 /// A compact reference to the message being replied to: connector + chip +
 /// name + one-line snippet, aligned to the row's text column.
@@ -53,8 +50,8 @@ pub fn reply_reference_strip(author: String, snippet: String) -> Element {
                 border_left_width: Some(Tokenized::Literal(2.0)),
                 border_bottom_width: Some(Tokenized::Literal(2.0)),
                 border_bottom_right_radius: Some(px(6.0)),
-                border_left_color: Some(col(CONNECTOR)),
-                border_bottom_color: Some(col(CONNECTOR)),
+                border_left_color: Some(col(theme::BUTTON_SECONDARY)),
+                border_bottom_color: Some(col(theme::BUTTON_SECONDARY)),
                 ..Default::default()
             }) {}
             // Spacer: the message row's 16px padding + 40px avatar + 10px
@@ -68,16 +65,16 @@ pub fn reply_reference_strip(author: String, snippet: String) -> Element {
                 gap: Some(px(6.0)),
                 ..Default::default()
             }) {
-                { reply_avatar_chip(author.as_str(), CHIP_TINT, 16.0, 8.0) }
+                { reply_avatar_chip(author.as_str(), theme::BG_SELECTED, 16.0, 8.0) }
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
                     font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col(NAME)),
+                    color: Some(col(theme::TEXT_NORMAL)),
                     ..Default::default()
                 }) { author }
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(SNIPPET)),
+                    color: Some(col(theme::TEXT_MUTED)),
                     max_width: Some(px(540.0)),
                     height: Some(px(18.0)),
                     overflow: Some(Overflow::Hidden),

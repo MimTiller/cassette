@@ -2,6 +2,7 @@
 //! Split out of `app.rs`; `use super::*` keeps app.rs's imports and shared
 //! colors/helpers in scope.
 
+use crate::theme;
 use super::*;
 
 /// A voice-channel row in the sidebar: a speaker icon (`VOLUME_2`) + name,
@@ -407,7 +408,7 @@ pub(super) fn user_panel(
                     let vc_style = StyleRules {
                         font_size: Some(px(10.0)),
                         font_weight: Some(FontWeight::SemiBold),
-                        color: Some(col("#23a559")),
+                        color: Some(col(theme::SUCCESS)),
                         ..Default::default()
                     };
                     let ch_style = StyleRules {
@@ -678,7 +679,7 @@ pub(super) fn user_panel(
             let deafen_btn = ui! {
                 view(style = icon_btn_style.clone(), test_id = "user-deafen") {
                     if deafened_state.get() {
-                        icon(HEADPHONES).color(|| Color::from("#f23f43")).size(15.0)
+                        icon(HEADPHONES).color(|| Color::from(theme::DANGER)).size(15.0)
                     } else {
                         icon(HEADPHONES).color(|| Color::from(TEXT_MUTED)).size(15.0)
                     }

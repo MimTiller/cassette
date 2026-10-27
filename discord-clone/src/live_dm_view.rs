@@ -26,6 +26,7 @@
 //! frame, the effect buffers and bumps the revision" path as the live
 //! channel composer in `app.rs`.
 
+use crate::theme;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -42,15 +43,6 @@ use crate::style_helpers::{borderless_input, col, pct, px, section_label};
 // --- palette -----------------------------------------------------------------
 // The same Discord dark palette as `app.rs` / `dm_view.rs`, kept local so the
 // module is self-contained (mirrors how `dm_view.rs` keeps its own constants).
-const BG_SIDEBAR: &str = "#2b2d31";
-const BG_MAIN: &str = "#313338";
-const BG_ACTIVE: &str = "#404249";
-const BG_HOVER: &str = "#35373c";
-const COMPOSER: &str = "#383a40";
-const TEXT: &str = "#f2f3f5";
-const TEXT_MUTED: &str = "#949ba4";
-const BORDER: &str = "#26272b";
-const BUTTON: &str = "#5865f2";
 
 fn grow(v: f32) -> Tokenized<f32> {
     Tokenized::Literal(v)
@@ -164,8 +156,8 @@ fn live_dm_find_row(
         height: Some(px(30.0)),
         padding_left: Some(px(8.0)),
         padding_right: Some(px(8.0)),
-        background: Some(col(BORDER)),
-        color: Some(col(TEXT)),
+        background: Some(col(theme::BG_TERTIARY)),
+        color: Some(col(theme::TEXT_STRONG)),
         font_size: Some(px(13.0)),
         border_top_left_radius: Some(px(4.0)),
         border_top_right_radius: Some(px(4.0)),
@@ -184,7 +176,7 @@ fn live_dm_find_row(
                 return ui! {
                     text(style = StyleRules {
                         font_size: Some(px(12.0)),
-                        color: Some(col(TEXT_MUTED)),
+                        color: Some(col(theme::TEXT_MUTED)),
                         padding_top: Some(px(6.0)),
                         padding_left: Some(px(4.0)),
                         ..Default::default()
@@ -207,10 +199,10 @@ fn live_dm_find_row(
                         border_bottom_right_radius: Some(px(4.0)),
                         ..Default::default()
                     }, test_id = "live-dm-find-result") {
-                        { crate::avatar_chip::avatar_chip(name.as_str(), BUTTON, 24.0, 12.0) }
+                        { crate::avatar_chip::avatar_chip(name.as_str(), theme::ACCENT, 24.0, 12.0) }
                         text(style = StyleRules {
                             font_size: Some(px(14.0)),
-                            color: Some(col(TEXT)),
+                            color: Some(col(theme::TEXT_STRONG)),
                             ..Default::default()
                         }) { name.clone() }
                     }
@@ -240,7 +232,7 @@ fn live_dm_find_row(
             padding_left: Some(px(10.0)),
             padding_right: Some(px(10.0)),
             border_bottom_width: Some(border_width(1.0)),
-            border_bottom_color: Some(col(BORDER)),
+            border_bottom_color: Some(col(theme::BG_TERTIARY)),
             ..Default::default()
         }) {
             text_input(value = query, on_change = on_change, placeholder = "Find or start a conversation", style = input_style, test_id = "live-dm-find")
@@ -326,9 +318,9 @@ fn live_dm_row(
             align_items: Some(AlignItems::Center),
             gap: Some(px(10.0)),
             background: Some(col(if on {
-                BG_ACTIVE
+                theme::BG_SELECTED
             } else if hovered.get() {
-                BG_HOVER
+                theme::BG_HOVER
             } else {
                 "transparent"
             })),
@@ -345,7 +337,7 @@ fn live_dm_row(
         flex_shrink: Some(grow(0.0)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        background: Some(col(BUTTON)),
+        background: Some(col(theme::ACCENT)),
         border_top_left_radius: Some(px(10.0)),
         border_top_right_radius: Some(px(10.0)),
         border_bottom_left_radius: Some(px(10.0)),
@@ -355,13 +347,13 @@ fn live_dm_row(
     let initial_style = StyleRules {
         font_size: Some(px(15.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
     let name_style = StyleRules {
         font_size: Some(px(15.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         flex_grow: Some(grow(1.0)),
         // Let a long username give up width instead of wrapping past the
         // fixed-height row (the mock dm_row's one-line preview fix).
@@ -454,9 +446,9 @@ fn live_dm_list(
 ) -> Element {
     let column_style = StyleRules {
         width: Some(px(240.0)),
-        background: Some(col(BG_SIDEBAR)),
+        background: Some(col(theme::BG_SECONDARY)),
         border_right_width: Some(border_width(1.0)),
-        border_right_color: Some(col(BORDER)),
+        border_right_color: Some(col(theme::BG_TERTIARY)),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
@@ -530,7 +522,7 @@ fn live_dm_conversation(
 ) -> Element {
     let pane_style = StyleRules {
         flex_grow: Some(grow(1.0)),
-        background: Some(col(BG_MAIN)),
+        background: Some(col(theme::BG_PRIMARY)),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
@@ -559,7 +551,7 @@ fn live_dm_conversation(
         padding_left: Some(px(16.0)),
         padding_right: Some(px(16.0)),
         border_top_width: Some(border_width(1.0)),
-        border_top_color: Some(col(BORDER)),
+        border_top_color: Some(col(theme::BG_TERTIARY)),
         flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Center),
         gap: Some(px(8.0)),
@@ -570,8 +562,8 @@ fn live_dm_conversation(
         height: Some(px(40.0)),
         padding_left: Some(px(12.0)),
         padding_right: Some(px(12.0)),
-        background: Some(col(COMPOSER)),
-        color: Some(col(TEXT)),
+        background: Some(col(theme::BG_INPUT)),
+        color: Some(col(theme::TEXT_STRONG)),
         border_top_left_radius: Some(px(8.0)),
         border_top_right_radius: Some(px(8.0)),
         border_bottom_left_radius: Some(px(8.0)),
@@ -650,7 +642,7 @@ fn live_dm_conversation(
                         }) {
                             text(style = StyleRules {
                                 font_size: Some(px(14.0)),
-                                color: Some(col(TEXT_MUTED)),
+                                color: Some(col(theme::TEXT_MUTED)),
                                 ..Default::default()
                             }) { "Select a conversation".to_string() }
                         }
@@ -678,13 +670,13 @@ fn live_dm_conversation(
                 padding_left: Some(px(16.0)),
                 padding_right: Some(px(16.0)),
                 border_bottom_width: Some(border_width(1.0)),
-                border_bottom_color: Some(col(BORDER)),
+                border_bottom_color: Some(col(theme::BG_TERTIARY)),
                 ..Default::default()
             };
             let title_style = StyleRules {
                 font_size: Some(px(15.0)),
                 font_weight: Some(FontWeight::SemiBold),
-                color: Some(col(TEXT)),
+                color: Some(col(theme::TEXT_STRONG)),
                 ..Default::default()
             };
 
@@ -705,7 +697,7 @@ fn live_dm_conversation(
                         }) {
                             text(style = StyleRules {
                                 font_size: Some(px(14.0)),
-                                color: Some(col(TEXT_MUTED)),
+                                color: Some(col(theme::TEXT_MUTED)),
                                 ..Default::default()
                             }) { "No messages yet".to_string() }
                         }
@@ -728,7 +720,7 @@ fn live_dm_conversation(
                     && edited_at.is_none();
                 rows.push(message_row(
                     author.as_str(),
-                    BUTTON,
+                    theme::ACCENT,
                     body.as_str(),
                     when,
                     crate::app::format_full_when(ts_s),

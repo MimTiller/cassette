@@ -33,6 +33,7 @@
 //!   for its per-row edit/delete closures) — a `ui!` `for` cannot attach a
 //!   distinct captured closure per row.
 
+use crate::theme;
 use icons_lucide::{PIN, PIN_OFF};
 use runtime_core::icon;
 use crate::pins::{PinnedMessage, unpin_message};
@@ -43,12 +44,6 @@ use runtime_core::{
 };
 
 // Discord dark palette — kept local so the component is self-contained.
-const PANEL_BG: &str = "#313338"; // overlay surface
-const ROW_BG: &str = "#2b2d31"; // pinned row surface
-const TEXT: &str = "#f2f3f5"; // primary text
-const TEXT_MUTED: &str = "#949ba4"; // secondary text
-const BORDER: &str = "#1e1f22"; // hairline
-const ACCENT: &str = "#f23f43"; // unpin affordance (Discord danger red)
 
 /// The "Pinned messages" full-screen panel. Renders nothing (zero size) while
 /// `open` is false; while true it shows a header (title + close) and the
@@ -92,7 +87,7 @@ pub fn pinned_messages_panel(
                     padding_left: Some(px(20.0)),
                     padding_right: Some(px(20.0)),
                     border_bottom_width: Some(runtime_core::Tokenized::Literal(1.0)),
-                    border_bottom_color: Some(col(BORDER)),
+                    border_bottom_color: Some(col(theme::BG_TERTIARY)),
                     ..Default::default()
                 }) {
                     view(style = StyleRules {
@@ -101,17 +96,17 @@ pub fn pinned_messages_panel(
                         gap: Some(px(8.0)),
                         ..Default::default()
                     }) {
-                        icon(PIN).color(|| Color::from(ACCENT)).size(18.0)
+                        icon(PIN).color(|| Color::from(theme::DANGER)).size(18.0)
                         text(style = StyleRules {
                             font_size: Some(px(18.0)),
                             font_weight: Some(FontWeight::Bold),
-                            color: Some(col(TEXT)),
+                            color: Some(col(theme::TEXT_STRONG)),
                             ..Default::default()
                         }) { "Pinned messages".to_string() }
                         if count_val > 0 {
                             text(style = StyleRules {
                                 font_size: Some(px(13.0)),
-                                color: Some(col(TEXT_MUTED)),
+                                color: Some(col(theme::TEXT_MUTED)),
                                 ..Default::default()
                             }) { format!("({count_val})") }
                         }
@@ -130,15 +125,15 @@ pub fn pinned_messages_panel(
                         border_right_width: Some(runtime_core::Tokenized::Literal(1.0)),
                         border_bottom_width: Some(runtime_core::Tokenized::Literal(1.0)),
                         border_left_width: Some(runtime_core::Tokenized::Literal(1.0)),
-                        border_top_color: Some(col(TEXT_MUTED)),
-                        border_right_color: Some(col(TEXT_MUTED)),
-                        border_bottom_color: Some(col(TEXT_MUTED)),
-                        border_left_color: Some(col(TEXT_MUTED)),
+                        border_top_color: Some(col(theme::TEXT_MUTED)),
+                        border_right_color: Some(col(theme::TEXT_MUTED)),
+                        border_bottom_color: Some(col(theme::TEXT_MUTED)),
+                        border_left_color: Some(col(theme::TEXT_MUTED)),
                         ..Default::default()
                     }) {
                         text(style = StyleRules {
                             font_size: Some(px(14.0)),
-                            color: Some(col(TEXT_MUTED)),
+                            color: Some(col(theme::TEXT_MUTED)),
                             ..Default::default()
                         }) { "x".to_string() }
                     }
@@ -163,7 +158,7 @@ pub fn pinned_messages_panel(
                     top: Some(px(0.0)),
                     width: Some(pct(100.0)),
                     height: Some(pct(100.0)),
-                    background: Some(col(PANEL_BG)),
+                    background: Some(col(theme::BG_PRIMARY)),
                     flex_direction: Some(FlexDirection::Column),
                     overflow: Some(Overflow::Hidden),
                     ..Default::default()
@@ -205,7 +200,7 @@ fn build_body(
             }) {
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(ACCENT)),
+                    color: Some(col(theme::DANGER)),
                     ..Default::default()
                 }) { err.clone() }
             }
@@ -221,7 +216,7 @@ fn build_body(
             }) {
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(TEXT_MUTED)),
+                    color: Some(col(theme::TEXT_MUTED)),
                     ..Default::default()
                 }) { "No pinned messages yet.".to_string() }
             }
@@ -296,7 +291,7 @@ fn pin_row(
             padding_bottom: Some(px(10.0)),
             padding_left: Some(px(14.0)),
             padding_right: Some(px(14.0)),
-            background: Some(col(ROW_BG)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(8.0)),
             border_top_right_radius: Some(px(8.0)),
             border_bottom_left_radius: Some(px(8.0)),
@@ -313,12 +308,12 @@ fn pin_row(
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
                     font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { author }
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(TEXT_MUTED)),
+                    color: Some(col(theme::TEXT_MUTED)),
                     ..Default::default()
                 }) { content }
             }
@@ -334,21 +329,21 @@ fn pin_row(
                 border_top_right_radius: Some(px(8.0)),
                 border_bottom_left_radius: Some(px(8.0)),
                 border_bottom_right_radius: Some(px(8.0)),
-                background: Some(col(ROW_BG)),
+                background: Some(col(theme::BG_SECONDARY)),
                 border_top_width: Some(runtime_core::Tokenized::Literal(1.0)),
                 border_right_width: Some(runtime_core::Tokenized::Literal(1.0)),
                 border_bottom_width: Some(runtime_core::Tokenized::Literal(1.0)),
                 border_left_width: Some(runtime_core::Tokenized::Literal(1.0)),
-                border_top_color: Some(col(ACCENT)),
-                border_right_color: Some(col(ACCENT)),
-                border_bottom_color: Some(col(ACCENT)),
-                border_left_color: Some(col(ACCENT)),
+                border_top_color: Some(col(theme::DANGER)),
+                border_right_color: Some(col(theme::DANGER)),
+                border_bottom_color: Some(col(theme::DANGER)),
+                border_left_color: Some(col(theme::DANGER)),
                 ..Default::default()
             }) {
-                icon(PIN_OFF).color(|| Color::from(ACCENT)).size(14.0)
+                icon(PIN_OFF).color(|| Color::from(theme::DANGER)).size(14.0)
                 text(style = StyleRules {
                     font_size: Some(px(12.0)),
-                    color: Some(col(ACCENT)),
+                    color: Some(col(theme::DANGER)),
                     ..Default::default()
                 }) { "Unpin".to_string() }
             }

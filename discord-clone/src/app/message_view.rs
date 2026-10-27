@@ -2,6 +2,7 @@
 //! Split out of `app.rs`; `use super::*` keeps app.rs's imports and shared
 //! colors/helpers in scope.
 
+use crate::theme;
 use super::*;
 
 /// Discord's message-grouping window: consecutive messages from the same
@@ -616,7 +617,7 @@ pub(super) fn md_chat_theme() -> markdown::MdTheme {
         heading: TEXT.to_string(),
         link: BUTTON.to_string(),
         code_fg: TEXT.to_string(),
-        code_bg: "#232529".to_string(),
+        code_bg: theme::BG_TERTIARY.to_string(),
         quote_fg: TEXT_CHANNEL.to_string(),
         base_size: 15.0,
         heading_scale: [1.6, 1.3, 1.15, 1.05, 1.0, 0.9],
@@ -987,7 +988,7 @@ pub(super) fn message_overflow_menu(
                     // that must never scroll; `hidden` keeps the surface from
                     // showing a scrollbar if a row ever wraps past the box.
                     overflow: Some(Overflow::Hidden),
-                    background: Some(col("#111214")),
+                    background: Some(col(theme::BG_FLOATING)),
                     border_top_left_radius: Some(px(8.0)),
                     border_top_right_radius: Some(px(8.0)),
                     border_bottom_left_radius: Some(px(8.0)),

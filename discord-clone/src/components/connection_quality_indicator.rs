@@ -26,12 +26,11 @@
 //!   and each bar's height comes from a static ascending
 //!   `BAR_HEIGHTS` array so the glyph reads as a signal-meter silhouette.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{component, ui, AlignItems, Element, FlexDirection, StyleRules, Tokenized};
 
 // Discord dark palette (kept local so the component is self-contained).
-const FILL: &str = "#23a55a"; // solid bar fill (Discord green — a good link)
-const OUTLINE: &str = "#4e5058"; // muted outline for the unfilled bars
 
 // The hardcoded local quality level, 1..=4: the number of SOLID bars. No
 // backend fetch — this is a self-contained glyph, so a fixed value stands in
@@ -60,7 +59,7 @@ pub fn ConnectionQualityIndicator() -> Element {
                     height: Some(px(BAR_HEIGHTS[i])),
                     // Solid fill when this bar is at-or-below the level,
                     // transparent otherwise so only the outline shows.
-                    background: Some(col(if i < QUALITY_LEVEL { FILL } else { "transparent" })),
+                    background: Some(col(if i < QUALITY_LEVEL { theme::SUCCESS } else { "transparent" })),
                     border_top_left_radius: Some(px(1.0)),
                     border_top_right_radius: Some(px(1.0)),
                     border_bottom_left_radius: Some(px(1.0)),
@@ -71,10 +70,10 @@ pub fn ConnectionQualityIndicator() -> Element {
                     border_left_width: Some(Tokenized::Literal(1.0)),
                     // Filled bars read as a solid block; unfilled bars read as
                     // a thin muted outline (Discord's "no signal" state).
-                    border_top_color: Some(col(if i < QUALITY_LEVEL { FILL } else { OUTLINE })),
-                    border_right_color: Some(col(if i < QUALITY_LEVEL { FILL } else { OUTLINE })),
-                    border_bottom_color: Some(col(if i < QUALITY_LEVEL { FILL } else { OUTLINE })),
-                    border_left_color: Some(col(if i < QUALITY_LEVEL { FILL } else { OUTLINE })),
+                    border_top_color: Some(col(if i < QUALITY_LEVEL { theme::SUCCESS } else { theme::BUTTON_SECONDARY })),
+                    border_right_color: Some(col(if i < QUALITY_LEVEL { theme::SUCCESS } else { theme::BUTTON_SECONDARY })),
+                    border_bottom_color: Some(col(if i < QUALITY_LEVEL { theme::SUCCESS } else { theme::BUTTON_SECONDARY })),
+                    border_left_color: Some(col(if i < QUALITY_LEVEL { theme::SUCCESS } else { theme::BUTTON_SECONDARY })),
                     ..Default::default()
                 }) {}
             }

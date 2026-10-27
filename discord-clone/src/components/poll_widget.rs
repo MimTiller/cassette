@@ -31,6 +31,7 @@
 //!   its own signal, the two counters never interfere — independence by
 //!   construction.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
@@ -43,10 +44,6 @@ const OPTION_A: &str = "Dark mode";
 const OPTION_B: &str = "Light mode";
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_CARD: &str = "#2b2d31"; // the poll card surface (Discord sidebar gray)
-const BG_ROW: &str = "#313338"; // an option row fill (Discord elevated surface)
-const BUTTON: &str = "#5865f2"; // the "Vote" button (Discord blurple accent)
-const TEXT: &str = "#dbdee1"; // primary labels / count numerals (Discord primary text)
 
 /// A poll widget. Renders a hardcoded question header above exactly two
 /// hardcoded options; each option has its own local `Signal<i32>` vote count
@@ -78,7 +75,7 @@ pub fn PollWidget() -> Element {
             padding_right: Some(px(12.0)),
             padding_top: Some(px(12.0)),
             padding_bottom: Some(px(12.0)),
-            background: Some(col(BG_CARD)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(10.0)),
             border_top_right_radius: Some(px(10.0)),
             border_bottom_left_radius: Some(px(10.0)),
@@ -90,7 +87,7 @@ pub fn PollWidget() -> Element {
             text(style = StyleRules {
                 font_size: Some(px(15.0)),
                 font_weight: Some(FontWeight::SemiBold),
-                color: Some(col(TEXT)),
+                color: Some(col(theme::TEXT_NORMAL)),
                 ..Default::default()
             }) { QUESTION.to_string() }
 
@@ -104,7 +101,7 @@ pub fn PollWidget() -> Element {
                 padding_right: Some(px(8.0)),
                 padding_top: Some(px(8.0)),
                 padding_bottom: Some(px(8.0)),
-                background: Some(col(BG_ROW)),
+                background: Some(col(theme::BG_PRIMARY)),
                 border_top_left_radius: Some(px(6.0)),
                 border_top_right_radius: Some(px(6.0)),
                 border_bottom_left_radius: Some(px(6.0)),
@@ -114,7 +111,7 @@ pub fn PollWidget() -> Element {
                 // The hardcoded option label — a static string body.
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_NORMAL)),
                     ..Default::default()
                 }) { OPTION_A.to_string() }
                 // The LIVE vote count for option A — a reactive f-string slot
@@ -123,7 +120,7 @@ pub fn PollWidget() -> Element {
                 text(style = StyleRules {
                     font_size: Some(px(13.0)),
                     font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_NORMAL)),
                     ..Default::default()
                 }) { "{vote_a}" }
                 // The "Vote" button for option A — the `button` primitive with a
@@ -135,7 +132,7 @@ pub fn PollWidget() -> Element {
                         height: Some(px(26.0)),
                         padding_left: Some(px(12.0)),
                         padding_right: Some(px(12.0)),
-                        background: Some(col(BUTTON)),
+                        background: Some(col(theme::ACCENT)),
                         border_top_left_radius: Some(px(5.0)),
                         border_top_right_radius: Some(px(5.0)),
                         border_bottom_left_radius: Some(px(5.0)),
@@ -157,7 +154,7 @@ pub fn PollWidget() -> Element {
                 padding_right: Some(px(8.0)),
                 padding_top: Some(px(8.0)),
                 padding_bottom: Some(px(8.0)),
-                background: Some(col(BG_ROW)),
+                background: Some(col(theme::BG_PRIMARY)),
                 border_top_left_radius: Some(px(6.0)),
                 border_top_right_radius: Some(px(6.0)),
                 border_bottom_left_radius: Some(px(6.0)),
@@ -167,14 +164,14 @@ pub fn PollWidget() -> Element {
                 // The hardcoded option label — a static string body.
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_NORMAL)),
                     ..Default::default()
                 }) { OPTION_B.to_string() }
                 // The LIVE vote count for option B — its own reactive slot.
                 text(style = StyleRules {
                     font_size: Some(px(13.0)),
                     font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_NORMAL)),
                     ..Default::default()
                 }) { "{vote_b}" }
                 // The "Vote" button for option B — its own closure bumping only
@@ -186,7 +183,7 @@ pub fn PollWidget() -> Element {
                         height: Some(px(26.0)),
                         padding_left: Some(px(12.0)),
                         padding_right: Some(px(12.0)),
-                        background: Some(col(BUTTON)),
+                        background: Some(col(theme::ACCENT)),
                         border_top_left_radius: Some(px(5.0)),
                         border_top_right_radius: Some(px(5.0)),
                         border_bottom_left_radius: Some(px(5.0)),

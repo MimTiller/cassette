@@ -42,6 +42,7 @@
 //!   states — only the topic text hides — so it can always be used to toggle
 //!   back).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, Position,
@@ -49,10 +50,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_STRIP: &str = "#313338"; // the banner strip surface (Discord sidebar gray)
-const TOPIC: &str = "#dbdee1"; // the topic text (Discord primary text)
-const BTN_GLYPH: &str = "#b5bac1"; // the collapse chevron glyph (Discord secondary text)
-const BTN_BG: &str = "#2b2d31"; // the button pill (Discord lowered surface)
 
 /// The channel-topic banner. Renders a thin top strip holding the (hardcoded)
 /// topic text on the left and a small collapse button on the right. While the
@@ -91,7 +88,7 @@ pub fn ChannelTopicBanner(
             padding_bottom: Some(px(6.0)),
             padding_left: Some(px(16.0)),
             padding_right: Some(px(12.0)),
-            background: Some(col(BG_STRIP)),
+            background: Some(col(theme::BG_PRIMARY)),
             border_top_left_radius: Some(px(6.0)),
             border_top_right_radius: Some(px(6.0)),
             border_bottom_left_radius: Some(px(6.0)),
@@ -110,7 +107,7 @@ pub fn ChannelTopicBanner(
                 text(style = StyleRules {
                     flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
                     font_size: Some(px(13.0)),
-                    color: Some(col(TOPIC)),
+                    color: Some(col(theme::TEXT_NORMAL)),
                     ..Default::default()
                 }) { topic_text.clone() }
             }
@@ -125,7 +122,7 @@ pub fn ChannelTopicBanner(
                 position: Some(Position::Relative),
                 width: Some(px(24.0)),
                 height: Some(px(24.0)),
-                background: Some(col(BTN_BG)),
+                background: Some(col(theme::BG_SECONDARY)),
                 flex_direction: Some(FlexDirection::Row),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
@@ -138,13 +135,13 @@ pub fn ChannelTopicBanner(
                 if collapsed.get() {
                     text(style = StyleRules {
                         font_size: Some(px(12.0)),
-                        color: Some(col(BTN_GLYPH)),
+                        color: Some(col(theme::INTERACTIVE)),
                         ..Default::default()
                     }) { "▸".to_string() }
                 } else {
                     text(style = StyleRules {
                         font_size: Some(px(12.0)),
-                        color: Some(col(BTN_GLYPH)),
+                        color: Some(col(theme::INTERACTIVE)),
                         ..Default::default()
                     }) { "▾".to_string() }
                 }

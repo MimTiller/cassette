@@ -24,17 +24,13 @@
 //!   use) — the same shape `server_discovery_card` uses for its two static
 //!   meta lines.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, ui, AlignItems, Element, FlexDirection, FontWeight, StyleRules, Tokenized,
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_CARD: &str = "#2b2d31";
-const BORDER: &str = "#1e1f22";
-const ACCENT: &str = "#5865f2";
-const TEXT: &str = "#f2f3f5";
-const TEXT_MUTED: &str = "#949ba4";
 
 /// The link-embed preview card. A bordered card with a colored left accent
 /// bar, containing the site name (muted meta) above the title (primary,
@@ -64,16 +60,16 @@ pub fn LinkEmbedPreview(
         border_right_width: Some(Tokenized::Literal(1.0)),
         border_bottom_width: Some(Tokenized::Literal(1.0)),
         border_left_width: Some(Tokenized::Literal(4.0)),
-        border_top_color: Some(col(BORDER)),
-        border_right_color: Some(col(BORDER)),
-        border_bottom_color: Some(col(BORDER)),
+        border_top_color: Some(col(theme::BG_TERTIARY)),
+        border_right_color: Some(col(theme::BG_TERTIARY)),
+        border_bottom_color: Some(col(theme::BG_TERTIARY)),
         // The colored left accent bar: a wider, brand-colored left border.
-        border_left_color: Some(col(ACCENT)),
+        border_left_color: Some(col(theme::ACCENT)),
         padding_top: Some(px(12.0)),
         padding_right: Some(px(12.0)),
         padding_bottom: Some(px(12.0)),
         padding_left: Some(px(12.0)),
-        background: Some(col(BG_CARD)),
+        background: Some(col(theme::BG_SECONDARY)),
         border_top_left_radius: Some(px(10.0)),
         border_top_right_radius: Some(px(10.0)),
         border_bottom_left_radius: Some(px(10.0)),
@@ -92,20 +88,20 @@ pub fn LinkEmbedPreview(
             view(style = stack_style) {
                 text(style = StyleRules {
                     font_size: Some(px(12.0)),
-                    color: Some(col(TEXT_MUTED)),
+                    color: Some(col(theme::TEXT_MUTED)),
                     ..Default::default()
                 }) { site.clone() }
                 text(style = StyleRules {
                     font_size: Some(px(15.0)),
                     font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { head.clone() }
                 // Written INLINE in `style = …` because `StyleRules` is not
                 // `Copy` (a shared `let` would be moved by the lines above).
                 text(style = StyleRules {
                     font_size: Some(px(13.0)),
-                    color: Some(col(TEXT_MUTED)),
+                    color: Some(col(theme::TEXT_MUTED)),
                     ..Default::default()
                 }) { desc.clone() }
             }

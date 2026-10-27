@@ -24,20 +24,13 @@
 //!   lowers to the `when` primitive (mounts the chosen branch, unmounts the
 //!   other when a button sets the signal).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, StyleRules,
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_CARD: &str = "#2b2d31"; // card surface (Discord sidebar gray)
-const BG_SNIPPET: &str = "#313338"; // message snippet surface (Discord chat bg)
-const TEXT: &str = "#f2f3f5"; // primary text
-const SNIPPET_TEXT: &str = "#dbdee1"; // message snippet body (Discord secondary text)
-const PROMPT: &str = "#dbdee1"; // confirmation prompt (Discord secondary text)
-const SENDER: &str = "#f2f3f5"; // sender name (Discord primary text)
-const CANCEL: &str = "#4e5058"; // cancel button (Discord muted gray)
-const DELETE: &str = "#da373c"; // delete button (Discord danger red)
 
 /// The hardcoded local message snippet shown above the prompt. Local literal
 /// only — sender name and body are hardcoded, no lookup, no backend call.
@@ -73,7 +66,7 @@ pub fn DeleteMessageConfirm() -> Element {
             padding_bottom: Some(px(20.0)),
             padding_left: Some(px(20.0)),
             padding_right: Some(px(20.0)),
-            background: Some(col(BG_CARD)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(8.0)),
             border_top_right_radius: Some(px(8.0)),
             border_bottom_left_radius: Some(px(8.0)),
@@ -91,7 +84,7 @@ pub fn DeleteMessageConfirm() -> Element {
                 padding_right: Some(px(12.0)),
                 padding_top: Some(px(10.0)),
                 padding_bottom: Some(px(10.0)),
-                background: Some(col(BG_SNIPPET)),
+                background: Some(col(theme::BG_PRIMARY)),
                 border_top_left_radius: Some(px(6.0)),
                 border_top_right_radius: Some(px(6.0)),
                 border_bottom_left_radius: Some(px(6.0)),
@@ -100,12 +93,12 @@ pub fn DeleteMessageConfirm() -> Element {
             }) {
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(SENDER)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { SNIPPET_SENDER.to_string() }
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(SNIPPET_TEXT)),
+                    color: Some(col(theme::TEXT_NORMAL)),
                     ..Default::default()
                 }) { SNIPPET_BODY.to_string() }
             }
@@ -114,7 +107,7 @@ pub fn DeleteMessageConfirm() -> Element {
             // no backend call.
             text(style = StyleRules {
                 font_size: Some(px(16.0)),
-                color: Some(col(PROMPT)),
+                color: Some(col(theme::TEXT_NORMAL)),
                 ..Default::default()
             }) { PROMPT_TEXT.to_string() }
 
@@ -126,7 +119,7 @@ pub fn DeleteMessageConfirm() -> Element {
             if let Some(r) = result.get() {
                 text(style = StyleRules {
                     font_size: Some(px(16.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { r.clone() }
             } else {
@@ -142,7 +135,7 @@ pub fn DeleteMessageConfirm() -> Element {
                             height: Some(px(30.0)),
                             padding_left: Some(px(16.0)),
                             padding_right: Some(px(16.0)),
-                            background: Some(col(CANCEL)),
+                            background: Some(col(theme::BUTTON_SECONDARY)),
                             border_top_left_radius: Some(px(6.0)),
                             border_top_right_radius: Some(px(6.0)),
                             border_bottom_left_radius: Some(px(6.0)),
@@ -160,7 +153,7 @@ pub fn DeleteMessageConfirm() -> Element {
                             height: Some(px(30.0)),
                             padding_left: Some(px(16.0)),
                             padding_right: Some(px(16.0)),
-                            background: Some(col(DELETE)),
+                            background: Some(col(theme::DANGER_STRONG)),
                             border_top_left_radius: Some(px(6.0)),
                             border_top_right_radius: Some(px(6.0)),
                             border_bottom_left_radius: Some(px(6.0)),

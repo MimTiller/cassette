@@ -24,12 +24,11 @@
 //!   same `for` + `key = idx` idiom `rules_accept_checkbox` uses for its
 //!   static rule lines. A real iterator (`.iter()`) is required, hence `.iter()`.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{component, ui, AlignItems, Element, FlexDirection, FontWeight, StyleRules};
 
 // Discord dark palette (kept local so the component is self-contained).
-const TEXT: &str = "#f2f3f5";
-const PILL_TEXT: &str = "#ffffff";
 
 /// The hardcoded member name (no props for now).
 const MEMBER: &str = "Mia Chen";
@@ -37,8 +36,8 @@ const MEMBER: &str = "Mia Chen";
 /// The color is Discord's role-badge convention (each role carries its own
 /// accent), kept here as a static pair so the badge is self-contained.
 const ROLES: [(&str, &str); 2] = [
-    ("Admin", "#5865f2"),    // blurple
-    ("Moderator", "#23a559"), // green
+    ("Admin", theme::ACCENT),    // blurple
+    ("Moderator", theme::SUCCESS), // green
 ];
 
 /// The member-role row. A horizontal row: the member name (primary) followed
@@ -56,7 +55,7 @@ pub fn MemberRoleList() -> Element {
     let name_style = StyleRules {
         font_size: Some(px(15.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
 
@@ -87,7 +86,7 @@ pub fn MemberRoleList() -> Element {
                     text(style = StyleRules {
                         font_size: Some(px(11.0)),
                         font_weight: Some(FontWeight::SemiBold),
-                        color: Some(col(PILL_TEXT)),
+                        color: Some(col(theme::TEXT_ON_ACCENT)),
                         ..Default::default()
                     }) { role.to_string() }
                 }

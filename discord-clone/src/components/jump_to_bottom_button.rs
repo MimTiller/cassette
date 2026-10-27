@@ -31,6 +31,7 @@
 //!   `Position::Relative` viewport wrapper so it floats over the visible
 //!   message area's bottom-right corner rather than scrolling with content.
 
+use crate::theme;
 use std::rc::Rc;
 
 use crate::style_helpers::{col, px};
@@ -41,8 +42,6 @@ use runtime_core::{
 
 // Discord palette (same constants `app.rs` uses for the blurple button and
 // near-white text) — kept local so the component is self-contained.
-const BUTTON: &str = "#5865f2";
-const TEXT: &str = "#f2f3f5";
 
 /// The floating "jump to bottom" pill. Renders a down-arrow + "Jump to bottom"
 /// label while `visible` is set; clicking it invokes `on_jump`. While `visible`
@@ -64,8 +63,8 @@ pub fn JumpToBottomButton(visible: Signal<bool>, on_jump: Rc<dyn Fn()>) -> Eleme
                 padding_right: Some(px(10.0)),
                 padding_top: Some(px(6.0)),
                 padding_bottom: Some(px(6.0)),
-                background: Some(col(BUTTON)),
-                color: Some(col(TEXT)),
+                background: Some(col(theme::ACCENT)),
+                color: Some(col(theme::TEXT_STRONG)),
                 flex_direction: Some(FlexDirection::Row),
                 align_items: Some(AlignItems::Center),
                 gap: Some(px(6.0)),
@@ -79,12 +78,12 @@ pub fn JumpToBottomButton(visible: Signal<bool>, on_jump: Rc<dyn Fn()>) -> Eleme
             }) {
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { "↓".to_string() }
                 text(style = StyleRules {
                     font_size: Some(px(12.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { "Jump to bottom".to_string() }
             }

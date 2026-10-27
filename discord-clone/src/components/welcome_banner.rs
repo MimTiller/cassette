@@ -24,6 +24,7 @@
 //!   runtime's `button` helper takes a fixed `label` prop, which doesn't fit
 //!   a small glyph tap target).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, Position,
@@ -31,10 +32,6 @@ use runtime_core::{
 };
 
 // Discord dark palette — kept local so the component is self-contained.
-const BANNER_BG: &str = "#313338"; // banner surface (Discord sidebar gray)
-const TEXT: &str = "#f2f3f5"; // primary text
-const MUTED_BORDER: &str = "#4e5058"; // dismiss-button ring
-const TEXT_MUTED: &str = "#949ba4"; // dismiss "x" glyph
 
 /// The welcome banner. Greets the member's name (`name` prop) with a wave emoji
 /// and a dismiss "x"; renders nothing once the local `dismissed` signal is set
@@ -64,7 +61,7 @@ pub fn WelcomeBanner(#[prop(default = "Sam")] name: String) -> Element {
                 padding_bottom: Some(px(14.0)),
                 padding_left: Some(px(16.0)),
                 padding_right: Some(px(16.0)),
-                background: Some(col(BANNER_BG)),
+                background: Some(col(theme::BG_PRIMARY)),
                 border_top_left_radius: Some(px(8.0)),
                 border_top_right_radius: Some(px(8.0)),
                 border_bottom_left_radius: Some(px(8.0)),
@@ -75,7 +72,7 @@ pub fn WelcomeBanner(#[prop(default = "Sam")] name: String) -> Element {
                 text(style = StyleRules {
                     flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
                     font_size: Some(px(15.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { greeting.clone() }
 
@@ -98,15 +95,15 @@ pub fn WelcomeBanner(#[prop(default = "Sam")] name: String) -> Element {
                     border_right_width: Some(runtime_core::Tokenized::Literal(1.0)),
                     border_bottom_width: Some(runtime_core::Tokenized::Literal(1.0)),
                     border_left_width: Some(runtime_core::Tokenized::Literal(1.0)),
-                    border_top_color: Some(col(MUTED_BORDER)),
-                    border_right_color: Some(col(MUTED_BORDER)),
-                    border_bottom_color: Some(col(MUTED_BORDER)),
-                    border_left_color: Some(col(MUTED_BORDER)),
+                    border_top_color: Some(col(theme::BUTTON_SECONDARY)),
+                    border_right_color: Some(col(theme::BUTTON_SECONDARY)),
+                    border_bottom_color: Some(col(theme::BUTTON_SECONDARY)),
+                    border_left_color: Some(col(theme::BUTTON_SECONDARY)),
                     ..Default::default()
                 }) {
                     text(style = StyleRules {
                         font_size: Some(px(14.0)),
-                        color: Some(col(TEXT_MUTED)),
+                        color: Some(col(theme::TEXT_MUTED)),
                         ..Default::default()
                     }) { "x".to_string() }
                 }

@@ -21,6 +21,7 @@
 //! would be moved on the first rebuild). `Signal` is `Copy`, so every `move`
 //! closure captures a copy and stays `Fn`.
 
+use crate::theme;
 use runtime_core::{
     component, switch, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
     Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
@@ -31,9 +32,6 @@ use crate::invite_link_display::InviteLinkDisplay;
 use crate::style_helpers::{col, pct, px};
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_MAIN: &str = "#313338";
-const BUTTON: &str = "#5865f2";
-const TEXT: &str = "#f2f3f5";
 
 const MIN_30_SECS: i64 = 30 * 60;
 const DAY_SECS: i64 = 24 * 60 * 60;
@@ -58,7 +56,7 @@ pub fn InviteModal(
 
     // --- Close button ("Done" pill in the header) --------------------------
     let close_label_style = StyleRules {
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         font_size: Some(px(12.0)),
         font_weight: Some(FontWeight::SemiBold),
         ..Default::default()
@@ -67,7 +65,7 @@ pub fn InviteModal(
         height: Some(px(26.0)),
         padding_left: Some(px(12.0)),
         padding_right: Some(px(12.0)),
-        background: Some(col(BG_SIDEBAR)),
+        background: Some(col(theme::BG_SECONDARY)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         border_top_left_radius: Some(px(6.0)),
@@ -123,8 +121,8 @@ pub fn InviteModal(
     let create_btn_style = StyleRules {
         height: Some(px(40.0)),
         margin_top: Some(px(16.0)),
-        background: Some(col(BUTTON)),
-        color: Some(col(TEXT)),
+        background: Some(col(theme::ACCENT)),
+        color: Some(col(theme::TEXT_STRONG)),
         font_size: Some(px(15.0)),
         font_weight: Some(FontWeight::SemiBold),
         align_items: Some(AlignItems::Center),
@@ -139,14 +137,14 @@ pub fn InviteModal(
     let create_btn_label = StyleRules {
         font_size: Some(px(15.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
 
     // --- Error line ---------------------------------------------------------
     let err_style = StyleRules {
         font_size: Some(px(13.0)),
-        color: Some(col("#f23f43")),
+        color: Some(col(theme::DANGER)),
         text_align: Some(runtime_core::TextAlign::Center),
         margin_top: Some(px(12.0)),
         ..Default::default()
@@ -166,7 +164,7 @@ pub fn InviteModal(
     let header_title = StyleRules {
         font_size: Some(px(18.0)),
         font_weight: Some(FontWeight::Bold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
     let header = ui! {
@@ -261,7 +259,7 @@ pub fn InviteModal(
         top: Some(px(0.0)),
         width: Some(if open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col(BG_MAIN)),
+        background: Some(col(theme::BG_PRIMARY)),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
@@ -281,6 +279,3 @@ pub fn InviteModal(
     }
 }
 
-/// Local alias so the close-button style can reference the sidebar color
-/// without importing it from `app.rs` (which would create a circular dep).
-const BG_SIDEBAR: &str = "#2b2d31";

@@ -24,6 +24,7 @@
 //! `move` closure captures a copy and stays `Fn`. The Rename button carries an
 //! `.on_touch` chain built as a `let` binding (the `close_btn` idiom) so the
 //! method chain lives outside the `ui!` child position.
+use crate::theme;
 use runtime_core::{
     component, switch, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
     Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
@@ -32,12 +33,6 @@ use runtime_core::{
 use crate::style_helpers::{borderless_input, col, pct, px};
 
 // Discord dark palette (kept local so the component is self-contained).
-const CARD: &str = "#2b2d31";
-const INPUT_BG: &str = "#1e1f22";
-const BTN_BG: &str = "#5865f2";
-const TEXT: &str = "#f2f3f5";
-const TEXT_CHANNEL: &str = "#c8cacf";
-const TEXT_MUTED: &str = "#949ba4";
 
 /// The "Rename Channel" modal. `server_id` / `channel_id` are the target
 /// (read at submit time); `name` is the typed new name (seeded with the
@@ -71,7 +66,7 @@ pub fn RenameChannelModal(
         padding_bottom: Some(px(20.0)),
         padding_left: Some(px(20.0)),
         padding_right: Some(px(20.0)),
-        background: Some(col(CARD)),
+        background: Some(col(theme::BG_SECONDARY)),
         border_top_left_radius: Some(px(12.0)),
         border_top_right_radius: Some(px(12.0)),
         border_bottom_left_radius: Some(px(12.0)),
@@ -82,12 +77,12 @@ pub fn RenameChannelModal(
     let title_style = StyleRules {
         font_size: Some(px(18.0)),
         font_weight: Some(FontWeight::Bold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
     let sub_style = StyleRules {
         font_size: Some(px(13.0)),
-        color: Some(col(TEXT_MUTED)),
+        color: Some(col(theme::TEXT_MUTED)),
         margin_top: Some(px(4.0)),
         ..Default::default()
     };
@@ -96,8 +91,8 @@ pub fn RenameChannelModal(
         margin_top: Some(px(16.0)),
         padding_left: Some(px(12.0)),
         padding_right: Some(px(12.0)),
-        background: Some(col(INPUT_BG)),
-        color: Some(col(TEXT_CHANNEL)),
+        background: Some(col(theme::BG_TERTIARY)),
+        color: Some(col(theme::TEXT_NORMAL)),
         font_size: Some(px(15.0)),
         border_top_left_radius: Some(px(8.0)),
         border_top_right_radius: Some(px(8.0)),
@@ -108,7 +103,7 @@ pub fn RenameChannelModal(
     let rename_btn_style = StyleRules {
         height: Some(px(40.0)),
         margin_top: Some(px(16.0)),
-        background: Some(col(BTN_BG)),
+        background: Some(col(theme::ACCENT)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         border_top_left_radius: Some(px(8.0)),
@@ -121,12 +116,12 @@ pub fn RenameChannelModal(
     let btn_label_style = StyleRules {
         font_size: Some(px(15.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
     let err_style = StyleRules {
         font_size: Some(px(13.0)),
-        color: Some(col("#f23f43")),
+        color: Some(col(theme::DANGER)),
         margin_top: Some(px(12.0)),
         ..Default::default()
     };
@@ -242,7 +237,7 @@ pub fn RenameChannelModal(
         top: Some(px(0.0)),
         width: Some(if open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col("rgba(0, 0, 0, 0.6)")),
+        background: Some(col(theme::OVERLAY)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         overflow: Some(Overflow::Hidden),

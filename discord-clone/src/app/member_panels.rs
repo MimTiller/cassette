@@ -2,6 +2,7 @@
 //! Split out of `app.rs`; `use super::*` keeps app.rs's imports and shared
 //! colors/helpers in scope.
 
+use crate::theme;
 use super::*;
 
 /// The live member row's avatar chip size (px): the same 32px circle the
@@ -458,7 +459,7 @@ pub(super) fn action_menu(
                         flex_direction: Some(FlexDirection::Column),
                         width: Some(px(150.0)),
                         gap: Some(px(2.0)),
-                        background: Some(col("#111214")),
+                        background: Some(col(theme::BG_FLOATING)),
                         border_top_left_radius: Some(px(8.0)),
                         border_top_right_radius: Some(px(8.0)),
                         border_bottom_left_radius: Some(px(8.0)),
@@ -628,7 +629,7 @@ pub(super) fn live_member_panel(
     let small_label_style = StyleRules {
         font_size: Some(px(12.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col("#ffffff")),
+        color: Some(col(theme::TEXT_ON_ACCENT)),
         ..Default::default()
     };
     let error_style = StyleRules {
@@ -707,10 +708,10 @@ pub(super) fn live_member_panel(
             _ => true,
         };
         let presence_color = match presence.get(&member_id).map(|s| s.as_str()) {
-            Some("online") => "#23a559",
-            Some("away") => "#f0b232",
-            Some("offline") => "#80848e",
-            _ => "#80848e",
+            Some("online") => theme::SUCCESS,
+            Some("away") => theme::WARNING,
+            Some("offline") => theme::TEXT_FAINT,
+            _ => theme::TEXT_FAINT,
         };
         // The row's avatar: the shared `avatar_chip` helper — uploaded image
         // when the client registry has one, else the letter chip — in a

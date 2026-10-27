@@ -23,17 +23,13 @@
 //!   lowers to the `when` primitive (mounts the chosen branch, unmounts the
 //!   other when a button sets the signal).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, StyleRules,
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_CARD: &str = "#2b2d31"; // card surface (Discord sidebar gray)
-const TEXT: &str = "#f2f3f5"; // primary text
-const MESSAGE: &str = "#dbdee1"; // confirmation message (Discord secondary text)
-const CANCEL: &str = "#4e5058"; // cancel button (Discord muted gray)
-const CONFIRM: &str = "#da373c"; // confirm button (Discord danger red — kick)
 
 /// The hardcoded confirmation message shown above the buttons. Local literal
 /// only — the member name is hardcoded, no lookup, no backend call.
@@ -63,7 +59,7 @@ pub fn KickConfirmDialog() -> Element {
             padding_bottom: Some(px(20.0)),
             padding_left: Some(px(20.0)),
             padding_right: Some(px(20.0)),
-            background: Some(col(BG_CARD)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(8.0)),
             border_top_right_radius: Some(px(8.0)),
             border_bottom_left_radius: Some(px(8.0)),
@@ -74,7 +70,7 @@ pub fn KickConfirmDialog() -> Element {
             // hardcoded member name, no lookup, no backend call.
             text(style = StyleRules {
                 font_size: Some(px(18.0)),
-                color: Some(col(MESSAGE)),
+                color: Some(col(theme::TEXT_NORMAL)),
                 ..Default::default()
             }) { MESSAGE_TEXT.to_string() }
 
@@ -86,7 +82,7 @@ pub fn KickConfirmDialog() -> Element {
             if let Some(r) = result.get() {
                 text(style = StyleRules {
                     font_size: Some(px(16.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { r.clone() }
             } else {
@@ -102,7 +98,7 @@ pub fn KickConfirmDialog() -> Element {
                             height: Some(px(30.0)),
                             padding_left: Some(px(16.0)),
                             padding_right: Some(px(16.0)),
-                            background: Some(col(CANCEL)),
+                            background: Some(col(theme::BUTTON_SECONDARY)),
                             border_top_left_radius: Some(px(6.0)),
                             border_top_right_radius: Some(px(6.0)),
                             border_bottom_left_radius: Some(px(6.0)),
@@ -120,7 +116,7 @@ pub fn KickConfirmDialog() -> Element {
                             height: Some(px(30.0)),
                             padding_left: Some(px(16.0)),
                             padding_right: Some(px(16.0)),
-                            background: Some(col(CONFIRM)),
+                            background: Some(col(theme::DANGER_STRONG)),
                             border_top_left_radius: Some(px(6.0)),
                             border_top_right_radius: Some(px(6.0)),
                             border_bottom_left_radius: Some(px(6.0)),

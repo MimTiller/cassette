@@ -31,6 +31,7 @@
 //! `Element` moved into an `Fn` render closure is gone after the first
 //! rebuild, E0507). The owner gate is a build-time lookup of the signed-in
 //! user's own row in `live_members` (`role == "owner"`).
+use crate::theme;
 use runtime_core::{
     component, switch, ui, AlignItems, Element, FlexDirection, FontWeight,
     JustifyContent, ObjectFit, Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
@@ -41,13 +42,6 @@ use crate::style_helpers::{borderless_input, col, pct, px, section_label};
 use crate::audit_log_row::AuditLogRow;
 
 // Discord dark palette (kept local so the component is self-contained).
-const CARD: &str = "#2b2d31";
-const INPUT: &str = "#1e1f22";
-const BTN_SAVE: &str = "#4e5058";
-const BTN_TRANSFER: &str = "#248046";
-const TEXT: &str = "#f2f3f5";
-const TEXT_MUTED: &str = "#949ba4";
-const ERROR: &str = "#f23f43";
 
 /// The role the add-member picker advances to when its chip is tapped, in the
 /// order member → moderator → admin → owner → member — the exact cycle the
@@ -114,7 +108,7 @@ pub fn ServerSettingsPanel(
         padding_bottom: Some(px(20.0)),
         padding_left: Some(px(20.0)),
         padding_right: Some(px(20.0)),
-        background: Some(col(CARD)),
+        background: Some(col(theme::BG_SECONDARY)),
         border_top_left_radius: Some(px(12.0)),
         border_top_right_radius: Some(px(12.0)),
         border_bottom_left_radius: Some(px(12.0)),
@@ -133,14 +127,14 @@ pub fn ServerSettingsPanel(
     let title_style = StyleRules {
         font_size: Some(px(18.0)),
         font_weight: Some(FontWeight::Bold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
     let close_style = StyleRules {
         height: Some(px(26.0)),
         padding_left: Some(px(12.0)),
         padding_right: Some(px(12.0)),
-        background: Some(col(BTN_SAVE)),
+        background: Some(col(theme::BUTTON_SECONDARY)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         border_top_left_radius: Some(px(6.0)),
@@ -154,7 +148,7 @@ pub fn ServerSettingsPanel(
     let close_label_style = StyleRules {
         font_size: Some(px(12.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
     let section_style = StyleRules {
@@ -166,7 +160,7 @@ pub fn ServerSettingsPanel(
     let label_style = section_label();
     let input_style = StyleRules {
         height: Some(px(36.0)),
-        background: Some(col(INPUT)),
+        background: Some(col(theme::BG_TERTIARY)),
         border_top_left_radius: Some(px(8.0)),
         border_top_right_radius: Some(px(8.0)),
         border_bottom_left_radius: Some(px(8.0)),
@@ -178,7 +172,7 @@ pub fn ServerSettingsPanel(
     };
     let save_btn_style = StyleRules {
         height: Some(px(34.0)),
-        background: Some(col(BTN_SAVE)),
+        background: Some(col(theme::BUTTON_SECONDARY)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         border_top_left_radius: Some(px(8.0)),
@@ -190,7 +184,7 @@ pub fn ServerSettingsPanel(
     };
     let transfer_btn_style = StyleRules {
         height: Some(px(34.0)),
-        background: Some(col(BTN_TRANSFER)),
+        background: Some(col(theme::SUCCESS_STRONG)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         border_top_left_radius: Some(px(8.0)),
@@ -206,7 +200,7 @@ pub fn ServerSettingsPanel(
     // admin→member). Both reuse the palette above; no new color tokens.
     let add_btn_style = StyleRules {
         height: Some(px(34.0)),
-        background: Some(col(BTN_TRANSFER)),
+        background: Some(col(theme::SUCCESS_STRONG)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         border_top_left_radius: Some(px(8.0)),
@@ -218,7 +212,7 @@ pub fn ServerSettingsPanel(
     };
     let role_chip_style = StyleRules {
         height: Some(px(34.0)),
-        background: Some(col(INPUT)),
+        background: Some(col(theme::BG_TERTIARY)),
         padding_left: Some(px(10.0)),
         padding_right: Some(px(10.0)),
         align_items: Some(AlignItems::Center),
@@ -234,18 +228,18 @@ pub fn ServerSettingsPanel(
     let role_chip_label_style = StyleRules {
         font_size: Some(px(13.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
     let btn_label_style = StyleRules {
         font_size: Some(px(14.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
     let err_style = StyleRules {
         font_size: Some(px(12.0)),
-        color: Some(col(ERROR)),
+        color: Some(col(theme::DANGER)),
         margin_top: Some(px(10.0)),
         ..Default::default()
     };
@@ -503,7 +497,7 @@ pub fn ServerSettingsPanel(
                         height: Some(px(64.0)),
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),
-                        background: Some(col(INPUT)),
+                        background: Some(col(theme::BG_TERTIARY)),
                         object_fit: Some(ObjectFit::Cover),
                         border_top_left_radius: Some(px(20.0)),
                         border_top_right_radius: Some(px(20.0)),
@@ -518,7 +512,7 @@ pub fn ServerSettingsPanel(
                                 text(style = StyleRules {
                                     font_size: Some(px(24.0)),
                                     font_weight: Some(FontWeight::Bold),
-                                    color: Some(col(TEXT)),
+                                    color: Some(col(theme::TEXT_STRONG)),
                                     ..Default::default()
                                 }) { initial }
                             }
@@ -574,7 +568,7 @@ pub fn ServerSettingsPanel(
                     text(style = label_style.clone()) { "Transfer ownership".to_string() }
                     text(style = StyleRules {
                         font_size: Some(px(11.0)),
-                        color: Some(col(TEXT_MUTED)),
+                        color: Some(col(theme::TEXT_MUTED)),
                         ..Default::default()
                     }) { "Pass ownership to another member's numeric user id.".to_string() }
                     text_input(value = owner, placeholder = "New owner user id", style = input_style.clone())
@@ -592,7 +586,7 @@ pub fn ServerSettingsPanel(
             let add_uid_input = ui! {
                 text_input(value = add_uid, placeholder = "New member user id", style = StyleRules {
                     height: Some(px(34.0)),
-                    background: Some(col(INPUT)),
+                    background: Some(col(theme::BG_TERTIARY)),
                     border_top_left_radius: Some(px(8.0)),
                     border_top_right_radius: Some(px(8.0)),
                     border_bottom_left_radius: Some(px(8.0)),
@@ -635,7 +629,7 @@ pub fn ServerSettingsPanel(
                     text(style = label_style.clone()) { "Add a member".to_string() }
                     text(style = StyleRules {
                         font_size: Some(px(11.0)),
-                        color: Some(col(TEXT_MUTED)),
+                        color: Some(col(theme::TEXT_MUTED)),
                         ..Default::default()
                     }) { "Add (or re-role) a member by numeric user id; tap the chip to change their role.".to_string() }
                     view(style = row_row()) {
@@ -724,7 +718,7 @@ pub fn ServerSettingsPanel(
         top: Some(px(0.0)),
         width: Some(if open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col("rgba(0, 0, 0, 0.6)")),
+        background: Some(col(theme::OVERLAY)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         overflow: Some(Overflow::Hidden),

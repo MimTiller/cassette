@@ -29,6 +29,7 @@
 //!   with `av_busy` + `av_error` signals keying the labels reactively (the
 //!   `ServerSettingsPanel` triple, minus the paste input).
 
+use crate::theme;
 use crate::style_helpers::{borderless_input, col, px};
 use runtime_core::{
     component,
@@ -54,15 +55,6 @@ use file_picker::{FilePicker, PickRequest, PickOutcome, MediaKind};
 
 // The same Discord dark palette as `app.rs`, kept local so the screen is
 // self-contained.
-const BG_MAIN: &str = "#313338";
-const TEXT: &str = "#f2f3f5";
-const COMPOSER: &str = "#383a40";
-/// Blurple avatar tint (the signed-in user's chip color).
-const AVATAR: &str = "#5865f2";
-/// Button green (the Change-avatar / Remove pills, same token as `BTN_SAVE` elsewhere).
-const BTN: &str = "#23a55a";
-/// Discord red (the inline rejection line).
-const ERROR: &str = "#f23f43";
 
 fn grow(v: f32) -> Tokenized<f32> {
     Tokenized::Literal(v)
@@ -227,7 +219,7 @@ pub fn attachment_thumbnail(src: runtime_core::Reactive<String>, filename: Strin
             height: Some(px(cell)),
             align_items: Some(AlignItems::Center),
             justify_content: Some(JustifyContent::Center),
-            background: Some(col("#1e2024")),
+            background: Some(col(theme::BG_TERTIARY)),
             border_top_left_radius: Some(px(6.0)),
             border_top_right_radius: Some(px(6.0)),
             border_bottom_left_radius: Some(px(6.0)),
@@ -302,8 +294,8 @@ pub fn ProfileSettings() -> Element {
         height: Some(px(40.0)),
         padding_left: Some(px(12.0)),
         padding_right: Some(px(12.0)),
-        background: Some(col(COMPOSER)),
-        color: Some(col(TEXT)),
+        background: Some(col(theme::BG_INPUT)),
+        color: Some(col(theme::TEXT_STRONG)),
         border_top_left_radius: Some(px(8.0)),
         border_top_right_radius: Some(px(8.0)),
         border_bottom_left_radius: Some(px(8.0)),
@@ -425,7 +417,7 @@ pub fn ProfileSettings() -> Element {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Column),
             align_items: Some(AlignItems::Center),
-            background: Some(col(BG_MAIN)),
+            background: Some(col(theme::BG_PRIMARY)),
             padding_top: Some(px(24.0)),
             padding_left: Some(px(20.0)),
             padding_right: Some(px(20.0)),
@@ -459,8 +451,8 @@ pub fn ProfileSettings() -> Element {
                     height: Some(px(72.0)),
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
-                    background: Some(col(AVATAR)),
-                    color: Some(col(TEXT)),
+                    background: Some(col(theme::ACCENT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     font_size: Some(px(30.0)),
                     font_weight: Some(FontWeight::Bold),
                     border_top_left_radius: Some(px(36.0)),
@@ -486,7 +478,7 @@ pub fn ProfileSettings() -> Element {
             // (reactive closures re-run when `av_busy` / `av_picking` flip).
             view(style = StyleRules {
                 height: Some(px(34.0)),
-                background: Some(col(BTN)),
+                background: Some(col(theme::SUCCESS)),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
                 border_top_left_radius: Some(px(8.0)),
@@ -499,7 +491,7 @@ pub fn ProfileSettings() -> Element {
                 text(style = StyleRules {
                     font_size: Some(px(13.0)),
                     font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) {
                     move ||
@@ -520,7 +512,7 @@ pub fn ProfileSettings() -> Element {
             })
             view(style = StyleRules {
                 height: Some(px(34.0)),
-                background: Some(col(BTN)),
+                background: Some(col(theme::SUCCESS)),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
                 border_top_left_radius: Some(px(8.0)),
@@ -533,7 +525,7 @@ pub fn ProfileSettings() -> Element {
                 text(style = StyleRules {
                     font_size: Some(px(13.0)),
                     font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { move || if av_busy.get() { "Removing…".to_string() } else { "Remove".to_string() } }
             }
@@ -546,7 +538,7 @@ pub fn ProfileSettings() -> Element {
             if !av_error.get().is_empty() {
                 text(style = StyleRules {
                     font_size: Some(px(12.0)),
-                    color: Some(col(ERROR)),
+                    color: Some(col(theme::DANGER)),
                     ..Default::default()
                 }) { move || av_error.get().clone() }
             }

@@ -22,6 +22,7 @@
 //!   `Reactive<i64>`; they read `.get()` and `.to_string()` into `text`
 //!   children.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent, StyleRules,
@@ -29,10 +30,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_CARD: &str = "#2b2d31";
-const BG_BLOCK: &str = "#313338";
-const TEXT: &str = "#f2f3f5";
-const TEXT_MUTED: &str = "#949ba4";
 
 /// The server-stats card. Renders a row of three small stat blocks (total
 /// members, online now, messages today), each with its own label. The three
@@ -66,7 +63,7 @@ pub fn ServerStatsCard(
             padding_right: Some(px(12.0)),
             padding_bottom: Some(px(12.0)),
             padding_left: Some(px(12.0)),
-            background: Some(col(BG_CARD)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(10.0)),
             border_top_right_radius: Some(px(10.0)),
             border_bottom_left_radius: Some(px(10.0)),
@@ -82,7 +79,7 @@ pub fn ServerStatsCard(
                     gap: Some(px(4.0)),
                     padding_top: Some(px(10.0)),
                     padding_bottom: Some(px(10.0)),
-                    background: Some(col(BG_BLOCK)),
+                    background: Some(col(theme::BG_PRIMARY)),
                     border_top_left_radius: Some(px(8.0)),
                     border_top_right_radius: Some(px(8.0)),
                     border_bottom_left_radius: Some(px(8.0)),
@@ -92,12 +89,12 @@ pub fn ServerStatsCard(
                     text(style = StyleRules {
                         font_size: Some(px(20.0)),
                         font_weight: Some(FontWeight::SemiBold),
-                        color: Some(col(TEXT)),
+                        color: Some(col(theme::TEXT_STRONG)),
                         ..Default::default()
                     }) { value.to_string() }
                     text(style = StyleRules {
                         font_size: Some(px(11.0)),
-                        color: Some(col(TEXT_MUTED)),
+                        color: Some(col(theme::TEXT_MUTED)),
                         ..Default::default()
                     }) { (*label).to_string() }
                 }

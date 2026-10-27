@@ -10,10 +10,10 @@
 //! `px` / `col` constructors, an inline `#[prop(default = ...)]` String prop
 //! read once into an owned local (`name.get().to_string()`), and a `ui!` body.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{component, ui, AlignItems, Element, FlexDirection, StyleRules};
 
-const TEXT_MUTED: &str = "#949ba4"; // Discord secondary text
 
 /// The typing indicator. Shows "<name> is typing..." in small muted text.
 #[component]
@@ -35,7 +35,7 @@ pub fn TypingIndicator(#[prop(default = "miri")] name: String) -> Element {
         }) {
             text(style = StyleRules {
                 font_size: Some(px(12.0)),
-                color: Some(col(TEXT_MUTED)),
+                color: Some(col(theme::TEXT_MUTED)),
                 ..Default::default()
             }) { line.clone() }
         }

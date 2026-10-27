@@ -12,6 +12,7 @@
 //! runtime (a 404 http image) is the only residual gap — the seeded data
 //! paths carry valid data URLs, which paint or never mount.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     ui, AlignItems, Element, FontWeight, JustifyContent, ObjectFit, Position,
@@ -160,7 +161,7 @@ pub fn avatar_chip(name: &str, tint: &str, size: f32, radius: f32) -> Element {
                 text(style = StyleRules {
                     font_size: Some(px(size * 0.44)),
                     font_weight: Some(FontWeight::Bold),
-                    color: Some(col("#f2f3f5")),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { initial }
             }

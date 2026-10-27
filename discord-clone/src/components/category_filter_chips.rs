@@ -29,6 +29,7 @@
 //!   `rules_accept_checkbox`); each chip reads/writes `active[idx]`, so each is
 //!   bound to its own independent local boolean signal.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, StyleRules,
@@ -36,11 +37,6 @@ use runtime_core::{
 };
 
 // Discord dark palette — kept local so the component is self-contained.
-const CHIP_ACTIVE_BG: &str = "#5865f2"; // active fill (Discord blurple accent)
-const CHIP_ACTIVE_BORDER: &str = "#5865f2"; // active ring (matches the fill)
-const CHIP_ACTIVE_TEXT: &str = "#ffffff"; // white label on the blurple fill
-const CHIP_INACTIVE_BORDER: &str = "#4e5058"; // inactive outline (muted)
-const CHIP_INACTIVE_TEXT: &str = "#949ba4"; // inactive label (muted)
 
 // The 3 hardcoded local category names — exactly these, in this order, no
 // backend fetch. Kept as a static slice so the keyed `for` renders one chip per
@@ -97,7 +93,7 @@ pub fn CategoryFilterChips() -> Element {
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),
-                        background: Some(col(if on { CHIP_ACTIVE_BG } else { "transparent" })),
+                        background: Some(col(if on { theme::ACCENT } else { "transparent" })),
                         border_top_left_radius: Some(px(8.0)),
                         border_top_right_radius: Some(px(8.0)),
                         border_bottom_left_radius: Some(px(8.0)),
@@ -106,10 +102,10 @@ pub fn CategoryFilterChips() -> Element {
                         border_right_width: Some(Tokenized::Literal(1.0)),
                         border_bottom_width: Some(Tokenized::Literal(1.0)),
                         border_left_width: Some(Tokenized::Literal(1.0)),
-                        border_top_color: Some(col(if on { CHIP_ACTIVE_BORDER } else { CHIP_INACTIVE_BORDER })),
-                        border_right_color: Some(col(if on { CHIP_ACTIVE_BORDER } else { CHIP_INACTIVE_BORDER })),
-                        border_bottom_color: Some(col(if on { CHIP_ACTIVE_BORDER } else { CHIP_INACTIVE_BORDER })),
-                        border_left_color: Some(col(if on { CHIP_ACTIVE_BORDER } else { CHIP_INACTIVE_BORDER })),
+                        border_top_color: Some(col(if on { theme::ACCENT } else { theme::BUTTON_SECONDARY })),
+                        border_right_color: Some(col(if on { theme::ACCENT } else { theme::BUTTON_SECONDARY })),
+                        border_bottom_color: Some(col(if on { theme::ACCENT } else { theme::BUTTON_SECONDARY })),
+                        border_left_color: Some(col(if on { theme::ACCENT } else { theme::BUTTON_SECONDARY })),
                         ..Default::default()
                     }
                 }) {
@@ -118,9 +114,9 @@ pub fn CategoryFilterChips() -> Element {
                         StyleRules {
                             font_size: Some(px(13.0)),
                             color: Some(col(if active[idx].get() {
-                                CHIP_ACTIVE_TEXT
+                                theme::TEXT_ON_ACCENT
                             } else {
-                                CHIP_INACTIVE_TEXT
+                                theme::TEXT_MUTED
                             })),
                             ..Default::default()
                         }

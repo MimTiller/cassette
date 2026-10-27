@@ -36,6 +36,7 @@
 //! - the glyphs are static string bodies (`.to_string()`), so they bake to
 //!   static `TextSource` with no reactive machinery; every style is written
 //!   INLINE in `style = …` (created fresh per evaluation).
+use crate::theme;
 use std::rc::Rc;
 
 use crate::style_helpers::{col, px};
@@ -45,8 +46,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BAR_BG: &str = "#2b2d31"; // the action-bar surface (Discord sidebar gray)
-const ICON: &str = "#b5bac1"; // the react/reply/more glyphs (Discord secondary text)
 
 /// The message action bar. Renders the react / reply / more pill while `visible`
 /// is set; each button fires its callback. Positioned absolutely at the row's
@@ -95,7 +94,7 @@ pub fn message_action_bar(
                     padding_right: Some(px(4.0)),
                     padding_top: Some(px(2.0)),
                     padding_bottom: Some(px(2.0)),
-                    background: Some(col(BAR_BG)),
+                    background: Some(col(theme::BG_SECONDARY)),
                     border_top_left_radius: Some(px(8.0)),
                     border_top_right_radius: Some(px(8.0)),
                     border_bottom_left_radius: Some(px(8.0)),
@@ -119,7 +118,7 @@ pub fn message_action_bar(
                     }) {
                         text(style = StyleRules {
                             font_size: Some(px(16.0)),
-                            color: Some(col(ICON)),
+                            color: Some(col(theme::INTERACTIVE)),
                             ..Default::default()
                         }) { "😊".to_string() }
                     }
@@ -147,7 +146,7 @@ pub fn message_action_bar(
                     }) {
                         text(style = StyleRules {
                             font_size: Some(px(16.0)),
-                            color: Some(col(ICON)),
+                            color: Some(col(theme::INTERACTIVE)),
                             ..Default::default()
                         }) { "↩".to_string() }
                     }
@@ -174,7 +173,7 @@ pub fn message_action_bar(
                     }) {
                         text(style = StyleRules {
                             font_size: Some(px(16.0)),
-                            color: Some(col(ICON)),
+                            color: Some(col(theme::INTERACTIVE)),
                             ..Default::default()
                         }) { "⋯".to_string() }
                     }

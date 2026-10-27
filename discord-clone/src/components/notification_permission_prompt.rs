@@ -23,17 +23,13 @@
 //!   all styles are written INLINE (created fresh per evaluation, never
 //!   captured across the `when` boundary).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, StyleRules,
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_CARD: &str = "#2b2d31"; // card surface (Discord sidebar gray)
-const TEXT: &str = "#f2f3f5"; // primary text
-const PROMPT: &str = "#f0b232"; // prompt line (Discord warning yellow)
-const DISMISS: &str = "#4e5058"; // "Not Now" button (Discord muted gray)
-const ENABLE: &str = "#5865f2"; // "Enable" button (Discord brand blurple)
 
 /// The notification permission prompt. Renders the hardcoded line
 /// `"Enable notifications?"` with a `Not Now` and an `Enable` button.
@@ -61,7 +57,7 @@ pub fn NotificationPermissionPrompt() -> Element {
             padding_bottom: Some(px(20.0)),
             padding_left: Some(px(20.0)),
             padding_right: Some(px(20.0)),
-            background: Some(col(BG_CARD)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(8.0)),
             border_top_right_radius: Some(px(8.0)),
             border_bottom_left_radius: Some(px(8.0)),
@@ -71,7 +67,7 @@ pub fn NotificationPermissionPrompt() -> Element {
             // The hardcoded prompt line — a local literal, no backend call.
             text(style = StyleRules {
                 font_size: Some(px(18.0)),
-                color: Some(col(PROMPT)),
+                color: Some(col(theme::WARNING)),
                 ..Default::default()
             }) { "Enable notifications?" }
 
@@ -83,7 +79,7 @@ pub fn NotificationPermissionPrompt() -> Element {
             if let Some(r) = result.get() {
                 text(style = StyleRules {
                     font_size: Some(px(16.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { r.clone() }
             } else {
@@ -99,7 +95,7 @@ pub fn NotificationPermissionPrompt() -> Element {
                             height: Some(px(30.0)),
                             padding_left: Some(px(16.0)),
                             padding_right: Some(px(16.0)),
-                            background: Some(col(DISMISS)),
+                            background: Some(col(theme::BUTTON_SECONDARY)),
                             border_top_left_radius: Some(px(6.0)),
                             border_top_right_radius: Some(px(6.0)),
                             border_bottom_left_radius: Some(px(6.0)),
@@ -117,7 +113,7 @@ pub fn NotificationPermissionPrompt() -> Element {
                             height: Some(px(30.0)),
                             padding_left: Some(px(16.0)),
                             padding_right: Some(px(16.0)),
-                            background: Some(col(ENABLE)),
+                            background: Some(col(theme::ACCENT)),
                             border_top_left_radius: Some(px(6.0)),
                             border_top_right_radius: Some(px(6.0)),
                             border_bottom_left_radius: Some(px(6.0)),

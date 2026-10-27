@@ -24,14 +24,13 @@
 //!   impl turns into a dynamic text value, so the label re-reads `revealed` on
 //!   re-evaluation and swaps the moment the signal flips.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, StyleRules,
 };
 
 // Discord dark palette + labels — kept local so the component is self-contained.
-const BG_HIDDEN: &str = "#404249"; // spoiler cover (subtle gray)
-const BG_REVEALED: &str = "#5865f2"; // revealed fill (Discord accent)
 const LABEL_HIDDEN: &str = "Click to view spoiler";
 const LABEL_REVEALED: &str = "Image revealed";
 
@@ -57,7 +56,7 @@ pub fn SpoilerImagePlaceholder() -> Element {
                     flex_direction: Some(FlexDirection::Row),
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
-                    background: Some(col(if shown { BG_REVEALED } else { BG_HIDDEN })),
+                    background: Some(col(if shown { theme::ACCENT } else { theme::BG_SELECTED })),
                     border_top_left_radius: Some(px(10.0)),
                     border_top_right_radius: Some(px(10.0)),
                     border_bottom_left_radius: Some(px(10.0)),

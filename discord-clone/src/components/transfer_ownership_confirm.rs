@@ -24,17 +24,13 @@
 //!   all styles are written INLINE (created fresh per evaluation, never
 //!   captured across the `when` boundary).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, StyleRules,
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_CARD: &str = "#2b2d31"; // card surface (Discord sidebar gray)
-const TEXT: &str = "#f2f3f5"; // primary text
-const WARNING: &str = "#f0b232"; // warning message (Discord warning yellow)
-const CANCEL: &str = "#4e5058"; // cancel button (Discord muted gray)
-const CONFIRM: &str = "#248046"; // confirm button (Discord green)
 
 /// The hardcoded target member name shown in the warning line. Local literal
 /// only — no member lookup, no backend call.
@@ -65,7 +61,7 @@ pub fn TransferOwnershipConfirm() -> Element {
             padding_bottom: Some(px(20.0)),
             padding_left: Some(px(20.0)),
             padding_right: Some(px(20.0)),
-            background: Some(col(BG_CARD)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(8.0)),
             border_top_right_radius: Some(px(8.0)),
             border_bottom_left_radius: Some(px(8.0)),
@@ -76,7 +72,7 @@ pub fn TransferOwnershipConfirm() -> Element {
             // no member lookup, no backend call.
             text(style = StyleRules {
                 font_size: Some(px(18.0)),
-                color: Some(col(WARNING)),
+                color: Some(col(theme::WARNING)),
                 ..Default::default()
             }) { format!("Transfer ownership to {}?", TARGET_NAME) }
 
@@ -88,7 +84,7 @@ pub fn TransferOwnershipConfirm() -> Element {
             if let Some(r) = result.get() {
                 text(style = StyleRules {
                     font_size: Some(px(16.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { r.clone() }
             } else {
@@ -104,7 +100,7 @@ pub fn TransferOwnershipConfirm() -> Element {
                             height: Some(px(30.0)),
                             padding_left: Some(px(16.0)),
                             padding_right: Some(px(16.0)),
-                            background: Some(col(CANCEL)),
+                            background: Some(col(theme::BUTTON_SECONDARY)),
                             border_top_left_radius: Some(px(6.0)),
                             border_top_right_radius: Some(px(6.0)),
                             border_bottom_left_radius: Some(px(6.0)),
@@ -122,7 +118,7 @@ pub fn TransferOwnershipConfirm() -> Element {
                             height: Some(px(30.0)),
                             padding_left: Some(px(16.0)),
                             padding_right: Some(px(16.0)),
-                            background: Some(col(CONFIRM)),
+                            background: Some(col(theme::SUCCESS_STRONG)),
                             border_top_left_radius: Some(px(6.0)),
                             border_top_right_radius: Some(px(6.0)),
                             border_bottom_left_radius: Some(px(6.0)),

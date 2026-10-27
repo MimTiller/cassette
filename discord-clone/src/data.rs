@@ -2,6 +2,7 @@
 //! message view. Everything is `&'static` so the reactive closures can hold
 //! cheap references. Swap this for a network fetch later; the `app()` tree
 //! only reads these, so the UI stays untouched.
+use crate::theme;
 
 
 
@@ -165,10 +166,10 @@ impl Status {
     /// The status dot color (Discord's palette).
     pub fn color(self) -> &'static str {
         match self {
-            Status::Online => "#23a559",
-            Status::Idle => "#f0b232",
-            Status::DoNotDisturb => "#f23f43",
-            Status::Offline => "#80848e",
+            Status::Online => theme::SUCCESS,
+            Status::Idle => theme::WARNING,
+            Status::DoNotDisturb => theme::DANGER,
+            Status::Offline => theme::TEXT_FAINT,
         }
     }
 
@@ -216,7 +217,7 @@ pub struct User {
 
 pub const USER: User = User {
     name: "Nova",
-    color: "#5865f2",
+    color: theme::ACCENT,
 };
 
 /// The current user rendered as a regular member entry (the member panel and
@@ -271,7 +272,7 @@ pub const DEFAULT_MEMBER_PROFILE: MemberProfile = MemberProfile {
     activity_verb: "Playing",
     activity_detail: "Some Game Title",
     role_name: "Member",
-    role_color: "#949ba4",
+    role_color: theme::TEXT_MUTED,
     bio: "Tell us about yourself...",
     boost_level: 2,
     nickname: "Nova",
@@ -286,7 +287,7 @@ static MEMBER_PROFILES: &[(&str, MemberProfile)] = &[
             activity_verb: "Playing",
             activity_detail: "Hollow Knight",
             role_name: "Moderator",
-            role_color: "#5865f2",
+            role_color: theme::ACCENT,
             bio: "Borrow-checker whisperer. Ask me about lifetimes, I won't blink.",
             boost_level: 2,
             nickname: "miri",
@@ -299,7 +300,7 @@ static MEMBER_PROFILES: &[(&str, MemberProfile)] = &[
             activity_verb: "Listening to",
             activity_detail: "Lo-fi beats",
             role_name: "Member",
-            role_color: "#949ba4",
+            role_color: theme::TEXT_MUTED,
             bio: "Building tiny WASM tools for fun. Zero-deps or it didn't happen.",
             boost_level: 1,
             nickname: "dyno",
@@ -312,7 +313,7 @@ static MEMBER_PROFILES: &[(&str, MemberProfile)] = &[
             activity_verb: "Playing",
             activity_detail: "Stardew Valley",
             role_name: "Member",
-            role_color: "#949ba4",
+            role_color: theme::TEXT_MUTED,
             bio: "Semicolons are load-bearing (fight me). Weekend farmhand.",
             boost_level: 0,
             nickname: "nara",
@@ -325,7 +326,7 @@ static MEMBER_PROFILES: &[(&str, MemberProfile)] = &[
             activity_verb: "Watching",
             activity_detail: "RustConf talks",
             role_name: "Admin",
-            role_color: "#23a559",
+            role_color: theme::SUCCESS,
             bio: "Do not disturb — I'm mid-session. Ping me after the conference ends.",
             boost_level: 3,
             nickname: "wren",
@@ -338,7 +339,7 @@ static MEMBER_PROFILES: &[(&str, MemberProfile)] = &[
             activity_verb: "Playing",
             activity_detail: "Celeste",
             role_name: "Member",
-            role_color: "#949ba4",
+            role_color: theme::TEXT_MUTED,
             bio: "Out most of the day, sorry for the late replies. Speedrunner-ish.",
             boost_level: 1,
             nickname: "juno",
@@ -351,7 +352,7 @@ static MEMBER_PROFILES: &[(&str, MemberProfile)] = &[
             activity_verb: "Playing",
             activity_detail: "Blender",
             role_name: "Member",
-            role_color: "#949ba4",
+            role_color: theme::TEXT_MUTED,
             bio: "Rendering things, mostly badly. Title screen lighting feels right though.",
             boost_level: 1,
             nickname: "kai",
@@ -364,7 +365,7 @@ static MEMBER_PROFILES: &[(&str, MemberProfile)] = &[
             activity_verb: "Working on",
             activity_detail: "A pixel font",
             role_name: "Moderator",
-            role_color: "#5865f2",
+            role_color: theme::ACCENT,
             bio: "Emblem colorist. Warmer golds, colder blues. Drop free packs in #assets.",
             boost_level: 2,
             nickname: "sol",
@@ -377,7 +378,7 @@ static MEMBER_PROFILES: &[(&str, MemberProfile)] = &[
             activity_verb: "Playing",
             activity_detail: "Aseprite",
             role_name: "Member",
-            role_color: "#949ba4",
+            role_color: theme::TEXT_MUTED,
             bio: "Pixel art, one sprite at a time. Ask me for the font pack link.",
             boost_level: 0,
             nickname: "pix",
@@ -390,7 +391,7 @@ static MEMBER_PROFILES: &[(&str, MemberProfile)] = &[
             activity_verb: "Listening to",
             activity_detail: "Synthwave",
             role_name: "Member",
-            role_color: "#949ba4",
+            role_color: theme::TEXT_MUTED,
             bio: "Gone a while, back soon. Leave a render in WIP and I'll critique it.",
             boost_level: 1,
             nickname: "ash",
@@ -403,7 +404,7 @@ static MEMBER_PROFILES: &[(&str, MemberProfile)] = &[
             activity_verb: "Playing",
             activity_detail: "Trail Maps",
             role_name: "Moderator",
-            role_color: "#5865f2",
+            role_color: theme::ACCENT,
             bio: "Organizing the next hike. Bring layers — the ridge is windy.",
             boost_level: 2,
             nickname: "rio",
@@ -416,7 +417,7 @@ static MEMBER_PROFILES: &[(&str, MemberProfile)] = &[
             activity_verb: "Playing",
             activity_detail: "Chess",
             role_name: "Member",
-            role_color: "#949ba4",
+            role_color: theme::TEXT_MUTED,
             bio: "Just here for the weekend trip. Meeting at the north lot, 7am?",
             boost_level: 0,
             nickname: "sam",
@@ -429,7 +430,7 @@ static MEMBER_PROFILES: &[(&str, MemberProfile)] = &[
             activity_verb: "Working on",
             activity_detail: "A trail log",
             role_name: "Member",
-            role_color: "#949ba4",
+            role_color: theme::TEXT_MUTED,
             bio: "Offline a lot, sorry! Will confirm the hike when I'm back.",
             boost_level: 0,
             nickname: "lee",
@@ -516,29 +517,29 @@ pub fn find_dm(id: u32) -> Option<&'static Dm> {
 pub static DMS: &[Dm] = &[
     Dm {
         id: 1,
-        user: Member { name: "miri", color: "#5865f2", status: Status::Online, role: "Member" },
+        user: Member { name: "miri", color: theme::ACCENT, status: Status::Online, role: "Member" },
         messages: &[
             DmMessage {
                 author: "miri",
-                color: "#5865f2",
+                color: theme::ACCENT,
                 body: "still hitting that borrow error from this morning?",
                 age_secs: 3600 * 3,
             },
             DmMessage {
                 author: "Nova",
-                color: "#5865f2",
+                color: theme::ACCENT,
                 body: "almost — the lifetime on the helper was the whole thing",
                 age_secs: 3600 * 3 - 60,
             },
             DmMessage {
                 author: "miri",
-                color: "#5865f2",
+                color: theme::ACCENT,
                 body: "the classic. send me the patch when it lands",
                 age_secs: 3600 * 3 - 90,
             },
             DmMessage {
                 author: "miri",
-                color: "#5865f2",
+                color: theme::ACCENT,
                 // A GIF sent as a DM: the row renders it as the image
                 // (message_body) and the list preview shows "GIF".
                 body: "https://media.giphy.com/media/JIX9t2j0ZTN9S/giphy.gif#480x360",
@@ -558,7 +559,7 @@ pub static DMS: &[Dm] = &[
             },
             DmMessage {
                 author: "Nova",
-                color: "#5865f2",
+                color: theme::ACCENT,
                 body: "yeah, it shells out to wasm-bindgen-cli under the hood",
                 age_secs: 3600 * 5 - 45,
             },
@@ -570,7 +571,7 @@ pub static DMS: &[Dm] = &[
             },
             DmMessage {
                 author: "Nova",
-                color: "#5865f2",
+                color: theme::ACCENT,
                 body: "let me know if it chokes on your setup",
                 age_secs: 3600 * 5 - 120,
             },
@@ -588,7 +589,7 @@ pub static DMS: &[Dm] = &[
             },
             DmMessage {
                 author: "Nova",
-                color: "#5865f2",
+                color: theme::ACCENT,
                 body: "got a rain shell + a base layer, should be plenty",
                 age_secs: 3600 * 12 - 30,
             },
@@ -606,7 +607,7 @@ pub static DMS: &[Dm] = &[
             },
             DmMessage {
                 author: "Nova",
-                color: "#5865f2",
+                color: theme::ACCENT,
                 body: "warmer reads better against the dark bg, yes",
                 age_secs: 3600 * 8 - 60,
             },
@@ -630,7 +631,7 @@ pub static DMS: &[Dm] = &[
             },
             DmMessage {
                 author: "Nova",
-                color: "#5865f2",
+                color: theme::ACCENT,
                 body: "the showcase thread mostly, and the hike plan",
                 age_secs: 3600 * 18 - 40,
             },
@@ -660,7 +661,7 @@ pub static SERVERS: &[Server] = &[
                         messages: &[
                             Message {
                                 author: "miri",
-                                color: "#5865f2",
+                                color: theme::ACCENT,
                                 body: "the classic. the compiler was being generous",
                                 age_secs: 3600 * 9 + 95,
                             },
@@ -672,7 +673,7 @@ pub static SERVERS: &[Server] = &[
                             },
                             Message {
                                 author: "miri",
-                                color: "#5865f2",
+                                color: theme::ACCENT,
                                 body: "morning all ☕ anyone up for a borrow-checker war story?",
                                 age_secs: 3600 * 9,
                             },
@@ -734,7 +735,7 @@ pub static SERVERS: &[Server] = &[
                         id: 104,
                         name: "Lounge",
                         speakers: &[
-                            Member { name: "miri", color: "#5865f2", status: Status::Online, role: "Owner" },
+                            Member { name: "miri", color: theme::ACCENT, status: Status::Online, role: "Owner" },
                             Member { name: "dyno", color: "#57f287", status: Status::Online, role: "Moderator" },
                         ],
                     },
@@ -747,7 +748,7 @@ pub static SERVERS: &[Server] = &[
             },
         ],
         members: &[
-            Member { name: "miri", color: "#5865f2", status: Status::Online, role: "Owner" },
+            Member { name: "miri", color: theme::ACCENT, status: Status::Online, role: "Owner" },
             Member { name: "dyno", color: "#57f287", status: Status::Online, role: "Moderator" },
             Member { name: "nara", color: "#eb459e", status: Status::Idle, role: "Admin" },
             Member { name: "wren", color: "#3ba55c", status: Status::DoNotDisturb, role: "Member" },
@@ -758,7 +759,7 @@ pub static SERVERS: &[Server] = &[
         id: 2,
         name: "Pixel Forge",
         initial: "P",
-        accent: "#5865f2",
+        accent: theme::ACCENT,
         categories: &[
             Category {
                 id: 2100,
@@ -825,7 +826,7 @@ pub static SERVERS: &[Server] = &[
         id: 3,
         name: "Trailhead",
         initial: "T",
-        accent: "#23a559",
+        accent: theme::SUCCESS,
         categories: &[
             Category {
                 id: 3100,
@@ -867,8 +868,8 @@ pub static SERVERS: &[Server] = &[
         ],
         members: &[
             Member { name: "rio", color: "#3ba55c", status: Status::Online, role: "Owner" },
-            Member { name: "sam", color: "#5865f2", status: Status::Idle, role: "Moderator" },
-            Member { name: "lee", color: "#f0b232", status: Status::Offline, role: "Member" },
+            Member { name: "sam", color: theme::ACCENT, status: Status::Idle, role: "Moderator" },
+            Member { name: "lee", color: theme::WARNING, status: Status::Offline, role: "Member" },
         ],
     },
 ];

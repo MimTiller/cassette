@@ -35,6 +35,7 @@
 //!   mechanism the web backend regression-tests for a scrolled list.
 //! - Glyphs are `&'static str` (copyable), so closures capture them by value
 //!   with no `String`-move issues.
+use crate::theme;
 use crate::emoji_data;
 use crate::style_helpers::{borderless_input, col, px};
 use icons_lucide::SEARCH;
@@ -47,13 +48,6 @@ use std::rc::Rc;
 
 // Discord dark palette (kept local so the component is self-contained,
 // mirroring `message_search_bar`).
-const BG_CARD: &str = "#2b2d31"; // card surface (Discord sidebar gray)
-const SURFACE: &str = "#313338"; // search field / hover
-const RAIL_ACTIVE: &str = "#1e1f22"; // active rail tab
-const BORDER: &str = "#1e1f22"; // 1px card border
-const TEXT: &str = "#f2f3f5"; // primary text
-const MUTED: &str = "#949ba4"; // muted text / inactive rail
-const SHADOW: &str = "#000000"; // elevated card shadow
 
 // Grid geometry (shared by the cell layout and the scroll-to-section math).
 const COLS: usize = 8; // emoji per row
@@ -269,7 +263,7 @@ fn section_header(label: &str) -> Element {
             top: Some(px(0.0)),
             width: Some(px(10000.0)),
             height: Some(px(HEADER)),
-            background: Some(col(BG_CARD)),
+            background: Some(col(theme::BG_SECONDARY)),
             padding_left: Some(px(8.0)),
             align_items: Some(AlignItems::Center),
             justify_content: Some(JustifyContent::Center),
@@ -277,7 +271,7 @@ fn section_header(label: &str) -> Element {
         }) {
             text(style = StyleRules {
                 font_size: Some(px(11.0)),
-                color: Some(col(MUTED)),
+                color: Some(col(theme::TEXT_MUTED)),
                 ..Default::default()
             }) { label.to_string() }
         }
@@ -398,7 +392,7 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
                             border_top_right_radius: Some(px(8.0)),
                             border_bottom_left_radius: Some(px(8.0)),
                             border_bottom_right_radius: Some(px(8.0)),
-                            background: Some(if on { col(RAIL_ACTIVE) } else { col(BG_CARD) }),
+                            background: Some(if on { col(theme::BG_TERTIARY) } else { col(theme::BG_SECONDARY) }),
                             ..Default::default()
                         }
                     }) {
@@ -467,7 +461,7 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
                         height: Some(px(52.0)),
                         flex_shrink: Some(Tokenized::Literal(0.0)),
                         border_top_width: Some(Tokenized::Literal(1.0)),
-                        border_top_color: Some(col(BORDER)),
+                        border_top_color: Some(col(theme::BG_TERTIARY)),
                         ..Default::default()
                     }) {}
                 };
@@ -485,11 +479,11 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
                     padding_right: Some(px(16.0)),
                     gap: Some(px(10.0)),
                     border_top_width: Some(Tokenized::Literal(1.0)),
-                    border_top_color: Some(col(BORDER)),
+                    border_top_color: Some(col(theme::BG_TERTIARY)),
                     ..Default::default()
                 }) {
                     text(style = StyleRules { font_size: Some(px(28.0)), ..Default::default() }) { big }
-                    text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(MUTED)), ..Default::default() }) { name }
+                    text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { name }
                 }
             }
         },
@@ -501,7 +495,7 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
             width: Some(px(420.0)),
             height: Some(px(440.0)),
             flex_direction: Some(FlexDirection::Column),
-            background: Some(col(BG_CARD)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(10.0)),
             border_top_right_radius: Some(px(10.0)),
             border_bottom_left_radius: Some(px(10.0)),
@@ -510,11 +504,11 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
             border_right_width: Some(Tokenized::Literal(1.0)),
             border_bottom_width: Some(Tokenized::Literal(1.0)),
             border_left_width: Some(Tokenized::Literal(1.0)),
-            border_top_color: Some(col(BORDER)),
-            border_right_color: Some(col(BORDER)),
-            border_bottom_color: Some(col(BORDER)),
-            border_left_color: Some(col(BORDER)),
-            shadow: Some(Shadow { x: 0.0, y: 8.0, blur: 24.0, color: col(SHADOW) }),
+            border_top_color: Some(col(theme::BG_TERTIARY)),
+            border_right_color: Some(col(theme::BG_TERTIARY)),
+            border_bottom_color: Some(col(theme::BG_TERTIARY)),
+            border_left_color: Some(col(theme::BG_TERTIARY)),
+            shadow: Some(Shadow { x: 0.0, y: 8.0, blur: 24.0, color: col(theme::SHADOW) }),
             overflow: Some(Overflow::Hidden),
             ..Default::default()
         }) {
@@ -528,7 +522,7 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
                 margin_left: Some(px(12.0)),
                 gap: Some(px(8.0)),
                 height: Some(px(38.0)),
-                background: Some(col(SURFACE)),
+                background: Some(col(theme::BG_PRIMARY)),
                 padding_left: Some(px(10.0)),
                 padding_right: Some(px(10.0)),
                 border_top_left_radius: Some(px(6.0)),
@@ -537,15 +531,15 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
                 border_bottom_right_radius: Some(px(6.0)),
                 ..borderless_input()
             }) {
-                icon(SEARCH).color(|| Color::from(MUTED)).size(16.0)
+                icon(SEARCH).color(|| Color::from(theme::TEXT_MUTED)).size(16.0)
                 text_input(
                     value = query,
                     on_change = on_change,
                     placeholder = "Search",
                     style = StyleRules {
                         flex_grow: Some(Tokenized::Literal(1.0)),
-                        color: Some(col(TEXT)),
-                        background: Some(col(SURFACE)),
+                        color: Some(col(theme::TEXT_STRONG)),
+                        background: Some(col(theme::BG_PRIMARY)),
                         font_size: Some(px(14.0)),
                         ..borderless_input()
                     },

@@ -30,15 +30,13 @@
 //!   `style = …` (created fresh per evaluation, never captured across the
 //!   `when` boundary).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, StyleRules,
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_CARD: &str = "#2b2d31"; // card surface (Discord sidebar gray)
-const TEXT: &str = "#f2f3f5"; // primary text
-const BLURPLE: &str = "#5865f2"; // toggle button (Discord accent)
 
 /// The translate switch. Renders a single line of text that shows the
 /// `original` string while the local `showTranslated` signal is `false` (the
@@ -77,7 +75,7 @@ pub fn TranslateToggle(
             padding_bottom: Some(px(20.0)),
             padding_left: Some(px(20.0)),
             padding_right: Some(px(20.0)),
-            background: Some(col(BG_CARD)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(8.0)),
             border_top_right_radius: Some(px(8.0)),
             border_bottom_left_radius: Some(px(8.0)),
@@ -91,13 +89,13 @@ pub fn TranslateToggle(
             if showTranslated.get() {
                 text(style = StyleRules {
                     font_size: Some(px(18.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { trans.clone() }
             } else {
                 text(style = StyleRules {
                     font_size: Some(px(18.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { orig.clone() }
             }
@@ -112,7 +110,7 @@ pub fn TranslateToggle(
                     height: Some(px(30.0)),
                     padding_left: Some(px(16.0)),
                     padding_right: Some(px(16.0)),
-                    background: Some(col(BLURPLE)),
+                    background: Some(col(theme::ACCENT)),
                     border_top_left_radius: Some(px(6.0)),
                     border_top_right_radius: Some(px(6.0)),
                     border_bottom_left_radius: Some(px(6.0)),

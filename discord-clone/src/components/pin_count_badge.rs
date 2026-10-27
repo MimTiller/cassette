@@ -29,15 +29,13 @@
 //!   `PIN_COUNT.to_string()` bound above the `ui!` block (the exact idiom
 //!   `dm_view.rs` uses for `unread_label`). No signals anywhere in this badge.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, ui, AlignItems, Element, FlexDirection, FontWeight, StyleRules,
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const PIN: &str = "#f2f3f5"; // the pin glyph (Discord near-white)
-const TEXT: &str = "#f2f3f5"; // the count label (Discord near-white)
-const BG_PILL: &str = "#3a3c41"; // the pill surface (Discord elevated gray)
 
 // The hardcoded local pinned-message count. No backend fetch — this is a
 // self-contained badge, so a fixed value stands in for a live count. It is
@@ -71,7 +69,7 @@ pub fn PinCountBadge() -> Element {
                 padding_right: Some(px(7.0)),
                 padding_top: Some(px(3.0)),
                 padding_bottom: Some(px(3.0)),
-                background: Some(col(BG_PILL)),
+                background: Some(col(theme::BG_HOVER)),
                 border_top_left_radius: Some(px(8.0)),
                 border_top_right_radius: Some(px(8.0)),
                 border_bottom_left_radius: Some(px(8.0)),
@@ -82,7 +80,7 @@ pub fn PinCountBadge() -> Element {
                 // `TextSource::Static` (no reactive machinery).
                 text(style = StyleRules {
                     font_size: Some(px(13.0)),
-                    color: Some(col(PIN)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { "📌".to_string() }
                 // The count label — the static `count_label` bound above, so it
@@ -90,7 +88,7 @@ pub fn PinCountBadge() -> Element {
                 text(style = StyleRules {
                     font_size: Some(px(12.0)),
                     font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { count_label }
             }

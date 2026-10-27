@@ -22,6 +22,7 @@
 //!   `TouchPhase::Ended` guard — the app's standard click pattern. `visible`
 //!   is `Copy` (`Signal<bool>`), so the `move` handler captures a copy of the
 //!   same signal the branch reads and clears it — no callback prop needed.
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     ui, AlignItems, Element, FlexDirection, JustifyContent, Position, Signal, StyleRules,
@@ -29,10 +30,6 @@ use runtime_core::{
 };
 
 // Discord dark palette — kept local so the component is self-contained.
-const TOAST_BG: &str = "#313338"; // toast surface (Discord sidebar gray)
-const TEXT: &str = "#f2f3f5"; // primary text
-const MUTED_BORDER: &str = "#4e5058"; // close-button ring
-const TEXT_MUTED: &str = "#949ba4"; // close "x" glyph
 
 // The hardcoded toast copy. No backend fetch.
 const TOAST_TEXT: &str = "Message pinned!";
@@ -62,7 +59,7 @@ pub fn pin_confirm_toast(visible: Signal<bool>) -> Element {
                 padding_bottom: Some(px(14.0)),
                 padding_left: Some(px(16.0)),
                 padding_right: Some(px(16.0)),
-                background: Some(col(TOAST_BG)),
+                background: Some(col(theme::BG_PRIMARY)),
                 border_top_left_radius: Some(px(8.0)),
                 border_top_right_radius: Some(px(8.0)),
                 border_bottom_left_radius: Some(px(8.0)),
@@ -74,7 +71,7 @@ pub fn pin_confirm_toast(visible: Signal<bool>) -> Element {
                 text(style = StyleRules {
                     flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
                     font_size: Some(px(15.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { TOAST_TEXT.to_string() }
 
@@ -97,15 +94,15 @@ pub fn pin_confirm_toast(visible: Signal<bool>) -> Element {
                     border_right_width: Some(runtime_core::Tokenized::Literal(1.0)),
                     border_bottom_width: Some(runtime_core::Tokenized::Literal(1.0)),
                     border_left_width: Some(runtime_core::Tokenized::Literal(1.0)),
-                    border_top_color: Some(col(MUTED_BORDER)),
-                    border_right_color: Some(col(MUTED_BORDER)),
-                    border_bottom_color: Some(col(MUTED_BORDER)),
-                    border_left_color: Some(col(MUTED_BORDER)),
+                    border_top_color: Some(col(theme::BUTTON_SECONDARY)),
+                    border_right_color: Some(col(theme::BUTTON_SECONDARY)),
+                    border_bottom_color: Some(col(theme::BUTTON_SECONDARY)),
+                    border_left_color: Some(col(theme::BUTTON_SECONDARY)),
                     ..Default::default()
                 }) {
                     text(style = StyleRules {
                         font_size: Some(px(14.0)),
-                        color: Some(col(TEXT_MUTED)),
+                        color: Some(col(theme::TEXT_MUTED)),
                         ..Default::default()
                     }) { "x".to_string() }
                 }

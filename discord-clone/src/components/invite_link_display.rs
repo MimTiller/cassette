@@ -25,6 +25,7 @@
 //!   (lowered to the `when` primitive). `StyleRules` is not `Copy`, so its
 //!   style is written inline in `style = …` (fresh per evaluation).
 
+use crate::theme;
 use crate::style_helpers::{borderless_input, col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
@@ -32,11 +33,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_CARD: &str = "#2b2d31"; // card surface (Discord sidebar gray)
-const INPUT_BG: &str = "#1e1f22"; // field surface (Discord input gray)
-const BTN_BG: &str = "#5865f2"; // Copy button (Discord blurple)
-const TEXT: &str = "#f2f3f5"; // primary text (link + button label)
-const TEXT_MUTED: &str = "#949ba4"; // header + "Copied!" line (Discord secondary)
 
 /// The invite-link card. `code` is the real invite code (the redeemable
 /// handle) shown as `discord.gg/{code}` in a read-only field above a `Copy`
@@ -79,7 +75,7 @@ pub fn InviteLinkDisplay(code: String) -> Element {
             padding_bottom: Some(px(20.0)),
             padding_left: Some(px(20.0)),
             padding_right: Some(px(20.0)),
-            background: Some(col(BG_CARD)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(8.0)),
             border_top_right_radius: Some(px(8.0)),
             border_bottom_left_radius: Some(px(8.0)),
@@ -89,7 +85,7 @@ pub fn InviteLinkDisplay(code: String) -> Element {
             text(style = StyleRules {
                 font_size: Some(px(13.0)),
                 font_weight: Some(FontWeight::SemiBold),
-                color: Some(col(TEXT_MUTED)),
+                color: Some(col(theme::TEXT_MUTED)),
                 ..Default::default()
             }) { "INVITE LINK".to_string() }
             // The read-only field: a controlled `text_input` bound to `link`.
@@ -101,8 +97,8 @@ pub fn InviteLinkDisplay(code: String) -> Element {
                     height: Some(px(40.0)),
                     padding_left: Some(px(12.0)),
                     padding_right: Some(px(12.0)),
-                    background: Some(col(INPUT_BG)),
-                    color: Some(col(TEXT)),
+                    background: Some(col(theme::BG_TERTIARY)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     font_size: Some(px(15.0)),
                     border_top_left_radius: Some(px(8.0)),
                     border_top_right_radius: Some(px(8.0)),
@@ -118,8 +114,8 @@ pub fn InviteLinkDisplay(code: String) -> Element {
                     height: Some(px(32.0)),
                     padding_left: Some(px(16.0)),
                     padding_right: Some(px(16.0)),
-                    background: Some(col(BTN_BG)),
-                    color: Some(col(TEXT)),
+                    background: Some(col(theme::ACCENT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     font_size: Some(px(14.0)),
                     border_top_left_radius: Some(px(6.0)),
                     border_top_right_radius: Some(px(6.0)),
@@ -138,7 +134,7 @@ pub fn InviteLinkDisplay(code: String) -> Element {
             if copied.get() {
                 text(style = StyleRules {
                     font_size: Some(px(13.0)),
-                    color: Some(col(TEXT_MUTED)),
+                    color: Some(col(theme::TEXT_MUTED)),
                     ..Default::default()
                 }) { "Copied!".to_string() }
             }

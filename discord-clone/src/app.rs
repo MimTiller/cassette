@@ -27,6 +27,7 @@
 //! days-ago comparison plus a civil-time formatter is all a "Today at" label
 //! needs.
 
+use crate::theme;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -166,38 +167,38 @@ fn voice_test_id(id: u32) -> &'static str {
 }
 
 // Discord dark palette (Blurple-flavoured).
-const BG_RAIL: &str = "#1e1f22";
-const BG_SIDEBAR: &str = "#2b2d31";
-const BG_MAIN: &str = "#313338";
-const BG_ACTIVE: &str = "#404249";
+const BG_RAIL: &str = theme::BG_TERTIARY;
+const BG_SIDEBAR: &str = theme::BG_SECONDARY;
+const BG_MAIN: &str = theme::BG_PRIMARY;
+const BG_ACTIVE: &str = theme::BG_SELECTED;
 /// Discord's row hover colour (lighter than `#2b2d31`, darker than active).
-const BG_HOVER: &str = "#35373c";
+const BG_HOVER: &str = theme::BG_HOVER;
 /// Discord's elevated surface — one step above `BG_MAIN`, for the channel
 /// anchor chip and other small raised elements that should sit visually above
 /// the message pane background.
-const BG_ELEVATED: &str = "#383a40";
-const TEXT: &str = "#f2f3f5";
-const TEXT_MUTED: &str = "#949ba4";
-const TEXT_CHANNEL: &str = "#c8cacf";
-const BORDER: &str = "#26272b";
-const COMPOSER: &str = "#383a40";
-const BUTTON: &str = "#5865f2";
+const BG_ELEVATED: &str = theme::BG_INPUT;
+const TEXT: &str = theme::TEXT_STRONG;
+const TEXT_MUTED: &str = theme::TEXT_MUTED;
+const TEXT_CHANNEL: &str = theme::TEXT_NORMAL;
+const BORDER: &str = theme::BG_TERTIARY;
+const COMPOSER: &str = theme::BG_INPUT;
+const BUTTON: &str = theme::ACCENT;
 /// Active-server indicator pill on the rail (Discord's white sliver).
-const PILL: &str = "#f2f3f5";
+const PILL: &str = theme::TEXT_STRONG;
 /// Discord's unread badge red (the pill on channels + the rail count).
-const BADGE: &str = "#f23f43";
+const BADGE: &str = theme::DANGER;
 /// Reaction-pill palette — kept identical to `components/reaction_summary.rs`
 /// (the unwired single-example pill this feature generalizes) so the live
 /// pills reuse that exact visual language: a blurple border + tinted fill
 /// when the current user reacted, a muted-gray border on a neutral fill
 /// otherwise.
-const REACTED_BG: &str = "#363b63";
-const REACTED_BORDER: &str = "#5865f2";
-const PLAIN_BG: &str = "#313338";
-const PLAIN_BORDER: &str = "#4e5058";
+const REACTED_BG: &str = theme::BG_ACCENT_SUBTLE;
+const REACTED_BORDER: &str = theme::ACCENT;
+const PLAIN_BG: &str = theme::BG_PRIMARY;
+const PLAIN_BORDER: &str = theme::BUTTON_SECONDARY;
 /// The user-profile section at the bottom of the sidebar sits a shade darker
 /// than the channel list above it.
-const USER_BAR: &str = "#232428";
+const USER_BAR: &str = theme::BG_USER_PANEL;
 /// One staged composer attachment: a unique staging key (for the thumbnail
 /// strip's `switch` so an 'x' removes exactly that entry), the file name
 /// (shown in the mock fallback line + carried to the wire frame), the MIME
@@ -393,6 +394,8 @@ static RESTORED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::
 static SESSION_NOTE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 pub fn app() -> Element {
+    // The colour theme (tokens for every role), with the saved accent.
+    crate::theme::install(crate::notify::load_accent());
     // Point the backend `#[server]` RPC stubs at a base URL and attach the
     // signed-in user id as the `x-user-id` header on every outgoing call.
     // Runs once per process (the `app()` entry), so no "only once" guard is

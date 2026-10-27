@@ -31,16 +31,13 @@
 //!   stays `Fn` across every press; styles are inline so nothing non-`Copy`
 //!   is captured across the `when` boundary.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, StyleRules,
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const TEXT: &str = "#f2f3f5"; // primary text (the username)
-const TEXT_MUTED: &str = "#949ba4"; // muted text (the reason)
-const UNBAN_BG: &str = "#5865f2"; // unban button (Discord blurple)
-const UNBAN_TEXT: &str = "#f2f3f5"; // unban button label (near-white)
 
 // The one hardcoded local banned user — no backend fetch.
 const USERNAME: &str = "Jordan";
@@ -80,7 +77,7 @@ pub fn BanListRow() -> Element {
                 // The banned username — primary text, a static string literal.
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { USERNAME.to_string() }
 
@@ -88,7 +85,7 @@ pub fn BanListRow() -> Element {
                 // same line (side by side) as the username.
                 text(style = StyleRules {
                     font_size: Some(px(13.0)),
-                    color: Some(col(TEXT_MUTED)),
+                    color: Some(col(theme::TEXT_MUTED)),
                     ..Default::default()
                 }) { REASON.to_string() }
 
@@ -102,8 +99,8 @@ pub fn BanListRow() -> Element {
                         height: Some(px(28.0)),
                         padding_left: Some(px(14.0)),
                         padding_right: Some(px(14.0)),
-                        background: Some(col(UNBAN_BG)),
-                        color: Some(col(UNBAN_TEXT)),
+                        background: Some(col(theme::ACCENT)),
+                        color: Some(col(theme::TEXT_STRONG)),
                         border_top_left_radius: Some(px(6.0)),
                         border_top_right_radius: Some(px(6.0)),
                         border_bottom_left_radius: Some(px(6.0)),

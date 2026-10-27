@@ -1,6 +1,7 @@
 //! `app_shell` section, split out of `app.rs`. Reads the shared state
 //! through `ShellState`; returns the elements the final layout places.
 
+use crate::theme;
 use super::*;
 
 pub(super) struct GatewayEffectsParts {
@@ -25,10 +26,10 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
         move || format!("{:?}", gateway.status()),
         move |status: &String| {
             let (label, color) = match status.as_str() {
-                "Open" => ("Open", "#23a55a"),
-                "Connecting" => ("Connecting", "#f0b232"),
+                "Open" => ("Open", theme::SUCCESS),
+                "Connecting" => ("Connecting", theme::WARNING),
                 // Closed and Error share the red accent.
-                _ => ("Closed", "#f23f43"),
+                _ => ("Closed", theme::DANGER),
             };
             // The status dot: a small filled `view` circle in the same 11px
             // shape as the member-list presence dots (Lucide's `circle` is an
@@ -93,13 +94,13 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                     gap: Some(px(8.0)),
                     padding_top: Some(px(8.0)),
                     padding_bottom: Some(px(8.0)),
-                    background: Some(col("#f23f43")),
+                    background: Some(col(theme::DANGER)),
                     ..Default::default()
                 }) {
                     text(style = StyleRules {
                         font_size: Some(px(13.0)),
                         font_weight: Some(FontWeight::SemiBold),
-                        color: Some(col("#ffffff")),
+                        color: Some(col(theme::TEXT_ON_ACCENT)),
                         ..Default::default()
                     }) { "Connection lost — reconnecting…".to_string() }
                 }

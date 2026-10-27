@@ -18,11 +18,11 @@
 //!   reactive `if` `idle_timer_badge` uses for its badge portion. There is no
 //!   `else` branch: while unset, the marker simply renders nothing.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{component, signal, ui, Element, StyleRules};
 
 // Discord muted-text gray (kept local so the component is self-contained).
-const TEXT_MUTED: &str = "#949ba4";
 
 /// The "(edited)" marker. Renders small gray "(edited)" text while the local
 /// `was_edited` signal is set (hardcoded `true` for now); otherwise it
@@ -44,7 +44,7 @@ pub fn EditedLabel() -> Element {
         if was_edited.get() {
             text(style = StyleRules {
                 font_size: Some(px(12.0)),
-                color: Some(col(TEXT_MUTED)),
+                color: Some(col(theme::TEXT_MUTED)),
                 ..Default::default()
             }) { "(edited)".to_string() }
         }

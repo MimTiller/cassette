@@ -28,6 +28,7 @@
 //!   across the `when` boundary) — the same shape `app.rs` /
 //!   `server_discovery_card` use for their reactive subtrees.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
@@ -35,10 +36,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_CARD: &str = "#2b2d31";
-const BG_BUTTON: &str = "#5865f2";
-const TEXT: &str = "#f2f3f5";
-const TEXT_MUTED: &str = "#949ba4";
 
 /// The hardcoded template name (no props for now).
 const TEMPLATE_NAME: &str = "Gaming";
@@ -68,7 +65,7 @@ pub fn ServerTemplateCard() -> Element {
         padding_right: Some(px(16.0)),
         padding_bottom: Some(px(16.0)),
         padding_left: Some(px(16.0)),
-        background: Some(col(BG_CARD)),
+        background: Some(col(theme::BG_SECONDARY)),
         border_top_left_radius: Some(px(10.0)),
         border_top_right_radius: Some(px(10.0)),
         border_bottom_left_radius: Some(px(10.0)),
@@ -79,7 +76,7 @@ pub fn ServerTemplateCard() -> Element {
     let name_style = StyleRules {
         font_size: Some(px(18.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
 
@@ -90,7 +87,7 @@ pub fn ServerTemplateCard() -> Element {
             // (a `StyleRules` `let` would be moved on its first use).
             text(style = StyleRules {
                 font_size: Some(px(13.0)),
-                color: Some(col(TEXT_MUTED)),
+                color: Some(col(theme::TEXT_MUTED)),
                 ..Default::default()
             }) { DESCRIPTION.to_string() }
             // Reactive branch: `if !selected.get() {…} else {…}` lowers to a
@@ -106,7 +103,7 @@ pub fn ServerTemplateCard() -> Element {
                     style = StyleRules {
                         height: Some(px(36.0)),
                         margin_top: Some(px(4.0)),
-                        background: Some(col(BG_BUTTON)),
+                        background: Some(col(theme::ACCENT)),
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),
                         border_top_left_radius: Some(px(8.0)),
@@ -119,7 +116,7 @@ pub fn ServerTemplateCard() -> Element {
             } else {
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     margin_top: Some(px(4.0)),
                     ..Default::default()
                 }) { "Selected!".to_string() }

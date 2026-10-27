@@ -2,6 +2,7 @@
 //! Split out of `app.rs`; `use super::*` keeps app.rs's imports and shared
 //! colors/helpers in scope.
 
+use crate::theme;
 use super::*;
 
 /// The login screen, shown while `authed` is false. A username + password
@@ -300,7 +301,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             let err_style = StyleRules {
                 margin_top: Some(px(12.0)),
                 font_size: Some(px(13.0)),
-                color: Some(col("#f23f43")),
+                color: Some(col(theme::DANGER)),
                 text_align: Some(TextAlign::Center),
                 ..Default::default()
             };

@@ -1,6 +1,7 @@
 //! `app_shell` section, split out of `app.rs`. Reads the shared state
 //! through `ShellState`; returns the elements the final layout places.
 
+use crate::theme;
 use super::*;
 
 pub(super) struct RailParts {
@@ -541,7 +542,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
             // they're kept reachable above the divider rather than in the
             // bottom DM+Settings row (which must stay DM + Settings only).
             view(style = circle_style.clone(), test_id = "rail-join-server") {
-                icon(PLUS).color(|| Color::from("#23a55a")).size(20.0)
+                icon(PLUS).color(|| Color::from(theme::SUCCESS)).size(20.0)
             }
             // Add-a-Server: open the join modal. Reset the per-open state so a
             // re-open always starts fresh (the same reset the caller owns).

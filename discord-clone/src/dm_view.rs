@@ -25,6 +25,7 @@
 //! - `dm_conversation(dm_id, ...)` — one conversation (header + messages +
 //!   composer).
 
+use crate::theme;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -45,15 +46,6 @@ use crate::style_helpers::{borderless_input, col, px, section_label};
 // --- palette -----------------------------------------------------------------
 // The same Discord dark palette as `app.rs`, kept local so the module is
 // self-contained (mirrors how `profile_settings.rs` keeps its own constants).
-const BG_SIDEBAR: &str = "#2b2d31";
-const BG_MAIN: &str = "#313338";
-const BG_ACTIVE: &str = "#404249";
-const BG_HOVER: &str = "#35373c";
-const TEXT: &str = "#f2f3f5";
-const TEXT_MUTED: &str = "#949ba4";
-const BORDER: &str = "#26272b";
-const COMPOSER: &str = "#383a40";
-const BUTTON: &str = "#5865f2";
 
 
 
@@ -94,9 +86,9 @@ pub fn dm_list(
 ) -> Element {
     let column_style = StyleRules {
         width: Some(px(240.0)),
-        background: Some(col(BG_SIDEBAR)),
+        background: Some(col(theme::BG_SECONDARY)),
         border_right_width: Some(border_width(1.0)),
-        border_right_color: Some(col(BORDER)),
+        border_right_color: Some(col(theme::BG_TERTIARY)),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
@@ -219,9 +211,9 @@ fn dm_row(dm_id: u32, active: Signal<u32>, unread: Rc<RefCell<HashMap<u32, u32>>
             align_items: Some(AlignItems::Center),
             gap: Some(px(10.0)),
             background: Some(col(if on {
-                BG_ACTIVE
+                theme::BG_SELECTED
             } else if hovered.get() {
-                BG_HOVER
+                theme::BG_HOVER
             } else {
                 "transparent"
             })),
@@ -252,7 +244,7 @@ fn dm_row(dm_id: u32, active: Signal<u32>, unread: Rc<RefCell<HashMap<u32, u32>>
     let avatar_initial_style = StyleRules {
         font_size: Some(px(14.0)),
         font_weight: Some(FontWeight::Bold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
     let dot_style = StyleRules {
@@ -270,10 +262,10 @@ fn dm_row(dm_id: u32, active: Signal<u32>, unread: Rc<RefCell<HashMap<u32, u32>>
         border_right_width: Some(border_width(2.0)),
         border_bottom_width: Some(border_width(2.0)),
         border_left_width: Some(border_width(2.0)),
-        border_top_color: Some(col(BG_SIDEBAR)),
-        border_right_color: Some(col(BG_SIDEBAR)),
-        border_bottom_color: Some(col(BG_SIDEBAR)),
-        border_left_color: Some(col(BG_SIDEBAR)),
+        border_top_color: Some(col(theme::BG_SECONDARY)),
+        border_right_color: Some(col(theme::BG_SECONDARY)),
+        border_bottom_color: Some(col(theme::BG_SECONDARY)),
+        border_left_color: Some(col(theme::BG_SECONDARY)),
         ..Default::default()
     };
 
@@ -291,7 +283,7 @@ fn dm_row(dm_id: u32, active: Signal<u32>, unread: Rc<RefCell<HashMap<u32, u32>>
         } else {
             FontWeight::Normal
         }),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         max_lines: Some(1u32),
         min_width: Some(px(0.0)),
         flex_shrink: Some(grow(1.0)),
@@ -299,14 +291,14 @@ fn dm_row(dm_id: u32, active: Signal<u32>, unread: Rc<RefCell<HashMap<u32, u32>>
     };
     let preview_style = StyleRules {
         font_size: Some(px(12.0)),
-        color: Some(col(TEXT_MUTED)),
+        color: Some(col(theme::TEXT_MUTED)),
         min_width: Some(px(0.0)),
         flex_shrink: Some(grow(1.0)),
         ..Default::default()
     };
     let when_style = StyleRules {
         font_size: Some(px(10.0)),
-        color: Some(col(TEXT_MUTED)),
+        color: Some(col(theme::TEXT_MUTED)),
         ..Default::default()
     };
     let unread_style = StyleRules {
@@ -322,8 +314,8 @@ fn dm_row(dm_id: u32, active: Signal<u32>, unread: Rc<RefCell<HashMap<u32, u32>>
         padding_right: Some(px(5.0)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        background: Some(col("#f23f43")),
-        color: Some(col(TEXT)),
+        background: Some(col(theme::DANGER)),
+        color: Some(col(theme::TEXT_STRONG)),
         font_size: Some(px(11.0)),
         font_weight: Some(FontWeight::Bold),
         border_top_left_radius: Some(px(9.0)),
@@ -376,7 +368,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
         padding_left: Some(px(16.0)),
         padding_right: Some(px(16.0)),
         border_bottom_width: Some(border_width(1.0)),
-        border_bottom_color: Some(col(BORDER)),
+        border_bottom_color: Some(col(theme::BG_TERTIARY)),
         flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Center),
         gap: Some(px(10.0)),
@@ -399,7 +391,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
     let header_initial_style = StyleRules {
         font_size: Some(px(13.0)),
         font_weight: Some(FontWeight::Bold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
     let header_dot_style = StyleRules {
@@ -417,10 +409,10 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
         border_right_width: Some(border_width(2.0)),
         border_bottom_width: Some(border_width(2.0)),
         border_left_width: Some(border_width(2.0)),
-        border_top_color: Some(col(BG_MAIN)),
-        border_right_color: Some(col(BG_MAIN)),
-        border_bottom_color: Some(col(BG_MAIN)),
-        border_left_color: Some(col(BG_MAIN)),
+        border_top_color: Some(col(theme::BG_PRIMARY)),
+        border_right_color: Some(col(theme::BG_PRIMARY)),
+        border_bottom_color: Some(col(theme::BG_PRIMARY)),
+        border_left_color: Some(col(theme::BG_PRIMARY)),
         ..Default::default()
     };
     let header_stack_style = StyleRules {
@@ -431,12 +423,12 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
     let header_name_style = StyleRules {
         font_size: Some(px(15.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
     let header_status_style = StyleRules {
         font_size: Some(px(12.0)),
-        color: Some(col(TEXT_MUTED)),
+        color: Some(col(theme::TEXT_MUTED)),
         ..Default::default()
     };
     let header_name = dm.user.name.to_string();
@@ -492,7 +484,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
                     .unwrap_or(false);
                 let base = message_row(
                     author,
-                    BUTTON,
+                    theme::ACCENT,
                     body.as_str(),
                     when,
                     crate::app::format_full_when(*ts),
@@ -553,7 +545,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
         padding_left: Some(px(16.0)),
         padding_right: Some(px(16.0)),
         border_top_width: Some(border_width(1.0)),
-        border_top_color: Some(col(BORDER)),
+        border_top_color: Some(col(theme::BG_TERTIARY)),
         flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Center),
         gap: Some(px(8.0)),
@@ -564,8 +556,8 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
         height: Some(px(40.0)),
         padding_left: Some(px(12.0)),
         padding_right: Some(px(12.0)),
-        background: Some(col(COMPOSER)),
-        color: Some(col(TEXT)),
+        background: Some(col(theme::BG_INPUT)),
+        color: Some(col(theme::TEXT_STRONG)),
         border_top_left_radius: Some(px(8.0)),
         border_top_right_radius: Some(px(8.0)),
         border_bottom_left_radius: Some(px(8.0)),
@@ -581,7 +573,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
         height: Some(px(28.0)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        background: Some(col(COMPOSER)),
+        background: Some(col(theme::BG_INPUT)),
         border_top_left_radius: Some(px(14.0)),
         border_top_right_radius: Some(px(14.0)),
         border_bottom_left_radius: Some(px(14.0)),
@@ -643,15 +635,15 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
                             flex_direction: Some(FlexDirection::Row),
                             align_items: Some(AlignItems::Center),
                             gap: Some(px(8.0)),
-                            background: Some(col(COMPOSER)),
+                            background: Some(col(theme::BG_INPUT)),
                             border_top_width: Some(border_width(1.0)),
                             border_right_width: Some(border_width(1.0)),
                             border_bottom_width: Some(border_width(1.0)),
                             border_left_width: Some(border_width(1.0)),
-                            border_top_color: Some(col(BORDER)),
-                            border_right_color: Some(col(BORDER)),
-                            border_bottom_color: Some(col(BORDER)),
-                            border_left_color: Some(col(BORDER)),
+                            border_top_color: Some(col(theme::BG_TERTIARY)),
+                            border_right_color: Some(col(theme::BG_TERTIARY)),
+                            border_bottom_color: Some(col(theme::BG_TERTIARY)),
+                            border_left_color: Some(col(theme::BG_TERTIARY)),
                             border_top_left_radius: Some(px(13.0)),
                             border_top_right_radius: Some(px(13.0)),
                             border_bottom_left_radius: Some(px(13.0)),
@@ -660,7 +652,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
                         }) {
                             text(style = StyleRules {
                                 font_size: Some(px(12.0)),
-                                color: Some(col(TEXT)),
+                                color: Some(col(theme::TEXT_STRONG)),
                                 ..Default::default()
                             }) { format!("\u{1F4CE} {name}") }
                             // The 'x' to clear the staged attachment: a tiny
@@ -679,7 +671,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
                             }) {
                                 text(style = StyleRules {
                                     font_size: Some(px(12.0)),
-                                    color: Some(col(TEXT_MUTED)),
+                                    color: Some(col(theme::TEXT_MUTED)),
                                     ..Default::default()
                                 }) { "\u{2715}".to_string() }
                             }
@@ -758,15 +750,15 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
                         left: Some(px(16.0)),
                         right: Some(px(16.0)),
                         bottom: Some(px(12.0)),
-                        background: Some(col(COMPOSER)),
+                        background: Some(col(theme::BG_INPUT)),
                         border_top_width: Some(border_width(1.0)),
                         border_right_width: Some(border_width(1.0)),
                         border_bottom_width: Some(border_width(1.0)),
                         border_left_width: Some(border_width(1.0)),
-                        border_top_color: Some(col(BORDER)),
-                        border_right_color: Some(col(BORDER)),
-                        border_bottom_color: Some(col(BORDER)),
-                        border_left_color: Some(col(BORDER)),
+                        border_top_color: Some(col(theme::BG_TERTIARY)),
+                        border_right_color: Some(col(theme::BG_TERTIARY)),
+                        border_bottom_color: Some(col(theme::BG_TERTIARY)),
+                        border_left_color: Some(col(theme::BG_TERTIARY)),
                         padding_top: Some(px(10.0)),
                         padding_bottom: Some(px(10.0)),
                         padding_left: Some(px(10.0)),
@@ -823,7 +815,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
     ui! {
         view(style = StyleRules {
             flex_grow: Some(grow(1.0)),
-            background: Some(col(BG_MAIN)),
+            background: Some(col(theme::BG_PRIMARY)),
             flex_direction: Some(FlexDirection::Column),
             overflow: Some(Overflow::Hidden),
             ..Default::default()
@@ -852,7 +844,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
                 emoji_popover
                 view(style = composer_style) {
                     view(style = icon_button_style.clone()) {
-                        icon(PLUS).color(|| Color::from(TEXT_MUTED)).size(16.0)
+                        icon(PLUS).color(|| Color::from(theme::TEXT_MUTED)).size(16.0)
                     }
                     // `+` = stage/unstage the mock attachment. `Signal` is
                     // `Copy`, so each `move` closure captures its own handle;
@@ -867,7 +859,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
                     })
                     text_input(value = text, on_change = on_change, placeholder = "Message", style = input_style).on_key_down(on_enter)
                     view(style = icon_button_style) {
-                        icon(SMILE).color(|| Color::from(TEXT_MUTED)).size(16.0)
+                        icon(SMILE).color(|| Color::from(theme::TEXT_MUTED)).size(16.0)
                     }
                     // Smile = open/close the emoji popover (a `Copy` handle on
                     // `emoji_open`, mirroring the attachment button).

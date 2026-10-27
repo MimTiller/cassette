@@ -25,6 +25,7 @@
 //!   styles are written INLINE (created fresh per evaluation, never captured
 //!   across the `when` boundary).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
@@ -32,10 +33,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_CARD: &str = "#2b2d31"; // card surface (Discord sidebar gray)
-const TEXT: &str = "#f2f3f5"; // primary text
-const ACCEPT: &str = "#248046"; // accept button (Discord green)
-const DECLINE: &str = "#4e5058"; // decline button (Discord muted gray)
 
 /// The friend request card. Renders the member's friend-request sender name
 /// (the `sender` prop, defaulting to the previous shared literal) with an
@@ -65,7 +62,7 @@ pub fn FriendRequestCard(#[prop(default = "Fen")] sender: String) -> Element {
             padding_bottom: Some(px(16.0)),
             padding_left: Some(px(16.0)),
             padding_right: Some(px(16.0)),
-            background: Some(col(BG_CARD)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(10.0)),
             border_top_right_radius: Some(px(10.0)),
             border_bottom_left_radius: Some(px(10.0)),
@@ -78,7 +75,7 @@ pub fn FriendRequestCard(#[prop(default = "Fen")] sender: String) -> Element {
             text(style = StyleRules {
                 font_size: Some(px(18.0)),
                 font_weight: Some(FontWeight::SemiBold),
-                color: Some(col(TEXT)),
+                color: Some(col(theme::TEXT_STRONG)),
                 ..Default::default()
             }) { sender_name }
 
@@ -90,7 +87,7 @@ pub fn FriendRequestCard(#[prop(default = "Fen")] sender: String) -> Element {
             if let Some(s) = status.get() {
                 text(style = StyleRules {
                     font_size: Some(px(15.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     margin_top: Some(px(4.0)),
                     ..Default::default()
                 }) { s.clone() }
@@ -108,7 +105,7 @@ pub fn FriendRequestCard(#[prop(default = "Fen")] sender: String) -> Element {
                             height: Some(px(30.0)),
                             padding_left: Some(px(16.0)),
                             padding_right: Some(px(16.0)),
-                            background: Some(col(ACCEPT)),
+                            background: Some(col(theme::SUCCESS_STRONG)),
                             border_top_left_radius: Some(px(6.0)),
                             border_top_right_radius: Some(px(6.0)),
                             border_bottom_left_radius: Some(px(6.0)),
@@ -126,7 +123,7 @@ pub fn FriendRequestCard(#[prop(default = "Fen")] sender: String) -> Element {
                             height: Some(px(30.0)),
                             padding_left: Some(px(16.0)),
                             padding_right: Some(px(16.0)),
-                            background: Some(col(DECLINE)),
+                            background: Some(col(theme::BUTTON_SECONDARY)),
                             border_top_left_radius: Some(px(6.0)),
                             border_top_right_radius: Some(px(6.0)),
                             border_bottom_left_radius: Some(px(6.0)),

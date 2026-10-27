@@ -25,16 +25,13 @@
 //!   `let` inside a node body and `StyleRules` is not `Copy` (the same inline
 //!   shape `idle_timer_badge` uses for its reactive badge).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{component, signal, ui, AlignItems, Element, FlexDirection, FontFamily, StyleRules};
 
 // Discord dark palette (kept local so the component is self-contained). The
 // code block's background is deliberately darker than the chat surface so it
 // reads as a distinct, inset snippet.
-const BG_CODE: &str = "#1e1f22";
-const BG_BUTTON: &str = "#404249";
-const TEXT_CODE: &str = "#f2f3f5";
-const TEXT_MUTED: &str = "#949ba4";
 
 /// A CSS-style monospace stack, passed verbatim to the platform's font lookup
 /// (web's `font-family`). Lowered to `FontFamily::System` by `From<String>`.
@@ -62,7 +59,7 @@ pub fn CodeBlock() -> Element {
         padding_top: Some(px(10.0)),
         padding_bottom: Some(px(10.0)),
         gap: Some(px(8.0)),
-        background: Some(col(BG_CODE)),
+        background: Some(col(theme::BG_TERTIARY)),
         border_top_left_radius: Some(px(8.0)),
         border_top_right_radius: Some(px(8.0)),
         border_bottom_left_radius: Some(px(8.0)),
@@ -73,7 +70,7 @@ pub fn CodeBlock() -> Element {
     let code_style = StyleRules {
         font_family: Some(MONO.to_string().into()),
         font_size: Some(px(13.0)),
-        color: Some(col(TEXT_CODE)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
 
@@ -81,7 +78,7 @@ pub fn CodeBlock() -> Element {
         height: Some(px(24.0)),
         padding_left: Some(px(10.0)),
         padding_right: Some(px(10.0)),
-        background: Some(col(BG_BUTTON)),
+        background: Some(col(theme::BG_SELECTED)),
         border_top_left_radius: Some(px(6.0)),
         border_top_right_radius: Some(px(6.0)),
         border_bottom_left_radius: Some(px(6.0)),
@@ -112,7 +109,7 @@ pub fn CodeBlock() -> Element {
                     text(style = StyleRules {
                         font_family: Some(FontFamily::System(MONO.to_string())),
                         font_size: Some(px(12.0)),
-                        color: Some(col(TEXT_MUTED)),
+                        color: Some(col(theme::TEXT_MUTED)),
                         ..Default::default()
                     }) { "Copied!".to_string() }
                 }

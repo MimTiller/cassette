@@ -8,6 +8,7 @@
 //! (`user_popup` / `user_profile`), owned by `app_shell`, so the async
 //! profile fetch can always write its result.
 
+use crate::theme;
 use super::*;
 
 use discord_server::profiles::{GetUserProfileInput, UserProfile};
@@ -87,7 +88,7 @@ pub(super) fn short_date(ms: i64) -> String {
 /// The card's banner color: one of a few muted tones, picked from the name
 /// so a user always gets the same one.
 fn banner_color(name: &str) -> &'static str {
-    const TONES: [&str; 6] = ["#5865f2", "#3ba55c", "#faa61a", "#ed4245", "#9b59b6", "#1abc9c"];
+    const TONES: [&str; 6] = [theme::ACCENT, "#3ba55c", theme::WARNING, theme::DANGER, "#9b59b6", "#1abc9c"];
     let sum: u32 = name.bytes().map(u32::from).sum();
     TONES[(sum % TONES.len() as u32) as usize]
 }
@@ -168,7 +169,6 @@ pub(super) fn build(s: &ShellState) -> UserPopupsParts {
 
 const CARD_W: f32 = 300.0;
 const CARD_H: f32 = 360.0;
-const CARD_BG: &str = "#232428";
 
 fn profile_card(
     profile: Option<UserProfile>,
@@ -185,7 +185,7 @@ fn profile_card(
         top: Some(px(top)),
         width: Some(px(CARD_W)),
         flex_direction: Some(FlexDirection::Column),
-        background: Some(col(CARD_BG)),
+        background: Some(col(theme::BG_USER_PANEL)),
         border_top_left_radius: Some(px(8.0)),
         border_top_right_radius: Some(px(8.0)),
         border_bottom_left_radius: Some(px(8.0)),
@@ -271,7 +271,7 @@ fn profile_card(
                     TouchResponse::CONSUMED
                 })
                 if let Some((label_text, enabled)) = friend {
-                    view(style = button(if enabled { "#248046" } else { "#4e5058" })) {
+                    view(style = button(if enabled { theme::SUCCESS_STRONG } else { theme::BUTTON_SECONDARY })) {
                         text(style = button_text.clone()) { label_text.to_string() }
                     }
                     .on_touch({
@@ -298,7 +298,7 @@ fn profile_card(
                 height: Some(px(88.0)),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
-                background: Some(col(CARD_BG)),
+                background: Some(col(theme::BG_USER_PANEL)),
                 border_top_left_radius: Some(px(44.0)),
                 border_top_right_radius: Some(px(44.0)),
                 border_bottom_left_radius: Some(px(44.0)),
@@ -450,7 +450,7 @@ fn user_menu(
                     margin_right: Some(px(6.0)),
                     flex_direction: Some(FlexDirection::Row),
                     align_items: Some(AlignItems::Center),
-                    background: Some(col(if hovered.get() { if red { "#da373c" } else { "#4752c4" } } else { "transparent" })),
+                    background: Some(col(if hovered.get() { if red { theme::DANGER_STRONG } else { theme::ACCENT_HOVER } } else { "transparent" })),
                     border_top_left_radius: Some(px(4.0)),
                     border_top_right_radius: Some(px(4.0)),
                     border_bottom_left_radius: Some(px(4.0)),
@@ -460,7 +460,7 @@ fn user_menu(
                     text(style = move || StyleRules {
                         font_size: Some(px(14.0)),
                         font_weight: Some(FontWeight::SemiBold),
-                        color: Some(col(if red && !hovered.get() { "#f23f43" } else { TEXT })),
+                        color: Some(col(if red && !hovered.get() { theme::DANGER } else { TEXT })),
                         ..Default::default()
                     }) { label.clone() }
                 }
@@ -483,7 +483,7 @@ fn user_menu(
             flex_direction: Some(FlexDirection::Column),
             padding_top: Some(px(6.0)),
             padding_bottom: Some(px(6.0)),
-            background: Some(col("#111214")),
+            background: Some(col(theme::BG_FLOATING)),
             border_top_left_radius: Some(px(6.0)),
             border_top_right_radius: Some(px(6.0)),
             border_bottom_left_radius: Some(px(6.0)),

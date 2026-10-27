@@ -20,6 +20,7 @@
 //! `let` bindings (a captured, non-`Copy` binding would be moved on the
 //! first iteration).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, StyleRules, TouchPhase,
@@ -27,10 +28,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_RAIL: &str = "#1e1f22";
-const BG_HOVER: &str = "#35373c";
-const TEXT_MUTED: &str = "#949ba4";
-const TEXT: &str = "#f2f3f5";
 
 /// The folder label — hardcoded for now.
 const FOLDER_NAME: &str = "Work";
@@ -53,7 +50,7 @@ pub fn ServerFolderGroup() -> Element {
         margin_right: Some(px(8.0)),
         padding_left: Some(px(12.0)),
         padding_right: Some(px(8.0)),
-        background: Some(col(BG_HOVER)),
+        background: Some(col(theme::BG_HOVER)),
         border_top_left_radius: Some(px(8.0)),
         border_top_right_radius: Some(px(8.0)),
         border_bottom_left_radius: Some(px(8.0)),
@@ -66,14 +63,14 @@ pub fn ServerFolderGroup() -> Element {
 
     let icon_style = StyleRules {
         font_size: Some(px(18.0)),
-        color: Some(col(TEXT_MUTED)),
+        color: Some(col(theme::TEXT_MUTED)),
         ..Default::default()
     };
 
     let name_style = StyleRules {
         font_size: Some(px(14.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT_MUTED)),
+        color: Some(col(theme::TEXT_MUTED)),
         ..Default::default()
     };
 
@@ -83,7 +80,7 @@ pub fn ServerFolderGroup() -> Element {
             align_items: Some(AlignItems::Stretch),
             gap: Some(px(4.0)),
             padding_top: Some(px(6.0)),
-            background: Some(col(BG_RAIL)),
+            background: Some(col(theme::BG_TERTIARY)),
             ..Default::default()
         }) {
             view(style = header_style) {
@@ -115,7 +112,7 @@ pub fn ServerFolderGroup() -> Element {
                         }) {
                             text(style = StyleRules {
                                 font_size: Some(px(14.0)),
-                                color: Some(col(TEXT)),
+                                color: Some(col(theme::TEXT_STRONG)),
                                 ..Default::default()
                             }) { name.to_string() }
                         }

@@ -21,6 +21,7 @@
 //! - each pill is a fully-rounded `view` + child `text` (the app's standard pill
 //!   shape); the pill's radius is half its fixed height, giving a clean lozenge.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, ui, AlignItems, Element, FlexDirection, JustifyContent, StyleRules,
@@ -34,7 +35,6 @@ const TAG_BG: [&str; 3] = [
     "#38504a", // "Casual" — muted teal
     "#4d3b4d", // "18+"    — muted plum
 ];
-const TAG_TEXT: &str = "#e6e7e9"; // light label, readable on every fill above
 
 // The 3 hardcoded local tag strings — exactly these, in this order, no backend
 // fetch. Kept as a static slice so the keyed `for` renders one pill per entry;
@@ -80,7 +80,7 @@ pub fn ServerTagChips() -> Element {
                 }) {
                     text(style = StyleRules {
                         font_size: Some(px(12.0)),
-                        color: Some(col(TAG_TEXT)),
+                        color: Some(col(theme::TEXT_NORMAL)),
                         ..Default::default()
                     }) { tag.to_string() }
                 }

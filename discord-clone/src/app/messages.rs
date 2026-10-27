@@ -1,6 +1,7 @@
 //! `app_shell` section, split out of `app.rs`. Reads the shared state
 //! through `ShellState`; returns the elements the final layout places.
 
+use crate::theme;
 use super::*;
 
 pub(super) struct MessagesParts {
@@ -180,7 +181,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                                 padding_right: Some(px(7.0)),
                                 padding_top: Some(px(3.0)),
                                 padding_bottom: Some(px(3.0)),
-                                background: Some(col("#3a3c41")),
+                                background: Some(col(theme::BG_HOVER)),
                                 border_top_left_radius: Some(px(8.0)),
                                 border_top_right_radius: Some(px(8.0)),
                                 border_bottom_left_radius: Some(px(8.0)),
@@ -189,13 +190,13 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                             }) {
                                 text(style = StyleRules {
                                     font_size: Some(px(13.0)),
-                                    color: Some(col("#f2f3f5")),
+                                    color: Some(col(theme::TEXT_STRONG)),
                                     ..Default::default()
                                 }) { "📌".to_string() }
                                 text(style = StyleRules {
                                     font_size: Some(px(12.0)),
                                     font_weight: Some(FontWeight::SemiBold),
-                                    color: Some(col("#f2f3f5")),
+                                    color: Some(col(theme::TEXT_STRONG)),
                                     ..Default::default()
                                 }) { pin_count_label }
                             }
@@ -211,7 +212,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         })
                         // Show / hide the member list.
                         view(style = moderation_style.clone(), test_id = "toggle-members") {
-                            icon(USERS).color(move || Color::from(if super::members_visible(members_pref) { "#f2f3f5" } else { TEXT_MUTED })).size(15.0)
+                            icon(USERS).color(move || Color::from(if super::members_visible(members_pref) { theme::TEXT_STRONG } else { TEXT_MUTED })).size(15.0)
                         }
                         .on_touch(move |ev| {
                             if ev.phase == TouchPhase::Ended {

@@ -27,14 +27,13 @@
 //!   BOTH branches can capture it by copy. Unlike `soundboard_button` there is
 //!   no auto-revert timer — the state persists until the next click.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, StyleRules,
 };
 
 // Discord palette (kept local so the component is self-contained).
-const JOIN: &str = "#5865f2"; // "Join Voice" (Discord blurple accent)
-const LEAVE: &str = "#f23f43"; // "Leave Voice" (Discord danger red, a distinct color)
 
 /// A voice join/leave trigger. Renders one `button` bound to a local
 /// `connected` signal. While the signal is `false` the button shows "Join
@@ -77,7 +76,7 @@ pub fn VoiceJoinButton() -> Element {
                         height: Some(px(34.0)),
                         padding_left: Some(px(18.0)),
                         padding_right: Some(px(18.0)),
-                        background: Some(col(LEAVE)),
+                        background: Some(col(theme::DANGER)),
                         border_top_left_radius: Some(px(6.0)),
                         border_top_right_radius: Some(px(6.0)),
                         border_bottom_left_radius: Some(px(6.0)),
@@ -96,7 +95,7 @@ pub fn VoiceJoinButton() -> Element {
                         height: Some(px(34.0)),
                         padding_left: Some(px(18.0)),
                         padding_right: Some(px(18.0)),
-                        background: Some(col(JOIN)),
+                        background: Some(col(theme::ACCENT)),
                         border_top_left_radius: Some(px(6.0)),
                         border_top_right_radius: Some(px(6.0)),
                         border_bottom_left_radius: Some(px(6.0)),

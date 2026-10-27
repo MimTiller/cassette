@@ -30,6 +30,7 @@
 //!   *content* is ever reactive — a `ui!` text child must be `TextContent`
 //!   (a bare `if` in the content slot yields an `Element`, which it is not).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, ui, AlignItems, Element, FlexDirection, FontWeight, Signal, StyleRules, Tokenized,
@@ -37,10 +38,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_MAIN: &str = "#313338";
-const BG_SELECTED: &str = "#404249";
-const TEXT: &str = "#f2f3f5";
-const TEXT_MUTED: &str = "#949ba4";
 
 /// The four hardcoded timeout-duration labels — exactly four, in ascending
 /// order. `SECS[i]` is the seconds behind `TIMEOUT_OPTIONS[i]`.
@@ -64,7 +61,7 @@ pub fn TimeoutDurationPicker(duration: Signal<i64>) -> Element {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Column),
             align_items: Some(AlignItems::Stretch),
-            background: Some(col(BG_MAIN)),
+            background: Some(col(theme::BG_PRIMARY)),
             padding_top: Some(px(16.0)),
             padding_bottom: Some(px(16.0)),
             ..Default::default()
@@ -72,7 +69,7 @@ pub fn TimeoutDurationPicker(duration: Signal<i64>) -> Element {
             text(style = StyleRules {
                 font_size: Some(px(13.0)),
                 font_weight: Some(FontWeight::SemiBold),
-                color: Some(col(TEXT_MUTED)),
+                color: Some(col(theme::TEXT_MUTED)),
                 margin_left: Some(px(16.0)),
                 margin_right: Some(px(16.0)),
                 margin_bottom: Some(px(8.0)),
@@ -93,7 +90,7 @@ pub fn TimeoutDurationPicker(duration: Signal<i64>) -> Element {
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),
                         gap: Some(px(10.0)),
-                        background: Some(col(if sel { BG_SELECTED } else { "transparent" })),
+                        background: Some(col(if sel { theme::BG_SELECTED } else { "transparent" })),
                         border_top_left_radius: Some(px(8.0)),
                         border_top_right_radius: Some(px(8.0)),
                         border_bottom_left_radius: Some(px(8.0)),
@@ -116,27 +113,27 @@ pub fn TimeoutDurationPicker(duration: Signal<i64>) -> Element {
                         border_left_width: Some(border_width(2.0)),
                         border_right_width: Some(border_width(2.0)),
                         border_top_color: Some(col(if TIMEOUT_SECS[i] == duration.get() {
-                            TEXT
+                            theme::TEXT_STRONG
                         } else {
-                            TEXT_MUTED
+                            theme::TEXT_MUTED
                         })),
                         border_bottom_color: Some(col(if TIMEOUT_SECS[i] == duration.get() {
-                            TEXT
+                            theme::TEXT_STRONG
                         } else {
-                            TEXT_MUTED
+                            theme::TEXT_MUTED
                         })),
                         border_left_color: Some(col(if TIMEOUT_SECS[i] == duration.get() {
-                            TEXT
+                            theme::TEXT_STRONG
                         } else {
-                            TEXT_MUTED
+                            theme::TEXT_MUTED
                         })),
                         border_right_color: Some(col(if TIMEOUT_SECS[i] == duration.get() {
-                            TEXT
+                            theme::TEXT_STRONG
                         } else {
-                            TEXT_MUTED
+                            theme::TEXT_MUTED
                         })),
                         background: Some(col(if TIMEOUT_SECS[i] == duration.get() {
-                            TEXT
+                            theme::TEXT_STRONG
                         } else {
                             "transparent"
                         })),
@@ -150,9 +147,9 @@ pub fn TimeoutDurationPicker(duration: Signal<i64>) -> Element {
                             FontWeight::Normal
                         }),
                         color: Some(col(if TIMEOUT_SECS[i] == duration.get() {
-                            TEXT
+                            theme::TEXT_STRONG
                         } else {
-                            TEXT_MUTED
+                            theme::TEXT_MUTED
                         })),
                         ..Default::default()
                     }) { name.to_string() }

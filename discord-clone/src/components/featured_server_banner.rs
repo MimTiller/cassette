@@ -26,6 +26,7 @@
 //!   INLINE in `style = …` (created fresh per evaluation, never captured
 //!   across the `when` boundary).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
@@ -33,10 +34,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_BANNER: &str = "#5865f2"; // solid banner background (Discord blurple)
-const BG_BUTTON: &str = "#ffffff"; // the "View" button surface on the blurple
-const TEXT: &str = "#ffffff"; // primary text on the colored block
-const TEXT_MUTED: &str = "#c9cdfb"; // tagline, slightly muted white
 
 /// The hardcoded server name (no props for now).
 const SERVER_NAME: &str = "Indie Devs";
@@ -68,7 +65,7 @@ pub fn FeaturedServerBanner() -> Element {
             padding_right: Some(px(16.0)),
             padding_bottom: Some(px(16.0)),
             padding_left: Some(px(16.0)),
-            background: Some(col(BG_BANNER)),
+            background: Some(col(theme::ACCENT)),
             border_top_left_radius: Some(px(10.0)),
             border_top_right_radius: Some(px(10.0)),
             border_bottom_left_radius: Some(px(10.0)),
@@ -79,13 +76,13 @@ pub fn FeaturedServerBanner() -> Element {
             text(style = StyleRules {
                 font_size: Some(px(18.0)),
                 font_weight: Some(FontWeight::SemiBold),
-                color: Some(col(TEXT)),
+                color: Some(col(theme::TEXT_ON_ACCENT)),
                 ..Default::default()
             }) { SERVER_NAME.to_string() }
             // The hardcoded tagline — a slightly muted second line.
             text(style = StyleRules {
                 font_size: Some(px(13.0)),
-                color: Some(col(TEXT_MUTED)),
+                color: Some(col(theme::TEXT_NORMAL)),
                 ..Default::default()
             }) { TAGLINE.to_string() }
             // Reactive branch: `if !viewed.get() {…} else {…}` lowers to a
@@ -101,7 +98,7 @@ pub fn FeaturedServerBanner() -> Element {
                     style = StyleRules {
                         height: Some(px(36.0)),
                         margin_top: Some(px(6.0)),
-                        background: Some(col(BG_BUTTON)),
+                        background: Some(col(theme::TEXT_ON_ACCENT)),
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),
                         border_top_left_radius: Some(px(8.0)),
@@ -114,7 +111,7 @@ pub fn FeaturedServerBanner() -> Element {
             } else {
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_ON_ACCENT)),
                     margin_top: Some(px(6.0)),
                     ..Default::default()
                 }) { "Viewing!".to_string() }

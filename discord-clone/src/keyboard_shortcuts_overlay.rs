@@ -6,6 +6,7 @@
 //! sizes this subtree to full screen when on and zero when off (the same
 //! build-once/toggle idiom as `profile_settings`). No backend call.
 
+use crate::theme;
 use runtime_core::{
     AlignItems, Element, FlexDirection, FontWeight, JustifyContent, Overflow, Position, Signal,
     StyleRules, TouchPhase, TouchResponse, ui,
@@ -16,11 +17,6 @@ use crate::style_helpers::{col, pct, px};
 // The same Discord dark palette as `profile_settings.rs`. Kept local so the
 // overlay stays self-contained; the values mirror it exactly so the two
 // trees agree pixel-for-pixel.
-const BG_SIDEBAR: &str = "#2b2d31";
-const BG_ACTIVE: &str = "#404249";
-const TEXT: &str = "#f2f3f5";
-const TEXT_MUTED: &str = "#949ba4";
-const BORDER: &str = "#26272b";
 
 fn border_width(v: f32) -> runtime_core::Tokenized<f32> {
     runtime_core::Tokenized::Literal(v)
@@ -51,19 +47,19 @@ const SHORTCUTS: &[Shortcut] = &[
 fn shortcut_row(s: &Shortcut) -> Element {
     let label_style = StyleRules {
         font_size: Some(px(15.0)),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
         ..Default::default()
     };
     let combo_style = StyleRules {
         font_size: Some(px(12.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT_MUTED)),
+        color: Some(col(theme::TEXT_MUTED)),
         padding_left: Some(px(8.0)),
         padding_right: Some(px(8.0)),
         padding_top: Some(px(2.0)),
         padding_bottom: Some(px(2.0)),
-        background: Some(col(BG_ACTIVE)),
+        background: Some(col(theme::BG_SELECTED)),
         border_top_left_radius: Some(px(4.0)),
         border_top_right_radius: Some(px(4.0)),
         border_bottom_left_radius: Some(px(4.0)),
@@ -99,7 +95,7 @@ pub fn keyboard_shortcuts_overlay(open: Signal<bool>) -> Element {
         top: Some(pct(0.0)),
         width: Some(pct(100.0)),
         height: Some(pct(100.0)),
-        background: Some(col("rgba(0, 0, 0, 0.6)")),
+        background: Some(col(theme::OVERLAY)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         ..Default::default()
@@ -111,7 +107,7 @@ pub fn keyboard_shortcuts_overlay(open: Signal<bool>) -> Element {
         height: Some(px(28.0)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        color: Some(col(TEXT_MUTED)),
+        color: Some(col(theme::TEXT_MUTED)),
         font_size: Some(px(16.0)),
         border_top_left_radius: Some(px(6.0)),
         border_top_right_radius: Some(px(6.0)),
@@ -120,7 +116,7 @@ pub fn keyboard_shortcuts_overlay(open: Signal<bool>) -> Element {
         ..Default::default()
     };
     let close_text_style = StyleRules {
-        color: Some(col(TEXT_MUTED)),
+        color: Some(col(theme::TEXT_MUTED)),
         font_size: Some(px(16.0)),
         ..Default::default()
     };
@@ -128,7 +124,7 @@ pub fn keyboard_shortcuts_overlay(open: Signal<bool>) -> Element {
     let title_style = StyleRules {
         font_size: Some(px(16.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
         ..Default::default()
     };
@@ -136,7 +132,7 @@ pub fn keyboard_shortcuts_overlay(open: Signal<bool>) -> Element {
     // The panel: centered, fixed width, scrollable content.
     let panel_style = StyleRules {
         width: Some(px(380.0)),
-        background: Some(col(BG_SIDEBAR)),
+        background: Some(col(theme::BG_SECONDARY)),
         border_top_left_radius: Some(px(10.0)),
         border_top_right_radius: Some(px(10.0)),
         border_bottom_left_radius: Some(px(10.0)),
@@ -145,10 +141,10 @@ pub fn keyboard_shortcuts_overlay(open: Signal<bool>) -> Element {
         border_right_width: Some(border_width(1.0)),
         border_bottom_width: Some(border_width(1.0)),
         border_left_width: Some(border_width(1.0)),
-        border_top_color: Some(col(BORDER)),
-        border_right_color: Some(col(BORDER)),
-        border_bottom_color: Some(col(BORDER)),
-        border_left_color: Some(col(BORDER)),
+        border_top_color: Some(col(theme::BG_TERTIARY)),
+        border_right_color: Some(col(theme::BG_TERTIARY)),
+        border_bottom_color: Some(col(theme::BG_TERTIARY)),
+        border_left_color: Some(col(theme::BG_TERTIARY)),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
         padding_top: Some(px(16.0)),
@@ -172,7 +168,7 @@ pub fn keyboard_shortcuts_overlay(open: Signal<bool>) -> Element {
                         padding_bottom: Some(px(14.0)),
                         gap: Some(px(8.0)),
                         border_bottom_width: Some(border_width(1.0)),
-                        border_bottom_color: Some(col(BORDER)),
+                        border_bottom_color: Some(col(theme::BG_TERTIARY)),
                         margin_bottom: Some(px(8.0)),
                         ..Default::default()
                     }) {

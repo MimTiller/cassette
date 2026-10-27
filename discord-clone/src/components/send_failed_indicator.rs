@@ -33,6 +33,7 @@
 //!   `style = …` (created fresh per evaluation, never captured across the
 //!   `when` boundary).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, ui, AlignItems, Element, FlexDirection, Position, StyleRules, TouchPhase,
@@ -40,9 +41,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_PILL: &str = "#2b2d31"; // the pill surface (Discord sidebar gray)
-const WARN: &str = "#f0b232"; // the warning-triangle glyph (Discord warning amber)
-const TEXT: &str = "#f2f3f5"; // the "Failed to send - Retry" label (Discord near-white)
 
 /// The send-failure banner. While `failed` is set it renders a pill with a
 /// warning-triangle glyph and a "Failed to send - Retry" label; clicking the
@@ -62,7 +60,7 @@ pub fn SendFailedIndicator(failed: runtime_core::Signal<bool>) -> Element {
                 padding_right: Some(px(10.0)),
                 padding_top: Some(px(5.0)),
                 padding_bottom: Some(px(5.0)),
-                background: Some(col(BG_PILL)),
+                background: Some(col(theme::BG_SECONDARY)),
                 border_top_left_radius: Some(px(8.0)),
                 border_top_right_radius: Some(px(8.0)),
                 border_bottom_left_radius: Some(px(8.0)),
@@ -77,14 +75,14 @@ pub fn SendFailedIndicator(failed: runtime_core::Signal<bool>) -> Element {
                 // `TextSource::Static` (no reactive machinery).
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(WARN)),
+                    color: Some(col(theme::WARNING)),
                     ..Default::default()
                 }) { "⚠".to_string() }
                 // The failure label — the "Retry" affordance (a tap dismisses
                 // the banner so the user can resend).
                 text(style = StyleRules {
                     font_size: Some(px(13.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { "Failed to send - Retry".to_string() }
             }

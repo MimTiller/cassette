@@ -23,11 +23,11 @@
 //!   once per render;
 //! - the swap is a reactive `if hovered.get() { … } else { … }` inside `ui!`,
 //!   each branch reading the signal so `ui!` lowers it to a `when`.
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{signal, ui, AlignItems, Element, FlexDirection, StyleRules};
 
 // Discord dark palette (kept local so the component is self-contained).
-const TEXT: &str = "#949ba4"; // muted timestamp tone
 
 /// The timestamp with hover tooltip. Shows the short `when` label at rest and
 /// the full `full` absolute date/time while hovered. `when` / `full` are static
@@ -62,13 +62,13 @@ pub fn message_timestamp_tooltip(when: String, full: String) -> Element {
             if hovered.get() {
                 text(style = StyleRules {
                     font_size: Some(px(11.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_MUTED)),
                     ..Default::default()
                 }) { full.clone() }
             } else {
                 text(style = StyleRules {
                     font_size: Some(px(11.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_MUTED)),
                     ..Default::default()
                 }) { when.clone() }
             }

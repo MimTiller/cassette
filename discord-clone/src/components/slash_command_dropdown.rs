@@ -28,6 +28,7 @@
 //!   styling reads the `selected` signal, so a `ui!` text child never becomes
 //!   reactive.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, StyleRules, TouchPhase,
@@ -35,10 +36,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_MAIN: &str = "#2b2d31";
-const BG_SELECTED: &str = "#404249";
-const TEXT: &str = "#f2f3f5";
-const TEXT_MUTED: &str = "#949ba4";
 
 /// The three hardcoded slash commands — exactly three, local only.
 const SLASH_COMMANDS: [&str; 3] = ["/shrug", "/tableflip", "/giphy"];
@@ -55,7 +52,7 @@ pub fn SlashCommandDropdown() -> Element {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Column),
             align_items: Some(AlignItems::Stretch),
-            background: Some(col(BG_MAIN)),
+            background: Some(col(theme::BG_SECONDARY)),
             padding_top: Some(px(8.0)),
             padding_bottom: Some(px(8.0)),
             ..Default::default()
@@ -74,7 +71,7 @@ pub fn SlashCommandDropdown() -> Element {
                         padding_right: Some(px(12.0)),
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),
-                        background: Some(col(if sel { BG_SELECTED } else { "transparent" })),
+                        background: Some(col(if sel { theme::BG_SELECTED } else { "transparent" })),
                         border_top_left_radius: Some(px(8.0)),
                         border_top_right_radius: Some(px(8.0)),
                         border_bottom_left_radius: Some(px(8.0)),
@@ -90,9 +87,9 @@ pub fn SlashCommandDropdown() -> Element {
                             FontWeight::Normal
                         }),
                         color: Some(col(if selected.get() == *cmd {
-                            TEXT
+                            theme::TEXT_STRONG
                         } else {
-                            TEXT_MUTED
+                            theme::TEXT_MUTED
                         })),
                         ..Default::default()
                     }) { cmd.to_string() }

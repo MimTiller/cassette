@@ -33,6 +33,7 @@
 
 #![allow(dead_code)]
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, ui, AlignItems, Element, FlexDirection, FontWeight, StyleRules,
@@ -42,8 +43,7 @@ use runtime_core::{
 // ramp: unboosted gray up through blurple, green, and a gold for the top tier.
 // Every fill is dark enough for the white label to stay readable. Kept local
 // so the component is self-contained.
-const LEVEL_COLORS: [&str; 4] = ["#80848e", "#5865f2", "#3ba55c", "#f0b232"];
-const PILL_TEXT: &str = "#ffffff"; // white label, readable on every level fill
+const LEVEL_COLORS: [&str; 4] = [theme::TEXT_FAINT, theme::ACCENT, "#3ba55c", theme::WARNING];
 
 /// The server boost-level badge. A small pill: "Level {n}" rendered in white on
 /// a distinct per-level background (0-3). The boost level is an inline prop
@@ -86,7 +86,7 @@ pub fn ServerBoostBadge(#[prop(default = 2)] boost_level: i32) -> Element {
             text(style = StyleRules {
                 font_size: Some(px(12.0)),
                 font_weight: Some(FontWeight::SemiBold),
-                color: Some(col(PILL_TEXT)),
+                color: Some(col(theme::TEXT_ON_ACCENT)),
                 ..Default::default()
             }) { label }
         }

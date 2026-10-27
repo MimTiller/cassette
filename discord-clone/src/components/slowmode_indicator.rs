@@ -32,15 +32,13 @@
 //!   the per-channel gating is done at the call site by passing `0` or a real
 //!   cooldown.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, ui, AlignItems, Element, FlexDirection, FontWeight, StyleRules,
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const CLOCK: &str = "#949ba4"; // the clock glyph (Discord muted text)
-const TEXT: &str = "#949ba4"; // the "Slowmode: {n}s" label (Discord muted text)
-const BG_PILL: &str = "#2b2d31"; // the pill surface (Discord sidebar gray)
 
 /// The slowmode timer indicator. A small pill with a clock glyph and the
 /// "Slowmode: {n}s" label. The cooldown seconds arrive as a prop (`secs`), so
@@ -78,7 +76,7 @@ pub fn SlowmodeIndicator(#[prop(default = 0)] secs: u32) -> Element {
                 padding_right: Some(px(7.0)),
                 padding_top: Some(px(3.0)),
                 padding_bottom: Some(px(3.0)),
-                background: Some(col(BG_PILL)),
+                background: Some(col(theme::BG_SECONDARY)),
                 border_top_left_radius: Some(px(8.0)),
                 border_top_right_radius: Some(px(8.0)),
                 border_bottom_left_radius: Some(px(8.0)),
@@ -89,7 +87,7 @@ pub fn SlowmodeIndicator(#[prop(default = 0)] secs: u32) -> Element {
                 // `TextSource::Static` (no reactive machinery).
                 text(style = StyleRules {
                     font_size: Some(px(13.0)),
-                    color: Some(col(CLOCK)),
+                    color: Some(col(theme::TEXT_MUTED)),
                     ..Default::default()
                 }) { "🕓".to_string() }
                 // The label — the static `label` bound above, so it bakes to
@@ -97,7 +95,7 @@ pub fn SlowmodeIndicator(#[prop(default = 0)] secs: u32) -> Element {
                 text(style = StyleRules {
                     font_size: Some(px(12.0)),
                     font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_MUTED)),
                     ..Default::default()
                 }) { label }
             }

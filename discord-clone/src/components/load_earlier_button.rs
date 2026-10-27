@@ -28,6 +28,7 @@
 //! - the "in-flight" guard the caller passes renders a muted label while a
 //!   page is loading so a double-tap can't fire a second `History` request.
 
+use crate::theme;
 use std::rc::Rc;
 
 use crate::style_helpers::{col, px};
@@ -38,9 +39,6 @@ use runtime_core::{
 
 // Discord palette (same constants `app.rs` uses for the blurple button and
 // near-white text) — kept local so the component is self-contained.
-const BUTTON: &str = "#5865f2";
-const TEXT: &str = "#f2f3f5";
-const TEXT_MUTED: &str = "#80848e";
 
 /// The "Load earlier messages" scrollback pill. Renders an up-arrow + label.
 /// `busy` is `true` while a history page is in flight (the label goes muted and
@@ -56,7 +54,7 @@ pub fn load_earlier_button(busy: Signal<bool>, on_load: Rc<dyn Fn()>) -> Element
             padding_right: Some(px(12.0)),
             padding_top: Some(px(6.0)),
             padding_bottom: Some(px(6.0)),
-            background: Some(col(BUTTON)),
+            background: Some(col(theme::ACCENT)),
             flex_direction: Some(FlexDirection::Row),
             align_items: Some(AlignItems::Center),
             gap: Some(px(6.0)),
@@ -70,13 +68,13 @@ pub fn load_earlier_button(busy: Signal<bool>, on_load: Rc<dyn Fn()>) -> Element
         }) {
             text(style = StyleRules {
                 font_size: Some(px(14.0)),
-                color: Some(col(TEXT)),
+                color: Some(col(theme::TEXT_STRONG)),
                 ..Default::default()
             }) { "↑".to_string() }
             text(style = move || StyleRules {
                 font_size: Some(px(12.0)),
                 // Muted while a page is in flight ("Loading…"), bright otherwise.
-                color: Some(col(if busy.get() { TEXT_MUTED } else { TEXT })),
+                color: Some(col(if busy.get() { theme::TEXT_FAINT } else { theme::TEXT_STRONG })),
                 ..Default::default()
             }) { move || (if busy.get() { "Loading…" } else { "Load earlier messages" }).to_string() }
         }

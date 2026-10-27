@@ -29,6 +29,7 @@
 //!   `when` boundary) — the same shape `translate_toggle` /
 //!   `server_discovery_card` use.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
@@ -36,11 +37,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_CARD: &str = "#2b2d31"; // card surface (Discord sidebar gray)
-const TEXT: &str = "#f2f3f5"; // primary text
-const TEXT_MUTED: &str = "#949ba4"; // secondary text (the time line)
-const BLURPLE: &str = "#5865f2"; // "Interested" button (Discord accent)
-const GREEN: &str = "#23a55a"; // "Going" button (Discord confirmed accent)
 
 // The two hardcoded local strings — no backend call, just literals.
 const EVENT_NAME: &str = "Movie Night";
@@ -68,7 +64,7 @@ pub fn ServerEventCard() -> Element {
             padding_bottom: Some(px(16.0)),
             padding_left: Some(px(16.0)),
             padding_right: Some(px(16.0)),
-            background: Some(col(BG_CARD)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(8.0)),
             border_top_right_radius: Some(px(8.0)),
             border_bottom_left_radius: Some(px(8.0)),
@@ -78,12 +74,12 @@ pub fn ServerEventCard() -> Element {
             text(style = StyleRules {
                 font_size: Some(px(16.0)),
                 font_weight: Some(FontWeight::SemiBold),
-                color: Some(col(TEXT)),
+                color: Some(col(theme::TEXT_STRONG)),
                 ..Default::default()
             }) { EVENT_NAME.to_string() }
             text(style = StyleRules {
                 font_size: Some(px(13.0)),
-                color: Some(col(TEXT_MUTED)),
+                color: Some(col(theme::TEXT_MUTED)),
                 ..Default::default()
             }) { EVENT_TIME.to_string() }
             // Reactive branch: `if interested.get() {…} else {…}` lowers to a
@@ -99,7 +95,7 @@ pub fn ServerEventCard() -> Element {
                     style = StyleRules {
                         height: Some(px(30.0)),
                         margin_top: Some(px(4.0)),
-                        background: Some(col(GREEN)),
+                        background: Some(col(theme::SUCCESS)),
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),
@@ -117,7 +113,7 @@ pub fn ServerEventCard() -> Element {
                     style = StyleRules {
                         height: Some(px(30.0)),
                         margin_top: Some(px(4.0)),
-                        background: Some(col(BLURPLE)),
+                        background: Some(col(theme::ACCENT)),
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),

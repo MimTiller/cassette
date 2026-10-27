@@ -39,6 +39,7 @@
 //!   re-evaluation time so the `StyleRules` is a fresh value each pass (never a
 //!   captured `let` binding — `StyleRules` is not `Copy`).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
@@ -46,12 +47,6 @@ use runtime_core::{
 };
 
 // Discord dark palette — kept local so the component is self-contained.
-const BG_ROW: &str = "#313338"; // row surface (Discord sidebar gray)
-const BG_CARD: &str = "#2b2d31"; // card surface (Discord sidebar panel)
-const TEXT: &str = "#f2f3f5"; // primary text (template name)
-const BUTTON_BG: &str = "#5865f2"; // preview button fill (Discord blurple)
-const BORDER_IDLE: &str = "#4e5058"; // idle card outline (muted)
-const BORDER_PREVIEW: &str = "#5865f2"; // previewing card ring (blurple accent)
 
 /// A unitless `Tokenized<f32>` border width (the `border_*_width` style fields
 /// take a plain `f32` token, not a `Length`) — same shape `permission_override_row`
@@ -93,7 +88,7 @@ pub fn TemplateGalleryGrid() -> Element {
             padding_bottom: Some(px(16.0)),
             padding_left: Some(px(16.0)),
             padding_right: Some(px(16.0)),
-            background: Some(col(BG_ROW)),
+            background: Some(col(theme::BG_PRIMARY)),
             border_top_left_radius: Some(px(10.0)),
             border_top_right_radius: Some(px(10.0)),
             border_bottom_left_radius: Some(px(10.0)),
@@ -122,7 +117,7 @@ pub fn TemplateGalleryGrid() -> Element {
                         padding_right: Some(px(12.0)),
                         padding_bottom: Some(px(12.0)),
                         padding_left: Some(px(12.0)),
-                        background: Some(col(BG_CARD)),
+                        background: Some(col(theme::BG_SECONDARY)),
                         border_top_left_radius: Some(px(8.0)),
                         border_top_right_radius: Some(px(8.0)),
                         border_bottom_left_radius: Some(px(8.0)),
@@ -131,10 +126,10 @@ pub fn TemplateGalleryGrid() -> Element {
                         border_right_width: Some(border_width(if on { 2.0 } else { 1.0 })),
                         border_bottom_width: Some(border_width(if on { 2.0 } else { 1.0 })),
                         border_left_width: Some(border_width(if on { 2.0 } else { 1.0 })),
-                        border_top_color: Some(col(if on { BORDER_PREVIEW } else { BORDER_IDLE })),
-                        border_right_color: Some(col(if on { BORDER_PREVIEW } else { BORDER_IDLE })),
-                        border_bottom_color: Some(col(if on { BORDER_PREVIEW } else { BORDER_IDLE })),
-                        border_left_color: Some(col(if on { BORDER_PREVIEW } else { BORDER_IDLE })),
+                        border_top_color: Some(col(if on { theme::ACCENT } else { theme::BUTTON_SECONDARY })),
+                        border_right_color: Some(col(if on { theme::ACCENT } else { theme::BUTTON_SECONDARY })),
+                        border_bottom_color: Some(col(if on { theme::ACCENT } else { theme::BUTTON_SECONDARY })),
+                        border_left_color: Some(col(if on { theme::ACCENT } else { theme::BUTTON_SECONDARY })),
                         ..Default::default()
                     }
                 }) {
@@ -143,7 +138,7 @@ pub fn TemplateGalleryGrid() -> Element {
                     text(style = StyleRules {
                         font_size: Some(px(15.0)),
                         font_weight: Some(FontWeight::SemiBold),
-                        color: Some(col(TEXT)),
+                        color: Some(col(theme::TEXT_STRONG)),
                         ..Default::default()
                     }) { name.to_string() }
 
@@ -163,7 +158,7 @@ pub fn TemplateGalleryGrid() -> Element {
                             flex_direction: Some(FlexDirection::Row),
                             align_items: Some(AlignItems::Center),
                             justify_content: Some(JustifyContent::Center),
-                            background: Some(col(BUTTON_BG)),
+                            background: Some(col(theme::ACCENT)),
                             border_top_left_radius: Some(px(6.0)),
                             border_top_right_radius: Some(px(6.0)),
                             border_bottom_left_radius: Some(px(6.0)),

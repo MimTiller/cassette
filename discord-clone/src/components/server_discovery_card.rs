@@ -27,6 +27,7 @@
 //!   `style = …` (created fresh per evaluation, never captured across the
 //!   `when` boundary) — the same shape `app.rs` / `idle_timer_badge` use.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
@@ -34,10 +35,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_CARD: &str = "#2b2d31";
-const BG_BUTTON: &str = "#5865f2";
-const TEXT: &str = "#f2f3f5";
-const TEXT_MUTED: &str = "#949ba4";
 
 /// The hardcoded server name (no props for now).
 const SERVER_NAME: &str = "Gamers United";
@@ -68,7 +65,7 @@ pub fn ServerDiscoveryCard() -> Element {
         padding_right: Some(px(16.0)),
         padding_bottom: Some(px(16.0)),
         padding_left: Some(px(16.0)),
-        background: Some(col(BG_CARD)),
+        background: Some(col(theme::BG_SECONDARY)),
         border_top_left_radius: Some(px(10.0)),
         border_top_right_radius: Some(px(10.0)),
         border_bottom_left_radius: Some(px(10.0)),
@@ -79,7 +76,7 @@ pub fn ServerDiscoveryCard() -> Element {
     let name_style = StyleRules {
         font_size: Some(px(18.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
 
@@ -92,12 +89,12 @@ pub fn ServerDiscoveryCard() -> Element {
             // `for` loop in `server_folder_group` uses for per-row styles.
             text(style = StyleRules {
                 font_size: Some(px(13.0)),
-                color: Some(col(TEXT_MUTED)),
+                color: Some(col(theme::TEXT_MUTED)),
                 ..Default::default()
             }) { MEMBER_COUNT.to_string() }
             text(style = StyleRules {
                 font_size: Some(px(13.0)),
-                color: Some(col(TEXT_MUTED)),
+                color: Some(col(theme::TEXT_MUTED)),
                 ..Default::default()
             }) { DESCRIPTION.to_string() }
             // Reactive branch: `if !joined.get() {…} else {…}` lowers to a
@@ -113,7 +110,7 @@ pub fn ServerDiscoveryCard() -> Element {
                     style = StyleRules {
                         height: Some(px(36.0)),
                         margin_top: Some(px(4.0)),
-                        background: Some(col(BG_BUTTON)),
+                        background: Some(col(theme::ACCENT)),
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),
                         border_top_left_radius: Some(px(8.0)),
@@ -126,7 +123,7 @@ pub fn ServerDiscoveryCard() -> Element {
             } else {
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     margin_top: Some(px(4.0)),
                     ..Default::default()
                 }) { "Joined!".to_string() }

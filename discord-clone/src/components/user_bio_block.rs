@@ -33,16 +33,13 @@
 //! - styles are plain `StyleRules` via the `style_helpers` `px` / `col`
 //!   constructors (one static pass, no live style engine).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, text_area, ui, AlignItems, Element, FlexDirection, StyleRules, Tokenized,
 };
 
 // Discord dark palette — kept local so the component is self-contained.
-const CARD_BG: &str = "#2b2d31"; // card surface (Discord sidebar gray)
-const TEXT: &str = "#f2f3f5"; // primary text
-const TEXT_MUTED: &str = "#949ba4"; // character count / hint text
-const BIO_BG: &str = "#1e1f22"; // text area surface (Discord input gray)
 
 // The display budget shown in the character count.
 const BIO_BUDGET: usize = 190;
@@ -76,7 +73,7 @@ pub fn UserBioBlock(#[prop(default = "Tell us about yourself...")] bio: String) 
         .max_rows(8)
         .with_style(StyleRules {
             width: Some(px(320.0)),
-            background: Some(col(BIO_BG)),
+            background: Some(col(theme::BG_TERTIARY)),
             border_top_left_radius: Some(px(6.0)),
             border_top_right_radius: Some(px(6.0)),
             border_bottom_left_radius: Some(px(6.0)),
@@ -85,10 +82,10 @@ pub fn UserBioBlock(#[prop(default = "Tell us about yourself...")] bio: String) 
             border_right_width: Some(Tokenized::Literal(1.0)),
             border_bottom_width: Some(Tokenized::Literal(1.0)),
             border_left_width: Some(Tokenized::Literal(1.0)),
-            border_top_color: Some(col("#4e5058")),
-            border_right_color: Some(col("#4e5058")),
-            border_bottom_color: Some(col("#4e5058")),
-            border_left_color: Some(col("#4e5058")),
+            border_top_color: Some(col(theme::BUTTON_SECONDARY)),
+            border_right_color: Some(col(theme::BUTTON_SECONDARY)),
+            border_bottom_color: Some(col(theme::BUTTON_SECONDARY)),
+            border_left_color: Some(col(theme::BUTTON_SECONDARY)),
             ..Default::default()
         });
 
@@ -113,7 +110,7 @@ pub fn UserBioBlock(#[prop(default = "Tell us about yourself...")] bio: String) 
             padding_bottom: Some(px(18.0)),
             padding_left: Some(px(20.0)),
             padding_right: Some(px(20.0)),
-            background: Some(col(CARD_BG)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(8.0)),
             border_top_right_radius: Some(px(8.0)),
             border_bottom_left_radius: Some(px(8.0)),
@@ -124,7 +121,7 @@ pub fn UserBioBlock(#[prop(default = "Tell us about yourself...")] bio: String) 
             text(style = StyleRules {
                 font_size: Some(px(16.0)),
                 font_weight: Some(runtime_core::FontWeight::SemiBold),
-                color: Some(col(TEXT)),
+                color: Some(col(theme::TEXT_STRONG)),
                 ..Default::default()
             }) { "About you".to_string() }
 
@@ -136,7 +133,7 @@ pub fn UserBioBlock(#[prop(default = "Tell us about yourself...")] bio: String) 
             // re-renders `"{n}/190"` on every keystroke.
             text(style = StyleRules {
                 font_size: Some(px(12.0)),
-                color: Some(col(TEXT_MUTED)),
+                color: Some(col(theme::TEXT_MUTED)),
                 ..Default::default()
             }) { char_count }
         }

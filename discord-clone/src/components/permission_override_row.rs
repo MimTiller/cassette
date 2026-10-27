@@ -34,6 +34,7 @@
 //!   each evaluation (never a captured `let` binding — `StyleRules` is not
 //!   `Copy`).
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, StyleRules,
@@ -41,12 +42,6 @@ use runtime_core::{
 };
 
 // Discord dark palette — kept local so the component is self-contained.
-const BG_MAIN: &str = "#313338"; // row surface (Discord sidebar gray)
-const BG_ACTIVE: &str = "#5865f2"; // active override fill (Discord accent)
-const BG_INACTIVE: &str = "#404249"; // inactive override pill (subtle)
-const BORDER_ACTIVE: &str = "#5865f2"; // active ring
-const BORDER_INACTIVE: &str = "#4e5058"; // inactive ring (muted)
-const TEXT: &str = "#f2f3f5"; // primary text
 
 // The one hardcoded local permission — no backend fetch.
 const PERMISSION: &str = "Send Messages";
@@ -80,7 +75,7 @@ pub fn PermissionOverrideRow() -> Element {
             padding_bottom: Some(px(16.0)),
             padding_left: Some(px(16.0)),
             padding_right: Some(px(16.0)),
-            background: Some(col(BG_MAIN)),
+            background: Some(col(theme::BG_PRIMARY)),
             border_top_left_radius: Some(px(10.0)),
             border_top_right_radius: Some(px(10.0)),
             border_bottom_left_radius: Some(px(10.0)),
@@ -90,7 +85,7 @@ pub fn PermissionOverrideRow() -> Element {
             // The hardcoded permission name.
             text(style = StyleRules {
                 font_size: Some(px(16.0)),
-                color: Some(col(TEXT)),
+                color: Some(col(theme::TEXT_STRONG)),
                 ..Default::default()
             }) { PERMISSION.to_string() }
 
@@ -112,9 +107,9 @@ pub fn PermissionOverrideRow() -> Element {
                             align_items: Some(AlignItems::Center),
                             justify_content: Some(JustifyContent::Center),
                             background: Some(col(if active {
-                                BG_ACTIVE
+                                theme::ACCENT
                             } else {
-                                BG_INACTIVE
+                                theme::BG_SELECTED
                             })),
                             border_top_left_radius: Some(px(8.0)),
                             border_top_right_radius: Some(px(8.0)),
@@ -141,24 +136,24 @@ pub fn PermissionOverrideRow() -> Element {
                                 1.0
                             })),
                             border_top_color: Some(col(if active {
-                                BORDER_ACTIVE
+                                theme::ACCENT
                             } else {
-                                BORDER_INACTIVE
+                                theme::BUTTON_SECONDARY
                             })),
                             border_right_color: Some(col(if active {
-                                BORDER_ACTIVE
+                                theme::ACCENT
                             } else {
-                                BORDER_INACTIVE
+                                theme::BUTTON_SECONDARY
                             })),
                             border_bottom_color: Some(col(if active {
-                                BORDER_ACTIVE
+                                theme::ACCENT
                             } else {
-                                BORDER_INACTIVE
+                                theme::BUTTON_SECONDARY
                             })),
                             border_left_color: Some(col(if active {
-                                BORDER_ACTIVE
+                                theme::ACCENT
                             } else {
-                                BORDER_INACTIVE
+                                theme::BUTTON_SECONDARY
                             })),
                             ..Default::default()
                         }

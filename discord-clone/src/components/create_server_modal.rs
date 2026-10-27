@@ -24,6 +24,7 @@
 //! the `ui!` child position. The inline `error` line is the reactive
 //! `if !…is_empty() { text { move || … } }` idiom from `app.rs`. `Signal` is
 //! `Copy`, so every `move` closure captures a copy and stays `Fn`.
+use crate::theme;
 use std::rc::Rc;
 
 use runtime_core::{
@@ -36,13 +37,6 @@ use crate::server_icon_upload_placeholder::ServerIconUploadPlaceholder;
 use crate::server_region_selector::ServerRegionSelector;
 
 // Discord dark palette (kept local so the component is self-contained).
-const CARD: &str = "#2b2d31";
-const INPUT_BG: &str = "#1e1f22";
-const BTN_BG: &str = "#5865f2";
-const BTN_CANCEL: &str = "#4e5058";
-const TEXT: &str = "#f2f3f5";
-const TEXT_CHANNEL: &str = "#c8cacf";
-const TEXT_MUTED: &str = "#949ba4";
 
 pub fn create_server_modal(
     open: Signal<bool>,
@@ -64,7 +58,7 @@ pub fn create_server_modal(
         padding_bottom: Some(px(20.0)),
         padding_left: Some(px(20.0)),
         padding_right: Some(px(20.0)),
-        background: Some(col(CARD)),
+        background: Some(col(theme::BG_SECONDARY)),
         border_top_left_radius: Some(px(12.0)),
         border_top_right_radius: Some(px(12.0)),
         border_bottom_left_radius: Some(px(12.0)),
@@ -75,12 +69,12 @@ pub fn create_server_modal(
     let title_style = StyleRules {
         font_size: Some(px(18.0)),
         font_weight: Some(FontWeight::Bold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
     let sub_style = StyleRules {
         font_size: Some(px(13.0)),
-        color: Some(col(TEXT_MUTED)),
+        color: Some(col(theme::TEXT_MUTED)),
         margin_top: Some(px(4.0)),
         ..Default::default()
     };
@@ -89,8 +83,8 @@ pub fn create_server_modal(
         margin_top: Some(px(16.0)),
         padding_left: Some(px(12.0)),
         padding_right: Some(px(12.0)),
-        background: Some(col(INPUT_BG)),
-        color: Some(col(TEXT_CHANNEL)),
+        background: Some(col(theme::BG_TERTIARY)),
+        color: Some(col(theme::TEXT_NORMAL)),
         font_size: Some(px(15.0)),
         border_top_left_radius: Some(px(8.0)),
         border_top_right_radius: Some(px(8.0)),
@@ -107,7 +101,7 @@ pub fn create_server_modal(
     let create_btn_style = StyleRules {
         height: Some(px(40.0)),
         flex_grow: Some(Tokenized::Literal(1.0)),
-        background: Some(col(BTN_BG)),
+        background: Some(col(theme::ACCENT)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         border_top_left_radius: Some(px(8.0)),
@@ -119,7 +113,7 @@ pub fn create_server_modal(
     let cancel_btn_style = StyleRules {
         height: Some(px(40.0)),
         flex_grow: Some(Tokenized::Literal(1.0)),
-        background: Some(col(BTN_CANCEL)),
+        background: Some(col(theme::BUTTON_SECONDARY)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         border_top_left_radius: Some(px(8.0)),
@@ -131,12 +125,12 @@ pub fn create_server_modal(
     let btn_label_style = StyleRules {
         font_size: Some(px(15.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
+        color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
     let err_style = StyleRules {
         font_size: Some(px(13.0)),
-        color: Some(col("#f23f43")),
+        color: Some(col(theme::DANGER)),
         margin_top: Some(px(12.0)),
         ..Default::default()
     };
@@ -241,7 +235,7 @@ pub fn create_server_modal(
         top: Some(px(0.0)),
         width: Some(if open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col("rgba(0, 0, 0, 0.6)")),
+        background: Some(col(theme::OVERLAY)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         overflow: Some(Overflow::Hidden),

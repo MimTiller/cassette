@@ -19,12 +19,11 @@
 //!   baked to `TextSource::Static` — no reactive machinery, the same
 //!   static-glyph approach `message_rating` uses for its ↑ / ↓ arrows.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{component, ui, AlignItems, Element, FlexDirection, StyleRules};
 
 // Discord dark palette — kept local so the component is self-contained.
-const TEXT: &str = "#f2f3f5"; // thread name (Discord primary text)
-const TEXT_MUTED: &str = "#949ba4"; // reply count (Discord secondary text)
 
 // The one hardcoded local thread — no backend fetch.
 const THREAD_NAME: &str = "Bug reports";
@@ -52,14 +51,14 @@ pub fn ThreadListRow() -> Element {
             // The thread name, on the same line.
             text(style = StyleRules {
                 font_size: Some(px(14.0)),
-                color: Some(col(TEXT)),
+                color: Some(col(theme::TEXT_STRONG)),
                 ..Default::default()
             }) { THREAD_NAME.to_string() }
 
             // The muted reply count, next to the name on the same line.
             text(style = StyleRules {
                 font_size: Some(px(12.0)),
-                color: Some(col(TEXT_MUTED)),
+                color: Some(col(theme::TEXT_MUTED)),
                 ..Default::default()
             }) { REPLY_COUNT.to_string() }
         }

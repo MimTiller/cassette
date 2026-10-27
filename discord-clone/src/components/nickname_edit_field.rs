@@ -40,6 +40,7 @@
 //!   `Tokenized<f32>`, not `px()`) — it uses a flat background + corner radius
 //!   instead, the same look as the input in `profile_settings`.
 
+use crate::theme;
 use crate::style_helpers::{borderless_input, col, px};
 use runtime_core::{
     after_ms_detached, component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent,
@@ -50,12 +51,6 @@ use runtime_core::{
 const SAVED_MS: i32 = 1500;
 
 // Discord palette (kept local so the component is self-contained).
-const BG_MAIN: &str = "#313338"; // screen background
-const COMPOSER: &str = "#383a40"; // input surface
-const TEXT: &str = "#f2f3f5"; // primary text (near-white)
-const BLURPLE: &str = "#5865f2"; // Save button (Discord accent)
-const MUTED: &str = "#4e5058"; // Reset button (subtle gray)
-const SAVED: &str = "#57f287"; // "Saved!" confirmation (Discord online green)
 
 /// A self-contained nickname editor. A `text_input` starts at the member's
 /// nickname (`default_nickname` prop) and is bound to local `nickname` state;
@@ -98,8 +93,8 @@ pub fn NicknameEditField(#[prop(default = "Alex")] default_nickname: String) -> 
         height: Some(px(40.0)),
         padding_left: Some(px(12.0)),
         padding_right: Some(px(12.0)),
-        background: Some(col(COMPOSER)),
-        color: Some(col(TEXT)),
+        background: Some(col(theme::BG_INPUT)),
+        color: Some(col(theme::TEXT_STRONG)),
         font_size: Some(px(15.0)),
         border_top_left_radius: Some(px(6.0)),
         border_top_right_radius: Some(px(6.0)),
@@ -112,7 +107,7 @@ pub fn NicknameEditField(#[prop(default = "Alex")] default_nickname: String) -> 
         height: Some(px(32.0)),
         padding_left: Some(px(18.0)),
         padding_right: Some(px(18.0)),
-        background: Some(col(BLURPLE)),
+        background: Some(col(theme::ACCENT)),
         border_top_left_radius: Some(px(6.0)),
         border_top_right_radius: Some(px(6.0)),
         border_bottom_left_radius: Some(px(6.0)),
@@ -127,7 +122,7 @@ pub fn NicknameEditField(#[prop(default = "Alex")] default_nickname: String) -> 
         height: Some(px(32.0)),
         padding_left: Some(px(18.0)),
         padding_right: Some(px(18.0)),
-        background: Some(col(MUTED)),
+        background: Some(col(theme::BUTTON_SECONDARY)),
         border_top_left_radius: Some(px(6.0)),
         border_top_right_radius: Some(px(6.0)),
         border_bottom_left_radius: Some(px(6.0)),
@@ -143,7 +138,7 @@ pub fn NicknameEditField(#[prop(default = "Alex")] default_nickname: String) -> 
             flex_direction: Some(FlexDirection::Column),
             align_items: Some(AlignItems::Center),
             justify_content: Some(JustifyContent::Center),
-            background: Some(col(BG_MAIN)),
+            background: Some(col(theme::BG_PRIMARY)),
             padding_top: Some(px(24.0)),
             padding_bottom: Some(px(24.0)),
             padding_left: Some(px(20.0)),
@@ -153,7 +148,7 @@ pub fn NicknameEditField(#[prop(default = "Alex")] default_nickname: String) -> 
         }) {
             text(style = StyleRules {
                 font_size: Some(px(15.0)),
-                color: Some(col(TEXT)),
+                color: Some(col(theme::TEXT_STRONG)),
                 ..Default::default()
             }) { "Nickname".to_string() }
 
@@ -182,7 +177,7 @@ pub fn NicknameEditField(#[prop(default = "Alex")] default_nickname: String) -> 
             if saved.get() {
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
-                    color: Some(col(SAVED)),
+                    color: Some(col(theme::SUCCESS)),
                     ..Default::default()
                 }) { "Saved!".to_string() }
             }

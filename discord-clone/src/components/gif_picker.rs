@@ -11,6 +11,7 @@
 //! Typing is debounced (`DEBOUNCE_MS`) and every request carries a generation
 //! number, so only the newest search's answer lands; a development key's
 //! 100 calls an hour is not spent one keystroke at a time.
+use crate::theme;
 use crate::style_helpers::{borderless_input, col, px};
 use discord_server::gifs::{Gif, GifPage, GifSearchInput};
 use icons_lucide::SEARCH;
@@ -22,12 +23,6 @@ use runtime_core::{
 use std::rc::Rc;
 
 // The emoji picker's palette, so the two cards match.
-const BG_CARD: &str = "#2b2d31";
-const SURFACE: &str = "#313338";
-const BORDER: &str = "#1e1f22";
-const TEXT: &str = "#f2f3f5";
-const MUTED: &str = "#949ba4";
-const SHADOW: &str = "#000000";
 
 const CARD_W: f32 = 420.0;
 const CARD_H: f32 = 440.0;
@@ -123,7 +118,7 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
                         padding_right: Some(px(24.0)),
                         ..Default::default()
                     }) {
-                        text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(MUTED)), ..Default::default() }) { status }
+                        text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { status }
                     }
                 };
             }
@@ -139,7 +134,7 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
                                 view(style = StyleRules {
                                     width: Some(px(COL_W)),
                                     height: Some(px(h)),
-                                    background: Some(col(SURFACE)),
+                                    background: Some(col(theme::BG_PRIMARY)),
                                     border_top_left_radius: Some(px(6.0)),
                                     border_top_right_radius: Some(px(6.0)),
                                     border_bottom_left_radius: Some(px(6.0)),
@@ -186,14 +181,14 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
                         margin_top: Some(px(GAP)),
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),
-                        background: Some(col(SURFACE)),
+                        background: Some(col(theme::BG_PRIMARY)),
                         border_top_left_radius: Some(px(6.0)),
                         border_top_right_radius: Some(px(6.0)),
                         border_bottom_left_radius: Some(px(6.0)),
                         border_bottom_right_radius: Some(px(6.0)),
                         ..Default::default()
                     }) {
-                        text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(TEXT)), ..Default::default() }) { "Load more".to_string() }
+                        text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { "Load more".to_string() }
                     }
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
@@ -229,7 +224,7 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
             width: Some(px(CARD_W)),
             height: Some(px(CARD_H)),
             flex_direction: Some(FlexDirection::Column),
-            background: Some(col(BG_CARD)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(10.0)),
             border_top_right_radius: Some(px(10.0)),
             border_bottom_left_radius: Some(px(10.0)),
@@ -238,11 +233,11 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
             border_right_width: Some(Tokenized::Literal(1.0)),
             border_bottom_width: Some(Tokenized::Literal(1.0)),
             border_left_width: Some(Tokenized::Literal(1.0)),
-            border_top_color: Some(col(BORDER)),
-            border_right_color: Some(col(BORDER)),
-            border_bottom_color: Some(col(BORDER)),
-            border_left_color: Some(col(BORDER)),
-            shadow: Some(Shadow { x: 0.0, y: 8.0, blur: 24.0, color: col(SHADOW) }),
+            border_top_color: Some(col(theme::BG_TERTIARY)),
+            border_right_color: Some(col(theme::BG_TERTIARY)),
+            border_bottom_color: Some(col(theme::BG_TERTIARY)),
+            border_left_color: Some(col(theme::BG_TERTIARY)),
+            shadow: Some(Shadow { x: 0.0, y: 8.0, blur: 24.0, color: col(theme::SHADOW) }),
             overflow: Some(Overflow::Hidden),
             ..Default::default()
         }, test_id = "gif-picker") {
@@ -257,7 +252,7 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
                 gap: Some(px(8.0)),
                 height: Some(px(38.0)),
                 flex_shrink: Some(Tokenized::Literal(0.0)),
-                background: Some(col(SURFACE)),
+                background: Some(col(theme::BG_PRIMARY)),
                 padding_left: Some(px(10.0)),
                 padding_right: Some(px(10.0)),
                 border_top_left_radius: Some(px(6.0)),
@@ -266,15 +261,15 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
                 border_bottom_right_radius: Some(px(6.0)),
                 ..borderless_input()
             }) {
-                icon(SEARCH).color(|| Color::from(MUTED)).size(16.0)
+                icon(SEARCH).color(|| Color::from(theme::TEXT_MUTED)).size(16.0)
                 text_input(
                     value = query,
                     on_change = on_change,
                     placeholder = "Search GIPHY",
                     style = StyleRules {
                         flex_grow: Some(Tokenized::Literal(1.0)),
-                        color: Some(col(TEXT)),
-                        background: Some(col(SURFACE)),
+                        color: Some(col(theme::TEXT_STRONG)),
+                        background: Some(col(theme::BG_PRIMARY)),
                         font_size: Some(px(14.0)),
                         ..borderless_input()
                     },
@@ -296,10 +291,10 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
                 border_top_width: Some(Tokenized::Literal(1.0)),
-                border_top_color: Some(col(BORDER)),
+                border_top_color: Some(col(theme::BG_TERTIARY)),
                 ..Default::default()
             }) {
-                text(style = StyleRules { font_size: Some(px(11.0)), color: Some(col(MUTED)), ..Default::default() }) {
+                text(style = StyleRules { font_size: Some(px(11.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) {
                     "Powered by GIPHY".to_string()
                 }
             }

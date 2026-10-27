@@ -30,6 +30,7 @@
 //!   signal flips). Styles are inline so nothing non-`Copy` is captured
 //!   across the `when` boundary.
 
+use crate::theme;
 use crate::style_helpers::{col, px};
 use runtime_core::{
     component, signal, text_area, ui, AlignItems, Element, FlexDirection, JustifyContent,
@@ -37,11 +38,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const BG_CARD: &str = "#2b2d31"; // card surface (Discord sidebar gray)
-const TEXT: &str = "#f2f3f5"; // primary text
-const INPUT_BG: &str = "#1e1f22"; // text area surface (Discord input gray)
-const INPUT_BORDER: &str = "#4e5058"; // text area border (Discord muted gray)
-const BAN_BG: &str = "#da373c"; // ban button (Discord danger red)
 
 /// The ban reason prompt. Renders a reason `text_area` (placeholder
 /// `"Reason for ban (optional)"`) above a `Ban` button; pressing `Ban`
@@ -68,7 +64,7 @@ pub fn BanReasonInput() -> Element {
             padding_bottom: Some(px(20.0)),
             padding_left: Some(px(20.0)),
             padding_right: Some(px(20.0)),
-            background: Some(col(BG_CARD)),
+            background: Some(col(theme::BG_SECONDARY)),
             border_top_left_radius: Some(px(8.0)),
             border_top_right_radius: Some(px(8.0)),
             border_bottom_left_radius: Some(px(8.0)),
@@ -83,7 +79,7 @@ pub fn BanReasonInput() -> Element {
             if banned.get() {
                 text(style = StyleRules {
                     font_size: Some(px(16.0)),
-                    color: Some(col(TEXT)),
+                    color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
                 }) { "User banned".to_string() }
             } else {
@@ -110,7 +106,7 @@ pub fn BanReasonInput() -> Element {
                         .max_rows(6)
                         .with_style(StyleRules {
                             width: Some(px(320.0)),
-                            background: Some(col(INPUT_BG)),
+                            background: Some(col(theme::BG_TERTIARY)),
                             border_top_left_radius: Some(px(6.0)),
                             border_top_right_radius: Some(px(6.0)),
                             border_bottom_left_radius: Some(px(6.0)),
@@ -119,10 +115,10 @@ pub fn BanReasonInput() -> Element {
                             border_right_width: Some(Tokenized::Literal(1.0)),
                             border_bottom_width: Some(Tokenized::Literal(1.0)),
                             border_left_width: Some(Tokenized::Literal(1.0)),
-                            border_top_color: Some(col(INPUT_BORDER)),
-                            border_right_color: Some(col(INPUT_BORDER)),
-                            border_bottom_color: Some(col(INPUT_BORDER)),
-                            border_left_color: Some(col(INPUT_BORDER)),
+                            border_top_color: Some(col(theme::BUTTON_SECONDARY)),
+                            border_right_color: Some(col(theme::BUTTON_SECONDARY)),
+                            border_bottom_color: Some(col(theme::BUTTON_SECONDARY)),
+                            border_left_color: Some(col(theme::BUTTON_SECONDARY)),
                             ..Default::default()
                         })
 
@@ -133,7 +129,7 @@ pub fn BanReasonInput() -> Element {
                             height: Some(px(32.0)),
                             padding_left: Some(px(16.0)),
                             padding_right: Some(px(16.0)),
-                            background: Some(col(BAN_BG)),
+                            background: Some(col(theme::DANGER_STRONG)),
                             border_top_left_radius: Some(px(6.0)),
                             border_top_right_radius: Some(px(6.0)),
                             border_bottom_left_radius: Some(px(6.0)),

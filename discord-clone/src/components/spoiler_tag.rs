@@ -43,6 +43,7 @@
 //!   `revealed` signal, so it stays `Fn` (callable on every press) and merely
 //!   toggles the local state — no backend call.
 
+use crate::theme;
 use crate::style_helpers::{col, pct, px};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, Overflow,
@@ -50,8 +51,6 @@ use runtime_core::{
 };
 
 // Palette, kept local so the component is self-contained.
-const TEXT: &str = "#f2f3f5"; // the real text (Discord near-white)
-const OVERLAY: &str = "#1e1f22"; // the veil (Discord darkest surface)
 const RADIUS: f32 = 6.0;
 
 /// The inline spoiler tag. Renders the `text` prop (the spoiler body the
@@ -95,7 +94,7 @@ pub fn SpoilerTag(
             // above.
             text(style = StyleRules {
                 font_size: Some(px(15.0)),
-                color: Some(col(TEXT)),
+                color: Some(col(theme::TEXT_STRONG)),
                 padding_left: Some(px(8.0)),
                 padding_right: Some(px(8.0)),
                 padding_top: Some(px(4.0)),
@@ -121,7 +120,7 @@ pub fn SpoilerTag(
                     top: Some(px(0.0)),
                     width: Some(pct(100.0)),
                     height: Some(pct(100.0)),
-                    background: Some(col(OVERLAY)),
+                    background: Some(col(theme::BG_TERTIARY)),
                     opacity: Some(Tokenized::Literal(0.92)),
                     pointer_events: Some(PointerEvents::None),
                     border_top_left_radius: Some(px(RADIUS)),

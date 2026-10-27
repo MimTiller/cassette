@@ -36,6 +36,7 @@
 //!   (rows frozen at mount), so narrowing queries would keep showing the
 //!   mount-time snapshot.
 
+use crate::theme;
 use crate::style_helpers::{borderless_input, col, px};
 use icons_lucide::SEARCH;
 use runtime_core::{
@@ -44,11 +45,6 @@ use runtime_core::{
 };
 
 // Discord dark palette (kept local so the component is self-contained).
-const FIELD_BG: &str = "#1e1f22"; // the header field
-const CARD_BG: &str = "#2b2d31"; // the results card
-const TEXT: &str = "#f2f3f5"; // primary text (near-white)
-const MUTED: &str = "#949ba4"; // secondary / muted text
-const RESULT_BG: &str = "#313338"; // one hit's row
 
 /// A message-search bar that live-filters a caller-provided message corpus.
 /// `corpus` is a `ReadSignal<Vec<(String, String)>>` of `(author, text)` rows
@@ -101,12 +97,12 @@ pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>, server_name: 
                     width: Some(px(420.0)),
                     max_height: Some(px(480.0)),
                     flex_direction: Some(FlexDirection::Column),
-                    background: Some(col(CARD_BG)),
+                    background: Some(col(theme::BG_SECONDARY)),
                     border_top_left_radius: Some(px(8.0)),
                     border_top_right_radius: Some(px(8.0)),
                     border_bottom_left_radius: Some(px(8.0)),
                     border_bottom_right_radius: Some(px(8.0)),
-                    shadow: Some(Shadow { x: 0.0, y: 8.0, blur: 24.0, color: col("#000000") }),
+                    shadow: Some(Shadow { x: 0.0, y: 8.0, blur: 24.0, color: col(theme::SHADOW) }),
                     // The shared popup level (`app::popups::POPUP_Z`).
                     z_index: Some(60),
                     overflow: Some(Overflow::Hidden),
@@ -124,11 +120,11 @@ pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>, server_name: 
                         text(style = StyleRules {
                             font_size: Some(px(13.0)),
                             font_weight: Some(runtime_core::FontWeight::SemiBold),
-                            color: Some(col(MUTED)),
+                            color: Some(col(theme::TEXT_MUTED)),
                             ..Default::default()
                         }) { count }
                         view(style = StyleRules { padding_left: Some(px(8.0)), padding_right: Some(px(4.0)), ..Default::default() }) {
-                            text(style = StyleRules { font_size: Some(px(18.0)), color: Some(col(MUTED)), ..Default::default() }) { "×".to_string() }
+                            text(style = StyleRules { font_size: Some(px(18.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { "×".to_string() }
                         }
                         .on_touch(move |ev| {
                             if ev.phase == TouchPhase::Ended {
@@ -150,7 +146,7 @@ pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>, server_name: 
                                 view(style = StyleRules {
                                     flex_direction: Some(FlexDirection::Column),
                                     gap: Some(px(4.0)),
-                                    background: Some(col(RESULT_BG)),
+                                    background: Some(col(theme::BG_PRIMARY)),
                                     padding_top: Some(px(10.0)),
                                     padding_bottom: Some(px(10.0)),
                                     padding_left: Some(px(12.0)),
@@ -164,10 +160,10 @@ pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>, server_name: 
                                     text(style = StyleRules {
                                         font_size: Some(px(13.0)),
                                         font_weight: Some(runtime_core::FontWeight::SemiBold),
-                                        color: Some(col(TEXT)),
+                                        color: Some(col(theme::TEXT_STRONG)),
                                         ..Default::default()
                                     }) { author }
-                                    text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(TEXT)), ..Default::default() }) { text }
+                                    text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { text }
                                 }
                             }
                         }
@@ -190,7 +186,7 @@ pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>, server_name: 
                 padding_left: Some(px(8.0)),
                 padding_right: Some(px(8.0)),
                 gap: Some(px(6.0)),
-                background: Some(col(FIELD_BG)),
+                background: Some(col(theme::BG_TERTIARY)),
                 border_top_left_radius: Some(px(4.0)),
                 border_top_right_radius: Some(px(4.0)),
                 border_bottom_left_radius: Some(px(4.0)),
@@ -205,13 +201,13 @@ pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>, server_name: 
                         flex_grow: Some(Tokenized::Literal(1.0)),
                         min_width: Some(px(0.0)),
                         height: Some(px(28.0)),
-                        background: Some(col(FIELD_BG)),
-                        color: Some(col(TEXT)),
+                        background: Some(col(theme::BG_TERTIARY)),
+                        color: Some(col(theme::TEXT_STRONG)),
                         font_size: Some(px(14.0)),
                         ..borderless_input()
                     },
                 )
-                icon(SEARCH).color(|| Color::from(MUTED)).size(15.0)
+                icon(SEARCH).color(|| Color::from(theme::TEXT_MUTED)).size(15.0)
             }
             results
         }
