@@ -40,7 +40,7 @@ use crate::theme;
 use crate::style_helpers::{borderless_input, col, px};
 use icons_lucide::SEARCH;
 use runtime_core::{
-    component, icon, memo, signal, switch, ui, AlignItems, Color, Element, FlexDirection,
+    component, icon, memo, signal, switch, ui, AlignItems, Element, FlexDirection,
     JustifyContent, Overflow, Position, ReadSignal, Shadow, StyleRules, Tokenized, TouchPhase, TouchResponse,
 };
 
@@ -207,7 +207,7 @@ pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>, server_name: 
                         ..borderless_input()
                     },
                 )
-                icon(SEARCH).color(|| Color::from(theme::TEXT_MUTED)).size(15.0)
+                icon(SEARCH).color(|| theme::live(theme::TEXT_MUTED)).size(15.0)
             }
             results
         }

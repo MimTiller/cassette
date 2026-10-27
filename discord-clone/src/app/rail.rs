@@ -542,7 +542,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
             // they're kept reachable above the divider rather than in the
             // bottom DM+Settings row (which must stay DM + Settings only).
             view(style = circle_style.clone(), test_id = "rail-join-server") {
-                icon(PLUS).color(|| Color::from(theme::SUCCESS)).size(20.0)
+                icon(PLUS).color(|| theme::live(theme::SUCCESS)).size(20.0)
             }
             // Add-a-Server: open the join modal. Reset the per-open state so a
             // re-open always starts fresh (the same reset the caller owns).
@@ -557,7 +557,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                 TouchResponse::CONSUMED
             })
             view(style = circle_style.clone(), test_id = "rail-explore-servers") {
-                icon(COMPASS).color(|| Color::from(TEXT_MUTED)).size(20.0)
+                icon(COMPASS).color(|| theme::live(TEXT_MUTED)).size(20.0)
             }
             // Explore/Create-a-Server: reset the name field and open the create
             // modal (the same reset-on-open `create_server_modal`'s docs
@@ -578,7 +578,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
             // to reset — the suggested list is static). Moved up from the old
             // bottom slot so it stays reachable without cluttering the DM row.
             view(style = circle_style.clone(), test_id = "rail-discover-servers") {
-                icon(GLOBE).color(|| Color::from(TEXT_MUTED)).size(20.0)
+                icon(GLOBE).color(|| theme::live(TEXT_MUTED)).size(20.0)
             }
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
@@ -592,7 +592,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
             // --- Bottom row: Direct Messages + Settings --------------------
             // Real Discord's bottom rail row is DM + Settings only.
             view(style = circle_style.clone(), test_id = "rail-direct-messages") {
-                icon(MAIL).color(|| Color::from(TEXT_MUTED)).size(20.0)
+                icon(MAIL).color(|| theme::live(TEXT_MUTED)).size(20.0)
             }
             // Direct Messages. A signed-in account gets its REAL DMs (the live
             // DM screen); a guest has no backend identity, so it keeps the
@@ -630,7 +630,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                 TouchResponse::CONSUMED
             })
             view(style = circle_style.clone(), test_id = "rail-settings") {
-                icon(SETTINGS).color(|| Color::from(TEXT_MUTED)).size(20.0)
+                icon(SETTINGS).color(|| theme::live(TEXT_MUTED)).size(20.0)
             }
             // Settings: opens the full-screen Notification Settings overlay
             // (the same toggle idiom the user-panel's settings gear uses —

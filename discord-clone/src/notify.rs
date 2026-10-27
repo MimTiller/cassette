@@ -29,6 +29,7 @@ pub const NOTHING: u32 = 2;
 /// `localStorage` keys (namespaced so they can't collide with the backend).
 const KEY_MODE: &str = "idealyst.discord.notifMode";
 const KEY_ACCENT: &str = "idealyst.discord.accent";
+const KEY_THEME: &str = "idealyst.discord.theme";
 
 // ── browser notification (wasm/web only) ─────────────────────────────────────
 
@@ -150,7 +151,18 @@ pub fn load_mode() -> Option<u32> {
 
 /// Read the stored accent-color hex (e.g. `"#5865f2"`), or `None` if unset.
 pub fn load_accent() -> Option<String> {
-    crate::auth::store().get_now(KEY_ACCENT).ok().flatten()
+    crate::auth::store().get_now(KEY_ACCENT).ok().flatten().filter(|a| !a.is_empty())
+}
+
+/// The stored theme, or `None` if unset.
+pub fn load_theme() -> Option<crate::theme::ThemeName> {
+    crate::auth::store().get_now(KEY_THEME).ok().flatten().and_then(|k| crate::theme::ThemeName::from_key(&k))
+}
+
+/// Store the theme, and forget any accent override (a theme brings its own).
+pub fn save_theme(name: crate::theme::ThemeName) {
+    let _ = crate::auth::store().set_now(KEY_THEME, name.key());
+    let _ = crate::auth::store().set_now(KEY_ACCENT, "");
 }
 
 /// Store the notification level. Best-effort: a full/absent store is ignored.

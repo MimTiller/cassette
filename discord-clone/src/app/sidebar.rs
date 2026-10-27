@@ -422,7 +422,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                     } else {
                                         ui! {
                                             view(style = chan_btn_style(), test_id = "live-channel-gear") {
-                                                icon(SETTINGS).color(|| Color::from(TEXT_MUTED)).size(14.0)
+                                                icon(SETTINGS).color(|| theme::live(TEXT_MUTED)).size(14.0)
                                             }
                                             .on_touch(move |ev| {
                                                 if ev.phase == TouchPhase::Ended {
@@ -563,7 +563,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                 ui! {
                                     view(style = row_style) {
                                         icon(HASH)
-                                            .color(|| Color::from(TEXT_MUTED))
+                                            .color(|| theme::live(TEXT_MUTED))
                                             .size(14.0)
                                         text(style = label_style) { name }
                                         { actions }
@@ -619,7 +619,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                 ui! {
                                     view(style = row_style) {
                                         icon(VOLUME_2)
-                                            .color(|| Color::from(TEXT_MUTED))
+                                            .color(|| theme::live(TEXT_MUTED))
                                             .size(14.0)
                                         text(style = label_style) { name }
                                         { actions }
@@ -663,7 +663,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                     // reset-on-open idiom the rail's Join flow uses).
                     let add_btn = ui! {
                         view(style = chan_btn_style.clone(), test_id = "live-channel-add") {
-                            icon(PLUS).color(|| Color::from(TEXT_MUTED)).size(14.0)
+                            icon(PLUS).color(|| theme::live(TEXT_MUTED)).size(14.0)
                         }
                         .on_touch(move |ev| {
                             if ev.phase == TouchPhase::Ended {
@@ -684,7 +684,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                     // reset-on-open idiom as the create-channel "+" above.
                     let invite_btn = ui! {
                         view(style = chan_btn_style.clone(), test_id = "live-invite") {
-                            icon(USERS).color(|| Color::from(TEXT_MUTED)).size(14.0)
+                            icon(USERS).color(|| theme::live(TEXT_MUTED)).size(14.0)
                         }
                         .on_touch(move |ev| {
                             if ev.phase == TouchPhase::Ended {
@@ -705,7 +705,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                     // reset-on-open idiom as the create-channel "+" above.
                     let gear_btn = ui! {
                         view(style = chan_btn_style.clone(), test_id = "live-server-settings") {
-                            icon(SETTINGS).color(|| Color::from(TEXT_MUTED)).size(14.0)
+                            icon(SETTINGS).color(|| theme::live(TEXT_MUTED)).size(14.0)
                         }
                         .on_touch(move |ev| {
                             if ev.phase == TouchPhase::Ended {
@@ -812,7 +812,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                         color: Some(col(TEXT)),
                                         ..Default::default()
                                     }) { move || header_name() }
-                                    icon(CHEVRON_DOWN).color(|| Color::from(TEXT_MUTED)).size(14.0)
+                                    icon(CHEVRON_DOWN).color(|| theme::live(TEXT_MUTED)).size(14.0)
                                 }
                                 .on_touch(move |ev| {
                                     if ev.phase == TouchPhase::Ended {
@@ -934,7 +934,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                     rows.push(ui! {
                         view(style = row_style, test_id = channel_test_id(c.id)) {
                             icon(HASH)
-                                .color(|| Color::from(TEXT_MUTED))
+                                .color(|| theme::live(TEXT_MUTED))
                                 .size(14.0)
                             text(style = label_style) { name }
                             // Hover-revealed per-channel mute control. A `when`
@@ -1018,7 +1018,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                 view(style = sidebar_style) {
                     view(style = sidebar_header_style) {
                         icon(CHEVRON_DOWN)
-                            .color(|| Color::from(TEXT_MUTED))
+                            .color(|| theme::live(TEXT_MUTED))
                             .size(11.0)
                         text(style = sidebar_title_style) { title }
                     }
@@ -1072,7 +1072,7 @@ fn live_category_header(id: i64, name: String, collapsed: Signal<Vec<i64>>) -> E
             ..Default::default()
         }, test_id = "live-category") {
             icon(if is_collapsed { CHEVRON_RIGHT } else { CHEVRON_DOWN })
-                .color(|| Color::from(TEXT_MUTED))
+                .color(|| theme::live(TEXT_MUTED))
                 .size(12.0)
             text(style = StyleRules {
                 font_size: Some(px(12.0)),

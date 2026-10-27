@@ -16,7 +16,7 @@ use crate::style_helpers::{borderless_input, col, px};
 use discord_server::gifs::{Gif, GifPage, GifSearchInput};
 use icons_lucide::SEARCH;
 use runtime_core::{
-    after_ms_detached, component, icon, signal, switch, ui, AlignItems, Color, Element,
+    after_ms_detached, component, icon, signal, switch, ui, AlignItems, Element,
     FlexDirection, JustifyContent, ObjectFit, Overflow, Shadow, Signal, StyleRules, TouchPhase,
     TouchResponse, Tokenized,
 };
@@ -261,7 +261,7 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
                 border_bottom_right_radius: Some(px(6.0)),
                 ..borderless_input()
             }) {
-                icon(SEARCH).color(|| Color::from(theme::TEXT_MUTED)).size(16.0)
+                icon(SEARCH).color(|| theme::live(theme::TEXT_MUTED)).size(16.0)
                 text_input(
                     value = query,
                     on_change = on_change,

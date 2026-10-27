@@ -40,7 +40,7 @@ use runtime_core::{
 // Discord dark palette (kept local so the component is self-contained).
 
 // Accent presets (Discord blurple default + a spread for the picker).
-const ACCENTS: [&str; 5] = [theme::ACCENT, theme::SUCCESS, theme::DANGER, theme::WARNING, "#eb459e"];
+const ACCENTS: [&str; 6] = ["#5865f2", "#9b6bff", "#23a559", "#f23f43", "#f0b232", "#eb459e"];
 
 /// The three settings tabs, in order (the tab-bar index keys).
 /// Sidebar entries in order: (group heading, or "" to continue the group; label).
@@ -484,7 +484,7 @@ fn accent_swatch(
             StyleRules {
                 width: Some(px(34.0)),
                 height: Some(px(34.0)),
-                background: Some(col(hex)),
+                background: Some(theme::fixed(hex)),
                 border_top_left_radius: Some(px(8.0)),
                 border_top_right_radius: Some(px(8.0)),
                 border_bottom_left_radius: Some(px(8.0)),
@@ -512,7 +512,106 @@ fn accent_swatch(
 /// The **Appearance** tab: an accent-color picker. Tapping a swatch sets the
 /// shared `accent` signal (owned by `UserSettings`) and persists it. A true
 /// dark/light toggle is not supported by the component library yet.
+/// One theme choice: a small preview of the theme's own colours (always
+/// shown in that theme, whatever is active) and its name; the active one
+/// has an accent outline.
+fn theme_card(name: theme::ThemeName, active: Signal<theme::ThemeName>, on_pick: Rc<dyn Fn(theme::ThemeName)>) -> Element {
+    let bar = |w: f32, c: &str| ui! {
+        view(style = StyleRules {
+            width: Some(px(w)),
+            height: Some(px(6.0)),
+            background: Some(theme::fixed(c)),
+            border_top_left_radius: Some(px(3.0)),
+            border_top_right_radius: Some(px(3.0)),
+            border_bottom_left_radius: Some(px(3.0)),
+            border_bottom_right_radius: Some(px(3.0)),
+            ..Default::default()
+        }) {}
+    };
+    let preview = ui! {
+        view(style = StyleRules {
+            width: Some(px(132.0)),
+            height: Some(px(84.0)),
+            flex_direction: Some(FlexDirection::Row),
+            background: Some(theme::fixed(name.value(theme::BG_PRIMARY))),
+            border_top_left_radius: Some(px(6.0)),
+            border_top_right_radius: Some(px(6.0)),
+            border_bottom_left_radius: Some(px(6.0)),
+            border_bottom_right_radius: Some(px(6.0)),
+            overflow: Some(runtime_core::Overflow::Hidden),
+            ..Default::default()
+        }) {
+            view(style = StyleRules { width: Some(px(14.0)), background: Some(theme::fixed(name.value(theme::BG_TERTIARY))), ..Default::default() }) {}
+            view(style = StyleRules { width: Some(px(30.0)), background: Some(theme::fixed(name.value(theme::BG_SECONDARY))), ..Default::default() }) {}
+            view(style = StyleRules {
+                flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
+                flex_direction: Some(FlexDirection::Column),
+                gap: Some(px(7.0)),
+                padding_top: Some(px(12.0)),
+                padding_left: Some(px(8.0)),
+                ..Default::default()
+            }) {
+                { bar(52.0, name.value(theme::TEXT_STRONG)) }
+                { bar(70.0, name.value(theme::TEXT_MUTED)) }
+                { bar(40.0, name.value(theme::ACCENT)) }
+            }
+        }
+    };
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Column),
+            align_items: Some(AlignItems::Center),
+            gap: Some(px(8.0)),
+            ..Default::default()
+        }) {
+            view(style = move || {
+                let on = active.get() == name;
+                let w = runtime_core::Tokenized::Literal(2.0);
+                let c = col(if on { theme::ACCENT } else { theme::DIVIDER });
+                StyleRules {
+                    padding_top: Some(px(3.0)),
+                    padding_bottom: Some(px(3.0)),
+                    padding_left: Some(px(3.0)),
+                    padding_right: Some(px(3.0)),
+                    border_top_width: Some(w.clone()),
+                    border_right_width: Some(w.clone()),
+                    border_bottom_width: Some(w.clone()),
+                    border_left_width: Some(w),
+                    border_top_color: Some(c.clone()),
+                    border_right_color: Some(c.clone()),
+                    border_bottom_color: Some(c.clone()),
+                    border_left_color: Some(c),
+                    border_top_left_radius: Some(px(9.0)),
+                    border_top_right_radius: Some(px(9.0)),
+                    border_bottom_left_radius: Some(px(9.0)),
+                    border_bottom_right_radius: Some(px(9.0)),
+                    ..Default::default()
+                }
+            }) { preview }
+            text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_NORMAL)), ..Default::default() }) {
+                name.label().to_string()
+            }
+        }
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                on_pick(name);
+            }
+            TouchResponse::CONSUMED
+        })
+    }
+}
+
 fn appearance_tab(accent: Signal<String>) -> Element {
+    // The theme: picking one saves it, recolours the app and brings the
+    // theme's own accent back.
+    let active = signal(theme::current());
+    let on_theme: Rc<dyn Fn(theme::ThemeName)> = Rc::new(move |name: theme::ThemeName| {
+        active.set(name);
+        crate::notify::save_theme(name);
+        theme::set_theme_name(name);
+        accent.set(name.value(theme::ACCENT).to_string());
+    });
+    let theme_cards: Vec<Element> = theme::ThemeName::ALL.iter().map(|t| theme_card(*t, active, on_theme.clone())).collect();
     let accent_chk = accent.clone();
     let on_pick = Rc::new(move |hex: String| {
         accent_chk.set(hex.clone());
@@ -534,12 +633,24 @@ fn appearance_tab(accent: Signal<String>) -> Element {
                 font_size: Some(px(14.0)),
                 color: Some(col(theme::TEXT_STRONG)),
                 ..Default::default()
+            }) { "Theme".to_string() }
+            view(style = StyleRules {
+                flex_direction: Some(FlexDirection::Row),
+                flex_wrap: Some(runtime_core::FlexWrap::Wrap),
+                gap: Some(px(16.0)),
+                margin_bottom: Some(px(12.0)),
+                ..Default::default()
+            }) { theme_cards }
+            text(style = StyleRules {
+                font_size: Some(px(14.0)),
+                color: Some(col(theme::TEXT_STRONG)),
+                ..Default::default()
             }) { "Accent color".to_string() }
             text(style = StyleRules {
                 font_size: Some(px(12.0)),
                 color: Some(col(theme::TEXT_MUTED)),
                 ..Default::default()
-            }) { "Picks the highlight color used across the app. A dark/light theme toggle is a follow-up."
+            }) { "The highlight colour for buttons, selection and mentions. Picking a theme resets it to that theme's own."
                 .to_string() }
             view(style = StyleRules {
                 flex_direction: Some(FlexDirection::Row),
@@ -572,7 +683,7 @@ pub fn UserSettings(
 ) -> Element {
     // The accent is owned here (the gateway doesn't read it) and seeded from
     // storage (default Discord blurple).
-    let accent = signal(crate::notify::load_accent().unwrap_or_else(|| theme::ACCENT.to_string()));
+    let accent = signal(crate::notify::load_accent().unwrap_or_else(|| theme::current().value(theme::ACCENT).to_string()));
 
     // The selected section, rebuilt when `active` changes. `notif_mode` is
     // the SHARED notification level the gateway reads on every message.

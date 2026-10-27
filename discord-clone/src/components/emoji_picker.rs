@@ -40,7 +40,7 @@ use crate::emoji_data;
 use crate::style_helpers::{borderless_input, col, px};
 use icons_lucide::SEARCH;
 use runtime_core::{
-    component, icon, memo, signal, switch, ui, AlignItems, Color, Element, FlexDirection,
+    component, icon, memo, signal, switch, ui, AlignItems, Element, FlexDirection,
     FlexWrap, JustifyContent, Overflow, Position, Ref, ScrollViewHandle, Shadow, Signal,
     StyleRules, TouchPhase, TouchResponse, Tokenized,
 };
@@ -531,7 +531,7 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
                 border_bottom_right_radius: Some(px(6.0)),
                 ..borderless_input()
             }) {
-                icon(SEARCH).color(|| Color::from(theme::TEXT_MUTED)).size(16.0)
+                icon(SEARCH).color(|| theme::live(theme::TEXT_MUTED)).size(16.0)
                 text_input(
                     value = query,
                     on_change = on_change,

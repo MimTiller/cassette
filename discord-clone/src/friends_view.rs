@@ -41,7 +41,7 @@ use std::rc::Rc;
 use std::collections::HashMap;
 
 use runtime_core::{
-    AlignItems, Color, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent,
+    AlignItems, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent,
     KeyOutcome, ObjectFit, Overflow, Signal, StyleRules, Tokenized, TouchEvent,
     TouchPhase, TouchResponse, switch, ui,
 };
@@ -483,7 +483,7 @@ pub fn friends_screen(
                                 gap: Some(px(10.0)),
                                 ..Default::default()
                             }) {
-                                icon(PLUS).color(|| Color::from(theme::TEXT_MUTED)).size(18.0)
+                                icon(PLUS).color(|| theme::live(theme::TEXT_MUTED)).size(18.0)
                                 text_input(
                                     value = add_username,
                                     on_change = move |s: String| {
@@ -623,7 +623,7 @@ pub fn friends_screen(
                 padding_bottom: Some(px(8.0)),
                 ..Default::default()
             }) {
-                icon(USERS).color(|| Color::from(theme::TEXT_MUTED)).size(18.0)
+                icon(USERS).color(|| theme::live(theme::TEXT_MUTED)).size(18.0)
                 text(
                     style = StyleRules {
                         font_size: Some(px(16.0)),

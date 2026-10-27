@@ -31,7 +31,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use runtime_core::{
-    AlignItems, Color, Element, FlexDirection, FlexWrap, FontWeight, JustifyContent,
+    AlignItems, Element, FlexDirection, FlexWrap, FontWeight, JustifyContent,
     KeyEvent, KeyOutcome, Overflow, Position, Signal, StyleRules, Tokenized, TouchPhase,
     TouchResponse, signal, switch, ui,
 };
@@ -844,7 +844,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
                 emoji_popover
                 view(style = composer_style) {
                     view(style = icon_button_style.clone()) {
-                        icon(PLUS).color(|| Color::from(theme::TEXT_MUTED)).size(16.0)
+                        icon(PLUS).color(|| theme::live(theme::TEXT_MUTED)).size(16.0)
                     }
                     // `+` = stage/unstage the mock attachment. `Signal` is
                     // `Copy`, so each `move` closure captures its own handle;
@@ -859,7 +859,7 @@ pub fn dm_conversation(dm_id: u32, sent: Rc<RefCell<Vec<(u32, &'static str, Stri
                     })
                     text_input(value = text, on_change = on_change, placeholder = "Message", style = input_style).on_key_down(on_enter)
                     view(style = icon_button_style) {
-                        icon(SMILE).color(|| Color::from(theme::TEXT_MUTED)).size(16.0)
+                        icon(SMILE).color(|| theme::live(theme::TEXT_MUTED)).size(16.0)
                     }
                     // Smile = open/close the emoji popover (a `Copy` handle on
                     // `emoji_open`, mirroring the attachment button).

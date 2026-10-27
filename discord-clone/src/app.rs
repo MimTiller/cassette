@@ -33,7 +33,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use runtime_core::{
-    after_ms_detached, AlignItems, AlignSelf, Color, Cursor, Element,
+    after_ms_detached, AlignItems, AlignSelf, Cursor, Element,
     FlexDirection, FlexWrap, FontFamily, FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow,
     PanEvent, PanRecognizer, Position, Ref, ReadSignal, ScrollViewHandle, Signal, StyleRules,
     TextAlign, TextTransform, Tokenized, TouchEvent, TouchPhase, TouchResponse, ViewHandle, memo,
@@ -395,7 +395,7 @@ static SESSION_NOTE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(No
 
 pub fn app() -> Element {
     // The colour theme (tokens for every role), with the saved accent.
-    crate::theme::install(crate::notify::load_accent());
+    crate::theme::install(crate::notify::load_theme(), crate::notify::load_accent());
     // Point the backend `#[server]` RPC stubs at a base URL and attach the
     // signed-in user id as the `x-user-id` header on every outgoing call.
     // Runs once per process (the `app()` entry), so no "only once" guard is
@@ -1161,7 +1161,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 },
                 test_id = "friends-entry",
             ) {
-                icon(USERS).color(|| Color::from(TEXT_MUTED)).size(18.0)
+                icon(USERS).color(|| theme::live(TEXT_MUTED)).size(18.0)
                 text(
                     style = StyleRules {
                         font_size: Some(px(14.0)),

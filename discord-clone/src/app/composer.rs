@@ -1,6 +1,7 @@
 //! `app_shell` section, split out of `app.rs`. Reads the shared state
 //! through `ShellState`; returns the elements the final layout places.
 
+use crate::theme;
 use super::*;
 use crate::gif_picker::GifPicker;
 
@@ -676,7 +677,7 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
             }
             view(style = composer_style) {
                 view(style = icon_button_style.clone()) {
-                    icon(PLUS).color(|| Color::from(TEXT_MUTED)).size(16.0)
+                    icon(PLUS).color(|| theme::live(TEXT_MUTED)).size(16.0)
                 }
                 // `+` = open the file picker and stage a real image
                 // attachment (up to the shared per-message cap). The
@@ -724,7 +725,7 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
                     TouchResponse::CONSUMED
                 })
                 view(style = icon_button_style) {
-                    icon(SMILE).color(|| Color::from(TEXT_MUTED)).size(16.0)
+                    icon(SMILE).color(|| theme::live(TEXT_MUTED)).size(16.0)
                 }
                 // Smile = open/close the emoji popover (a `Copy` handle
                 // on `emoji_open`, mirroring the attachment button).

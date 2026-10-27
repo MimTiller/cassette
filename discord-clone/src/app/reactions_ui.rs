@@ -2,6 +2,7 @@
 //! Split out of `app.rs`; `use super::*` keeps app.rs's imports and shared
 //! colors/helpers in scope.
 
+use crate::theme;
 use super::*;
 
 // --- message reactions (mock session-local + live persisted/synced) --------
@@ -252,7 +253,7 @@ pub(super) fn reaction_area(
             border_bottom_right_radius: Some(px(13.0)),
             ..Default::default()
         }) {
-            icon(SMILE_PLUS).color(|| Color::from(TEXT_MUTED)).size(15.0)
+            icon(SMILE_PLUS).color(|| theme::live(TEXT_MUTED)).size(15.0)
         }
         .on_touch(move |ev| {
             if ev.phase == TouchPhase::Ended {

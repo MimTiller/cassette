@@ -69,7 +69,7 @@ pub(super) fn voice_section(
         let row = ui! {
             view(style = row_style, test_id = voice_test_id(v.id)) {
                 icon(VOLUME_2)
-                    .color(|| Color::from(TEXT_MUTED))
+                    .color(|| theme::live(TEXT_MUTED))
                     .size(14.0)
                 text(style = v_label_style) { label }
                 if joined.get() == Some((server_id, v.id)) {
@@ -663,9 +663,9 @@ pub(super) fn user_panel(
             let mic_btn = ui! {
                 view(style = icon_btn_style.clone(), test_id = "user-mic") {
                     if muted_state.get() {
-                        icon(MIC_OFF).color(|| Color::from(TEXT_MUTED)).size(15.0)
+                        icon(MIC_OFF).color(|| theme::live(TEXT_MUTED)).size(15.0)
                     } else {
-                        icon(MIC).color(|| Color::from(TEXT_MUTED)).size(15.0)
+                        icon(MIC).color(|| theme::live(TEXT_MUTED)).size(15.0)
                     }
                 }
                 .on_touch(move |ev| {
@@ -679,9 +679,9 @@ pub(super) fn user_panel(
             let deafen_btn = ui! {
                 view(style = icon_btn_style.clone(), test_id = "user-deafen") {
                     if deafened_state.get() {
-                        icon(HEADPHONES).color(|| Color::from(theme::DANGER)).size(15.0)
+                        icon(HEADPHONES).color(|| theme::live(theme::DANGER)).size(15.0)
                     } else {
-                        icon(HEADPHONES).color(|| Color::from(TEXT_MUTED)).size(15.0)
+                        icon(HEADPHONES).color(|| theme::live(TEXT_MUTED)).size(15.0)
                     }
                 }
                 .on_touch(move |ev| {
@@ -696,7 +696,7 @@ pub(super) fn user_panel(
             let notif_open = notif_mode.clone();
             let settings_btn = ui! {
                 view(style = icon_btn_style.clone(), test_id = "user-settings") {
-                    icon(SETTINGS).color(|| Color::from(TEXT_MUTED)).size(15.0)
+                    icon(SETTINGS).color(|| theme::live(TEXT_MUTED)).size(15.0)
                 }
                 .on_touch(move |ev| {
                     if ev.phase == TouchPhase::Ended {
@@ -710,7 +710,7 @@ pub(super) fn user_panel(
             let shortcuts_open = shortcuts_mode.clone();
             let shortcuts_btn = ui! {
                 view(style = icon_btn_style.clone(), test_id = "user-shortcuts") {
-                    icon(CIRCLE_HELP).color(|| Color::from(TEXT_MUTED)).size(15.0)
+                    icon(CIRCLE_HELP).color(|| theme::live(TEXT_MUTED)).size(15.0)
                 }
                 .on_touch(move |ev| {
                     if ev.phase == TouchPhase::Ended {

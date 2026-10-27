@@ -39,7 +39,7 @@ use runtime_core::icon;
 use crate::pins::{PinnedMessage, unpin_message};
 use crate::style_helpers::{col, px, pct};
 use runtime_core::{
-    switch, ui, AlignItems, Color, Element, FlexDirection, FontWeight, JustifyContent, Overflow,
+    switch, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent, Overflow,
     Position, Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
@@ -96,7 +96,7 @@ pub fn pinned_messages_panel(
                         gap: Some(px(8.0)),
                         ..Default::default()
                     }) {
-                        icon(PIN).color(|| Color::from(theme::DANGER)).size(18.0)
+                        icon(PIN).color(|| theme::live(theme::DANGER)).size(18.0)
                         text(style = StyleRules {
                             font_size: Some(px(18.0)),
                             font_weight: Some(FontWeight::Bold),
@@ -340,7 +340,7 @@ fn pin_row(
                 border_left_color: Some(col(theme::DANGER)),
                 ..Default::default()
             }) {
-                icon(PIN_OFF).color(|| Color::from(theme::DANGER)).size(14.0)
+                icon(PIN_OFF).color(|| theme::live(theme::DANGER)).size(14.0)
                 text(style = StyleRules {
                     font_size: Some(px(12.0)),
                     color: Some(col(theme::DANGER)),

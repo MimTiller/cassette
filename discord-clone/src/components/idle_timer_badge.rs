@@ -36,7 +36,7 @@ use crate::data::Status;
 use crate::style_helpers::px;
 use icons_lucide::MOON;
 use runtime_core::{
-    component, icon, ui, AlignItems, Color, Element, JustifyContent, StyleRules,
+    component, icon, ui, AlignItems, Element, JustifyContent, StyleRules,
     Tokenized, TouchPhase, TouchResponse,
 };
 
@@ -72,9 +72,9 @@ pub fn IdleTimerBadge(status: runtime_core::Signal<Status>) -> Element {
             ..Default::default()
         }, test_id = "user-idle") {
             if status.get() == Status::Idle {
-                icon(MOON).color(|| Color::from(theme::WARNING)).size(15.0)
+                icon(MOON).color(|| theme::live(theme::WARNING)).size(15.0)
             } else {
-                icon(MOON).color(|| Color::from(theme::TEXT_MUTED)).size(15.0)
+                icon(MOON).color(|| theme::live(theme::TEXT_MUTED)).size(15.0)
             }
         }
         .on_touch(move |ev| {

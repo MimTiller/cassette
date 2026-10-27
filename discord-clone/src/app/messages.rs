@@ -137,7 +137,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         // folded into the `switch` key so the badge count
                         // re-renders when an Unpin lands.
                         view(style = moderation_style.clone(), test_id = "pin-live") {
-                            icon(PIN).color(|| Color::from(TEXT_MUTED)).size(15.0)
+                            icon(PIN).color(|| theme::live(TEXT_MUTED)).size(15.0)
                         }
                         .on_touch(move |_ev| {
                             let open_p = pinned_panel_open;
@@ -204,7 +204,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         // Invite: opens the live "Invite People" overlay, which
                         // mints a real invite for this live server.
                         view(style = moderation_style.clone(), test_id = "invite-live") {
-                            icon(USER_PLUS).color(|| Color::from(TEXT_MUTED)).size(15.0)
+                            icon(USER_PLUS).color(|| theme::live(TEXT_MUTED)).size(15.0)
                         }
                         .on_touch(move |_ev| {
                             live_invite_open.set(true);
@@ -212,7 +212,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         })
                         // Show / hide the member list.
                         view(style = moderation_style.clone(), test_id = "toggle-members") {
-                            icon(USERS).color(move || Color::from(if super::members_visible(members_pref) { theme::TEXT_STRONG } else { TEXT_MUTED })).size(15.0)
+                            icon(USERS).color(move || theme::live(if super::members_visible(members_pref) { theme::TEXT_STRONG } else { TEXT_MUTED })).size(15.0)
                         }
                         .on_touch(move |ev| {
                             if ev.phase == TouchPhase::Ended {
@@ -240,7 +240,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                     // Gavel: opens the Server Moderation panel (a full-screen
                     // overlay, same idiom as the Profile Settings overlay).
                     view(style = moderation_style, test_id = "server-moderation") {
-                        icon(GAVEL).color(|| Color::from(TEXT_MUTED)).size(15.0)
+                        icon(GAVEL).color(|| theme::live(TEXT_MUTED)).size(15.0)
                     }
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
