@@ -20,11 +20,6 @@ use super::*;
 // client live.
 pub(super) type Reaction = (String, u32, bool);
 
-// Module-level marker: bumped alongside the reaction_strip gating change so the
-// dev server does a FULL rebuild (not a jump-table hotpatch) and the new
-// "add button only with pills" behavior actually lands in the served bundle.
-const REACTION_STRIP_GATED: bool = true;
-
 /// The identity key for per-message session-local state (the reaction `picker`,
 /// the `reactions` pill map, and the `translate_key`). MOCK rows key by their
 /// `(channel_id, rendered-list-index)` — the pre-existing stable-enough key —

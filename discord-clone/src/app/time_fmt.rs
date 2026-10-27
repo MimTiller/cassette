@@ -121,7 +121,7 @@ mod day_label_tests {
     }
 
     #[test]
-    fn leap_year_edge() {
+    fn last_day_of_february_non_leap_year() {
         // 2026-02-28 local (2026 is not a leap year).
         assert_eq!(crate::app::time_fmt::format_day_label(1_772_301_600), "February 28, 2026");
     }
