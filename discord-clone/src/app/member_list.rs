@@ -8,7 +8,7 @@ pub(super) struct MemberListParts {
 }
 
 pub(super) fn build(s: &ShellState) -> MemberListParts {
-    let ShellState { active_channel, active_live_channel, active_live_server, active_server, blocked_users, is_real_user, live_ban_confirm, live_kick_confirm, live_member_error, live_member_menu, live_members, live_messages, live_presence, live_presence_rev, live_revision, live_timeout_confirm, live_timeout_duration, member_panel_width, revision, selected_member, sent, sidebar_width, user_popup, user_profile, user_status, .. } = s.clone();
+    let ShellState { active_channel, active_live_channel, active_live_server, active_server, blocked_users, is_real_user, live_ban_confirm, live_kick_confirm, live_member_error, live_member_menu, live_members, live_messages, live_presence, live_presence_rev, live_revision, live_timeout_confirm, live_servers, live_timeout_duration, member_panel_width, revision, selected_member, sent, sidebar_width, user_popup, user_profile, user_status, .. } = s.clone();
     // --- member list (right side) ----------------------------------------
     // Rebuilds when the active server changes (each server has its own
     // roster) AND when the signed-in user's live status changes — the user
@@ -144,6 +144,7 @@ pub(super) fn build(s: &ShellState) -> MemberListParts {
                         blocked: blocked_users,
                         live_rev: live_revision,
                     },
+                    live_servers.get().into_iter().find(|s| s.id == ls).map(|s| s.name).unwrap_or_default(),
                 );
             }
             if *real_user {

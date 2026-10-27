@@ -595,9 +595,44 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
     }
 }
 
+thread_local! {
+    static ANCHOR: std::cell::Cell<Option<(f32, f32)>> = const { std::cell::Cell::new(None) };
+}
+
+/// Remember where (window coordinates) the button that is opening the
+/// reaction picker was pressed, so the picker can open beside it.
+pub fn set_anchor(x: f32, y: f32) {
+    ANCHOR.with(|a| a.set(Some((x, y))));
+}
+
+/// The last press `set_anchor` recorded, if any.
+pub fn anchor() -> Option<(f32, f32)> {
+    ANCHOR.with(|a| a.get())
+}
+
+/// Where a `w` x `h` picker card goes for a press at `at` in a `vw` x `vh`
+/// window: to the left of the press (to the right when there is no room),
+/// its top a little above the press, kept 8px inside the window.
+pub fn place_card(at: (f32, f32), w: f32, h: f32, vw: f32, vh: f32) -> (f32, f32) {
+    let (x, y) = at;
+    let left = if x - w - 12.0 >= 8.0 { x - w - 12.0 } else { (x + 12.0).min(vw - w - 8.0) };
+    let top = (y - 40.0).min(vh - h - 8.0).max(8.0);
+    (left.max(8.0), top)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn card_opens_beside_the_press_and_stays_inside() {
+        // Room on the left: the card ends 12px left of the press.
+        assert_eq!(place_card((1000.0, 300.0), 420.0, 440.0, 1600.0, 900.0), (568.0, 260.0));
+        // Near the bottom: pulled up to fit.
+        assert_eq!(place_card((1000.0, 880.0), 420.0, 440.0, 1600.0, 900.0), (568.0, 452.0));
+        // Near the left edge: opens to the right instead.
+        assert_eq!(place_card((100.0, 20.0), 420.0, 440.0, 1600.0, 900.0), (112.0, 8.0));
+    }
 
     #[test]
     fn full_sections_order() {

@@ -125,6 +125,7 @@ pub fn message_action_bar(
                     }
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
+                            crate::emoji_picker::set_anchor(ev.window_position.x, ev.window_position.y);
                             react();
                         }
                         TouchResponse::CONSUMED

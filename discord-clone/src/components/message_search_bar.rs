@@ -58,7 +58,13 @@ const ACCENT: &str = "#5865f2"; // author-name accent (Discord blurple)
 /// "no matches" line.
 #[component]
 #[allow(non_snake_case)]
-pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>) -> Element {
+/// `server_name` titles the bar "Search <server>" (Discord's wording); empty
+/// keeps the generic "Search messages".
+pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>, server_name: String) -> Element {
+    let title = move || {
+        let name = server_name.get();
+        if name.is_empty() { "Search messages".to_string() } else { format!("Search {name}") }
+    };
     // Local controlled state: the search query (empty until the user types).
     let query = signal(String::new());
     // The corpus is `Copy` (it is a `ReadSignal` handle), so the `memo`
@@ -133,7 +139,7 @@ pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>) -> Element {
                 font_size: Some(px(15.0)),
                 color: Some(col(TEXT)),
                 ..Default::default()
-            }) { "Search messages".to_string() }
+            }) { move || title() }
 
             view(style = StyleRules {
                 flex_direction: Some(FlexDirection::Row),

@@ -256,6 +256,7 @@ pub(super) fn reaction_area(
         }
         .on_touch(move |ev| {
             if ev.phase == TouchPhase::Ended {
+                crate::emoji_picker::set_anchor(ev.window_position.x, ev.window_position.y);
                 add.set(Some(add_key));
             }
             TouchResponse::CONSUMED
@@ -343,8 +344,14 @@ pub(super) fn reaction_picker_overlay(
                 }
             });
             // Transparent full-window layer (dismiss-on-outside-tap) with the
-            // full emoji picker card centered; the chat stays visible behind it.
+            // emoji picker card beside the button that opened it (centered
+            // when no press was recorded); the chat stays visible behind it.
             let backdrop_close = picker;
+            let vp = viewport_size().get();
+            let (card_left, card_top) = match crate::emoji_picker::anchor() {
+                Some(at) => crate::emoji_picker::place_card(at, 420.0, 440.0, vp.width, vp.height),
+                None => ((vp.width - 420.0) / 2.0, (vp.height - 440.0) / 2.0),
+            };
             ui! {
                 view(style = StyleRules {
                     position: Some(Position::Absolute),
@@ -353,11 +360,12 @@ pub(super) fn reaction_picker_overlay(
                     width: Some(pct(100.0)),
                     height: Some(pct(100.0)),
                     background: Some(col("transparent")),
-                    align_items: Some(AlignItems::Center),
-                    justify_content: Some(JustifyContent::Center),
                     ..Default::default()
                 }) {
                     view(style = StyleRules {
+                        position: Some(Position::Absolute),
+                        left: Some(px(card_left)),
+                        top: Some(px(card_top)),
                         background: Some(col(BG_ELEVATED)),
                         border_top_left_radius: Some(px(10.0)),
                         border_top_right_radius: Some(px(10.0)),

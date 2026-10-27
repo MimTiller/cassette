@@ -303,7 +303,7 @@ pub(super) fn member_panel(
                 padding_right: Some(px(12.0)),
                 ..Default::default()
             }) {
-                MessageSearchBar(corpus = search_corpus)
+                MessageSearchBar(corpus = search_corpus, server_name = String::new())
             }
         },
     );
@@ -552,6 +552,7 @@ pub(super) fn live_member_panel(
     presence: Rc<RefCell<HashMap<i64, String>>>,
     search_corpus: ReadSignal<Vec<(String, String)>>,
     popup: super::user_popups::UserPopupCtx,
+    server_name: String,
 ) -> Element {
     // Snapshot of the current roster. The panel is rebuilt (by the caller's
     // `switch` keyed on this signal) whenever the roster changes — including
@@ -586,7 +587,7 @@ pub(super) fn live_member_panel(
             padding_right: Some(px(12.0)),
             ..Default::default()
         }) {
-            MessageSearchBar(corpus = search_corpus)
+            MessageSearchBar(corpus = search_corpus, server_name = server_name.clone())
         }
     };
     let name_style = StyleRules {
