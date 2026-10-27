@@ -535,6 +535,14 @@ pub static DMS: &[Dm] = &[
                 body: "the classic. send me the patch when it lands",
                 age_secs: 3600 * 3 - 90,
             },
+            DmMessage {
+                author: "miri",
+                color: "#5865f2",
+                // A GIF sent as a DM: the row renders it as the image
+                // (message_body) and the list preview shows "GIF".
+                body: "https://media.giphy.com/media/JIX9t2j0ZTN9S/giphy.gif#480x360",
+                age_secs: 60,
+            },
         ],
     },
     Dm {

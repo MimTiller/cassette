@@ -102,13 +102,19 @@ pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>, server_name: 
 
     // Reactive derivation: `(author, text)` rows of the corpus that the query
     // matches. Empty query -> the whole corpus; non-empty -> case-insensitive
-    // substring hits on either the text or the author. Reading `query` and
+    // substring hits on either the text or the author. A GIF body is matched
+    // and shown as "GIF" (`excerpt_text`) so a user searching "gif" finds it,
+    // its media URL never being a searchable string. Reading `query` and
     // `corpus` inside the memo closure is what subscribes it to both, so the
     // list rebuilds on a keystroke AND on a corpus change (new channel / new
     // send), reusing the prior result when neither moved.
     let matches = memo(move || -> Vec<(String, String)> {
         let q = query.get();
-        let corpus = corpus.get();
+        let corpus: Vec<(String, String)> = corpus
+            .get()
+            .into_iter()
+            .map(|(author, text)| (author, crate::reply_reference_strip::excerpt_text(&text)))
+            .collect();
         let needle = q.to_lowercase();
         if needle.trim().is_empty() {
             corpus

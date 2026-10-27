@@ -88,13 +88,24 @@ pub fn reply_reference_strip(author: String, snippet: String) -> Element {
     }
 }
 
-/// Truncate a message body into a short single-line snippet for the strip:
-/// whitespace collapsed, trimmed, capped at 64 chars with an ellipsis.
-pub fn reply_snippet(body: &str) -> String {
-    // A GIF message quotes as "GIF", not its media URL.
+/// Display text for a message body wherever it is shown as a text EXCERPT
+/// (toast, search result, pinned row, DM-list preview): a GIF message (a body
+/// that is just a Giphy media URL, see `discord_server::gifs::gif_body`)
+/// reads as "GIF" instead of its URL. Every excerpt site calls this so the
+/// GIF rule lives in one place.
+pub fn excerpt_text(body: &str) -> String {
     if discord_server::gifs::gif_body(body).is_some() {
         return "GIF".to_string();
     }
+    body.to_string()
+}
+
+/// Truncate a message body into a short single-line snippet for the strip:
+/// whitespace collapsed, trimmed, capped at 64 chars with an ellipsis.
+pub fn reply_snippet(body: &str) -> String {
+    // A GIF message quotes as "GIF", not its media URL — one short word, so
+    // the excerpt passes straight through the truncation below.
+    let body: String = excerpt_text(body);
     let flat: String = body
         .chars()
         .map(|c| if c.is_whitespace() { ' ' } else { c })
@@ -105,5 +116,24 @@ pub fn reply_snippet(body: &str) -> String {
     } else {
         let cut: String = flat.chars().take(64).collect();
         format!("{}…", cut)
+    }
+}
+
+#[cfg(test)]
+mod excerpt_tests {
+    use super::excerpt_text;
+
+    #[test]
+    fn a_giphy_media_body_reads_as_gif() {
+        assert_eq!(excerpt_text("https://media2.giphy.com/media/abc/giphy.gif#480x360"), "GIF");
+        assert_eq!(excerpt_text(" https://i.giphy.com/abc.webp "), "GIF");
+    }
+
+    #[test]
+    fn a_plain_body_passes_through_unchanged() {
+        assert_eq!(excerpt_text("hello there"), "hello there");
+        // Not a Giphy media URL (a plain gif mention, an untrusted host).
+        assert_eq!(excerpt_text("https://evil.com/x.gif"), "https://evil.com/x.gif");
+        assert_eq!(excerpt_text("check out this gif"), "check out this gif");
     }
 }

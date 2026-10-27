@@ -192,7 +192,9 @@ fn dm_row(dm_id: u32, active: Signal<u32>, unread: Rc<RefCell<HashMap<u32, u32>>
     // Clamp to ONE line (the web backend does not emit a `max_lines` style,
     // so cutting the string with "…" is the fix): an unwrapped single line
     // cannot spill past the fixed-height row into its neighbours.
-    let preview = one_line(preview, 16);
+    // Clamp a GIF body to "GIF" first so the preview line shows the word, not
+    // the media URL (the shared `excerpt_text` rule for all excerpt sites).
+    let preview = one_line(crate::reply_reference_strip::excerpt_text(preview.as_str()), 16);
     let when = {
         let now = now_secs();
         format_when(dm.messages.last().map(|m| m.ts_secs(now)).unwrap_or(now), now)
