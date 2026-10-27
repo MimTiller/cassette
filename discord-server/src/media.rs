@@ -367,7 +367,9 @@ pub fn media_response(dir: PathBuf, name: &str) -> Option<(String, Vec<u8>)> {
 
 /// The HTTP response for `GET /media/{name}`: the file with exactly one
 /// `Content-Type`, an immutable year-long cache (the name IS the content
-/// hash) and `nosniff`; 404 for anything [`media_response`] refuses.
+/// hash) that is `private` (only the signed-in viewer's browser keeps it; the
+/// route requires a session) and `nosniff`; 404 for anything
+/// [`media_response`] refuses.
 pub fn http_response(dir: PathBuf, name: &str) -> axum::response::Response {
     use axum::http::{header, StatusCode};
     use axum::response::IntoResponse;
@@ -376,7 +378,7 @@ pub fn http_response(dir: PathBuf, name: &str) -> axum::response::Response {
         Some((mime, bytes)) => (
             [
                 (header::CONTENT_TYPE, mime),
-                (header::CACHE_CONTROL, "public, max-age=31536000, immutable".to_string()),
+                (header::CACHE_CONTROL, "private, max-age=31536000, immutable".to_string()),
                 (header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_string()),
             ],
             bytes,
@@ -525,7 +527,7 @@ mod tests {
         let h = ok.headers();
         assert_eq!(h.get_all(header::CONTENT_TYPE).iter().count(), 1);
         assert_eq!(h[header::CONTENT_TYPE], "image/png");
-        assert_eq!(h[header::CACHE_CONTROL], "public, max-age=31536000, immutable");
+        assert_eq!(h[header::CACHE_CONTROL], "private, max-age=31536000, immutable");
         assert_eq!(h[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
 
         let hash = &name[..64];

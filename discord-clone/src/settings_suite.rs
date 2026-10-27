@@ -417,6 +417,50 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                 ..Default::default()
             }) { "BLOCKED USERS".to_string() }
             { blocked_list }
+
+            // ── Sessions ── (revokes every login of this account, this
+            // device's included)
+            text(style = StyleRules {
+                font_size: Some(px(12.0)),
+                font_weight: Some(runtime_core::FontWeight::Bold),
+                color: Some(col(TEXT_MUTED)),
+                margin_top: Some(px(24.0)),
+                ..Default::default()
+            }) { "SESSIONS".to_string() }
+            text(style = StyleRules {
+                font_size: Some(px(13.0)),
+                color: Some(col(TEXT_MUTED)),
+                margin_top: Some(px(6.0)),
+                margin_bottom: Some(px(8.0)),
+                ..Default::default()
+            }) { "Signs this account out everywhere it is logged in, including here.".to_string() }
+            view(style = StyleRules {
+                height: Some(px(32.0)),
+                padding_left: Some(px(16.0)),
+                padding_right: Some(px(16.0)),
+                align_self: Some(runtime_core::AlignSelf::FlexStart),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                background: Some(col("#da373c")),
+                border_top_left_radius: Some(px(4.0)),
+                border_top_right_radius: Some(px(4.0)),
+                border_bottom_left_radius: Some(px(4.0)),
+                border_bottom_right_radius: Some(px(4.0)),
+                ..Default::default()
+            }, test_id = "logout-everywhere") {
+                text(style = StyleRules {
+                    font_size: Some(px(14.0)),
+                    font_weight: Some(runtime_core::FontWeight::SemiBold),
+                    color: Some(col("#ffffff")),
+                    ..Default::default()
+                }) { "Log out of all devices".to_string() }
+            }
+            .on_touch(|ev| {
+                if ev.phase == TouchPhase::Ended {
+                    crate::auth::request_logout_everywhere();
+                }
+                TouchResponse::CONSUMED
+            })
         }
     }
 }

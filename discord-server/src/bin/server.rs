@@ -28,7 +28,8 @@ use axum::Router;
 use tower_http::services::ServeDir;
 
 use axum::extract::{ConnectInfo, Path, Request};
-use axum::http::HeaderValue;
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::response::IntoResponse;
 use axum::middleware::Next;
 use axum::response::Response;
 use axum::routing::get;
@@ -46,8 +47,14 @@ async fn tag_peer_ip(ConnectInfo(peer): ConnectInfo<SocketAddr>, mut req: Reques
 
 /// GET /media/{name}: serve ONLY content-addressed names (see
 /// [`discord_server::media::http_response`] — anything else, including
-/// `..`, is a 404 without touching the filesystem).
-async fn media_route(Path(name): Path<String>) -> Response {
+/// `..`, is a 404 without touching the filesystem), and only to a signed-in
+/// user, so a leaked image link (a DM's or a private channel's) shows nothing
+/// to a stranger. The browser sends the session cookie with `<img>` loads.
+async fn media_route(Path(name): Path<String>, headers: HeaderMap) -> Response {
+    let header = |n: header::HeaderName| headers.get(n).and_then(|v| v.to_str().ok());
+    if discord_server::session::identity_from_headers(header(header::AUTHORIZATION), header(header::COOKIE)).is_none() {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
     discord_server::media::http_response(discord_server::media::media_dir(), &name)
 }
 

@@ -301,6 +301,13 @@ pub fn resolve_identity(
     None
 }
 
+/// The signed-in user behind a plain HTTP request's `Authorization` and
+/// `Cookie` headers (bearer token or `session` cookie; never the legacy
+/// header), for routes outside the `#[server]` dispatcher such as `/media`.
+pub fn identity_from_headers(authorization: Option<&str>, cookie_header: Option<&str>) -> Option<i64> {
+    resolve_identity(authorization, cookie_value(cookie_header, "session").as_deref(), None, false)
+}
+
 /// The acting user for the current request: a verified bearer token, the
 /// verified session cookie (the web path), or — only when explicitly
 /// enabled — the legacy header. `None` = unauthenticated.

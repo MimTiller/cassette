@@ -476,6 +476,20 @@ pub(crate) fn request_logout() {
     });
 }
 
+/// "Log out of all devices": revoke every session of this account on the
+/// server, drop this device's session, and reload into the login screen.
+pub(crate) fn request_logout_everywhere() {
+    runtime_core::driver::spawn_async(async move {
+        if discord_server::auth::logout_everywhere().await.is_ok() {
+            clear_session();
+            #[cfg(target_arch = "wasm32")]
+            if let Some(w) = web_sys::window() {
+                let _ = w.location().reload();
+            }
+        }
+    });
+}
+
 /// Drop the persisted session (logout), so a refresh doesn't restore it. The
 /// web half also relies on the `logout` server fn having cleared the httpOnly
 /// cookie — both halves are needed: keys gone AND cookie gone.

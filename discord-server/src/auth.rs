@@ -479,6 +479,19 @@ pub async fn logout() -> Result<LogoutResult, ServerError> {
     Ok(LogoutResult {})
 }
 
+/// Sign the account out on every device: revoke all of its session tokens
+/// (`users.token_version`) and clear this browser's cookie. Open sockets
+/// close at their next session re-check.
+#[server]
+pub async fn logout_everywhere() -> Result<LogoutResult, ServerError> {
+    let db = db_from_state()?;
+    let user = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    db.bump_token_version(user)
+        .map_err(|e| ServerError::failed(format!("failed to log out: {e}")))?;
+    server::set_cookie(session_cookie("", request_is_https()).clearing());
+    Ok(LogoutResult {})
+}
+
 /// The `session` cookie: HttpOnly and SameSite=Lax (the `server` SDK's
 /// defaults), and `Secure` only when the request came over https. Browsers
 /// drop `Secure` cookies on plain-http origins other than localhost, and the
