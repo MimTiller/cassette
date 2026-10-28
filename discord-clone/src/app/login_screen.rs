@@ -9,8 +9,8 @@ use super::*;
 /// form with two modes toggled by `mode`: sign in (the default) and sign up.
 /// The password field is `secure` (masks input like a real login); empty
 /// fields show an inline error. On success — a real backend login or signup —
-/// `authed` flips and this screen unmounts. "Continue as guest" skips the
-/// fields entirely. State is local to this function — it unmounts the moment
+/// `authed` flips and this screen unmounts. State is local to this function — it
+/// unmounts the moment
 /// `authed` flips, so no session survives a reload.
 pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element {
     let _ = &busy; // threaded for the submit button + handlers' guard (below).
@@ -238,10 +238,6 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             KeyOutcome::Default
         }
     };
-    // "Continue as guest" — a mock path: skips the fields and the backend
-    // entirely and just flips `authed`. Real sign-in / sign-up go through the
-    // fields and `crate::auth`; guest remains a local no-account shortcut.
-    let on_guest = move || authed.set(true);
 
     // The form. The inline error is reactive: a nested `switch` keyed on the
     // `error` signal rebuilds the form whenever a failed submit sets it (the
@@ -264,23 +260,6 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             mode.set(!mode.get());
             error.set(String::new());
         }
-    };
-    // The "Continue as guest" pill's parts. The pill `Element` is built *inside*
-    // the render closure (Elements aren't `Copy` and the closure is `Fn`, so a
-    // pre-built one would be moved on the first rebuild and gone the second).
-    let guest_style = StyleRules {
-        margin_top: Some(px(8.0)),
-        padding_top: Some(px(2.0)),
-        padding_bottom: Some(px(2.0)),
-        font_size: Some(px(13.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        ..Default::default()
-    };
-    let guest_text_style = StyleRules {
-        color: Some(col(BUTTON)),
-        font_size: Some(px(13.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        ..Default::default()
     };
     let form = switch(
         // Keyed on `(error, mode, busy)` so the form rebuilds when a failed
@@ -323,24 +302,6 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
                 "We're so excited to see you again!"
             }
             .to_string();
-            // The "Continue as guest" pill (mode-independent). Built *inside*
-            // the render closure (Elements aren't `Copy` and the closure is
-            // `Fn`, so a pre-built one would be moved on the first rebuild and
-            // gone the second).
-            let guest = on_guest.clone();
-            let guest_style_i = guest_style.clone();
-            let guest_text_style_i = guest_text_style.clone();
-            let guest_btn = ui! {
-                view(style = guest_style_i, test_id = "login-guest") {
-                    text(style = guest_text_style_i) { "Continue as guest".to_string() }
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        guest();
-                    }
-                    TouchResponse::CONSUMED
-                })
-            };
             // The reciprocal mode-toggle link: "No account? Sign up" in
             // sign-in mode, "Have an account? Sign in" in sign-up mode. Tapping
             // it flips `mode` (and clears any inline error), so the `(error,
@@ -457,7 +418,6 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
                         style = submit_style.clone(),
                     )
                     toggle_btn
-                    guest_btn
                 }
             }
         },
