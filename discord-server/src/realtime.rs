@@ -227,33 +227,11 @@ pub fn authorize_text_channel(
     Ok(server_id)
 }
 
-/// Resolve the `@username` tokens in `content` against the members of
-/// `server_id` and return the distinct user ids mentioned.
-///
-/// Token grammar is `crate::db::mention_tokens` (`@[A-Za-z0-9_]+`). Each token
-/// is matched **case-insensitively** against the members' usernames; on a
-/// collision (two members sharing a username) the first member in
-/// `server_members` order wins. Tokens with no matching member are dropped
-/// (they read as plain text, not a mention). The result is sorted and deduped
-/// so a token naming the same user twice appears once.
-pub fn resolve_mentions(db: &Db, server_id: i64, content: &str) -> Vec<i64> {
-    let tokens = crate::db::mention_tokens(content);
-    if tokens.is_empty() {
-        return Vec::new();
-    }
-    let members = db.server_members(server_id);
-    let mut out: Vec<i64> = Vec::new();
-    for token in &tokens {
-        for (user_id, username, _) in &members {
-            if username.eq_ignore_ascii_case(token) {
-                out.push(*user_id);
-                break; // first matching member wins; stop at the first hit
-            }
-        }
-    }
-    out.sort_unstable();
-    out.dedup();
-    out
+/// The user ids a message from `author_id` notifies: named members plus the
+/// `@everyone` / `@here` / role expansions (see
+/// [`crate::server_roles::resolve_mentions`]).
+pub fn resolve_mentions(db: &Db, server_id: i64, author_id: i64, content: &str) -> Vec<i64> {
+    crate::server_roles::resolve_mentions(db, server_id, author_id, content)
 }
 
 /// Validate one image attachment: allowed mime on BOTH the declared field and
@@ -366,7 +344,7 @@ pub fn post_channel_message(
             &media_rows,
         )
         .map_err(|e| e.to_string())?;
-    let mentioned_user_ids = resolve_mentions(db, server_id, content);
+    let mentioned_user_ids = resolve_mentions(db, server_id, user_id, content);
     if let Err(e) = db.insert_message_mentions(message_id, &mentioned_user_ids) {
         return Err(format!("failed to store mentions: {e}"));
     }
@@ -446,7 +424,7 @@ pub fn edit_channel_message(
         .map_err(|e| format!("failed to update message: {e}"))?;
     // Recompute mentions against the NEW content and replace the stored rows so
     // the persisted mention list matches the text.
-    let mentioned_user_ids = resolve_mentions(db, server_id, content);
+    let mentioned_user_ids = resolve_mentions(db, server_id, user_id, content);
     if let Err(e) = db.replace_message_mentions(message_id, &mentioned_user_ids) {
         return Err(format!("failed to store mentions: {e}"));
     }
@@ -457,6 +435,7 @@ pub fn edit_channel_message(
             channel_id,
             content: content.to_string(),
             edited_at,
+            mentioned_user_ids,
         },
     );
     Ok(())
@@ -804,15 +783,15 @@ mod tests {
     fn resolve_mentions_matches_members_case_insensitively() {
         let (_d, db) = setup();
         // Server 1 members: alice (1, owner), bob (2, member).
-        assert_eq!(resolve_mentions(&db, 1, "hey @alice"), vec![1]);
-        assert_eq!(resolve_mentions(&db, 1, "@BOB ping"), vec![2]);
-        assert_eq!(resolve_mentions(&db, 1, "@Alice @bob"), vec![1, 2]);
+        assert_eq!(resolve_mentions(&db, 1, 3, "hey @alice"), vec![1]);
+        assert_eq!(resolve_mentions(&db, 1, 3, "@BOB ping"), vec![2]);
+        assert_eq!(resolve_mentions(&db, 1, 3, "@Alice @bob"), vec![1, 2]);
         // Dedup: the same member named twice is listed once.
-        assert_eq!(resolve_mentions(&db, 1, "@alice @ALICE"), vec![1]);
+        assert_eq!(resolve_mentions(&db, 1, 3, "@alice @ALICE"), vec![1]);
         // A token with no matching member is dropped (plain text).
-        assert_eq!(resolve_mentions(&db, 1, "email @gmail.com"), Vec::<i64>::new());
+        assert_eq!(resolve_mentions(&db, 1, 3, "email @gmail.com"), Vec::<i64>::new());
         // Members of other servers do not resolve.
-        assert_eq!(resolve_mentions(&db, 1, "@carol"), Vec::<i64>::new());
+        assert_eq!(resolve_mentions(&db, 1, 3, "@carol"), Vec::<i64>::new());
     }
 
     #[test]
@@ -885,7 +864,9 @@ mod tests {
                 channel_id,
                 content,
                 edited_at,
+                mentioned_user_ids,
             } => {
+                assert_eq!(mentioned_user_ids, vec![2]);
                 assert_eq!((message_id, channel_id), (mid, 1));
                 assert_eq!(content, "edited @bob");
                 assert_eq!(edited_at, m.edited_at.unwrap());

@@ -26,6 +26,7 @@
 #[macro_use]
 pub mod components;
 pub mod roles;
+pub mod server_roles;
 pub mod server_settings;
 // `invites` compiles in BOTH halves, like `auth` / `server_settings`: the
 // `#[server]` fns emit client RPC stubs by default (the wire types

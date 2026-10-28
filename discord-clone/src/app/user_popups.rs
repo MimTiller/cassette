@@ -126,9 +126,10 @@ pub(super) fn build(s: &ShellState) -> UserPopupsParts {
             live_dm_mode.set(true);
         })
     };
+    // `live_revision` is in the key so a role change redraws an open card.
     let user_popup_el = switch(
-        move || (user_popup.get(), user_profile.get()),
-        move |(popup, profile): &(Option<UserPopup>, Option<UserProfile>)| {
+        move || (user_popup.get(), user_profile.get(), live_revision.get()),
+        move |(popup, profile, _rev): &(Option<UserPopup>, Option<UserProfile>, u32)| {
             let Some(popup) = *popup else {
                 return ui! { view(style = StyleRules { width: Some(px(0.0)), height: Some(px(0.0)), ..Default::default() }) {} };
             };
@@ -319,6 +320,7 @@ fn profile_card(
                 if let Some(role) = &p.server_role {
                     text(style = StyleRules { font_size: Some(px(12.0)), color: Some(col(TEXT_MUTED)), margin_top: Some(px(2.0)), ..Default::default() }) { role.clone() }
                 }
+                { role_chips(user_id, p.server_role.is_some(), label.clone()) }
                 text(style = label.clone()) { "Member since".to_string() }
                 text(style = value.clone()) { since.clone() }
                 if let Some((title, names)) = &mutual {
@@ -330,6 +332,84 @@ fn profile_card(
             }
         }
         .on_touch(|_| TouchResponse::CONSUMED)
+    }
+}
+
+/// The member's named roles as chips. Admins can take one away (×) or give
+/// any role they lack (the dimmed "+" chips).
+fn role_chips(user_id: i64, in_server: bool, label: StyleRules) -> Element {
+    use discord_server::server_roles::CustomRole;
+    let held = crate::mentions::roles_of(user_id);
+    let manage = in_server && crate::mentions::can_manage_roles();
+    let missing: Vec<CustomRole> = if manage {
+        crate::mentions::roles().roles.into_iter().filter(|r| !held.iter().any(|h| h.id == r.id)).collect()
+    } else {
+        Vec::new()
+    };
+    if !in_server || (held.is_empty() && missing.is_empty()) {
+        return ui! { view {} };
+    }
+    let chip = |r: &CustomRole, add: bool| -> Element {
+        let role_id = r.id;
+        let fill = if r.color.is_empty() { col(theme::TEXT_MUTED) } else { theme::fixed(&r.color) };
+        let text = if add { format!("+ {}", r.name) } else if manage { format!("{}  ×", r.name) } else { r.name.clone() };
+        ui! {
+            view(style = StyleRules {
+                flex_direction: Some(FlexDirection::Row),
+                align_items: Some(AlignItems::Center),
+                gap: Some(px(5.0)),
+                height: Some(px(22.0)),
+                padding_left: Some(px(6.0)),
+                padding_right: Some(px(8.0)),
+                background: Some(col(if add { theme::BG_USER_PANEL } else { theme::BG_TERTIARY })),
+                border_top_left_radius: Some(px(4.0)),
+                border_top_right_radius: Some(px(4.0)),
+                border_bottom_left_radius: Some(px(4.0)),
+                border_bottom_right_radius: Some(px(4.0)),
+                ..Default::default()
+            }) {
+                view(style = StyleRules {
+                    width: Some(px(10.0)),
+                    height: Some(px(10.0)),
+                    background: Some(fill),
+                    border_top_left_radius: Some(px(5.0)),
+                    border_top_right_radius: Some(px(5.0)),
+                    border_bottom_left_radius: Some(px(5.0)),
+                    border_bottom_right_radius: Some(px(5.0)),
+                    ..Default::default()
+                }) {}
+                text(style = StyleRules {
+                    font_size: Some(px(12.0)),
+                    color: Some(col(if add { TEXT_MUTED } else { TEXT_CHANNEL })),
+                    ..Default::default()
+                }) { text }
+            }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended && manage {
+                    runtime_core::driver::spawn_async(async move {
+                        let input = discord_server::server_roles::AssignRoleInput { role_id, user_id, assigned: add };
+                        if discord_server::server_roles::assign_role(input).await.is_ok() {
+                            if let Some(sid) = crate::mentions::server_id() {
+                                crate::mentions::load_roles(sid);
+                            }
+                        }
+                    });
+                }
+                TouchResponse::CONSUMED
+            })
+        }
+    };
+    let chips: Vec<Element> = held.iter().map(|r| chip(r, false)).chain(missing.iter().map(|r| chip(r, true))).collect();
+    ui! {
+        view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) {
+            text(style = label) { "Roles".to_string() }
+            view(style = StyleRules {
+                flex_direction: Some(FlexDirection::Row),
+                flex_wrap: Some(runtime_core::FlexWrap::Wrap),
+                gap: Some(px(4.0)),
+                ..Default::default()
+            }) { chips }
+        }
     }
 }
 

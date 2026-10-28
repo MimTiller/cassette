@@ -28,6 +28,8 @@ mod keyboard_shortcuts_overlay;
 // the gateway effect in `app.rs` and the `UserSettings` screen
 // (`settings_suite`).
 mod notify;
+mod mentions;
+mod roles_settings;
 // The full-screen, three-tab user-settings screen (Notifications / Account /
 // Appearance) opened by the settings gear; replaces the lone
 // `notification_settings` screen as the gear's target.
@@ -86,8 +88,6 @@ mod transfer_ownership_confirm;
 mod avatar_chip;
 #[path = "components/server_stats_card.rs"]
 mod server_stats_card;
-#[path = "components/audit_log_row.rs"]
-mod audit_log_row;
 #[path = "components/link_embed_preview.rs"]
 mod link_embed_preview;
 #[path = "components/member_role_list.rs"]

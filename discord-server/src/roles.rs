@@ -117,6 +117,11 @@ pub enum Action {
     /// ("Manage Messages"): any member can *read* the pinned view, but only
     /// moderators and above can change what is pinned.
     PinMessage,
+    /// Create, edit, delete and hand out named roles (`server_roles`). Admin+.
+    ManageRoles,
+    /// Notify with `@everyone`, `@here` or a role that isn't mentionable.
+    /// Moderator+.
+    MentionEveryone,
 }
 
 impl Role {
@@ -189,8 +194,13 @@ impl Action {
             | Action::DeleteChannel
             | Action::BanMember
             | Action::TimeoutMember
-            | Action::SetMemberRole => Role::Admin,
-            Action::RenameChannel | Action::AddMember | Action::RemoveMember | Action::PinMessage => Role::Moderator,
+            | Action::SetMemberRole
+            | Action::ManageRoles => Role::Admin,
+            Action::RenameChannel
+            | Action::AddMember
+            | Action::RemoveMember
+            | Action::PinMessage
+            | Action::MentionEveryone => Role::Moderator,
         }
     }
 }
@@ -250,6 +260,8 @@ mod tests {
             Action::TimeoutMember,
             Action::SetMemberRole,
             Action::PinMessage,
+            Action::ManageRoles,
+            Action::MentionEveryone,
         ];
         for a in actions {
             assert!(Role::Owner.can(a), "owner should do {a:?}");

@@ -597,6 +597,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let live_messages: Rc<RefCell<HashMap<i64, Vec<LiveMsg>>>> =
         Rc::new(RefCell::new(HashMap::new()));
     let live_revision: Signal<u32> = signal(0);
+    crate::mentions::install(live_revision);
 
     // --- message reactions (shared by the MOCK and the LIVE message lists) --
     // Per-message reaction state: `reactions` is the pill map (see the `ReactionMap`
@@ -992,6 +993,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             if let Ok(members) = crate::moderation::list_members(sid).await {
                 lmbrs.set(members);
             }
+            crate::mentions::load_roles(sid);
             if let Ok(counts) = crate::servers::unread_counts(sid).await {
                 let buf = lunread.clone();
                 buf.borrow_mut()

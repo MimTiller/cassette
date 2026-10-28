@@ -39,7 +39,6 @@ use runtime_core::{
 use file_picker::{FilePicker, MediaKind, PickOutcome, PickRequest};
 
 use crate::style_helpers::{borderless_input, col, pct, px, section_label};
-use crate::audit_log_row::AuditLogRow;
 
 // Discord dark palette (kept local so the component is self-contained).
 
@@ -148,12 +147,6 @@ pub fn ServerSettingsPanel(
         font_size: Some(px(12.0)),
         font_weight: Some(FontWeight::SemiBold),
         color: Some(col(theme::TEXT_STRONG)),
-        ..Default::default()
-    };
-    let section_style = StyleRules {
-        flex_direction: Some(FlexDirection::Column),
-        margin_top: Some(px(14.0)),
-        gap: Some(px(6.0)),
         ..Default::default()
     };
     let label_style = section_label();
@@ -435,9 +428,11 @@ pub fn ServerSettingsPanel(
     // `Element` moved into an `Fn` render closure is gone after the first
     // rebuild, E0507). `do_rename`/`do_icon`/`do_transfer` capture only
     // `Copy` signals, so they're `Copy` + `Fn` and can be invoked here.
+    // Also rebuilt on open and on a server switch, so the owner check and the
+    // roles section see the current server.
     let body = switch(
-        move || (b.get(), e.get()),
-        move |(busy, err): &(bool, String)| {
+        move || (b.get(), e.get(), close.get(), sid.get()),
+        move |(busy, err, _open, _sid): &(bool, String, bool, Option<i64>)| {
             let self_id: i64 = crate::auth::CURRENT_USER_ID
                 .load(std::sync::atomic::Ordering::SeqCst);
             let is_owner: bool = mbrs
@@ -674,21 +669,8 @@ pub fn ServerSettingsPanel(
                     view {}
                 }
             };
-            // A short, static "Audit Log" section: a few plausible mock server
-            // audit events rendered through `AuditLogRow` (one per event). This
-            // is a deliberate, fixed list in the server-settings card — NOT a
-            // per-row widget spliced into every server/member row (the graveyard
-            // anti-pattern). `AuditLogRow`'s `text` / `timestamp` `String` props
-            // are named-arg call sites (the `#[component]` inline-props idiom),
-            // each baking a static event line + relative timestamp.
-            let audit_el = ui! {
-                view(style = section_style.clone()) {
-                    text(style = label_style.clone()) { "Audit log".to_string() }
-                    AuditLogRow(text = "Alex banned Sam".to_string(), timestamp = "2 hours ago".to_string())
-                    AuditLogRow(text = "Sam changed the server icon".to_string(), timestamp = "5 hours ago".to_string())
-                    AuditLogRow(text = "Rae timed out Juno for 10 minutes".to_string(), timestamp = "1 day ago".to_string())
-                }
-            };
+            // Named roles: list, create, delete (admins and the owner).
+            let roles_el = crate::roles_settings::roles_section(sid.get());
             // The header (title + "Done") pins to the top of the card; the
             // sections below it live in a `scroll_view` so a small window
             // reveals them by scrolling rather than clipping (the same
@@ -701,7 +683,7 @@ pub fn ServerSettingsPanel(
                         { icon_row }
                         { add_row }
                         { transfer_el }
-                        { audit_el }
+                        { roles_el }
                         { err_el }
                     }
                 }

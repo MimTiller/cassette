@@ -12,7 +12,7 @@ pub(super) struct MessagesParts {
 }
 
 pub(super) fn build(s: &ShellState) -> MessagesParts {
-    let ShellState { active_channel, active_live_channel, active_live_server, active_server, blocked_users, gateway, has_more_earlier, is_real_user, live_at_bottom, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_invite_mode, live_messages, live_revision, live_servers, live_typing, live_typing_rev, load_busy, members_pref, moderation_mode, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, revealed_blocked, revision, sent, translate_key, user_popup, user_profile, .. } = s.clone();
+    let ShellState { active_channel, active_live_channel, active_live_server, active_server, blocked_users, gateway, has_more_earlier, is_real_user, live_at_bottom, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_invite_mode, live_members, live_messages, live_revision, live_servers, live_typing, live_typing_rev, load_busy, members_pref, moderation_mode, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, revealed_blocked, revision, sent, translate_key, user_popup, user_profile, .. } = s.clone();
     // --- main view -------------------------------------------------------
     let header_style = StyleRules {
         padding_top: Some(px(10.0)),
@@ -380,6 +380,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                     };
                 }
                 let self_id = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+                crate::mentions::set_members(active_live_server.get(), &live_members.get(), self_id);
                 let editing = live_editing;
                 let delete_c = live_delete_confirm;
                 let edit_text = live_edit_text;
@@ -443,6 +444,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                     blocked: blocked_users,
                     live_rev: live_revision,
                 };
+                crate::mentions::set_open_user(Rc::new(move |uid, x, y| popup_ctx.open(uid, x, y, false)));
                 // Messages from blocked users collapse into one "N Blocked
                 // Messages — Show" row per consecutive run, unless revealed.
                 let blocked_now = blocked_users.get();
@@ -532,7 +534,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                             }
                         });
                     });
-                    rows.push(live_edit_row(
+                    let row = live_edit_row(
                         *mid,
                         author.as_str(),
                         BUTTON,
@@ -554,7 +556,8 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         pin_c,
                         trans_l,
                         Some(Rc::new(popup_ctx.on_press(*aid))),
-                    ));
+                    );
+                    rows.push(if crate::mentions::mentions_me(*mid) { mention_highlight(row) } else { row });
                     // Image attachments render UNDER the body: the persisted
                     // list the gateway effect stored for this wire id (empty
                     // rows push nothing, so every other row is unchanged).

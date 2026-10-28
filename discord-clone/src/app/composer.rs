@@ -200,8 +200,11 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
         let (members, list) = match &q {
             None => (String::new(), Vec::new()),
             Some(q) => {
-                let members =
-                    live_member_roster(&live_channels_sig.get(), &live_messages_sig.borrow());
+                let members = if crate::mentions::server_id().is_some() {
+                    crate::mentions::completion_pool()
+                } else {
+                    live_member_roster(&live_channels_sig.get(), &live_messages_sig.borrow())
+                };
                 let list = filter_members(q, members);
                 (q.clone(), list)
             }
@@ -352,6 +355,7 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
                 .enumerate()
                 .map(|(i, name)| {
                     let on = (i as i64) == hi;
+                    let hint = crate::mentions::completion_hint(name);
                     let n = name.clone();
                     // Fresh per-row clone: `apply_touch` is an `Rc`, not `Copy`,
                     // and this `.map()` runs once per suggestion row, so each
@@ -374,6 +378,14 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
                                 color: Some(col(if on { TEXT } else { TEXT_CHANNEL })),
                                 ..Default::default()
                             }) { format!("@{}", name) }
+                            view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
+                            if let Some(h) = hint {
+                                text(style = StyleRules {
+                                    font_size: Some(px(12.0)),
+                                    color: Some(col(TEXT_MUTED)),
+                                    ..Default::default()
+                                }) { h.to_string() }
+                            }
                         }
                         .on_touch(move |ev| {
                             if ev.phase == TouchPhase::Ended {

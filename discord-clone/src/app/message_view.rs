@@ -297,6 +297,63 @@ pub(super) fn is_emoji_only(text: &str) -> bool {
     any
 }
 
+/// A mention inside a message: a tinted pill (a coloured role's pill takes
+/// its colour). A member's pill opens their card.
+fn mention_pill(seg: discord_server::server_roles::MentionSeg) -> Element {
+    use discord_server::server_roles::MentionSeg;
+    let (label, fg, bg, user) = match seg {
+        MentionSeg::User { id, name } => (format!("@{name}"), col(theme::MENTION_TEXT), col(theme::MENTION_BG), Some(id)),
+        MentionSeg::Role { name, color, .. } if !color.is_empty() => {
+            (format!("@{name}"), theme::fixed(&color), theme::fixed(&crate::mentions::tint(&color, 0.12)), None)
+        }
+        MentionSeg::Role { name, .. } => (format!("@{name}"), col(theme::MENTION_TEXT), col(theme::MENTION_BG), None),
+        MentionSeg::Everyone(w) => (format!("@{w}"), col(theme::MENTION_TEXT), col(theme::MENTION_BG), None),
+        MentionSeg::Text(t) => (t, col(TEXT), col("transparent"), None),
+    };
+    let style = StyleRules {
+        padding_left: Some(px(2.0)),
+        padding_right: Some(px(2.0)),
+        background: Some(bg),
+        border_top_left_radius: Some(px(3.0)),
+        border_top_right_radius: Some(px(3.0)),
+        border_bottom_left_radius: Some(px(3.0)),
+        border_bottom_right_radius: Some(px(3.0)),
+        ..Default::default()
+    };
+    let text_style = StyleRules {
+        font_size: Some(px(BODY_PX)),
+        font_weight: Some(FontWeight::SemiBold),
+        color: Some(fg),
+        ..Default::default()
+    };
+    match user {
+        Some(id) => ui! {
+            view(style = style) { text(style = text_style) { label } }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    let p = ev.window_position;
+                    crate::mentions::open_user(id, p.x, p.y);
+                }
+                TouchResponse::CONSUMED
+            })
+        },
+        None => ui! { view(style = style) { text(style = text_style) { label } } },
+    }
+}
+
+/// A message that mentions the signed-in user: a warm tint and a bar on the
+/// left, like Discord.
+pub(super) fn mention_highlight(row: Element) -> Element {
+    ui! {
+        view(style = StyleRules {
+            background: Some(col(theme::MENTION_ROW)),
+            border_left_width: Some(runtime_core::Tokenized::Literal(2.0)),
+            border_left_color: Some(col(theme::WARNING)),
+            ..Default::default()
+        }) { row }
+    }
+}
+
 pub(super) fn message_body(body: &str) -> Element {
     // A body that is just a Giphy media link (a GIF sent from the picker, or
     // a pasted one) shows as the animated image, sized from the link's
@@ -331,7 +388,7 @@ pub(super) fn message_body(body: &str) -> Element {
     // current metrics and grouped consecutive rows stay tight. A body
     // carrying `||…||` spoilers keeps the spoiler path (SDK v1 has no spoiler
     // construct); the two features never stack on one row.
-    if !body.contains("||") && looks_like_markdown(body) {
+    if !body.contains("||") && looks_like_markdown(&crate::mentions::without_mentions(body)) {
         return Element::from(markdown::markdown(linkify_bare_urls(body), md_chat_theme()));
     }
     // Split the body into `(is_spoiler, text)` runs. A `||…||` pair becomes a
@@ -409,14 +466,23 @@ pub(super) fn message_body(body: &str) -> Element {
                 // Plain run: inline text nodes in the same flow as the
                 // spoilers, so the row stays on one visual line when it fits.
                 // Emoji pieces get the bigger size.
-                emoji_runs(text)
+                // Emoji pieces get the bigger size; mentions become pills.
+                crate::mentions::segments(text)
                     .into_iter()
-                    .map(|(is_emoji, piece)| ui! {
-                        text(style = StyleRules {
-                            font_size: Some(px(if is_emoji { emoji_px } else { BODY_PX })),
-                            color: Some(col(TEXT)),
-                            ..Default::default()
-                        }) { piece }
+                    .flat_map(|seg| -> Vec<Element> {
+                        match seg {
+                            discord_server::server_roles::MentionSeg::Text(t) => emoji_runs(&t)
+                                .into_iter()
+                                .map(|(is_emoji, piece)| ui! {
+                                    text(style = StyleRules {
+                                        font_size: Some(px(if is_emoji { emoji_px } else { BODY_PX })),
+                                        color: Some(col(TEXT)),
+                                        ..Default::default()
+                                    }) { piece }
+                                })
+                                .collect(),
+                            mention => vec![mention_pill(mention)],
+                        }
                     })
                     .collect()
             }
@@ -786,10 +852,14 @@ pub(crate) fn message_row(
         gap: Some(px(6.0)),
         ..Default::default()
     };
+    // The name takes the colour of the author's highest coloured role.
     let author_style = StyleRules {
         font_size: Some(px(15.0)),
         font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
+        color: Some(match crate::mentions::name_color(author) {
+            Some(c) => theme::fixed(&c),
+            None => col(TEXT),
+        }),
         ..Default::default()
     };
     let initial = author.chars().next().unwrap_or(' ').to_string();

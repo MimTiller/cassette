@@ -78,10 +78,16 @@ pub const WARNING: &str = "#f0b232";
 pub const SHADOW: &str = "#000000";
 /// The dimming layer behind dialogs.
 pub const OVERLAY: &str = "rgba(0, 0, 0, 0.6)";
+/// A mention pill's background.
+pub const MENTION_BG: &str = "rgba(88, 101, 242, 0.3)";
+/// A mention pill's text.
+pub const MENTION_TEXT: &str = "#c9cdfb";
+/// The background of a message that mentions you.
+pub const MENTION_ROW: &str = "rgba(240, 178, 50, 0.1)";
 
 /// Every role: (role constant, token name). Palettes list values in this
 /// order.
-const ROLES: [(&str, &str); 27] = [
+const ROLES: [(&str, &str); 30] = [
     (BG_PRIMARY, "color-bg-primary"),
     (BG_SECONDARY, "color-bg-secondary"),
     (BG_TERTIARY, "color-bg-tertiary"),
@@ -109,20 +115,23 @@ const ROLES: [(&str, &str); 27] = [
     (WARNING, "color-warning"),
     (SHADOW, "color-shadow"),
     (OVERLAY, "color-overlay"),
+    (MENTION_BG, "color-mention-bg"),
+    (MENTION_TEXT, "color-mention-text"),
+    (MENTION_ROW, "color-mention-row"),
 ];
 const ACCENT_INDEX: usize = 16;
 
 /// Discord's dark palette (the role constants themselves).
-const DARK: [&str; 27] = [
+const DARK: [&str; 30] = [
     BG_PRIMARY, BG_SECONDARY, BG_TERTIARY, BG_FLOATING, BG_INPUT, BG_USER_PANEL, BG_HOVER, BG_SELECTED,
     BG_ACCENT_SUBTLE, TEXT_STRONG, TEXT_NORMAL, TEXT_MUTED, TEXT_FAINT, INTERACTIVE, TEXT_LINK,
     TEXT_ON_ACCENT, ACCENT, ACCENT_HOVER, BUTTON_SECONDARY, DIVIDER, DANGER, DANGER_STRONG, SUCCESS,
-    SUCCESS_STRONG, WARNING, SHADOW, OVERLAY,
+    SUCCESS_STRONG, WARNING, SHADOW, OVERLAY, MENTION_BG, MENTION_TEXT, MENTION_ROW,
 ];
 
 /// "Ash": a soft light theme of mid greys rather than white, with dark grey
 /// text, so it is easy on the eyes.
-const LIGHT: [&str; 27] = [
+const LIGHT: [&str; 30] = [
     "#e9eaed", // bg primary
     "#dcdee2", // bg secondary
     "#cdd0d5", // bg tertiary
@@ -150,10 +159,13 @@ const LIGHT: [&str; 27] = [
     "#b8770b", // warning
     "#000000", // shadow
     "rgba(20, 22, 26, 0.35)", // overlay
+    "rgba(88, 101, 242, 0.15)", // mention bg
+    "#3c47c0", // mention text
+    "rgba(184, 119, 11, 0.12)", // mention row
 ];
 
 /// "Dark Purple": dark backgrounds with a violet tint and a lavender accent.
-const PURPLE: [&str; 27] = [
+const PURPLE: [&str; 30] = [
     "#2a2633", // bg primary
     "#221e2b", // bg secondary
     "#18151f", // bg tertiary
@@ -181,6 +193,9 @@ const PURPLE: [&str; 27] = [
     "#f0b232", // warning
     "#000000", // shadow
     "rgba(10, 5, 20, 0.65)", // overlay
+    "rgba(155, 107, 255, 0.3)", // mention bg
+    "#ddd0ff", // mention text
+    "rgba(240, 178, 50, 0.1)", // mention row
 ];
 
 /// The themes the user can pick.
@@ -216,7 +231,7 @@ impl ThemeName {
         ThemeName::ALL.into_iter().find(|t| t.key() == key)
     }
 
-    fn palette(self) -> &'static [&'static str; 27] {
+    fn palette(self) -> &'static [&'static str; 30] {
         match self {
             ThemeName::Dark => &DARK,
             ThemeName::Light => &LIGHT,

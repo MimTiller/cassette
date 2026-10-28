@@ -202,8 +202,19 @@ pub enum WsServerMsg {
     /// (a few seconds) and does not need an explicit stop event.
     Typing { channel_id: i64, user_id: i64 },
     /// A channel message was edited. The client replaces the stored content
-    /// (and its timestamp) for `message_id` with the new values.
-    MessageEdited { message_id: i64, channel_id: i64, content: String, edited_at: i64 },
+    /// (and its timestamp) for `message_id` with the new values;
+    /// `mentioned_user_ids` is the mention list recomputed for the new text.
+    MessageEdited {
+        message_id: i64,
+        channel_id: i64,
+        content: String,
+        edited_at: i64,
+        #[serde(default)]
+        mentioned_user_ids: Vec<i64>,
+    },
+    /// A server's named roles or their holders changed; clients refetch
+    /// `server_roles::server_roles`.
+    RolesChanged { server_id: i64 },
     /// A channel message was deleted. The client drops its stored entry for
     /// `message_id`.
     MessageDeleted { message_id: i64, channel_id: i64 },

@@ -179,6 +179,8 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 attachments,
             }) = frame
             {
+                let me = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+                crate::mentions::mark_message(*message_id, me != 0 && mentioned_user_ids.contains(&me));
                 // The server resolved the author's username for the frame
                 // (`WsServerMsg::Message.author_username`), so the row shows a
                 // real name instead of an id. `author_id` still rides along for
@@ -362,8 +364,11 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 channel_id,
                 content,
                 edited_at,
+                mentioned_user_ids,
             }) = frame
             {
+                let me = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+                crate::mentions::mark_message(*message_id, me != 0 && mentioned_user_ids.contains(&me));
                 let channel_id = *channel_id;
                 let message_id = *message_id;
                 let edited_secs = *edited_at / 1000;
@@ -501,6 +506,13 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             // "just joined" / "just left" transition could use them), but the
             // re-fetch is the single source of truth, so it's the whole of the
             // handling here. `frame` is a `&WsServerMsg`, so copy the id out.
+            // A server's named roles changed: refetch them (name colours,
+            // role mentions) when it is the one on screen.
+            if let Some(discord_server::server_settings::WsServerMsg::RolesChanged { server_id }) = frame {
+                if crate::mentions::server_id() == Some(*server_id) {
+                    crate::mentions::load_roles(*server_id);
+                }
+            }
             if let Some(discord_server::server_settings::WsServerMsg::MemberChanged {
                 server_id,
                 ..
