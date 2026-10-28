@@ -38,6 +38,7 @@ use runtime_core::{
 
 use crate::app::{format_when, message_row, same_group};
 use crate::dms::{self, Dm};
+use crate::gif_picker::{GifPicker, gif_button};
 use crate::style_helpers::{borderless_input, col, pct, px, section_label};
 
 // --- palette -----------------------------------------------------------------
@@ -56,6 +57,9 @@ fn border_width(px: f32) -> Tokenized<f32> {
 /// `author_username`, `content`, `created_at` (UTC epoch ms), and
 /// `edited_at` (UTC epoch ms, `None` until the first edit).
 type LiveDmMsg = (String, String, i64, Option<i64>);
+/// How far above the composer strip the floating GIF picker anchors (same
+/// offset as the channel composer in `app/composer.rs`).
+const GIF_PICKER_BOTTOM_PX: f32 = 76.0;
 
 /// Convert the wire's UTC epoch *milliseconds* to the unix *seconds*
 /// `format_when` expects (the gateway path does the same `/1000` on ingest).
@@ -552,6 +556,7 @@ fn live_dm_conversation(
         padding_right: Some(px(16.0)),
         border_top_width: Some(border_width(1.0)),
         border_top_color: Some(col(theme::BG_TERTIARY)),
+        position: Some(runtime_core::Position::Relative),
         flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Center),
         gap: Some(px(8.0)),
@@ -571,6 +576,13 @@ fn live_dm_conversation(
         ..borderless_input()
     };
 
+    // --- GIF picker state (outlives the pane `switch`) ---------------------
+    // Owned at function scope so a DM-selection/revision rebuild of the pane
+    // cannot lose the open state; it is also closed whenever the selected DM
+    // changes (the render below compares `last_cid` and resets it).
+    let gif_open: Signal<bool> = signal(false);
+    let last_cid: Signal<i64> = signal(-1);
+
     // --- message list ------------------------------------------------------
     // Rebuilds when `rev` bumps (a fetched history load or an inbound
     // `DmMessage` frame) — the same value-dedup `switch` key trick the live
@@ -585,6 +597,14 @@ fn live_dm_conversation(
             let composer_style = composer_style.clone();
             let input_style = input_style.clone();
             let cid = _cid.unwrap_or(0);
+            // Close an open picker when the selected DM changes: compare
+            // against the previous cid in a RefCell (the render is `Fn`, so
+            // the state lives in the cell, not a captured local).
+            let prev_cid = last_cid.get();
+            if cid != prev_cid {
+                gif_open.set(false);
+            }
+            last_cid.set(cid);
 
             // --- composer (rebuilt in place, bound to the shared `text`) ----
             let on_change = move |s: String| {
@@ -623,9 +643,52 @@ fn live_dm_conversation(
                     }
                 }
             };
+            // GIF picker float, keyed on `gif_open` (owned at function scope
+            // so a pane rebuild cannot lose it). Picking sends the GIF as its
+            // own DM through the same `send_dm_message` path Enter uses,
+            // closes the picker, and leaves the typed draft untouched. The
+            // float anchors to the composer strip (position: Relative on
+            // `composer_style`) and floats above it, as in the channel
+            // composer.
+            let gif_switch = switch(
+                move || gif_open.get(),
+                move |open: &bool| {
+                    if !*open {
+                        return ui! {
+                            view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
+                        };
+                    }
+                    let pick_cb: Rc<dyn Fn(discord_server::gifs::Gif)> =
+                        Rc::new(move |gif: discord_server::gifs::Gif| {
+                            gif_open.set(false);
+                            let cid = match active.get() {
+                                Some(c) => c,
+                                None => return,
+                            };
+                            let body = discord_server::gifs::gif_message(&gif);
+                            runtime_core::driver::spawn_async(async move {
+                                let _ = dms::send_dm_message(cid, body).await;
+                            });
+                        });
+                    ui! {
+                        view(style = StyleRules {
+                            position: Some(runtime_core::Position::Absolute),
+                            right: Some(px(16.0)),
+                            bottom: Some(px(GIF_PICKER_BOTTOM_PX)),
+                            ..Default::default()
+                        }) {
+                            GifPicker(on_pick = Some(pick_cb))
+                        }
+                    }
+                },
+            );
             let composer_el = ui! {
                 view(style = composer_style) {
                     text_input(value = text, on_change = on_change, placeholder = "Message", style = input_style, test_id = "live-dm-composer").on_key_down(on_enter)
+                    // GIF button: shared chip (style + toggle handler) with
+                    // the channel composer.
+                    gif_button(gif_open, None)
+                    { gif_switch }
                 }
             };
 

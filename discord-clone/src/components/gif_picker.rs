@@ -17,8 +17,8 @@ use discord_server::gifs::{Gif, GifPage, GifSearchInput};
 use icons_lucide::SEARCH;
 use runtime_core::{
     after_ms_detached, component, icon, signal, switch, ui, AlignItems, Element,
-    FlexDirection, JustifyContent, ObjectFit, Overflow, Shadow, Signal, StyleRules, TouchPhase,
-    TouchResponse, Tokenized,
+    FlexDirection, FontWeight, JustifyContent, ObjectFit, Overflow, Shadow, Signal, StyleRules,
+    TouchPhase, TouchResponse, Tokenized,
 };
 use std::rc::Rc;
 
@@ -31,6 +31,54 @@ const GAP: f32 = 8.0;
 /// One grid column's width: two columns and a gap inside the padded card.
 const COL_W: f32 = (CARD_W - 2.0 * PAD - GAP) / 2.0;
 const DEBOUNCE_MS: i32 = 400;
+
+/// The composer's bordered "GIF" text button: paint for the label chip, plus
+/// an `on_touch` continuation that toggles `on` on release (and closes
+/// `close_others`, e.g. the emoji popover, when present — the DM composer
+/// passes `None`). Shared by the channel composer in `app/composer.rs` and
+/// the live DM composer in `live_dm_view.rs`.
+pub(crate) fn gif_button(on: Signal<bool>, close_others: Option<Signal<bool>>) -> Element {
+    ui! {
+        // GIF = open/close the GIF picker (closing the emoji picker's
+        // toggle lives in each composer's own on_touch site below).
+        view(style = StyleRules {
+            height: Some(px(22.0)),
+            padding_left: Some(px(5.0)),
+            padding_right: Some(px(5.0)),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(JustifyContent::Center),
+            border_top_width: Some(Tokenized::Literal(2.0)),
+            border_right_width: Some(Tokenized::Literal(2.0)),
+            border_bottom_width: Some(Tokenized::Literal(2.0)),
+            border_left_width: Some(Tokenized::Literal(2.0)),
+            border_top_color: Some(col(theme::TEXT_MUTED)),
+            border_right_color: Some(col(theme::TEXT_MUTED)),
+            border_bottom_color: Some(col(theme::TEXT_MUTED)),
+            border_left_color: Some(col(theme::TEXT_MUTED)),
+            border_top_left_radius: Some(px(4.0)),
+            border_top_right_radius: Some(px(4.0)),
+            border_bottom_left_radius: Some(px(4.0)),
+            border_bottom_right_radius: Some(px(4.0)),
+            ..Default::default()
+        }, test_id = "gif-button") {
+            text(style = StyleRules {
+                font_size: Some(px(11.0)),
+                font_weight: Some(FontWeight::Bold),
+                color: Some(col(theme::TEXT_MUTED)),
+                ..Default::default()
+            }) { "GIF".to_string() }
+        }
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                if let Some(other) = close_others {
+                    other.set(false);
+                }
+                on.set(!on.get());
+            }
+            TouchResponse::CONSUMED
+        })
+    }
+}
 
 /// Split `gifs` into two columns, each GIF going to the shorter one (the
 /// masonry layout), with its tile height at `COL_W` wide.

@@ -3,7 +3,7 @@
 
 use crate::theme;
 use super::*;
-use crate::gif_picker::GifPicker;
+use crate::gif_picker::{GifPicker, gif_button};
 
 pub(super) struct ComposerParts {
     pub(super) composer_area: Element,
@@ -689,41 +689,9 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
                     TouchResponse::CONSUMED
                 })
                 text_input(value = composer, on_change = update_on_type, placeholder_reactive = composer_placeholder.read_only(), style = input_style, test_id = "composer").on_key_down(composer_key)
-                // GIF = open/close the GIF picker (closing the emoji one).
-                view(style = StyleRules {
-                    height: Some(px(22.0)),
-                    padding_left: Some(px(5.0)),
-                    padding_right: Some(px(5.0)),
-                    align_items: Some(AlignItems::Center),
-                    justify_content: Some(JustifyContent::Center),
-                    border_top_width: Some(border_width(2.0)),
-                    border_right_width: Some(border_width(2.0)),
-                    border_bottom_width: Some(border_width(2.0)),
-                    border_left_width: Some(border_width(2.0)),
-                    border_top_color: Some(col(TEXT_MUTED)),
-                    border_right_color: Some(col(TEXT_MUTED)),
-                    border_bottom_color: Some(col(TEXT_MUTED)),
-                    border_left_color: Some(col(TEXT_MUTED)),
-                    border_top_left_radius: Some(px(4.0)),
-                    border_top_right_radius: Some(px(4.0)),
-                    border_bottom_left_radius: Some(px(4.0)),
-                    border_bottom_right_radius: Some(px(4.0)),
-                    ..Default::default()
-                }, test_id = "gif-button") {
-                    text(style = StyleRules {
-                        font_size: Some(px(11.0)),
-                        font_weight: Some(FontWeight::Bold),
-                        color: Some(col(TEXT_MUTED)),
-                        ..Default::default()
-                    }) { "GIF".to_string() }
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        emoji_open.set(false);
-                        gif_open.set(!gif_open.get());
-                    }
-                    TouchResponse::CONSUMED
-                })
+                // GIF = open/close the GIF picker (closes the emoji one,
+                // like the reference app). Chip shared with the DM composer.
+                gif_button(gif_open, Some(emoji_open))
                 view(style = icon_button_style) {
                     icon(SMILE).color(|| theme::live(TEXT_MUTED)).size(16.0)
                 }
