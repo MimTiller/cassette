@@ -260,11 +260,13 @@ pub fn ProfileSettings() -> Element {
     let about = signal(String::new());
     let profile_note = signal(String::new());
     let profile_busy = signal(false);
+    // Replies land in this page's signals, so they are anchored to it.
+    let alive = runtime_core::ScopeAlive::current();
     {
         let me = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
-        runtime_core::driver::spawn_async(async move {
-            let input = discord_server::profiles::GetUserProfileInput { user_id: me, server_id: None };
-            if let Ok(p) = discord_server::profiles::get_user_profile(input).await {
+        let input = discord_server::profiles::GetUserProfileInput { user_id: me, server_id: None };
+        runtime_core::spawn_then_in(&alive, discord_server::profiles::get_user_profile(input), move |result| {
+            if let Ok(p) = result {
                 display_name.set(p.display_name.unwrap_or_default());
                 about.set(p.about);
             }
@@ -277,8 +279,8 @@ pub fn ProfileSettings() -> Element {
         profile_busy.set(true);
         profile_note.set(String::new());
         let input = discord_server::profiles::SetProfileInput { display_name: display_name.get(), about: about.get() };
-        runtime_core::driver::spawn_async(async move {
-            match discord_server::profiles::set_profile(input).await {
+        runtime_core::spawn_then_in(&alive, discord_server::profiles::set_profile(input), move |result| {
+            match result {
                 Ok(saved) => {
                     crate::auth::remember_display_name(&crate::auth::current_username(), saved.display_name);
                     crate::mentions::names_changed();

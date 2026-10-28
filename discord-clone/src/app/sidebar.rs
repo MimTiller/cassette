@@ -895,13 +895,18 @@ fn server_dropdown(
                     }
                     confirm_leave.set(false);
                     let Some(sid) = server.get() else { return };
-                    runtime_core::driver::spawn_async(async move {
+                    let request = async move {
                         let input = discord_server::server_settings::LeaveServerInput { server_id: sid };
-                        if discord_server::server_settings::leave_server(input).await.is_ok() {
+                        discord_server::server_settings::leave_server(input).await.ok()?;
+                        Some(crate::servers::list_servers().await.ok())
+                    };
+                    // The menu that started this closes, so anchor to the shell.
+                    runtime_core::spawn_then_in(&crate::app::shell_alive(), request, move |left| {
+                        if let Some(list) = left {
                             server.set(None);
                             channel.set(None);
                             channels.set(Vec::new());
-                            if let Ok(list) = crate::servers::list_servers().await {
+                            if let Some(list) = list {
                                 servers.set(list);
                             }
                         }

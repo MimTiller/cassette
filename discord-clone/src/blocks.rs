@@ -20,8 +20,8 @@ pub fn is_blocked(list: &[BlockedUser], user_id: i64) -> bool {
 /// Fetch the blocked list into `blocked`, then bump `rev` so the message list
 /// re-filters.
 pub fn load(blocked: Signal<Vec<BlockedUser>>, rev: Signal<u32>) {
-    runtime_core::driver::spawn_async(async move {
-        if let Ok(list) = discord_server::blocks::list_blocked().await {
+    runtime_core::spawn_then_in(&crate::app::shell_alive(), discord_server::blocks::list_blocked(), move |result| {
+        if let Ok(list) = result {
             blocked.set(list);
             rev.set(rev.get() + 1);
         }
@@ -37,14 +37,17 @@ pub fn set_blocked(
     rev: Signal<u32>,
     done: impl FnOnce() + 'static,
 ) {
-    runtime_core::driver::spawn_async(async move {
+    let request = async move {
         let input = discord_server::blocks::BlockUserInput { user_id };
         let _ = if block {
             discord_server::blocks::block_user(input).await
         } else {
             discord_server::blocks::unblock_user(input).await
         };
-        if let Ok(list) = discord_server::blocks::list_blocked().await {
+        discord_server::blocks::list_blocked().await
+    };
+    runtime_core::spawn_then_in(&crate::app::shell_alive(), request, move |result| {
+        if let Ok(list) = result {
             blocked.set(list);
             rev.set(rev.get() + 1);
         }

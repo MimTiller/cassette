@@ -58,6 +58,14 @@ For a UI change, also look at it in a browser (see "Testing in a browser").
   (`crate::module::Name(..)`).
 - **Timers:** handles from `after_ms` and `after_animation_frame` cancel when
   dropped. Use `after_ms_detached` for fire-and-forget.
+- **Server calls: `spawn_then_in`, never a raw `spawn_async` that writes
+  signals.** Put the call in the future and every signal write in the
+  callback; the callback is skipped if its scope has gone. Anchor it with
+  `runtime_core::ScopeAlive::current()` taken in the component body (a
+  handler's own node dies when its first write rebuilds it), or with
+  `crate::app::shell_alive()` for app-shell state changed from a menu or
+  popup that closes. `idealyst lint discord-clone` flags the unsafe form
+  (`signal-across-await`).
 - **New shared state goes through `ShellState`** (see ARCHITECTURE.md).
 
 ### Both

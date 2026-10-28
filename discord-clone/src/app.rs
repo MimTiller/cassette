@@ -380,7 +380,21 @@ fn mention_active_query(text: &str) -> Option<String> {
     Some(after.to_string())
 }
 
+thread_local! {
+    /// The app shell's scope (see [`shell_alive`]).
+    static SHELL_ALIVE: std::cell::RefCell<Option<runtime_core::ScopeAlive>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The app shell's lifetime, for server calls whose results land in shell
+/// state but start from a short-lived node (a menu that closes, a row that
+/// rebuilds): a `spawn_then_in(&shell_alive(), …)` callback runs while the
+/// user is signed in and is dropped after logout.
+pub(crate) fn shell_alive() -> runtime_core::ScopeAlive {
+    SHELL_ALIVE.with(|s| s.borrow().clone()).unwrap_or_else(runtime_core::ScopeAlive::current)
+}
+
 fn app_shell(authed: Signal<bool>) -> Element {
+    SHELL_ALIVE.with(|s| *s.borrow_mut() = Some(runtime_core::ScopeAlive::current()));
     // [Feature 16] `active_server`/`active_channel` are the *mock* selection
     // signals: every pane renders live (backend) content now, so these keep a
     // `SERVERS[0]` default that no real user path ever displays (see each
@@ -558,8 +572,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // a base URL. Rendered as its own section below the mock rows; see the
     // rail for why these rows are not yet interactive.
     let live_servers: Signal<Vec<crate::servers::ServerSummary>> = signal(Vec::new());
-    runtime_core::driver::spawn_async(async move {
-        match crate::servers::list_servers().await {
+    runtime_core::spawn_then(async move { crate::servers::list_servers().await }, move |result| {
+        match result {
             Ok(servers) => {
                 live_servers.set(servers);
             }

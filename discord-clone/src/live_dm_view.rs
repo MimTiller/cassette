@@ -85,8 +85,10 @@ pub(crate) fn open_dm_with(
     msgs: Rc<RefCell<Vec<LiveDmMsg>>>,
     rev: Signal<u32>,
 ) {
-    runtime_core::driver::spawn_async(async move {
-        let Ok(dm) = dms::start_dm(user_id).await else {
+    // Called from popups that close, so the reply is anchored to the shell
+    // (which owns the DM state).
+    runtime_core::spawn_then_in(&crate::app::shell_alive(), dms::start_dm(user_id), move |result| {
+        let Ok(dm) = result else {
             return;
         };
         let dm_id = dm.channel_id;
@@ -97,13 +99,7 @@ pub(crate) fn open_dm_with(
         }
         active.set(Some(dm_id));
         crate::auth::save_last_view_dm(dm_id);
-        if let Ok(history) = dms::list_dm_messages(dm_id, None).await {
-            msgs.borrow_mut().clear();
-            msgs.borrow_mut().extend(history.into_iter().map(|msg| {
-                (msg.author_username, msg.content, msg.created_at, msg.edited_at)
-            }));
-            rev.set(rev.get() + 1);
-        }
+        crate::group_dm::load_history(dm_id, msgs, rev);
     });
 }
 

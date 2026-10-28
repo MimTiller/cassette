@@ -104,15 +104,15 @@ struct Results {
 }
 
 /// Ask the server for `query` at `offset`; the answer replaces (offset 0) or
-/// extends the results, unless a newer request (`gen`) was made meanwhile.
-fn fetch(query: String, offset: u32, results: Signal<Results>, gen: Signal<u32>) {
+/// extends the results, unless a newer request (`gen`) was made meanwhile or
+/// the picker (`alive`) has closed.
+fn fetch(alive: &runtime_core::ScopeAlive, query: String, offset: u32, results: Signal<Results>, gen: Signal<u32>) {
     let mine = gen.get() + 1;
     gen.set(mine);
     if offset == 0 {
         results.set(Results { status: "Loading…".to_string(), ..Default::default() });
     }
-    runtime_core::driver::spawn_async(async move {
-        let answer = discord_server::gifs::gif_search(GifSearchInput { query, offset }).await;
+    runtime_core::spawn_then_in(alive, discord_server::gifs::gif_search(GifSearchInput { query, offset }), move |answer| {
         if gen.get() != mine {
             return;
         }
@@ -140,14 +140,17 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
     let gen = signal(0u32);
 
     // Trending on open; a search DEBOUNCE_MS after the last keystroke.
-    fetch(String::new(), 0, results, gen);
+    let alive = runtime_core::ScopeAlive::current();
+    fetch(&alive, String::new(), 0, results, gen);
+    let typing_alive = alive.clone();
     let on_change = move |s: String| {
         query.set(s.clone());
         let typed = gen.get() + 1;
         gen.set(typed);
+        let alive = typing_alive.clone();
         after_ms_detached(DEBOUNCE_MS, move || {
             if gen.get() == typed {
-                fetch(s.trim().to_string(), 0, results, gen);
+                fetch(&alive, s.trim().to_string(), 0, results, gen);
             }
         });
     };
@@ -238,11 +241,14 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
                     }) {
                         text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { "Load more".to_string() }
                     }
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            fetch(query.get().trim().to_string(), next, results, gen);
+                    .on_touch({
+                        let alive = alive.clone();
+                        move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                fetch(&alive, query.get().trim().to_string(), next, results, gen);
+                            }
+                            TouchResponse::CONSUMED
                         }
-                        TouchResponse::CONSUMED
                     })
                 },
                 None => ui! { view {} },

@@ -145,9 +145,16 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
         ..Default::default()
     };
 
+    // Server calls finish in callbacks anchored to this screen, so a reply
+    // that lands after it unmounted is dropped instead of writing freed
+    // signals. (The handlers' own `busy` write rebuilds the form, so the
+    // handler's node is the wrong anchor.)
+    let alive = runtime_core::ScopeAlive::current();
+
     // Log in: validate, call the server, and flip `authed` on success. The
     // session id and token are recorded by `crate::auth`.
     let do_login = {
+        let alive = alive.clone();
         let authed = authed.clone();
         let busy = busy.clone();
         move || {
@@ -164,8 +171,8 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             error.set(String::new());
             notice.set(String::new());
             busy.set(true);
-            runtime_core::driver::spawn_async(async move {
-                match crate::auth::login(&name, &pw).await {
+            runtime_core::spawn_then_in(&alive, async move { crate::auth::login(&name, &pw).await }, move |result| {
+                match result {
                     Ok(_) => authed.set(true),
                     Err(message) => error.set(message),
                 }
@@ -176,6 +183,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
     // Sign up: the same checks plus a matching confirmation, then
     // `auth::signup`, which creates the account and logs it in.
     let do_signup = {
+        let alive = alive.clone();
         let authed = authed.clone();
         let busy = busy.clone();
         move || {
@@ -194,8 +202,8 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             }
             error.set(String::new());
             busy.set(true);
-            runtime_core::driver::spawn_async(async move {
-                match crate::auth::signup(&name, &pw).await {
+            runtime_core::spawn_then_in(&alive, async move { crate::auth::signup(&name, &pw).await }, move |result| {
+                match result {
                     Ok(_) => authed.set(true),
                     Err(message) => error.set(message),
                 }
@@ -206,6 +214,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
     // Reset: set the new password with the link's token, then show the log-in
     // form with the username filled in.
     let do_reset = {
+        let alive = alive.clone();
         let busy = busy.clone();
         move || {
             let pw = password.get();
@@ -223,8 +232,8 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             error.set(String::new());
             busy.set(true);
             let token = reset_token.get();
-            runtime_core::driver::spawn_async(async move {
-                match crate::auth::reset_password(&token, &pw).await {
+            runtime_core::spawn_then_in(&alive, async move { crate::auth::reset_password(&token, &pw).await }, move |result| {
+                match result {
                     Ok(name) => {
                         crate::auth::clear_reset_token_from_url();
                         reset_token.set(String::new());
@@ -240,17 +249,24 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             });
         }
     };
-    let on_submit = move || match screen.get() {
+    let on_submit: Rc<dyn Fn()> = Rc::new(move || match screen.get() {
         Screen::LogIn => do_login(),
         Screen::SignUp => do_signup(),
         Screen::Reset => do_reset(),
-    };
-    let on_enter = move |ev: &KeyEvent| {
-        if ev.key == "Enter" && !ev.shift && !ev.ctrl && !ev.alt && !ev.meta {
-            on_submit();
-            KeyOutcome::PreventDefault
-        } else {
-            KeyOutcome::Default
+    });
+    // Each input gets its own Enter-to-submit handler.
+    let on_enter = {
+        let on_submit = on_submit.clone();
+        move || {
+            let on_submit = on_submit.clone();
+            move |ev: &KeyEvent| {
+                if ev.key == "Enter" && !ev.shift && !ev.ctrl && !ev.alt && !ev.meta {
+                    on_submit();
+                    KeyOutcome::PreventDefault
+                } else {
+                    KeyOutcome::Default
+                }
+            }
         }
     };
     let on_username_change = move |s: String| username.set(s);
@@ -363,7 +379,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
                             placeholder = "username",
                             style = field_style.clone(),
                         )
-                        .on_key_down(on_enter)
+                        .on_key_down(on_enter())
                     }
                 }
             });
@@ -431,7 +447,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
                             secure = true,
                             style = field_style.clone(),
                         )
-                        .on_key_down(on_enter)
+                        .on_key_down(on_enter())
                     }
                 }
             });
@@ -447,6 +463,10 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             .to_string();
             let submit_bg = if is_signup { col(theme::SUCCESS) } else { col(BUTTON) };
             let password_label = if is_reset { "New password" } else { "Password" }.to_string();
+            let submit_click = {
+                let on_submit = on_submit.clone();
+                move || on_submit()
+            };
 
             let (switch_prompt, switch_action, switch_to, switch_test_id) = match current {
                 Screen::LogIn => ("Need an account?", "Sign up", Screen::SignUp, "login-signup-toggle"),
@@ -510,7 +530,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
                         secure = true,
                         style = field_style.clone(),
                     )
-                    .on_key_down(on_enter)
+                    .on_key_down(on_enter())
                     if let Some(el) = forgot_el {
                         el
                     }
@@ -523,7 +543,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
                     button(
                         label = submit_label,
                         test_id = "login-submit",
-                        on_click = on_submit,
+                        on_click = submit_click,
                         // Read live so the button greys out while `busy`.
                         disabled = move || busy.get(),
                         style = StyleRules {

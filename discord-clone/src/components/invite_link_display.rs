@@ -58,8 +58,8 @@ pub fn InviteLinkDisplay(code: String) -> Element {
     let on_copy = move || {
         let text = link.get();
         let copied = copied;
-        runtime_core::driver::spawn_async(async move {
-            if clipboard::set_text(&text).await.is_ok() {
+        runtime_core::spawn_then(async move { clipboard::set_text(&text).await }, move |result| {
+            if result.is_ok() {
                 copied.set(true);
             }
         });

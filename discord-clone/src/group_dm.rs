@@ -52,10 +52,11 @@ pub(crate) fn dm_title(dm: &Dm) -> String {
     }
 }
 
-/// Load a DM's history into the open-conversation buffer.
+/// Load a DM's history into the open-conversation buffer (app-shell state,
+/// so the reply is anchored to the shell).
 pub(crate) fn load_history(dm_id: i64, msgs: Rc<RefCell<Vec<LiveDmMsg>>>, rev: Signal<u32>) {
-    runtime_core::driver::spawn_async(async move {
-        if let Ok(history) = dms::list_dm_messages(dm_id, None).await {
+    runtime_core::spawn_then_in(&crate::app::shell_alive(), dms::list_dm_messages(dm_id, None), move |result| {
+        if let Ok(history) = result {
             let mut buf = msgs.borrow_mut();
             buf.clear();
             buf.extend(history.into_iter().map(|m| (m.author_username, m.content, m.created_at, m.edited_at)));
@@ -82,8 +83,8 @@ fn open(dm: Dm, live_dms: Signal<Vec<Dm>>, active: Signal<Option<i64>>, msgs: Rc
 /// Refetch the DM list after a `DmChanged` frame; if the open DM is gone
 /// (the user left or was removed), close it.
 pub(crate) fn refresh(live_dms: Signal<Vec<Dm>>, active: Signal<Option<i64>>, msgs: Rc<RefCell<Vec<LiveDmMsg>>>, rev: Signal<u32>) {
-    runtime_core::driver::spawn_async(async move {
-        if let Ok(list) = dms::list_dms().await {
+    runtime_core::spawn_then_in(&crate::app::shell_alive(), dms::list_dms(), move |result| {
+        if let Ok(list) = result {
             if let Some(open) = active.get() {
                 if !list.iter().any(|d| d.channel_id == open) {
                     active.set(None);
@@ -138,6 +139,8 @@ pub(crate) fn picker_dialog(
     msgs: Rc<RefCell<Vec<LiveDmMsg>>>,
     rev: Signal<u32>,
 ) -> Element {
+    // Replies land in this dialog's signals, so they are anchored to it.
+    let alive = runtime_core::ScopeAlive::current();
     let friends: Signal<Vec<(i64, String)>> = signal(Vec::new());
     let selected: Signal<Vec<i64>> = signal(Vec::new());
     let name = signal(String::new());
@@ -160,8 +163,8 @@ pub(crate) fn picker_dialog(
             };
             // Fetch accepted friends the first time the dialog opens.
             if friend_list.is_empty() {
-                runtime_core::driver::spawn_async(async move {
-                    if let Ok(list) = crate::friends::list_friends().await {
+                runtime_core::spawn_then_in(&alive, crate::friends::list_friends(), move |result| {
+                    if let Ok(list) = result {
                         let mut rows: Vec<(i64, String)> = list.accepted.into_iter().map(|u| (u.user_id, u.username)).collect();
                         rows.sort_by_key(|(_, n)| crate::auth::shown_name(n).to_lowercase());
                         friends.set(rows);
@@ -253,6 +256,7 @@ pub(crate) fn picker_dialog(
                 error.set(String::new());
             };
             let msgs_go = msgs.clone();
+            let confirm_alive = alive.clone();
             let confirm = move || {
                 let picked = selected.get();
                 if picked.is_empty() || busy.get() {
@@ -262,7 +266,7 @@ pub(crate) fn picker_dialog(
                 error.set(String::new());
                 let group_name = name.get();
                 let msgs = msgs_go.clone();
-                runtime_core::driver::spawn_async(async move {
+                let request = async move {
                     let result: Result<Dm, String> = match mode {
                         Picker::NewGroup if picked.len() == 1 => dms::start_dm(picked[0]).await,
                         Picker::NewGroup => discord_server::dms::create_group_dm(discord_server::dms::CreateGroupDmInput {
@@ -284,6 +288,9 @@ pub(crate) fn picker_dialog(
                             last
                         }
                     };
+                    result
+                };
+                runtime_core::spawn_then_in(&confirm_alive, request, move |result| {
                     match result {
                         Ok(dm) => {
                             picker.set(None);
@@ -406,9 +413,9 @@ pub(crate) fn members_panel(dm: &Dm) -> Element {
                     }
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
-                            runtime_core::driver::spawn_async(async move {
-                                let input = discord_server::dms::GroupDmMemberInput { dm_id, user_id: uid };
-                                if let Err(e) = discord_server::dms::remove_group_dm_member(input).await {
+                            let input = discord_server::dms::GroupDmMemberInput { dm_id, user_id: uid };
+                            runtime_core::spawn_then(discord_server::dms::remove_group_dm_member(input), move |result| {
+                                if let Err(e) = result {
                                     error.set(crate::errors::friendly(&e));
                                 }
                             });
@@ -487,9 +494,9 @@ pub(crate) fn members_panel(dm: &Dm) -> Element {
             }
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
-                    runtime_core::driver::spawn_async(async move {
-                        let input = discord_server::dms::GroupDmMemberInput { dm_id, user_id: me };
-                        if let Err(e) = discord_server::dms::remove_group_dm_member(input).await {
+                    let input = discord_server::dms::GroupDmMemberInput { dm_id, user_id: me };
+                    runtime_core::spawn_then(discord_server::dms::remove_group_dm_member(input), move |result| {
+                        if let Err(e) = result {
                             error.set(crate::errors::friendly(&e));
                         }
                     });
