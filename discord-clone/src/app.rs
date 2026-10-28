@@ -1555,8 +1555,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let modals::ModalsParts { join_el, create_el, discover_el, cc_el, rc_el, dc_el, invite_el, ss_el } = modals::build(&s);
     let user_popups::UserPopupsParts { user_popup_el } = user_popups::build(&s);
     let sidebar::SidebarParts { sidebar } = sidebar::build(&s);
-    let messages::MessagesParts { header, slowmode_el, sent_messages, typing_row } = messages::build(&s);
-    let composer::ComposerParts { composer_area } = composer::build(&s, slowmode_el);
+    let messages::MessagesParts { header, sent_messages, typing_row } = messages::build(&s);
+    let composer::ComposerParts { composer_area } = composer::build(&s);
     let member_list::MemberListParts { members_switch } = member_list::build(&s);
 
     let main_style = StyleRules {

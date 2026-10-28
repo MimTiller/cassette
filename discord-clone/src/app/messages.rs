@@ -6,7 +6,6 @@ use super::*;
 
 pub(super) struct MessagesParts {
     pub(super) header: Element,
-    pub(super) slowmode_el: Element,
     pub(super) sent_messages: Element,
     pub(super) typing_row: Element,
 }
@@ -78,13 +77,11 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     let header = switch(
         move || {
             (
-                active_server.get(),
-                active_channel.get(),
                 active_live_channel.get(),
                 pinned_count.get(),
             )
         },
-        move |(server_id, channel_id, live_cid, pinned_cnt): &(u32, u32, Option<i64>, i64)| {
+        move |(live_cid, pinned_cnt): &(Option<i64>, i64)| {
             let header_style = header_style.clone();
             let hash_style = hash_style.clone();
             let title_style = title_style.clone();
@@ -92,11 +89,11 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
             let moderation_style = moderation_style.clone();
             let search_server_name = live_servers.get().into_iter().find(|x| Some(x.id) == active_live_server.get()).map(|x| x.name).unwrap_or_default();
             // [Feature 16] Real account with no live channel: don't fall
-            // through to the mock header (it would show the demo `SERVERS[0]`
+            // through to a mock header (it would show the demo `SERVERS[0]`
             // channel). Show a neutral onboarding title during the login ->
             // server-fetch race / for a zero-server account.
-            if live_cid.is_none() {
-                return ui! {
+            match *live_cid {
+            None => ui! {
                     view(style = header_style) {
                         text(style = StyleRules {
                             color: Some(col(TEXT_MUTED)),
@@ -104,9 +101,8 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         }) { "#".to_string() }
                         text(style = title_style) { "No channel selected".to_string() }
                     }
-                };
-            }
-            if let Some(live_id) = *live_cid {
+                },
+            Some(live_id) => {
                 let title = live_channels
                     .get()
                     .iter()
@@ -224,31 +220,6 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                     }
                 };
             }
-            let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
-            let channel = server.find_text_channel(*channel_id).unwrap();
-            let title = channel.name.to_string();
-            let topic = channel.topic.to_string();
-            ui! {
-                view(style = header_style) {
-                    text(style = hash_style) { "#".to_string() }
-                    text(style = title_style) { title }
-                    text(style = topic_style) { topic }
-                    // Spacer: eats the row's remaining width so the pin badge
-                    // and search field sit at the far right.
-                    view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
-                    PinCountBadge()
-                    // Gavel: opens the Server Moderation panel (a full-screen
-                    // overlay, same idiom as the Profile Settings overlay).
-                    view(style = moderation_style, test_id = "server-moderation") {
-                        icon(GAVEL).color(|| theme::live(TEXT_MUTED)).size(15.0)
-                    }
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            moderation_open.set(true);
-                        }
-                        TouchResponse::CONSUMED
-                    })
-                }
             }
         },
     );
@@ -264,34 +235,12 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     // that spliced a bare `SlowmodeIndicator()` into the composer column) is
     // gone. `active_server`/`active_channel` are `Copy` signals, so capturing
     // them is cheap; the arm re-runs only on a real channel/server change.
-    let slowmode_el = switch(
-        move || (active_server.get(), active_channel.get(), active_live_channel.get()),
-        move |(server_id, channel_id, live_cid): &(u32, u32, Option<i64>)| {
-            // Live channels and channels without slowmode resolve to `0` ->
-            // the indicator renders nothing (the component's own static
-            // `if secs > 0` branch mounts no node for `0`).
-            let secs: u32 = if live_cid.is_some() {
-                0
-            } else {
-                SERVERS
-                    .iter()
-                    .find(|x| x.id == *server_id)
-                    .and_then(|s| s.find_text_channel(*channel_id))
-                    .and_then(|c| c.slowmode_secs)
-                    .unwrap_or(0)
-            };
-            ui! {
-                SlowmodeIndicator(secs = secs)
-            }
-        },
-    );
+    // Slowmode was a mock-channel-only feature (live backend channels have no
+    // slowmode column); deleted with the mock data.
 
-    // Message list — the channel's seed messages plus any sent here this session.
-    // `sent_read` is a dedicated clone so this closure and `on_send` don't both
-    // `move`-capture the same non-`Copy` `Rc`. The key includes `revision`
-    // because `switch` dedups on scrutinee VALUE — without it, a send (which
-    // keeps the same channel) would not rebuild the list.
-    let sent_read = sent.clone();
+    // Message list — the gateway-fed buffer for the live channel (the mock
+    // seed-message render is gone). `sent_read` handled the mock send log
+    // below; it's now unused there but kept for the live on_send path.
     let live_read = live_messages.clone();
     // Attachments per wire `message_id` cloned for the row renderer below —
     // the gateway effect stored each frame's list; a row looks its id up.
@@ -316,9 +265,6 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     let pinned_err_k = pinned_error.clone();
     let sent_messages = switch(
         move || (
-            active_server.get(),
-            active_channel.get(),
-            revision.get(),
             active_live_channel.get(),
             live_revision.get(),
             live_editing_k.get(),
@@ -328,7 +274,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
             live_at_bottom.get(),
             has_more_earlier.get(),
         ),
-        move |(server_id, channel_id, _revision, live_cid, _live_rev, _editing, _confirm, _react_rev, _load_busy, _at_bottom, _has_more): &(u32, u32, u32, Option<i64>, u32, Option<i64>, Option<i64>, u32, bool, bool, bool)| {
+        move |(live_cid, _live_rev, _editing, _confirm, _react_rev, _load_busy, _at_bottom, _has_more): &(Option<i64>, u32, Option<i64>, Option<i64>, u32, bool, bool, bool)| {
             // [Feature 16] Real account with no live channel: don't fall
             // through to the mock message list (it would render the demo
             // `SERVERS[0]` seed messages). Show a neutral onboarding hint
@@ -350,8 +296,8 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                     }
                 };
             }
-            // Live/real channel active: render the gateway-fed buffer instead of
-            // the mock path. `None` falls through to the mock render unchanged.
+            // Live channel active (the only path left — the mock seed-message
+            // render was deleted with guest mode): render the gateway-fed buffer.
             if let Some(live_id) = *live_cid {
                 let now = crate::data::now_secs();
                 let mine: Vec<LiveMsg> = live_read
@@ -586,116 +532,22 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                     }) { rows }
                 };
             }
-            let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
-            let channel = server.find_text_channel(*channel_id).unwrap();
-            let cid = *channel_id;
-            let now = crate::data::now_secs();
-            let mut rows: Vec<Element> = Vec::with_capacity(channel.messages.len());
-            // Message-grouping state carried across both loops (seed then
-            // this session's sends — oldest-first): the previous row's author
-            // + timestamp for the `same_group` test.
-            let mut prev: Option<(&str, i64)> = None;
-            for (i, m) in channel.messages.iter().enumerate() {
-                let ts = m.ts_secs(now);
-                let when = format_when(ts, now);
-                // Mock seed messages carry no edit state: pass `false` so they
-                // don't show a fake "(edited)" tag (the live path uses
-                // `edited_at.is_some()`).
-                let grouped = prev
-                    .map(|(pa, pts)| same_group(pa, pts, m.author, ts))
-                    .unwrap_or(false);
-                // MOCK pin: flash the "Message pinned!" toast and auto-dismiss
-                // it after a beat (the pre-backend idiom, now caller-supplied
-                // since `message_row_with_actions` takes `on_pin` as a `Rc`).
-                let pv = pin_visible_k;
-                let on_pin = Rc::new(move || {
-                    pv.set(true);
-                    let pv_d = pv;
-                    after_ms_detached(2_500, move || pv_d.set(false));
-                });
-                rows.push(message_row_with_actions(
-                    m.author,
-                    m.color,
-                    m.body,
-                    when,
-                    format_full_when(ts),
-                    false,
-                    grouped,
-                    MessageKey::Mock { cid, idx: i },
-                    picker,
-                    reply_ctx_k,
-                    reply_target_k,
-                    pin_visible_k,
-                    translate_key_k,
-                    on_pin,
-                    None,
-                    None,
-                    None,
-                ));
-                // Reaction strip under each mock row, keyed by this row's
-                // rendered-list position (seed messages first, so index `i`).
-                rows.push(reaction_area(
-                    MessageKey::Mock { cid, idx: i },
-                    reactions.clone(),
-                    reaction_rev,
-                    picker,
-                ));
-                prev = Some((m.author, ts));
-            }
-            let mine: Vec<(u32, &'static str, String, i64)> = sent_read.borrow().clone();
-            let mine: Vec<(u32, &'static str, String, i64)> = mine
-                .into_iter()
-                .filter(|(mcid, _, _, _)| *mcid == cid)
-                .collect();
-            for (i, (_mcid, author, body, ts)) in mine.iter().enumerate() {
-                let when = format_when(*ts, now);
-                // Own prior sends get the same hover bar as the seed rows. `false`
-                // for edited -- these are freshly composed, never-edited sends.
-                let grouped = prev
-                    .map(|(pa, pts)| same_group(pa, pts, author, *ts))
-                    .unwrap_or(false);
-                // MOCK pin: flash the toast + auto-dismiss (see the seed loop
-                // above — the same caller-supplied `on_pin` idiom).
-                let pv = pin_visible_k;
-                let on_pin = Rc::new(move || {
-                    pv.set(true);
-                    let pv_d = pv;
-                    after_ms_detached(2_500, move || pv_d.set(false));
-                });
-                rows.push(message_row_with_actions(
-                    author,
-                    BUTTON,
-                    body.as_str(),
-                    when,
-                    format_full_when(*ts),
-                    false,
-                    grouped,
-                    MessageKey::Mock { cid, idx: channel.messages.len() + i },
-                    picker,
-                    reply_ctx_k,
-                    reply_target_k,
-                    pin_visible_k,
-                    translate_key_k,
-                    on_pin,
-                    None,
-                    None,
-                    None,
-                ));
-                // Sent rows continue the list position after the seed rows, so
-                // their key is `seed_len + i` (see `ReactionMap` doc).
-                rows.push(reaction_area(
-                    MessageKey::Mock { cid, idx: channel.messages.len() + i },
-                    reactions.clone(),
-                    reaction_rev,
-                    picker,
-                ));
-                prev = Some((author, *ts));
-            }
+            // No live channel: the neutral onboarding hint (the mock seed-message
+            // render was deleted with guest mode).
             ui! {
                 view(style = StyleRules {
-                    flex_direction: Some(FlexDirection::Column),
+                    flex_grow: Some(grow(1.0)),
+                    align_items: Some(AlignItems::Center),
+                    justify_content: Some(JustifyContent::Center),
+                    padding_top: Some(px(24.0)),
                     ..Default::default()
-                }) { rows }
+                }) {
+                    text(style = StyleRules {
+                        font_size: Some(px(14.0)),
+                        color: Some(col(TEXT_MUTED)),
+                        ..Default::default()
+                    }) { "Create or join a server to start messaging.".to_string() }
+                }
             }
         },
     );
@@ -710,29 +562,21 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     let typing_live_chan = active_live_channel.clone();
     let typing_rev_for_key = live_typing_rev.clone();
     let typing_map_for_key = live_typing.clone();
+    let typing_live_chan = active_live_channel.clone();
+    let typing_rev_for_key = live_typing_rev.clone();
+    let typing_map_for_key = live_typing.clone();
+    // Typing indicator row: the live gateway typer (the mock "dyno is
+    // typing..." fallback was deleted with the mock channel data). Same line
+    // box height (4/4/16/16 paddings + 12px font) as before so the composer's
+    // y-offset never jumps.
     let typing_row = switch(
-        move || {
-            let live = typing_live_chan.get();
-            let (server, channel) = (active_server.get(), active_channel.get());
-            // The key includes the live revision so the row re-renders when a
-            // Typing frame arrives or the auto-clear fires. The mock key is
-            // `(server, channel)` (unchanged from the previous shape) — for
-            // live channels both are irrelevant (the arm below keys on the
-            // live channel + rev).
-            (server, channel, live, typing_rev_for_key.get())
-        },
-        move |(server_id, channel_id, live_chan, _rev): &(u32, u32, Option<i64>, u32)| {
-            // [Feature 16] Real account with no live channel: render an empty
-            // spacer (no mock typing indicator) during the login ->
-            // server-fetch race / for a zero-server account.
-            if live_chan.is_none() {
-                return ui! {
+        move || (typing_live_chan.get(), typing_rev_for_key.get()),
+        move |(live_chan, _rev): &(Option<i64>, u32)| {
+            match *live_chan {
+            None => ui! {
                     view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
-                };
-            }
-            // Live mode: show the typer from the gateway, or the empty
-            // spacer if nobody is typing right now.
-            if let Some(live_id) = *live_chan {
+                },
+            Some(live_id) => {
                 let label = {
                     let map = typing_map_for_key.borrow();
                     map.get(&live_id).map(|e| e.1.clone())
@@ -757,36 +601,10 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         }
                     }
                 }
-            } else if *server_id == 1 && *channel_id == 101 {
-                // `TypingIndicator`'s own root view already carries the row
-                // paddings (4/4/16/16) + a 12px line, so it is mounted bare —
-                // no wrapping view (that would double the padding). A `ui!`
-                // block with a single component child returns that child's
-                // `Element` directly.
-                ui! { TypingIndicator(name = "dyno".to_string()) }
-            } else {
-                // Empty spacer matching the indicator's exact line box: same
-                // paddings + a 12px (empty) text node, so the composer's
-                // y-offset never jumps when leaving #general.
-                ui! {
-                    view(style = StyleRules {
-                        flex_direction: Some(FlexDirection::Row),
-                        align_items: Some(AlignItems::Center),
-                        padding_top: Some(px(4.0)),
-                        padding_bottom: Some(px(4.0)),
-                        padding_left: Some(px(16.0)),
-                        padding_right: Some(px(16.0)),
-                        ..Default::default()
-                    }) {
-                        text(style = StyleRules {
-                            font_size: Some(px(12.0)),
-                            ..Default::default()
-                        }) { "".to_string() }
-                    }
-                }
+            }
             }
         },
     );
 
-    MessagesParts { header, slowmode_el, sent_messages, typing_row }
+    MessagesParts { header, sent_messages, typing_row }
 }

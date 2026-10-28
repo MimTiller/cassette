@@ -1179,7 +1179,6 @@ pub(super) fn message_row_with_actions(
         reply_c.set(Some((author_r.clone(), snippet_r.clone())));
         let id = match key_r {
             MessageKey::Live { id } => id,
-            MessageKey::Mock { .. } => return,
         };
         reply_t.set(Some(id));
     });

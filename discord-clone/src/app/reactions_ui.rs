@@ -30,7 +30,6 @@ pub(super) type Reaction = (String, u32, bool);
 /// `Mock { .. }`) and the live path gets its own namespace beside them.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum MessageKey {
-    Mock { cid: u32, idx: usize },
     Live { id: i64 },
 }
 
@@ -52,7 +51,6 @@ pub(super) fn request_live_reaction(
 ) {
     let id = match key {
         MessageKey::Live { id } => id,
-        MessageKey::Mock { .. } => return,
     };
     picker.set(None);
     runtime_core::driver::spawn_async(async move {
@@ -148,17 +146,7 @@ pub(super) fn reaction_area(
         let em = emoji.to_string();
         let em_close = em.clone();
         let cnt = *count;
-        let r = reactions.clone();
-        let rev = reaction_rev;
-        // Whether this tap removes (user already reacted) or adds (user has not)
-        // their own reaction. LIVE rows route the tap through the backend RPC
-        // (see `request_live_reaction`); MOCK rows mutate the pill map directly.
         let will_remove = *reacted;
-        let live_key = match key {
-            MessageKey::Live { .. } => true,
-            MessageKey::Mock { .. } => false,
-        };
-        let picker_l = picker;
         ui! {
             view(style = StyleRules {
                 flex_direction: Some(FlexDirection::Row),
@@ -198,36 +186,14 @@ pub(super) fn reaction_area(
                 }) { cnt.to_string() }
             }
             .on_touch(move |ev| {
-                // LIVE rows route the tap through the backend RPC: `request_live_reaction`
+                // LIVE row: route the tap through the backend RPC — `request_live_reaction`
                 // persists the row and broadcasts a count frame that updates the pill map
                 // (for THIS client via its own echo AND every other connected member). No
-                // optimistic mutation — the echo is the single source of truth, so a cold
-                // reload and a live sync converge identically. MOCK rows keep the direct
-                // session-local toggle: not-yet-reacted -> count+1 and highlight; already
-                // reacted -> count-1 and un-highlight, dropping the pill at 0.
+                // optimistic mutation; the echo is the single source of truth, so a cold
+                // reload and a live sync converge identically. (The mock session-local
+                // toggle was deleted with guest mode.)
                 if ev.phase == TouchPhase::Ended {
-                    if live_key {
-                        request_live_reaction(key, em_close.clone(), will_remove, picker_l);
-                    } else {
-                        let mut m = r.borrow_mut();
-                        let inner = m.entry(key).or_default();
-                        if let Some(pos) = inner.iter().position(|(e, _, _)| e == &em_close) {
-                            let (e, c, was_reacted) = inner[pos].clone();
-                            if was_reacted {
-                                if c <= 1 {
-                                    inner.remove(pos);
-                                } else {
-                                    inner[pos] = (e, c - 1, false);
-                                }
-                            } else {
-                                inner[pos] = (e, c + 1, true);
-                            }
-                        }
-                        if m.get(&key).map_or(false, |v| v.is_empty()) {
-                            m.remove(&key);
-                        }
-                        rev.set(rev.get() + 1);
-                    }
+                    request_live_reaction(key, em_close.clone(), will_remove, picker)
                 }
                 TouchResponse::CONSUMED
             })

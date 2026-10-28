@@ -9,8 +9,8 @@ pub(super) struct ComposerParts {
     pub(super) composer_area: Element,
 }
 
-pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
-    let ShellState { active_channel, active_live_channel, active_server, attach_busy, attach_error, attach_next_key, composer, emoji_open, gateway, gif_open, live_channels, live_messages, pending_attachment, reply_ctx, reply_target, revision, send_failed, sent, .. } = s.clone();
+pub(super) fn build(s: &ShellState) -> ComposerParts {
+    let ShellState { active_live_channel, attach_busy, attach_error, attach_next_key, composer, emoji_open, gateway, gif_open, live_channels, live_messages, pending_attachment, reply_ctx, reply_target, send_failed, .. } = s.clone();
     // --- composer --------------------------------------------------------
     let composer_style = StyleRules {
         padding_top: Some(px(12.0)),
@@ -58,11 +58,8 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
     // signal/Rc is cloned behind an `Rc` so the handler can be `Fn` (callable
     // from the `text_input on_key_down` closure).
     let send_composer = composer.clone();
-    let sent_write = sent.clone();
-    let revision_bump = revision.clone();
     // Live-send handles: `gateway` is a `Copy` `UseSocket`, so clone it in so
-    // the (shared) `move` handler can send over the global socket. Only used
-    // when `active_live_channel` is `Some`; otherwise the mock path runs.
+    // the (shared) `move` handler can send over the global socket.
     let live_chan = active_live_channel.clone();
     let gateway_send = gateway;
     let do_send = move || {
@@ -101,24 +98,7 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
             pending_attachment.set(Vec::new());
             reply_ctx.set(None);
             reply_target.set(None);
-            return;
         }
-        // Mock path: the per-session log carries only a body string, so
-        // staged images ride it as `[attachment: <name>]` lines (the
-        // pre-backend affordance; live mode sends real data URLs).
-        let out_body = if attached.is_empty() {
-            body
-        } else {
-            let names: Vec<String> = attached.iter().map(|(_, filename, _, _)| filename.clone()).collect();
-            format!("{}\n[attachment: {}]", body, names.join(", "))
-        };
-        let cid = active_channel.get();
-        sent_write.borrow_mut().push((cid, "Nova", out_body, crate::data::now_secs()));
-        send_composer.set(String::new());
-        pending_attachment.set(Vec::new());
-        // Bump the revision so the message-list `switch` rebuilds (its key
-        // dedups on value, so re-setting the same channel alone would not).
-        revision_bump.set(revision_bump.get() + 1);
     };
     let on_send = Rc::new(do_send);
     // Robot test hook (`send.now`): Enter on the composer is a raw keyboard
@@ -142,35 +122,20 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
         }
     };
 
-    // --- Composer placeholder: "Message #<channel>" (Discord's real format,
-    // channel-suffixed)
-    // Derives the active channel's display name (same source of truth as the
-    // header: the live backend's channel list when on a live channel, else the
-    // mock server's text-channel table) and prefixes it with "Message #".
-    // A `memo` keeps it reactive: switching channels re-derives the string
-    // without the composer's `text_input` needing to rebuild its own node.
-    // The `placeholder_reactive` prop wants `Reactive<Option<String>>`, so the
-    // memo yields `Some("Message #<name>")` (a `None` placeholder would be
-    // pointless — there is always an active channel).
-    let ph_server = active_server.clone();
-    let ph_channel = active_channel.clone();
+    // Derives the active live channel's display name (from the live backend's
+    // channel list — the mock server/channel lookup is gone) and prefixes it
+    // with "Message #". With no live channel there is no name, so no
+    // placeholder.
     let ph_live = active_live_channel.clone();
     let ph_channels = live_channels.clone();
     let composer_placeholder = memo(move || {
-        let name = if let Some(live_id) = ph_live.get() {
-            ph_channels
-                .get()
-                .iter()
-                .find(|c| c.id == live_id)
-                .map(|c| c.name.to_string())
-                .unwrap_or_default()
-        } else {
-            let server = SERVERS.iter().find(|x| x.id == ph_server.get()).unwrap();
-            server
-                .find_text_channel(ph_channel.get())
-                .map(|c| c.name.to_string())
-                .unwrap_or_default()
-        };
+        let Some(live_id) = ph_live.get() else { return Some(String::new()) };
+        let name = ph_channels
+            .get()
+            .iter()
+            .find(|c| c.id == live_id)
+            .map(|c| c.name.to_string())
+            .unwrap_or_default();
         Some(format!("Message #{name}"))
     });
 
@@ -673,13 +638,6 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
             emoji_popover
             gif_popover
             ac_el
-            // Per-channel slowmode indicator (gated): the channel-keyed
-            // `slowmode_el` above resolves the active channel's
-            // `slowmode_secs` and renders the pill only for
-            // slowmode-enabled channels — nothing for the rest. Same
-            // home b60 dropped the bare, unconditional
-            // `SlowmodeIndicator()` into; now it reads real state.
-            slowmode_el
             // Slash-command autocomplete: shown only while the composer
             // text actually starts with "/" (a real slash command is
             // being typed), not on every render. `composer` is the
