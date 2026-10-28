@@ -71,7 +71,7 @@ contributors (human or AI).
 
 1. **Rust** (stable) via [rustup](https://rustup.rs/), with the WASM target:
    `rustup target add wasm32-unknown-unknown`
-2. The **idealyst CLI** (3.x). See the
+2. The **idealyst CLI** (1.20 or newer). See the
    [idealyst README](https://github.com/IdealystIO/idealyst-native#installing-the-cli).
 3. **`wasm-bindgen-cli` 0.2.122**, to match the version pinned in
    `discord-clone/Cargo.toml`:
