@@ -187,6 +187,34 @@ impl Db {
         .flatten()
     }
 
+    /// `user_id`'s display name, or `None` when they show their username.
+    pub fn user_display_name(&self, user_id: i64) -> Option<String> {
+        let c = self.lock().ok()?;
+        c.query_row("SELECT display_name FROM users WHERE id = ?1", rusqlite::params![user_id], |r| {
+            r.get::<_, Option<String>>(0)
+        })
+        .ok()
+        .flatten()
+    }
+
+    /// `user_id`'s "about me" text (empty when unset).
+    pub fn user_about(&self, user_id: i64) -> String {
+        let Ok(c) = self.lock() else {
+            return String::new();
+        };
+        c.query_row("SELECT about FROM users WHERE id = ?1", rusqlite::params![user_id], |r| r.get(0))
+            .unwrap_or_default()
+    }
+
+    /// Store `user_id`'s display name (`None` clears it) and about text.
+    pub fn set_user_profile(&self, user_id: i64, display_name: Option<&str>, about: &str) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        c.execute(
+            "UPDATE users SET display_name = ?2, about = ?3 WHERE id = ?1",
+            rusqlite::params![user_id, display_name, about],
+        )
+    }
+
     /// Set (or clear, with `None`) the stored avatar URL for `user_id`.
     pub fn set_user_avatar(
         &self,

@@ -287,6 +287,9 @@ pub struct LoginResult {
     /// identity (the profile strip) with the real name rather than an id or the
     /// mock "you" placeholder.
     pub username: String,
+    /// Shown in place of the username when set.
+    #[serde(default)]
+    pub display_name: Option<String>,
     /// The account's stored avatar (a `/media/…` path) or `None`
     /// for the default initial-circle avatar. Echoed with the login so the
     /// client restores the signed-in user's avatar on a page refresh without
@@ -358,6 +361,7 @@ impl AuthService {
             user_id,
             token: crate::session::issue_token(user_id),
             username: stored_username,
+            display_name: self.db.user_display_name(user_id),
             avatar_url: self.db.user_avatar(user_id),
             blocked_ids: self.db.blocked_ids_for_user(user_id),
         })

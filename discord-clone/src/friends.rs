@@ -14,7 +14,8 @@
 
 pub use discord_server::friends::{FriendList};
 
-/// Pull every participant of a list into the shared client avatar registry.
+/// Pull every participant of a list into the shared client avatar and
+/// display-name registries.
 fn remember_avatars(list: FriendList) {
     for group in
         list
@@ -24,6 +25,7 @@ fn remember_avatars(list: FriendList) {
             .chain(list.accepted.iter())
     {
         crate::auth::remember_avatar(group.username.as_str(), group.avatar_url.clone());
+        crate::auth::remember_display_name(group.username.as_str(), group.display_name.clone());
     }
 }
 

@@ -208,7 +208,7 @@ fn live_dm_find_row(
                             font_size: Some(px(14.0)),
                             color: Some(col(theme::TEXT_STRONG)),
                             ..Default::default()
-                        }) { name.clone() }
+                        }) { crate::auth::shown_name(&name) }
                     }
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
@@ -253,6 +253,7 @@ mod dm_find_tests {
         crate::moderation::MemberInfo {
             user_id,
             username: username.to_string(),
+            display_name: None,
             role: "member".to_string(),
             avatar_url: None,
         }
@@ -401,7 +402,7 @@ fn live_dm_row(
     ui! {
         view(style = row_style) {
             { avatar_chip }
-            text(style = name_style) { name }
+            text(style = name_style) { crate::auth::shown_name(&name) }
         }
         .on_hover(move |on| hovered.set(on))
         .on_touch(move |ev| {
@@ -725,7 +726,7 @@ fn live_dm_conversation(
                         .cloned()
                         .or_else(|| dm.participants.first().cloned())
                 })
-                .map(|p| p.username)
+                .map(|p| crate::auth::shown_name(&p.username))
                 .unwrap_or_else(|| format!("user #{}", cid));
             let header_style = StyleRules {
                 padding_top: Some(px(10.0)),

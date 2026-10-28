@@ -465,7 +465,9 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 // below outlives `frame` and cannot borrow into it.
                 let channel_id = *channel_id;
                 let user_id = *user_id;
-                let label = format!("user {}", user_id);
+                let label = crate::mentions::username_of(user_id)
+                    .map(|u| crate::auth::shown_name(&u))
+                    .unwrap_or_else(|| "Someone".to_string());
                 let new_gen = {
                     let mut map = typing_buf.borrow_mut();
                     let entry = map
@@ -524,6 +526,24 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                                 }
                             }
                             live_channels.set(channels);
+                        }
+                    });
+                }
+            }
+            if let Some(discord_server::server_settings::WsServerMsg::ProfileChanged {
+                username,
+                display_name,
+                ..
+            }) = frame
+            {
+                crate::auth::remember_display_name(username, display_name.clone());
+                crate::mentions::names_changed();
+                live_revision.set(live_revision.get() + 1);
+                if let Some(sid) = member_server.get() {
+                    let roster = member_roster.clone();
+                    runtime_core::driver::spawn_async(async move {
+                        if let Ok(fresh) = crate::moderation::list_members(sid).await {
+                            roster.set(fresh);
                         }
                     });
                 }

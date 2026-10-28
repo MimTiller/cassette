@@ -302,7 +302,9 @@ pub(super) fn is_emoji_only(text: &str) -> bool {
 fn mention_pill(seg: discord_server::server_roles::MentionSeg) -> Element {
     use discord_server::server_roles::MentionSeg;
     let (label, fg, bg, user) = match seg {
-        MentionSeg::User { id, name } => (format!("@{name}"), col(theme::MENTION_TEXT), col(theme::MENTION_BG), Some(id)),
+        MentionSeg::User { id, name } => {
+            (format!("@{}", crate::auth::shown_name(&name)), col(theme::MENTION_TEXT), col(theme::MENTION_BG), Some(id))
+        }
         MentionSeg::Role { name, color, .. } if !color.is_empty() => {
             (format!("@{name}"), theme::fixed(&color), theme::fixed(&crate::mentions::tint(&color, 0.12)), None)
         }
@@ -932,10 +934,10 @@ pub(crate) fn message_row(
             let press2 = press.clone();
             (
                 ui! { view { { avatar_chip } }.on_touch(move |ev| (press)(ev)) },
-                ui! { view { text(style = author_style) { author.to_string() } }.on_touch(move |ev| (press2)(ev)) },
+                ui! { view { text(style = author_style) { crate::auth::shown_name(author) } }.on_touch(move |ev| (press2)(ev)) },
             )
         }
-        None => (avatar_chip, ui! { text(style = author_style) { author.to_string() } }),
+        None => (avatar_chip, ui! { text(style = author_style) { crate::auth::shown_name(author) } }),
     };
     ui! {
         view(style = row_style) {

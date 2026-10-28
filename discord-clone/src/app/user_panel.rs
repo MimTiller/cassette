@@ -40,17 +40,17 @@ pub(super) fn user_panel(
             // Real signed-in identity: when genuinely logged in (not guest), the
             // backend's username was stored in `CURRENT_USERNAME` at login and
             // outlives this screen. Guest mode leaves it empty, so the strip
-            // falls back to the mock `USER` identity ("Nova") there. The value
-            // is set before `authed` flips (login completes first), so a plain
-            // read here is stable for the whole mount — no reactivity needed.
+            // falls back to the mock `USER` identity ("Nova") there. The
+            // shown name follows display-name changes (see `shown`, below).
             let real_name = crate::auth::current_username();
+            let username = signal(real_name.clone());
             // When the signed-in account has an uploaded avatar (shared
             // client registry, fed by login / `list_members`), the profile
             // strip's chip draws the image instead of the initial. Read
             // before `real_name` moves into the display-name branch below.
             let avatar_img = crate::auth::avatar_for(real_name.as_str());
             let display_name = if !real_name.is_empty() {
-                real_name
+                crate::auth::shown_name(&real_name)
             } else {
                 user.name.to_string()
             };
@@ -496,7 +496,13 @@ pub(super) fn user_panel(
                     view(style = row_style) {
                         avatar
                         view(style = text_stack) {
-                            text(style = name_style) { name }
+                            text(style = name_style) {
+                                move || {
+                                    crate::mentions::revision();
+                                    let u = username.get();
+                                    if u.is_empty() { name.clone() } else { crate::auth::shown_name(&u) }
+                                }
+                            }
                             second_line
                         }
                     }

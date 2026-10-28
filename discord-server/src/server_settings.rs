@@ -227,6 +227,9 @@ pub enum WsServerMsg {
     /// re-fetch the local kick path already triggers). No roster data rides on
     /// the frame; the re-fetch supplies it.
     MemberChanged { server_id: i64, user_id: i64, joined: bool },
+    /// A user changed their display name (`None` = show the username).
+    /// Sent to everyone who shares a server with them.
+    ProfileChanged { user_id: i64, username: String, display_name: Option<String> },
     /// A member added (or removed) an emoji reaction on a channel message.
     /// `count` is the message's total for `emoji` AFTER the operation (0 when
     /// the last reaction was removed), so clients SET the pill's count rather
@@ -1019,6 +1022,7 @@ impl ServerSettings {
             .into_iter()
             .map(|(user_id, username, role)| MemberInfo {
                 user_id,
+                display_name: self.db.user_display_name(user_id),
                 username,
                 role,
                 avatar_url: self.db.user_avatar(user_id),
@@ -1570,6 +1574,9 @@ pub struct ListMembersInput {
 pub struct MemberInfo {
     pub user_id: i64,
     pub username: String,
+    /// Shown in place of the username when set.
+    #[serde(default)]
+    pub display_name: Option<String>,
     pub role: String,
     #[serde(default)]
     pub avatar_url: Option<String>,

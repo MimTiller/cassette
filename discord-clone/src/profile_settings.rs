@@ -1,8 +1,6 @@
-//! `profile_settings` — the Profile screen: a display-name text input seeded
-//! from the signed-in account (the real backend username from
-//! `crate::auth::current_username()`, falling back to the mock `USER` identity
-//! in guest mode), a circular avatar (uploaded image when set, else the
-//! colored circle + first letter of the name), a status-message text input,
+//! `profile_settings` — the Profile screen: a circular avatar (uploaded image
+//! when set, else the colored circle + first letter of the name), the display
+//! name and "about me" (loaded from the server, stored with `set_profile`),
 //! and the avatar controls: "Change avatar" (opens the `file-picker` SDK's
 //! native file-open UI, reads the chosen image, validates its type and size
 //! against the backend's cap, base64-encodes it into a `data:image/…;base64,`
@@ -255,21 +253,42 @@ runtime_vocabulary::robot_only! {
 
 #[component]
 pub fn ProfileSettings() -> Element {
-    // Real signed-in identity: the backend username recorded at login in
-    // `CURRENT_USERNAME` (see `crate::auth`), the same source the user panel
-    // reads. Guest mode leaves it empty, so fall back to the mock `USER`
-    // identity there. This component is rebuilt when the `authed` gate flips
-    // on login, so a plain read here captures the real name.
-    let real_name = crate::auth::current_username();
-    let display_name = signal(if !real_name.is_empty() {
-        real_name
-    } else {
-        crate::data::USER.name.to_string()
-    });
-    // Status message: no backend field yet, so seed from the real presence
-    // status vocabulary (`Status::Online.name()` = "Online") rather than a
-    // mock placeholder.
-    let status_message = signal(crate::data::Status::Online.name().to_string());
+    // The display name and "about me", loaded from the server; Save stores
+    // them with `set_profile`. An empty display name shows the username.
+    let username = crate::auth::current_username();
+    let display_name = signal(String::new());
+    let about = signal(String::new());
+    let profile_note = signal(String::new());
+    let profile_busy = signal(false);
+    {
+        let me = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+        runtime_core::driver::spawn_async(async move {
+            let input = discord_server::profiles::GetUserProfileInput { user_id: me, server_id: None };
+            if let Ok(p) = discord_server::profiles::get_user_profile(input).await {
+                display_name.set(p.display_name.unwrap_or_default());
+                about.set(p.about);
+            }
+        });
+    }
+    let do_save = move || {
+        if profile_busy.get() {
+            return;
+        }
+        profile_busy.set(true);
+        profile_note.set(String::new());
+        let input = discord_server::profiles::SetProfileInput { display_name: display_name.get(), about: about.get() };
+        runtime_core::driver::spawn_async(async move {
+            match discord_server::profiles::set_profile(input).await {
+                Ok(saved) => {
+                    crate::auth::remember_display_name(&crate::auth::current_username(), saved.display_name);
+                    crate::mentions::names_changed();
+                    profile_note.set("Saved.".to_string());
+                }
+                Err(e) => profile_note.set(crate::errors::friendly(&e)),
+            }
+            profile_busy.set(false);
+        });
+    };
     // The signed-in user's avatar URL (a `data:image/…;base64,` string,
     // seeded from the shared registry) — written by the "Change avatar"
     // picker flow below and read reactively by the avatar chip.
@@ -278,8 +297,11 @@ pub fn ProfileSettings() -> Element {
     // The avatar's first letter, recomputed whenever the name changes.
     let avatar_letter = {
         let name = display_name.clone();
+        // A signal, not the String, so this closure stays `Copy`.
+        let username = signal(username.clone());
         move || {
-            name.get()
+            let shown = name.get();
+            if shown.is_empty() { username.get() } else { shown }
                 .chars()
                 .next()
                 .map(|c| c.to_ascii_uppercase())
@@ -461,16 +483,66 @@ pub fn ProfileSettings() -> Element {
                     ..Default::default()
                 }) { avatar_letter }
             }
+            text(style = StyleRules {
+                align_self: Some(runtime_core::AlignSelf::Stretch),
+                font_size: Some(px(11.0)),
+                font_weight: Some(FontWeight::SemiBold),
+                color: Some(col(theme::TEXT_MUTED)),
+                ..Default::default()
+            }) { "DISPLAY NAME — SHOWN INSTEAD OF YOUR USERNAME".to_string() }
             text_input(
-                value = display_name.clone(),
-                placeholder = "Display name",
+                value = display_name,
+                on_change = move |v: String| display_name.set(v),
+                placeholder = username.clone(),
                 style = input_style.clone(),
             )
+            text(style = StyleRules {
+                align_self: Some(runtime_core::AlignSelf::Stretch),
+                font_size: Some(px(11.0)),
+                font_weight: Some(FontWeight::SemiBold),
+                color: Some(col(theme::TEXT_MUTED)),
+                ..Default::default()
+            }) { "ABOUT ME".to_string() }
             text_input(
-                value = status_message,
-                placeholder = "Status message",
+                value = about,
+                on_change = move |v: String| about.set(v),
+                placeholder = "A line about yourself",
                 style = input_style.clone(),
             )
+            view(style = StyleRules {
+                height: Some(px(34.0)),
+                padding_left: Some(px(16.0)),
+                padding_right: Some(px(16.0)),
+                background: Some(col(theme::ACCENT)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                border_top_left_radius: Some(px(8.0)),
+                border_top_right_radius: Some(px(8.0)),
+                border_bottom_left_radius: Some(px(8.0)),
+                border_bottom_right_radius: Some(px(8.0)),
+                flex_shrink: Some(grow(0.0)),
+                ..Default::default()
+            }, test_id = "profile-save") {
+                text(style = StyleRules {
+                    font_size: Some(px(13.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    color: Some(col(theme::TEXT_ON_ACCENT)),
+                    ..Default::default()
+                }) { move || if profile_busy.get() { "Saving…".to_string() } else { "Save Profile".to_string() } }
+            }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    do_save();
+                }
+                TouchResponse::CONSUMED
+            })
+            if !profile_note.get().is_empty() {
+                text(style = StyleRules {
+                    font_size: Some(px(12.0)),
+                    color: Some(col(theme::TEXT_MUTED)),
+                    ..Default::default()
+                }) { move || profile_note.get().clone() }
+            }
             // The "Change avatar" pill: tap it, the platform's native file-open
             // dialog appears, and the chosen image is uploaded on the fly.
             // The label tells the user which phase the upload is in

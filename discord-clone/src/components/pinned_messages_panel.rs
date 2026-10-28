@@ -310,7 +310,7 @@ fn pin_row(
                     font_weight: Some(FontWeight::SemiBold),
                     color: Some(col(theme::TEXT_STRONG)),
                     ..Default::default()
-                }) { author }
+                }) { crate::auth::shown_name(&author) }
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
                     color: Some(col(theme::TEXT_MUTED)),

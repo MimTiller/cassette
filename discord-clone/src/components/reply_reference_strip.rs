@@ -71,7 +71,7 @@ pub fn reply_reference_strip(author: String, snippet: String) -> Element {
                     font_weight: Some(FontWeight::SemiBold),
                     color: Some(col(theme::TEXT_NORMAL)),
                     ..Default::default()
-                }) { author }
+                }) { crate::auth::shown_name(&author) }
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
                     color: Some(col(theme::TEXT_MUTED)),

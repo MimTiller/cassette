@@ -96,7 +96,7 @@ pub fn reply_preview_bar(
                             font_size: Some(px(13.0)),
                             color: Some(col(theme::TEXT_NORMAL)),
                             ..Default::default()
-                        }) { format!("Replying to {}: {}", author, snippet) }
+                        }) { format!("Replying to {}: {}", crate::auth::shown_name(&author), snippet) }
 
                         // Spacer pushing the "×" control to the right edge.
                         view(style = StyleRules {

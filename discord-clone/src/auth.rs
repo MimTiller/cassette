@@ -66,6 +66,7 @@ pub async fn login(username: &str, password: &str) -> Result<i64, String> {
             // along so a refresh restores the uploaded image without a
             // second round trip.
             save_session(&result.token, result.user_id, &username, result.avatar_url.clone());
+            remember_display_name(&username, result.display_name.clone());
             // Register the author's avatar so every other surface (message
             // rows, member lists, DMs) resolves it by username.
             if !username.is_empty() {
@@ -236,6 +237,32 @@ pub(crate) fn remember_avatar(username: &str, avatar_url: Option<String>) {
     if let Some(url) = avatar_url {
         map.push((username.to_string(), url.clone()));
     }
+}
+
+/// Display names by username, for every user the client has heard about
+/// (members, friends, DM partners, profile cards). See [`shown_name`].
+pub(crate) static NAME_MAP: std::sync::Mutex<Vec<(String, String)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Record `username`'s display name, or forget it with `None`.
+pub(crate) fn remember_display_name(username: &str, display_name: Option<String>) {
+    if username.is_empty() {
+        return;
+    }
+    let mut map = NAME_MAP.lock().unwrap_or_else(|p| p.into_inner());
+    map.retain(|(u, _)| *u != username);
+    if let Some(name) = display_name {
+        map.push((username.to_string(), name));
+    }
+}
+
+/// The name to show for `username`: their display name when they have one.
+pub(crate) fn shown_name(username: &str) -> String {
+    let map = NAME_MAP.lock().unwrap_or_else(|p| p.into_inner());
+    map.iter()
+        .find(|(u, _)| *u == username)
+        .map(|(_, n)| n.clone())
+        .unwrap_or_else(|| username.to_string())
 }
 
 /// The stored avatar for `username`, or `None` = draw the initial circle.

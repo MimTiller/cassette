@@ -455,10 +455,10 @@ pub(super) fn live_member_panel(
                 }) {
                     if is_self {
                         text(style = name_style_self_branch) {
-                            format!("{} (you)", member.username)
+                            format!("{} (you)", crate::auth::shown_name(&member.username))
                         }
                     } else {
-                        text(style = name_style_other_branch) { member.username.clone() }
+                        text(style = name_style_other_branch) { crate::auth::shown_name(&member.username) }
                     }
                 }
 
@@ -786,6 +786,6 @@ pub(super) fn filter_members(q: &str, members: Vec<String>) -> Vec<String> {
     let q = q.to_lowercase();
     members
         .into_iter()
-        .filter(|m| m.to_lowercase().starts_with(&q))
+        .filter(|m| m.to_lowercase().starts_with(&q) || crate::auth::shown_name(m).to_lowercase().starts_with(&q))
         .collect()
 }

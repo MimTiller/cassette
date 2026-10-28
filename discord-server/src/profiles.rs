@@ -35,11 +35,65 @@ pub struct GetUserProfileInput {
     pub server_id: Option<i64>,
 }
 
+/// Longest display name, in characters.
+pub const MAX_DISPLAY_NAME_CHARS: usize = 32;
+/// Longest "about me", in characters.
+pub const MAX_ABOUT_CHARS: usize = 190;
+
+/// Check a display name: trimmed, at most [`MAX_DISPLAY_NAME_CHARS`], no
+/// control characters. Empty means "show my username" (`None`).
+pub fn validate_display_name(name: &str) -> Result<Option<String>, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Ok(None);
+    }
+    if name.chars().count() > MAX_DISPLAY_NAME_CHARS {
+        return Err(format!("display names can be at most {MAX_DISPLAY_NAME_CHARS} characters"));
+    }
+    if name.chars().any(char::is_control) {
+        return Err("display names can't contain line breaks or control characters".into());
+    }
+    Ok(Some(name.to_string()))
+}
+
+/// Check an "about me": trimmed, at most [`MAX_ABOUT_CHARS`]; line breaks
+/// are fine.
+pub fn validate_about(about: &str) -> Result<String, String> {
+    let about = about.trim();
+    if about.chars().count() > MAX_ABOUT_CHARS {
+        return Err(format!("\"About me\" can be at most {MAX_ABOUT_CHARS} characters"));
+    }
+    if about.chars().any(|c| c.is_control() && c != '\n') {
+        return Err("\"About me\" can't contain control characters".into());
+    }
+    Ok(about.to_string())
+}
+
+/// Input for [`set_profile`].
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SetProfileInput {
+    /// Empty to show the username instead.
+    pub display_name: String,
+    pub about: String,
+}
+
+/// What [`set_profile`] stored.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProfileFields {
+    pub display_name: Option<String>,
+    pub about: String,
+}
+
 /// One user's profile, as the acting user may see it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UserProfile {
     pub user_id: i64,
     pub username: String,
+    /// Shown in place of the username when set.
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub about: String,
     pub avatar_url: Option<String>,
     /// When the account was created, epoch milliseconds ("Member Since").
     pub created_at: i64,
@@ -107,6 +161,8 @@ impl ProfileService {
         Ok(UserProfile {
             user_id: target,
             username,
+            display_name: self.db.user_display_name(target),
+            about: self.db.user_about(target),
             avatar_url: self.db.user_avatar(target),
             created_at: self.created_at(target),
             server_role,
@@ -115,6 +171,16 @@ impl ProfileService {
             relationship: relationship.to_string(),
             blocked: caller != target && self.db.blocked_ids_for_user(caller).contains(&target),
         })
+    }
+
+    /// Set `user_id`'s display name and about text.
+    pub fn set_fields(&self, user_id: i64, display_name: &str, about: &str) -> Result<ProfileFields, String> {
+        let display_name = validate_display_name(display_name)?;
+        let about = validate_about(about)?;
+        self.db
+            .set_user_profile(user_id, display_name.as_deref(), &about)
+            .map_err(|e| format!("failed to save your profile: {e}"))?;
+        Ok(ProfileFields { display_name, about })
     }
 
     fn created_at(&self, user_id: i64) -> i64 {
@@ -160,6 +226,27 @@ pub async fn get_user_profile(input: GetUserProfileInput) -> Result<UserProfile,
     ProfileService::new(db)
         .get(user, input.user_id, input.server_id)
         .map_err(ServerError::failed)
+}
+
+/// Set the signed-in user's display name (empty to show the username) and
+/// "about me", and tell everyone who shares a server with them.
+#[server]
+pub async fn set_profile(input: SetProfileInput) -> Result<ProfileFields, ServerError> {
+    let db = db_from_state()?;
+    let user = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let fields = ProfileService::new(db.clone())
+        .set_fields(user, &input.display_name, &input.about)
+        .map_err(ServerError::failed)?;
+    let username = db.user_by_id(user).map(|(_, n)| n).unwrap_or_default();
+    crate::realtime::hub().publish(
+        &crate::realtime::presence_audience(&db, user),
+        &crate::server_settings::WsServerMsg::ProfileChanged {
+            user_id: user,
+            username,
+            display_name: fields.display_name.clone(),
+        },
+    );
+    Ok(fields)
 }
 
 /// Pull the shared `Db` out of server state (installed at startup by the
@@ -242,5 +329,31 @@ mod tests {
         db.insert_user_block(1, 2);
         assert!(ProfileService::new(db.clone()).get(1, 2, None).unwrap().blocked);
         assert!(!ProfileService::new(db).get(2, 1, None).unwrap().blocked);
+    }
+
+    #[test]
+    fn display_names_and_about_are_checked() {
+        assert_eq!(validate_display_name("  Tim  "), Ok(Some("Tim".into())));
+        assert_eq!(validate_display_name("   "), Ok(None));
+        assert!(validate_display_name(&"x".repeat(33)).is_err());
+        assert!(validate_display_name("a\nb").is_err());
+        assert_eq!(validate_display_name("Ünïcødé 🎵"), Ok(Some("Ünïcødé 🎵".into())));
+        assert_eq!(validate_about(" hi\nthere "), Ok("hi\nthere".into()));
+        assert!(validate_about(&"x".repeat(191)).is_err());
+        assert!(validate_about("bell\u{7}").is_err());
+    }
+
+    #[test]
+    fn set_fields_stores_and_profiles_show_them() {
+        let (_d, db) = setup_db();
+        let svc = ProfileService::new(db.clone());
+        let saved = svc.set_fields(2, " Bobby ", "I like trains").unwrap();
+        assert_eq!(saved, ProfileFields { display_name: Some("Bobby".into()), about: "I like trains".into() });
+        let p = svc.get(1, 2, None).unwrap();
+        assert_eq!((p.display_name.as_deref(), p.about.as_str()), (Some("Bobby"), "I like trains"));
+        // Clearing goes back to the username.
+        svc.set_fields(2, "", "").unwrap();
+        assert_eq!(svc.get(1, 2, None).unwrap().display_name, None);
+        assert!(svc.set_fields(2, &"x".repeat(40), "").is_err());
     }
 }

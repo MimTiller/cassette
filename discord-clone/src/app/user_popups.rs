@@ -239,6 +239,16 @@ fn profile_card(
     };
     let user_id = p.user_id;
     let name = p.username.clone();
+    let shown = p.display_name.clone().unwrap_or_else(|| p.username.clone());
+    let about_el = (!p.about.is_empty()).then(|| {
+        let (about_label, about_value, about) = (label.clone(), value.clone(), p.about.clone());
+        ui! {
+            view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) {
+                text(style = about_label) { "About me".to_string() }
+                text(style = about_value) { about }
+            }
+        }
+    });
     // The action row: your own card edits your profile; anyone else's
     // offers Message plus the friend action that fits.
     let actions: Element = if p.relationship == "self" {
@@ -316,11 +326,15 @@ fn profile_card(
                 padding_right: Some(px(16.0)),
                 ..Default::default()
             }) {
-                text(style = StyleRules { font_size: Some(px(20.0)), font_weight: Some(FontWeight::Bold), color: Some(col(TEXT)), ..Default::default() }) { name.clone() }
+                text(style = StyleRules { font_size: Some(px(20.0)), font_weight: Some(FontWeight::Bold), color: Some(col(TEXT)), ..Default::default() }) { shown.clone() }
+                text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(TEXT_MUTED)), ..Default::default() }) { name.clone() }
                 if let Some(role) = &p.server_role {
                     text(style = StyleRules { font_size: Some(px(12.0)), color: Some(col(TEXT_MUTED)), margin_top: Some(px(2.0)), ..Default::default() }) { role.clone() }
                 }
                 { role_chips(user_id, p.server_role.is_some(), label.clone()) }
+                if let Some(el) = about_el {
+                    el
+                }
                 text(style = label.clone()) { "Member since".to_string() }
                 text(style = value.clone()) { since.clone() }
                 if let Some((title, names)) = &mutual {

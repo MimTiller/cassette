@@ -40,6 +40,12 @@ fn bump() {
     }
 }
 
+/// Read the revision signal, so a reactive closure that calls this redraws
+/// when names, roles or members change.
+pub fn revision() -> u32 {
+    with(|c| c.rev).map(|rev| rev.get()).unwrap_or(0)
+}
+
 /// The message list's revision signal, bumped whenever roles change.
 pub fn install(rev: Signal<u32>) {
     with(|c| c.rev = Some(rev));
@@ -76,6 +82,9 @@ fn set_members(server_id: Option<i64>, members: &[discord_server::server_setting
 /// user's level, which gates the role controls), then redraw.
 pub fn members_loaded(server_id: i64, members: &[discord_server::server_settings::MemberInfo]) {
     let self_id = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+    for m in members {
+        crate::auth::remember_display_name(&m.username, m.display_name.clone());
+    }
     set_members(Some(server_id), members, self_id);
     bump();
 }
@@ -172,13 +181,23 @@ pub fn completion_pool() -> Vec<String> {
 }
 
 /// What a completion is, for the dropdown's hint: `None` for a member.
-pub fn completion_hint(name: &str) -> Option<&'static str> {
+pub fn completion_hint(name: &str) -> Option<String> {
     match name {
-        "everyone" => Some("Notify everyone in this server"),
-        "here" => Some("Notify everyone online"),
-        _ if with(|c| c.roles.roles.iter().any(|r| r.name == name)) => Some("Role"),
-        _ => None,
+        "everyone" => Some("Notify everyone in this server".into()),
+        "here" => Some("Notify everyone online".into()),
+        _ if with(|c| c.roles.roles.iter().any(|r| r.name == name)) => Some("Role".into()),
+        _ => Some(crate::auth::shown_name(name)).filter(|shown| shown != name),
     }
+}
+
+/// The username of member `user_id` in the active server.
+pub fn username_of(user_id: i64) -> Option<String> {
+    with(|c| c.users.iter().find(|(id, _)| *id == user_id).map(|(_, n)| n.clone()))
+}
+
+/// Redraw everything that shows names (after a display name changed).
+pub fn names_changed() {
+    bump();
 }
 
 /// `#rrggbb` at `alpha`, as `rgba(…)` (for tinted role pills).

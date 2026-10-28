@@ -76,6 +76,8 @@ pub struct FriendUser {
     pub user_id: i64,
     pub username: String,
     #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
     pub avatar_url: Option<String>,
 }
 
@@ -306,6 +308,7 @@ impl FriendService {
         FriendUser {
             user_id,
             username,
+            display_name: self.db.user_display_name(user_id),
             avatar_url: self.db.user_avatar(user_id),
         }
     }

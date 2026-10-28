@@ -222,7 +222,7 @@ fn friend_row(name: String, avatar: Option<String>, actions: Vec<Element>) -> El
     ui! {
         view(style = row_style()) {
             { chip }
-            text(style = name_style()) { name }
+            text(style = name_style()) { crate::auth::shown_name(&name) }
             { actions }
         }
     }
