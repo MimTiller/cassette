@@ -110,31 +110,31 @@ Server-side environment variables and files (all read by `discord-server`):
   gets the real implementations plus axum route registration. Same source,
   two compiled shapes.
 - Auth uses HMAC-signed session tokens. `login` returns a token formatted
-  `v1.<user_id>.<expires_unix_secs>.<hex hmac-sha256>` (the MAC covers the
-  `v1.<user_id>.<expires>` prefix, keyed with the server's session secret)
-  and valid for 12 hours, and also sets it as an httpOnly `session` cookie
+  `v2.<user_id>.<token_version>.<expires_unix_secs>.<hex hmac-sha256>` (the
+  MAC covers everything before it, keyed with the server's session secret),
+  valid for 12 hours, and also sets it as an httpOnly `session` cookie
   (SameSite=Lax; `Secure` only when the request came over https). The
-  browser replays that cookie on every later request — and on the
-  WebSocket upgrade handshake, where JS cannot read it — so the web client
-  never holds the token itself; native clients instead send it back as
+  browser replays that cookie on every later request, including the
+  WebSocket upgrade and `/media` fetches; native clients send it as
   `Authorization: Bearer <token>`. Identity comes only from a token whose
-  signature verifies against the server secret, never from a client-supplied
-  user id.
-- The legacy `x-user-id` header (the old stand-in session) is REJECTED by
-  default. Set `DISCORD_ALLOW_USER_ID_HEADER=1` to accept it for local
-  development or test tooling; a request that presents a bearer token never
-  falls back to the legacy header — a bad token is simply unauthenticated.
-- Login throttling (server-side, per account): after 5 failed logins within
-  a trailing 300-second window the account is locked and even the correct
-  password is rejected until the window slides past the oldest failure; a
-  successful login clears the failure log. Wrong-password errors are
-  uniform ("invalid username or password") so the endpoint never leaks which
-  usernames are registered.
-- Sessions are revocable: `logout` clears the session cookie (deleted with
-  the same flags), tokens expire on their 12-hour TTL, and the signing
-  secret — from `DISCORD_SESSION_SECRET` or a mode-0600 `<db>.session-secret`
-  file beside the database — can be rotated to invalidate every issued
-  token at once.
+  signature verifies, never from a client-supplied user id.
+- Revocation: every request also checks the token's version against
+  `users.token_version`. Changing the password or "Log out of all devices"
+  bumps it, which ends every existing session; open gateway connections
+  re-check within 30 seconds. `logout` clears this browser's cookie, and
+  rotating the signing secret (`DISCORD_SESSION_SECRET` or the mode-0600
+  `<db>.session-secret` file) invalidates every issued token at once.
+- The legacy `x-user-id` header is REJECTED by default. Set
+  `DISCORD_ALLOW_USER_ID_HEADER=1` to accept it for local development or
+  test tooling; a request that presents a bearer token never falls back to it.
+- Throttling: an account locks after 5 failed logins within 300 seconds
+  (until the oldest failure ages out); per client IP, logins are limited to
+  10 a minute and 60 an hour, sign-ups to 5 an hour, and invite redeems to
+  30 per 10 minutes (10 per account). Loopback is exempt. Wrong-password
+  errors are uniform ("invalid username or password") so the endpoint never
+  reveals which usernames exist.
+- Passwords are hashed with PBKDF2-HMAC-SHA256 (600,000 iterations); older,
+  weaker hashes are upgraded on the next successful login.
 - Data model: users, servers, channels, categories, messages, DM channels,
   server memberships, roles, invites, mentions, read-state — see
   `discord-server/migrations/` for the authoritative schema.

@@ -43,7 +43,8 @@ pub async fn set_avatar(avatar: Option<String>) -> Result<Option<String>, String
 /// # Errors
 /// Returns `Err(message)` for any failure — bad credentials, account
 /// lockout, or a transport/protocol-level `ServerError` (network, codec,
-/// version). The message is the `ServerError`'s `Display` form.
+/// version). The message is user-facing
+/// text from `errors::friendly`.
 pub async fn login(username: &str, password: &str) -> Result<i64, String> {
     let creds = discord_server::auth::LoginInput {
         username: username.to_string(),
@@ -95,8 +96,8 @@ pub async fn login(username: &str, password: &str) -> Result<i64, String> {
 ///
 /// # Errors
 /// Returns `Err(message)` for any failure — a duplicate username, or a
-/// transport/protocol-level `ServerError` (network, codec, version). The
-/// message is the `ServerError`'s `Display` form.
+/// transport/protocol-level `ServerError` (network, codec, version). The message is user-facing
+/// text from `errors::friendly`.
 pub async fn signup(username: &str, password: &str) -> Result<i64, String> {
     let input = discord_server::auth::SignupInput {
         username: username.to_string(),
@@ -128,8 +129,8 @@ pub async fn signup(username: &str, password: &str) -> Result<i64, String> {
 ///
 /// # Errors
 /// Returns `Err(message)` for any failure — a duplicate handle, a missing
-/// session (not logged in), or a transport-level `ServerError`. The message is
-/// the `ServerError`'s `Display` form.
+/// session (not logged in), or a transport-level `ServerError`.
+/// The message is user-facing text from `errors::friendly`.
 pub async fn change_username(new_username: &str) -> Result<String, String> {
     let input = discord_server::auth::ChangeUsernameInput {
         new_username: new_username.to_string(),
@@ -159,7 +160,8 @@ pub async fn change_username(new_username: &str) -> Result<String, String> {
 /// # Errors
 /// Returns `Err(message)` for any failure — a wrong current password, a blank
 /// new password, being unauthenticated, or a transport-level `ServerError`.
-/// The message is the `ServerError`'s `Display` form.
+/// The message is user-facing
+/// text from `errors::friendly`.
 pub async fn change_password(current_password: &str, new_password: &str) -> Result<(), String> {
     let input = discord_server::auth::ChangePasswordInput {
         current_password: current_password.to_string(),
