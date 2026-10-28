@@ -10,14 +10,13 @@ pub(super) struct OverlaysParts {
     pub(super) shortcuts_region: Element,
     pub(super) live_dm_region: Element,
     pub(super) moderation_region: Element,
-    pub(super) member_profile_el: Element,
     pub(super) live_invite_region: Element,
     pub(super) bug_reports_region: Element,
 }
 
 pub(super) fn build(s: &ShellState) -> OverlaysParts {
     let ShellState { active_live_server, active_server, authed, blocked_users, bug_reports_mode,
-        friends_add_error, friends_add_username, friends_entry, friends_open, friends_snap, friends_tab, gateway, live_dm_active, live_dm_messages, live_dm_mode, live_dm_new_id, live_dm_revision, live_dms, live_invite_code, live_invite_error, live_invite_mode, live_members, live_presence, live_presence_rev, live_revision, moderation_mode, notif_level, notif_mode, on_dm_message, profile_mode, selected_member, shortcuts_mode, .. } = s.clone();
+        friends_add_error, friends_add_username, friends_entry, friends_open, friends_snap, friends_tab, gateway, live_dm_active, live_dm_messages, live_dm_mode, live_dm_new_id, live_dm_revision, live_dms, live_invite_code, live_invite_error, live_invite_mode, live_members, live_presence, live_presence_rev, live_revision, moderation_mode, notif_level, notif_mode, on_dm_message, profile_mode, shortcuts_mode, .. } = s.clone();
 
     // User Settings: one full-window screen (see `settings_suite`), shown
     // while `notif_mode` is on. "Profile" (`profile_mode`) opens it at the
@@ -364,11 +363,8 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         }
     };
 
-    // Member profile overlay: built once, shown/hidden by `selected_member`.
-    // Full-screen and painted last so it sits above the member list; collapses
-    // to zero size while no member is selected (the same toggle idiom as the
-    // other overlay regions above).
-    let member_profile_el = member_profile_panel(selected_member.clone());
+    // Member profile overlay removed — the mock member profile panel is gone
+    // (live profile cards come from user_popups instead).
 
     // --- Live "Invite People" overlay (real backend) ----------------------
     // The live channel header's `USER_PLUS` action opens this. Unlike the mock
@@ -670,5 +666,5 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         }
     };
 
-    OverlaysParts { profile_region, notif_region, shortcuts_region, live_dm_region, moderation_region, member_profile_el, live_invite_region, bug_reports_region }
+    OverlaysParts { profile_region, notif_region, shortcuts_region, live_dm_region, moderation_region, live_invite_region, bug_reports_region }
 }

@@ -8,7 +8,7 @@ pub(super) struct MemberListParts {
 }
 
 pub(super) fn build(s: &ShellState) -> MemberListParts {
-    let ShellState { active_channel, active_live_server, active_server, blocked_users, live_ban_confirm, live_kick_confirm, live_member_error, live_member_menu, live_members, live_presence, live_presence_rev, live_revision, live_timeout_confirm, live_timeout_duration, member_panel_width, revision, selected_member, sent, sidebar_width, user_popup, user_profile, user_status, .. } = s.clone();
+    let ShellState { active_live_server, blocked_users, live_ban_confirm, live_kick_confirm, live_member_error, live_member_menu, live_members, live_presence, live_presence_rev, live_revision, live_timeout_confirm, live_timeout_duration, user_popup, user_profile, user_status, .. } = s.clone();
     // --- member list (right side) ----------------------------------------
     // Rebuilds when the active server changes (each server has its own
     // roster) AND when the signed-in user's live status changes — the user
@@ -39,43 +39,11 @@ pub(super) fn build(s: &ShellState) -> MemberListParts {
     let live_timeout_panel = live_timeout_confirm.clone();
     let live_timeout_dur_panel = live_timeout_duration.clone();
     let live_presence_panel = live_presence.clone();
-    // The message-search corpus the mock member panel's `MessageSearchBar`
-    // filters over: the active channel's seed messages plus this session's
-    // sends, as `(author, text)` rows. A `memo` keyed on the same signals the
-    // message list uses (`active_server`/`active_channel` + the `revision`
-    // send-counter), so switching channels or sending a message rebuilds the
-    // corpus; the bar then live-filters it client-side.
-    let search_corpus = memo(move || -> Vec<(String, String)> {
-        let (server_id, channel_id) = (active_server.get(), active_channel.get());
-        // Read `revision` (the per-send counter) so the memo subscribes to it:
-        // `sent` is an `Rc<RefCell<…>>`, invisible to the reactive graph, so
-        // without this read a send would not rebuild the corpus — the same
-        // counter the message list's `switch` is keyed on.
-        let _rev = revision.get();
-        let sent_snapshot = sent.borrow().clone();
-        let server = match SERVERS.iter().find(|x| x.id == server_id) {
-            Some(s) => s,
-            None => return Vec::new(),
-        };
-        let channel = match server.find_text_channel(channel_id) {
-            Some(c) => c,
-            None => return Vec::new(),
-        };
-        let mut corpus: Vec<(String, String)> = channel
-            .messages
-            .iter()
-            .map(|m| (m.author.to_string(), m.body.to_string()))
-            .collect();
-        for (_cid, author, body, _ts) in sent_snapshot.iter().filter(|(cid, _, _, _)| *cid == channel_id) {
-            corpus.push((author.to_string(), body.clone()));
-        }
-        corpus
-    });
+    // The mock message-search corpus was removed with the mock member panel;
+    // the member column is now live-only.
     let members_switch = switch(
         move || {
             (
-                active_server.get(),
-                user_status.get(),
                 active_live_server.get(),
                 live_members.get(),
                 live_member_error.get(),
@@ -87,9 +55,17 @@ pub(super) fn build(s: &ShellState) -> MemberListParts {
                 live_member_menu.get(),
             )
         },
-        move |(_server_id, user_status, live_active, _live_members, _live_err, _live_kick, _live_ban, _live_timeout, _live_timeout_dur, _presence_rev, _live_menu): &(
-            u32,
-            Status,
+        move |(
+            live_active,
+            _live_members,
+            _live_err,
+            _live_kick,
+            _live_ban,
+            _live_timeout,
+            _live_timeout_dur,
+            _presence_rev,
+            _live_menu,
+        ): &(
             Option<i64>,
             Vec<crate::moderation::MemberInfo>,
             String,

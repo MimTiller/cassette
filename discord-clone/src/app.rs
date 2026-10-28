@@ -56,7 +56,7 @@ use crate::server_settings_panel::ServerSettingsPanel;
 
 use runtime_shared::time::local_offset_minutes;
 
-use crate::data::{SERVERS, Category, Member, Server, Status, TextChannel, USER, member_profile};
+use crate::data::{SERVERS, Category, Member, Server, Status, TextChannel, USER};
 use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
 use crate::ban_list_row::BanListRow;
@@ -1566,7 +1566,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         overflow: Some(Overflow::Hidden),
         ..Default::default()
     };
-    let overlays::OverlaysParts { profile_region, notif_region, shortcuts_region, live_dm_region, moderation_region, member_profile_el, live_invite_region, bug_reports_region } = overlays::build(&s);
+    let overlays::OverlaysParts { profile_region, notif_region, shortcuts_region, live_dm_region, moderation_region, live_invite_region, bug_reports_region } = overlays::build(&s);
 
     // --- "jump to bottom" scroll tracking ---------------------------------
     // The floating "Jump to bottom" pill only appears while the reader has
@@ -1745,10 +1745,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 resize_handle(member_panel_width, -1.0, "resize-members")
                 members_switch
             }
-            // Member profile overlay: full-screen, painted after the member
-            // list so it covers the whole window when a row is tapped
-            // (collapses to zero size while no member is selected).
-            member_profile_el
             // Painted last so it sits on top of everything when open.
             profile_region
             notif_region
