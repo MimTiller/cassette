@@ -44,7 +44,6 @@ const BAR_HEIGHTS: [f32; 4] = [5.0, 9.0, 13.0, 17.0];
 /// The connection-quality indicator. Four small bars in a row, bottom-aligned;
 /// the first `QUALITY_LEVEL` bars are solid green, the rest are muted outlines.
 #[component]
-#[allow(non_snake_case)]
 pub fn ConnectionQualityIndicator() -> Element {
     ui! {
         view(style = StyleRules {

@@ -72,7 +72,6 @@ fn next_add_role(current: &str) -> &'static str {
 /// add-member section's inputs (a numeric id and a role that cycles
 /// member→moderator→admin→owner→member via the section's chip).
 #[component]
-#[allow(non_snake_case)]
 pub fn ServerSettingsPanel(
     open: Signal<bool>,
     server_id: Signal<Option<i64>>,

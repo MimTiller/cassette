@@ -45,7 +45,6 @@ use crate::style_helpers::{borderless_input, col, pct, px};
 /// message; `channels` is the live channel list, re-fetched on a successful
 /// create. All signals are owned by the caller and reset on re-open.
 #[component]
-#[allow(non_snake_case)]
 pub fn CreateChannelModal(
     open: Signal<bool>,
     server_id: Signal<Option<i64>>,

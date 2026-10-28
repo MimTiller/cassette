@@ -46,7 +46,6 @@ use runtime_core::{
 /// `"Bonjour"` / `"Hello"` — so the component still compiles standalone); no
 /// backend call, just the two literals the signal switches between.
 #[component]
-#[allow(non_snake_case)]
 pub fn TranslateToggle(
     #[prop(default = "Bonjour")] original: String,
     #[prop(default = "Hello")] translated: String,

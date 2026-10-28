@@ -45,7 +45,6 @@ fn initials_of(name: &str) -> String {
 /// The server-icon fallback. A colored circle showing `SERVER_NAME`'s
 /// initials (the first letter of up to the first two words).
 #[component]
-#[allow(non_snake_case)]
 pub fn ServerIconFallback() -> Element {
     let initials = initials_of(SERVER_NAME);
 

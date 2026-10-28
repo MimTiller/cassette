@@ -45,7 +45,6 @@ const TAGS: [&str; 3] = ["Gaming", "Casual", "18+"];
 /// badges in a row; each pill sits on its own (slightly different) background
 /// color drawn from the parallel `TAG_BG` table by loop index.
 #[component]
-#[allow(non_snake_case)]
 pub fn ServerTagChips() -> Element {
     ui! {
         // Horizontal row of pills, vertically centered.

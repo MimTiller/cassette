@@ -46,7 +46,6 @@ use runtime_core::{
 /// the user is idle, muted otherwise; a tap goes idle (or cycles on, if
 /// already idle), driven through the app's shared `status` signal.
 #[component]
-#[allow(non_snake_case)]
 pub fn IdleTimerBadge(status: runtime_core::Signal<Status>) -> Element {
     // The idle glyph swaps to amber while `status` is `Idle`; a tap sets it to
     // `Idle`, or (already idle) advances it one step so a second tap clears

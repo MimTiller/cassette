@@ -47,7 +47,6 @@ const USERNAME: &str = "Alex";
 /// `unblocked` signal to `true`, which unmounts the row (it renders nothing).
 /// No backend call, no props — local state only.
 #[component]
-#[allow(non_snake_case)]
 pub fn BlockedUserRow() -> Element {
     // Local state: whether this user has been unblocked. Starts `false`
     // (still blocked → the row is visible).

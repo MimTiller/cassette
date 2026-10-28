@@ -38,7 +38,6 @@ use runtime_core::{
 /// handle) shown as `discord.gg/{code}` in a read-only field above a `Copy`
 /// button; pressing `Copy` reveals a `"Copied!"` confirmation. No backend call.
 #[component]
-#[allow(non_snake_case)]
 pub fn InviteLinkDisplay(code: String) -> Element {
     // The shareable link, derived from the real code prop. Built as a signal
     // (never written after construction) so the field reads as read-only in

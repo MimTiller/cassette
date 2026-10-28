@@ -56,7 +56,6 @@ const VOLUME_MAX: i32 = 100;
 /// live numeric node, and each button clamps the value to `0..=100`. No
 /// backend call — only the local signal.
 #[component]
-#[allow(non_snake_case)]
 pub fn VolumeSlider() -> Element {
     // The one local level signal, `Copy`. The `move` handlers below capture a
     // copy of the same underlying signal (the one the reactive text slot also

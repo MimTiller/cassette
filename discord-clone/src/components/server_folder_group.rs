@@ -40,7 +40,6 @@ const SERVERS: [&str; 2] = ["Design Guild", "Rust Community"];
 /// two hardcoded server names render below it, otherwise the list is
 /// unmounted.
 #[component]
-#[allow(non_snake_case)]
 pub fn ServerFolderGroup() -> Element {
     let expanded = signal(false);
 

@@ -45,7 +45,6 @@ use runtime_core::{
 /// signal toggle. The screen that mounts this header reads the same signal to
 /// show/hide the rows beneath it.
 #[component]
-#[allow(non_snake_case)]
 pub fn CategoryHeader(title: String, collapsed: Signal<bool>) -> Element {
     let title_text = title.get().to_string();
     ui! {

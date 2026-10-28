@@ -54,7 +54,6 @@ const BG_MUTED: &str = "#3f2a2c"; // faint red-tinted surface for the muted stat
 /// look (a red `🔇` on a red-tinted surface), and another press flips it back.
 /// The signal is owned by the caller — no backend call.
 #[component]
-#[allow(non_snake_case)]
 pub fn MuteChannelToggle(muted: Signal<bool>) -> Element {
     // Toggle: flip `muted` on every press. `Signal` is `Copy`, so the `move`
     // handler captures a copy of the same underlying signal (the one the

@@ -44,7 +44,6 @@ const DAY_SECS: i64 = 24 * 60 * 60;
 /// successfully; `created_err` holds the backend's rejection message on
 /// failure. All five signals are owned by the caller and reset on re-open.
 #[component]
-#[allow(non_snake_case)]
 pub fn InviteModal(
     open: Signal<bool>,
     server_id: Signal<Option<i64>>,

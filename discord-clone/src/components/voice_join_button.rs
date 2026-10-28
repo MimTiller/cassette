@@ -41,7 +41,6 @@ use runtime_core::{
 /// button to "Leave Voice" in a distinct (danger red) color. Clicking again
 /// toggles it back. No real voice connection, no backend call.
 #[component]
-#[allow(non_snake_case)]
 pub fn VoiceJoinButton() -> Element {
     let connected = signal(false);
 

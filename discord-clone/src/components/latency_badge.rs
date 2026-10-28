@@ -60,7 +60,6 @@ fn latency_color(ms: i32) -> &'static str {
 /// The latency badge. A small pill whose `{n}ms` label is colored by the
 /// hardcoded value's range (green / amber / red).
 #[component]
-#[allow(non_snake_case)]
 pub fn LatencyBadge() -> Element {
     // Static: `LATENCY_MS` is a `const`, so this `format!` is a one-shot value,
     // not a reactive read. Bound above the `ui!` block so the text bakes to

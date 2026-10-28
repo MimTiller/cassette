@@ -58,7 +58,6 @@ use runtime_core::{
 /// button stay so the banner can be re-expanded), and pressing it again flips
 /// it back. No backend call — only the local signal toggle.
 #[component]
-#[allow(non_snake_case)]
 pub fn ChannelTopicBanner(
     #[prop(default = "General discussion - be kind!")] topic: String,
 ) -> Element {

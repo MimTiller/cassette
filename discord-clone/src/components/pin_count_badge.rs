@@ -45,7 +45,6 @@ const PIN_COUNT: usize = 3;
 /// The pinned-message count badge. A small pill with a pin glyph and the
 /// pinned count; renders nothing at all when `PIN_COUNT` is `0`.
 #[component]
-#[allow(non_snake_case)]
 pub fn PinCountBadge() -> Element {
     // Static: `PIN_COUNT` is a `const`, so `to_string()` is a one-shot value,
     // not a reactive read. Bound above the `ui!` block so the branch (a plain

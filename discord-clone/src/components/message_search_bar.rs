@@ -52,7 +52,6 @@ use runtime_core::{
 /// matches, clearing shows everything, and a dead-end query shows a muted
 /// "no matches" line.
 #[component]
-#[allow(non_snake_case)]
 /// The channel header's search field ("Search <server>"). While a query is
 /// typed, the hits drop down in a card under the field (author + text, a hit
 /// count and a "×" that clears the query).

@@ -284,7 +284,6 @@ fn section_header(label: &str) -> Element {
 /// string when a cell is tapped; the caller decides what to do with it (append
 /// to the composer, or add/remove a reaction) and then closes itself.
 #[component]
-#[allow(non_snake_case)]
 pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
     // Local controlled state, owned by the component so it persists while the
     // picker is mounted (the `#[component]` macro keeps one instance alive).

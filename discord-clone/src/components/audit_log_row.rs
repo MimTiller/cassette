@@ -30,7 +30,6 @@ use runtime_core::{component, ui, AlignItems, Element, FlexDirection, StyleRules
 /// A single audit-log row. Renders the `text` event line with a muted
 /// `timestamp` next to it on the same line. No backend.
 #[component]
-#[allow(non_snake_case)]
 pub fn AuditLogRow(
     #[prop(default = "Alex kicked Sam")] text: String,
     #[prop(default = "2 hours ago")] timestamp: String,

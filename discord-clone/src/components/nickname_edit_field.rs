@@ -58,7 +58,6 @@ const SAVED_MS: i32 = 1500;
 /// moment via a one-shot timer) and **Reset** returns the input to the default
 /// nickname. No backend call, no navigation wiring yet.
 #[component]
-#[allow(non_snake_case)]
 pub fn NicknameEditField(#[prop(default = "Alex")] default_nickname: String) -> Element {
     // The member's display nickname seeds the local input signal (and is what
     // Reset restores to). `default_nickname` is a prop read once into an owned

@@ -90,7 +90,6 @@ fn dashes() -> Vec<(f32, f32, f32, f32)> {
 /// solid colored circle while it is `true`; clicking the square toggles the
 /// signal (no real file picker — just the local flip).
 #[component]
-#[allow(non_snake_case)]
 pub fn ServerIconUploadPlaceholder() -> Element {
     let hasImage = signal(false);
     // Dash positions come from `dashes()` (generated off SQUARE/DASH/GAP) so

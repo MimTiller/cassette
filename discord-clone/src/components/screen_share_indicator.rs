@@ -55,7 +55,6 @@ const TAG_BG: &str = "#2a4034"; // a subtle green-tinted surface — tag, not a 
 /// signals an active screen share with this small tag, not a large filled
 /// button.
 #[component]
-#[allow(non_snake_case)]
 pub fn ScreenShareIndicator() -> Element {
     let isSharing = signal(true);
 

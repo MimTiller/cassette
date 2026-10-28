@@ -49,7 +49,6 @@ const CATEGORIES: [&str; 3] = ["Gaming", "Music", "Education"];
 /// that chip's signal, which re-runs its reactive `style` closure to swap the
 /// chip between the inactive (muted outline) and active (blurple fill) looks.
 #[component]
-#[allow(non_snake_case)]
 pub fn CategoryFilterChips() -> Element {
     // One independent local boolean signal per chip (one slot per category).
     // `Signal<bool>` is `Copy`, so `active[idx]` hands each closure its own

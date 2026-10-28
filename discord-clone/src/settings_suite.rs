@@ -672,7 +672,6 @@ fn appearance_tab(accent: Signal<String>) -> Element {
 /// that same level on every inbound message; a single source of truth means a
 /// picker change is live for the next message without a re-open.
 #[component]
-#[allow(non_snake_case)]
 pub fn UserSettings(
     notif_mode: Signal<u32>,
     blocked: Signal<Vec<crate::blocks::BlockedUser>>,

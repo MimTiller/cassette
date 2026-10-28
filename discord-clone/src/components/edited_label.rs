@@ -28,7 +28,6 @@ use runtime_core::{component, signal, ui, Element, StyleRules};
 /// `was_edited` signal is set (hardcoded `true` for now); otherwise it
 /// renders nothing.
 #[component]
-#[allow(non_snake_case)]
 pub fn EditedLabel() -> Element {
     let was_edited = signal(true);
 

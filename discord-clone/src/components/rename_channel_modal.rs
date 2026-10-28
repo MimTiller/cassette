@@ -41,7 +41,6 @@ use crate::style_helpers::{borderless_input, col, pct, px};
 /// is the live channel list, re-fetched on a successful rename. All signals
 /// are owned by the caller and reset on re-open.
 #[component]
-#[allow(non_snake_case)]
 pub fn RenameChannelModal(
     open: Signal<bool>,
     server_id: Signal<Option<i64>>,

@@ -17,7 +17,6 @@ use runtime_core::{component, ui, AlignItems, Element, FlexDirection, StyleRules
 
 /// The typing indicator. Shows "<name> is typing..." in small muted text.
 #[component]
-#[allow(non_snake_case)]
 pub fn TypingIndicator(#[prop(default = "miri")] name: String) -> Element {
     // Hardcoded constant (never `.set`): read once into an owned String.
     let name_text = name.get().to_string();

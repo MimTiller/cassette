@@ -72,7 +72,6 @@ fn option_row(label: &'static str, idx: u32, selected: Signal<u32>) -> Element {
 /// The notification-settings card: a heading and three mutually exclusive
 /// options. Starts on "All messages".
 #[component]
-#[allow(non_snake_case)]
 pub fn NotificationSettings() -> Element {
     let selected = signal(0u32);
 

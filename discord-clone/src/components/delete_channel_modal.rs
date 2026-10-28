@@ -42,7 +42,6 @@ use crate::style_helpers::{col, pct, px};
 /// message; `channels` is the live channel list, re-fetched on a successful
 /// delete. All signals are owned by the caller and reset on re-open.
 #[component]
-#[allow(non_snake_case)]
 pub fn DeleteChannelModal(
     open: Signal<bool>,
     server_id: Signal<Option<i64>>,

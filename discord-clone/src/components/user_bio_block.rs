@@ -49,7 +49,6 @@ const BIO_BUDGET: usize = 190;
 /// count beneath it. No backend call — local state only, the starting value
 /// arriving as a prop (default is the previous shared literal).
 #[component]
-#[allow(non_snake_case)]
 pub fn UserBioBlock(#[prop(default = "Tell us about yourself...")] bio: String) -> Element {
     // The member's bio seeds the local signal (never `.set` from a prop — the
     // signal is the live editor state after that). `bio` is a prop read once

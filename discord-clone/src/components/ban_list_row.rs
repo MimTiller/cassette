@@ -48,7 +48,6 @@ const REASON: &str = "Spamming links";
 /// sets the local `unbanned` signal to `true`, which unmounts the row (it
 /// renders nothing). No backend call, no props — local state only.
 #[component]
-#[allow(non_snake_case)]
 pub fn BanListRow() -> Element {
     // Local state: whether this user has been unbanned. Starts `false`
     // (still banned → the row is visible).

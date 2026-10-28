@@ -50,7 +50,6 @@ const SIZE: &str = "2.4 MB";
 /// a generic file icon; a small "x" button sets the local `removed` signal, and
 /// once it is set the card renders nothing. No props, no backend.
 #[component]
-#[allow(non_snake_case)]
 #[allow(dead_code)] // declared but not wired into any screen yet
 pub fn AttachmentPreviewCard() -> Element {
     // Whether the attachment has been removed. Local only; `false` at start.

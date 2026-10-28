@@ -254,7 +254,6 @@ runtime_vocabulary::robot_only! {
 }
 
 #[component]
-#[allow(non_snake_case)]
 pub fn ProfileSettings() -> Element {
     // Real signed-in identity: the backend username recorded at login in
     // `CURRENT_USERNAME` (see `crate::auth`), the same source the user panel

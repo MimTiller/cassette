@@ -48,7 +48,6 @@ const DESCRIPTION: &str = "A place for gamers";
 /// shows (pressing it sets `joined`), and once `joined` is set the "Joined!"
 /// text renders in its place.
 #[component]
-#[allow(non_snake_case)]
 pub fn ServerDiscoveryCard() -> Element {
     let joined = signal(false);
 

@@ -30,7 +30,6 @@ use runtime_core::{component, signal, ui, Element, StyleRules};
 /// `isVerified` signal is set (hardcoded `true` for now); otherwise it
 /// renders nothing.
 #[component]
-#[allow(non_snake_case)]
 pub fn VerifiedBadge() -> Element {
     let isVerified = signal(true);
 

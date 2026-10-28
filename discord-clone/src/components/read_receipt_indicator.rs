@@ -38,7 +38,6 @@ const STATUS: &str = "read";
 /// The read-receipt indicator. Renders one checkmark for "sent", two checkmarks
 /// for "delivered", and two colored (blurple) checkmarks for "read".
 #[component]
-#[allow(non_snake_case)]
 pub fn ReadReceiptIndicator() -> Element {
     // How many checkmarks this status renders: one for "sent", two for
     // "delivered" / "read". Computed at mount from the hardcoded STATUS (a
