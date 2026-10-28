@@ -13,7 +13,7 @@ pub(super) struct RailParts {
 }
 
 pub(super) fn build(s: &ShellState) -> RailParts {
-    let ShellState { active_channel, active_live_channel, active_live_server, active_server, create_busy, create_error, create_name, create_open, discover_open, dm_mode, dynamic_servers, friends_snap, gateway, join_busy, join_code, join_error, join_open, join_result, joined_voice, live_ban_confirm, live_channels, live_dm_active, live_dm_mode, live_dms, live_kick_confirm, live_member_error, live_members, live_servers, live_timeout_confirm, live_unread_rev, notif_mode, rail_unread, server_rail, .. } = s.clone();
+    let ShellState { active_channel, active_live_channel, active_live_server, active_server, create_busy, create_error, create_name, create_open, discover_open, dynamic_servers, friends_snap, gateway, join_busy, join_code, join_error, join_open, join_result, joined_voice, live_ban_confirm, live_channels, live_dm_active, live_dm_mode, live_dms, live_kick_confirm, live_member_error, live_members, live_servers, live_timeout_confirm, live_unread_rev, notif_mode, rail_unread, server_rail, .. } = s.clone();
     // --- server rail -----------------------------------------------------
     let rail_style = StyleRules {
         width: Some(px(72.0)),
@@ -397,7 +397,6 @@ pub(super) fn build(s: &ShellState) -> RailParts {
         let create_error = create_error.clone();
         let create_busy = create_busy.clone();
         let discover_open = discover_open.clone();
-        let dm_open = dm_mode.clone();
         let settings_open = notif_mode.clone();
         ui! {
             // --- Top cluster: server-related actions (above the divider) ----

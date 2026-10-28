@@ -8,7 +8,6 @@ pub(super) struct OverlaysParts {
     pub(super) profile_region: Element,
     pub(super) notif_region: Element,
     pub(super) shortcuts_region: Element,
-    pub(super) dm_region: Element,
     pub(super) live_dm_region: Element,
     pub(super) moderation_region: Element,
     pub(super) member_profile_el: Element,
@@ -17,7 +16,8 @@ pub(super) struct OverlaysParts {
 }
 
 pub(super) fn build(s: &ShellState) -> OverlaysParts {
-    let ShellState { active_live_server, active_server, authed, blocked_users, bug_reports_mode, dm_active, dm_mode, dm_revision, dm_sent, dm_unread, dm_unread_rev, friends_add_error, friends_add_username, friends_entry, friends_open, friends_snap, friends_tab, gateway, live_dm_active, live_dm_messages, live_dm_mode, live_dm_new_id, live_dm_revision, live_dms, live_invite_code, live_invite_error, live_invite_mode, live_members, live_presence, live_presence_rev, live_revision, moderation_mode, notif_level, notif_mode, on_dm_message, profile_mode, selected_member, shortcuts_mode, .. } = s.clone();
+    let ShellState { active_live_server, active_server, authed, blocked_users, bug_reports_mode,
+        friends_add_error, friends_add_username, friends_entry, friends_open, friends_snap, friends_tab, gateway, live_dm_active, live_dm_messages, live_dm_mode, live_dm_new_id, live_dm_revision, live_dms, live_invite_code, live_invite_error, live_invite_mode, live_members, live_presence, live_presence_rev, live_revision, moderation_mode, notif_level, notif_mode, on_dm_message, profile_mode, selected_member, shortcuts_mode, .. } = s.clone();
 
     // User Settings: one full-window screen (see `settings_suite`), shown
     // while `notif_mode` is on. "Profile" (`profile_mode`) opens it at the
@@ -140,80 +140,8 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
             }
         }
     };
-    // Direct Messages screen (mock): same full-screen, paint-last idiom as the
-    // Profile / Notification overlays above. `dm_screen` builds the list column
-    // + the active conversation; its three inputs are the `dm_*` signals owned
-    // in `app_shell` scope, so the open conversation and this session's sent
-    // DMs survive a close/re-open. A "Done" pill in the header flips
-    // `dm_mode` back off to close it.
-    let dm_el = dm_screen(dm_active, dm_sent, dm_revision, dm_unread, dm_unread_rev);
-    let dm_close = dm_mode.clone();
-    let dm_header = ui! {
-        view(style = StyleRules {
-            flex_direction: Some(FlexDirection::Row),
-            align_items: Some(AlignItems::Center),
-            justify_content: Some(JustifyContent::SpaceBetween),
-            padding_top: Some(px(16.0)),
-            padding_bottom: Some(px(16.0)),
-            padding_left: Some(px(16.0)),
-            padding_right: Some(px(16.0)),
-            border_bottom_width: Some(border_width(1.0)),
-            border_bottom_color: Some(col(BORDER)),
-            background: Some(col(BG_MAIN)),
-            ..Default::default()
-        }) {
-            text(style = StyleRules {
-                font_size: Some(px(18.0)),
-                font_weight: Some(FontWeight::Bold),
-                color: Some(col(TEXT)),
-                ..Default::default()
-            }) { "Direct Messages".to_string() }
-            view(style = StyleRules {
-                height: Some(px(26.0)),
-                padding_left: Some(px(12.0)),
-                padding_right: Some(px(12.0)),
-                background: Some(col(BG_SIDEBAR)),
-                align_items: Some(AlignItems::Center),
-                justify_content: Some(JustifyContent::Center),
-                border_top_left_radius: Some(px(6.0)),
-                border_top_right_radius: Some(px(6.0)),
-                border_bottom_left_radius: Some(px(6.0)),
-                border_bottom_right_radius: Some(px(6.0)),
-                ..Default::default()
-            }) {
-                text(style = StyleRules {
-                    color: Some(col(TEXT)),
-                    font_size: Some(px(12.0)),
-                    font_weight: Some(FontWeight::SemiBold),
-                    ..Default::default()
-                }) { "Done".to_string() }
-            }
-            .on_touch(move |ev| {
-                if ev.phase == TouchPhase::Ended {
-                    dm_close.set(false);
-                }
-                TouchResponse::CONSUMED
-            })
-        }
-    };
-    let dm_open_chk = dm_mode.clone();
-    let dm_wrap = move || StyleRules {
-        position: Some(Position::Absolute),
-        left: Some(px(0.0)),
-        top: Some(px(0.0)),
-        width: Some(if dm_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        height: Some(if dm_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col(theme::OVERLAY)),
-        flex_direction: Some(FlexDirection::Column),
-        overflow: Some(Overflow::Hidden),
-        ..Default::default()
-    };
-    let dm_region = ui! {
-        view(style = dm_wrap) {
-            dm_header
-            view(style = StyleRules { flex_grow: Some(grow(1.0)), background: Some(col(BG_MAIN)), overflow: Some(Overflow::Hidden), ..Default::default() }) { dm_el }
-        }
-    };
+    // Direct Messages are LIVE only — the mock DM screen (dm_screen) and its
+    // header/wrap region were deleted with it; see `live_dm_region` below.
 
     // Live (backend) Direct Messages screen: same full-screen, paint-last idiom
     // as the mock `dm_region` above, but a separate, independent entry point.
@@ -742,5 +670,5 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         }
     };
 
-    OverlaysParts { profile_region, notif_region, shortcuts_region, dm_region, live_dm_region, moderation_region, member_profile_el, live_invite_region, bug_reports_region }
+    OverlaysParts { profile_region, notif_region, shortcuts_region, live_dm_region, moderation_region, member_profile_el, live_invite_region, bug_reports_region }
 }

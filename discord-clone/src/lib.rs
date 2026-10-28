@@ -35,7 +35,6 @@ mod roles_settings;
 // `notification_settings` screen as the gear's target.
 mod settings_suite;
 mod profile_settings;
-mod dm_view;
 mod dms;
 mod live_dm_view;
 // Client friends-list wrapper (RPC front-end for discord-server/src/friends.rs)

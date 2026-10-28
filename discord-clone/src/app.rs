@@ -56,7 +56,7 @@ use crate::server_settings_panel::ServerSettingsPanel;
 
 use runtime_shared::time::local_offset_minutes;
 
-use crate::data::{DMS, SERVERS, Category, Member, Server, Status, TextChannel, USER, member_profile};
+use crate::data::{SERVERS, Category, Member, Server, Status, TextChannel, USER, member_profile};
 use crate::message_search_bar::MessageSearchBar;
 use crate::pin_count_badge::PinCountBadge;
 use crate::ban_list_row::BanListRow;
@@ -83,7 +83,6 @@ use crate::soundboard_button::SoundboardButton;
 use crate::edited_label::EditedLabel;
 use crate::settings_suite::UserSettings;
 use crate::keyboard_shortcuts_overlay::keyboard_shortcuts_overlay;
-use crate::dm_view::dm_screen;
 use crate::style_helpers::{borderless_input, col, pct, px, section_label};
 use crate::join_modal::JoinServerModal;
 use crate::create_server_modal::create_server_modal;
@@ -1019,27 +1018,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // full-screen overlay, the same build-once/toggle idiom as `profile_mode`.
     let shortcuts_mode: Signal<bool> = signal(false);
 
-    // Direct Messages (mock): a "DMs" rail circle toggles the full-screen
-    // `dm_view::dm_screen` overlay, the same build-once/toggle idiom as
-    // `profile_mode` / `notif_mode`. `dm_active` selects the open conversation
-    // (seeded to the most recent mock DM — `DMS` is ordered by recency, so the
-    // first entry), `dm_sent` is this session's sent-DM log, and `dm_revision`
-    // is the rebuild counter its message list's `switch` dedups on. These are
-    // created fresh here (not threaded from elsewhere) — the DM view is
-    // self-contained over `crate::data`.
-    let dm_mode: Signal<bool> = signal(false);
-    let dm_active: Signal<u32> = signal(DMS.first().map(|d| d.id).unwrap_or(0));
-    let dm_sent: Rc<RefCell<Vec<(u32, &'static str, String, i64)>>> = Rc::new(RefCell::new(Vec::new()));
-    let dm_revision: Signal<u32> = signal(0);
-    // Mock DM unread badges: the per-DM count map + the rebuild counter its
-    // list `switch` dedups on. Seeded from the static `mock_unread` counts and
-    // owned here (next to `dm_sent`/`dm_revision`) so a read state survives a
-    // close/re-open — `dm_screen` re-mounts its list on each open. `dm_view`'s
-    // reset `switch` zeroes a DM's count the moment `dm_active` opens it.
-    let dm_unread: Rc<RefCell<HashMap<u32, u32>>> = Rc::new(RefCell::new(
-        DMS.iter().map(|d| (d.id, crate::dm_view::mock_unread(d.id))).collect(),
-    ));
-    let dm_unread_rev: Signal<u32> = signal(0);
+    // Direct Messages are LIVE only (see the `live_dm_*` state below); the mock
+    // DM screen and its state were removed with it.
 
     // Reaction state (`reactions` / `reaction_rev` / `picker`) is declared up
     // with the live state before `gateway_incoming_effect` — see that block.
@@ -1472,12 +1452,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         dc_name: dc_name.clone(),
         dc_open: dc_open.clone(),
         deafened: deafened.clone(),
-        dm_active: dm_active.clone(),
-        dm_mode: dm_mode.clone(),
-        dm_revision: dm_revision.clone(),
-        dm_sent: dm_sent.clone(),
-        dm_unread: dm_unread.clone(),
-        dm_unread_rev: dm_unread_rev.clone(),
         emoji_open: emoji_open.clone(),
         friends_add_error: friends_add_error.clone(),
         friends_add_username: friends_add_username.clone(),
@@ -1592,7 +1566,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         overflow: Some(Overflow::Hidden),
         ..Default::default()
     };
-    let overlays::OverlaysParts { profile_region, notif_region, shortcuts_region, dm_region, live_dm_region, moderation_region, member_profile_el, live_invite_region, bug_reports_region } = overlays::build(&s);
+    let overlays::OverlaysParts { profile_region, notif_region, shortcuts_region, live_dm_region, moderation_region, member_profile_el, live_invite_region, bug_reports_region } = overlays::build(&s);
 
     // --- "jump to bottom" scroll tracking ---------------------------------
     // The floating "Jump to bottom" pill only appears while the reader has
@@ -1779,14 +1753,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
             profile_region
             notif_region
             shortcuts_region
-            // Direct Messages (mock): full-screen, same paint-last idiom. Sits
-            // above the server/channel view but below the modal overlays
-            // (join / create / discover), so a modal opened from elsewhere still
-            // wins on top.
-            dm_region
             // Direct Messages (LIVE / backend): full-screen, same paint-last
-            // idiom as the mock `dm_region` above; an independent entry point
-            // so the mock DM screen is left untouched.
+            // idiom; an independent entry point (the mock DM screen is gone).
             live_dm_region
             // "Join a Server" overlay: full-screen, painted last so it sits on
             // top when open (collapses to zero size when closed).
