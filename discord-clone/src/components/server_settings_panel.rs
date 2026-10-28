@@ -3,8 +3,10 @@
 //! by numeric user id, and transfer ownership to another member by numeric user
 //! id.
 //!
-//! A full-screen card over a dimmed backdrop (the build-once/toggle idiom of
-//! `delete_channel_modal.rs` / `create_channel_modal.rs`). The `open` /
+//! Full-screen like User Settings (`settings_suite::settings_layout`): the
+//! server's name over an Overview / Roles / Members sidebar on the left, the
+//! selected section on the right, and ✕ / Escape to close. Built once and
+//! collapsed while closed (the overlays' idiom). The `open` /
 //! `busy` / `error` / `servers` / `server_id` / `name` / `icon` /
 //! `new_owner_id` / `add_member_user_id` / `add_member_role` signals are all
 //! owned by the caller (`app.rs`), which seeds `name`/`icon` from the active
@@ -33,12 +35,13 @@
 //! user's own row in `live_members` (`role == "owner"`).
 use crate::theme;
 use runtime_core::{
-    component, switch, ui, AlignItems, Element, FlexDirection, FontWeight,
+    component, signal, switch, ui, AlignItems, Element, FlexDirection, FontWeight,
     JustifyContent, ObjectFit, Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
 };
 use file_picker::{FilePicker, MediaKind, PickOutcome, PickRequest};
 
 use crate::style_helpers::{borderless_input, col, pct, px, section_label};
+use std::rc::Rc;
 
 // Discord dark palette (kept local so the component is self-contained).
 
@@ -58,6 +61,11 @@ fn next_add_role(current: &str) -> &'static str {
         _ => "member",
     }
 }
+
+/// The sidebar's sections, in order (the `section` signal's index).
+const SECTIONS: [&str; 3] = ["Overview", "Roles", "Members"];
+const SECTION_OVERVIEW: usize = 0;
+const SECTION_ROLES: usize = 1;
 
 /// The LIVE server-settings panel. `open` gates the overlay; `server_id` is
 /// the target (read at submit time, `None` = no-op); `name`/`icon`/
@@ -95,60 +103,9 @@ pub fn ServerSettingsPanel(
     let mbrs = members;
     let add_uid = add_member_user_id;
     let add_role = add_member_role;
+    let section = signal(SECTION_OVERVIEW);
 
     // --- Shared styles (one static pass) ------------------------------------
-    let card_style = StyleRules {
-        width: Some(px(380.0)),
-        // Fill the window height so tall content scrolls inside a `scroll_view`
-        // rather than overflowing (and being clipped by) the full-window wrap.
-        height: Some(pct(100.0)),
-        padding_top: Some(px(20.0)),
-        padding_bottom: Some(px(20.0)),
-        padding_left: Some(px(20.0)),
-        padding_right: Some(px(20.0)),
-        background: Some(col(theme::BG_SECONDARY)),
-        border_top_left_radius: Some(px(12.0)),
-        border_top_right_radius: Some(px(12.0)),
-        border_bottom_left_radius: Some(px(12.0)),
-        border_bottom_right_radius: Some(px(12.0)),
-        flex_direction: Some(FlexDirection::Column),
-        align_items: Some(AlignItems::Stretch),
-        ..Default::default()
-    };
-    let header_style = StyleRules {
-        flex_direction: Some(FlexDirection::Row),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::SpaceBetween),
-        margin_bottom: Some(px(16.0)),
-        ..Default::default()
-    };
-    let title_style = StyleRules {
-        font_size: Some(px(18.0)),
-        font_weight: Some(FontWeight::Bold),
-        color: Some(col(theme::TEXT_STRONG)),
-        ..Default::default()
-    };
-    let close_style = StyleRules {
-        height: Some(px(26.0)),
-        padding_left: Some(px(12.0)),
-        padding_right: Some(px(12.0)),
-        background: Some(col(theme::BUTTON_SECONDARY)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(6.0)),
-        border_top_right_radius: Some(px(6.0)),
-        border_bottom_left_radius: Some(px(6.0)),
-        border_bottom_right_radius: Some(px(6.0)),
-        flex_direction: Some(FlexDirection::Row),
-        flex_shrink: Some(runtime_core::Tokenized::Literal(0.0)),
-        ..Default::default()
-    };
-    let close_label_style = StyleRules {
-        font_size: Some(px(12.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(theme::TEXT_STRONG)),
-        ..Default::default()
-    };
     let label_style = section_label();
     let input_style = StyleRules {
         height: Some(px(36.0)),
@@ -355,6 +312,7 @@ pub fn ServerSettingsPanel(
                             // caller's `role` from it, and it needs to flip off
                             // for the (now former) owner without a server re-select.
                             if let Ok(members) = crate::moderation::list_members(sid0).await {
+                                crate::mentions::members_loaded(sid0, &members);
                                 mbrs2.set(members);
                             }
                         }
@@ -397,6 +355,7 @@ pub fn ServerSettingsPanel(
                             // so re-fetch it the same way `do_transfer` does —
                             // the panel rebuilds off the `members` signal key.
                             if let Ok(members) = crate::moderation::list_members(sid0).await {
+                                crate::mentions::members_loaded(sid0, &members);
                                 mbrs2.set(members);
                             }
                         }
@@ -431,8 +390,8 @@ pub fn ServerSettingsPanel(
     // Also rebuilt on open and on a server switch, so the owner check and the
     // roles section see the current server.
     let body = switch(
-        move || (b.get(), e.get(), close.get(), sid.get()),
-        move |(busy, err, _open, _sid): &(bool, String, bool, Option<i64>)| {
+        move || (section.get(), b.get(), e.get(), close.get(), sid.get()),
+        move |(tab, busy, err, _open, _sid): &(usize, bool, String, bool, Option<i64>)| {
             let self_id: i64 = crate::auth::CURRENT_USER_ID
                 .load(std::sync::atomic::Ordering::SeqCst);
             let is_owner: bool = mbrs
@@ -529,6 +488,8 @@ pub fn ServerSettingsPanel(
             };
             let row_col = move || StyleRules {
                 flex_direction: Some(FlexDirection::Column),
+                gap: Some(px(8.0)),
+                max_width: Some(px(480.0)),
                 ..Default::default()
             };
             // The add-member action row lays its controls out horizontally
@@ -543,7 +504,7 @@ pub fn ServerSettingsPanel(
             let name_row = ui! {
                 view(style = row_col()) {
                     text(style = label_style.clone()) { "Server name".to_string() }
-                    text_input(value = nm, placeholder = "New server name", style = input_style.clone())
+                    text_input(value = nm, on_change = move |v: String| nm.set(v), placeholder = "New server name", style = input_style.clone())
                     rename_btn
                 }
             };
@@ -565,7 +526,7 @@ pub fn ServerSettingsPanel(
                         color: Some(col(theme::TEXT_MUTED)),
                         ..Default::default()
                     }) { "Pass ownership to another member's numeric user id.".to_string() }
-                    text_input(value = owner, placeholder = "New owner user id", style = input_style.clone())
+                    text_input(value = owner, on_change = move |v: String| owner.set(v), placeholder = "New owner user id", style = input_style.clone())
                     transfer_btn
                 }
             };
@@ -578,7 +539,7 @@ pub fn ServerSettingsPanel(
             // submit time by `do_add_member`. `flex_grow: 1` lets the input
             // fill the row while the chip + button stay fixed-width.
             let add_uid_input = ui! {
-                text_input(value = add_uid, placeholder = "New member user id", style = StyleRules {
+                text_input(value = add_uid, on_change = move |v: String| add_uid.set(v), placeholder = "New member user id", style = StyleRules {
                     height: Some(px(34.0)),
                     background: Some(col(theme::BG_TERTIARY)),
                     border_top_left_radius: Some(px(8.0)),
@@ -633,23 +594,9 @@ pub fn ServerSettingsPanel(
                     }
                 }
             };
-            let header = ui! {
-                view(style = header_style.clone()) {
-                    text(style = title_style.clone()) { "Server Settings".to_string() }
-                    view(style = close_style.clone()) {
-                        text(style = close_label_style.clone()) { "Done".to_string() }
-                    }
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            close.set(false);
-                        }
-                        TouchResponse::CONSUMED
-                    })
-                }
-            };
             // The inline error line and the owner-gated transfer section are
             // each either the real element or an empty (zero-size) `view`, so
-            // the card is a single `ui!` with no nested in-`ui!` conditionals
+            // the panel is a single `ui!` with no nested in-`ui!` conditionals
             // (those wrap their branch in a stored reactivity closure that
             // can't hold the switch's `&String` `err` borrow — the reason the
             // other modals lift their conditions out to a top-level `if/else`).
@@ -669,57 +616,65 @@ pub fn ServerSettingsPanel(
                     view {}
                 }
             };
-            // Named roles: list, create, delete (admins and the owner).
-            let roles_el = crate::roles_settings::roles_section(sid.get());
-            // The header (title + "Done") pins to the top of the card; the
-            // sections below it live in a `scroll_view` so a small window
-            // reveals them by scrolling rather than clipping (the same
-            // `scroll_view` idiom the Profile/Settings overlays use).
+            let sections: Vec<Element> = match *tab {
+                SECTION_OVERVIEW => vec![name_row, icon_row],
+                // Named roles: create, list, delete (admins and the owner).
+                SECTION_ROLES => vec![crate::roles_settings::roles_section(sid.get())],
+                _ => vec![add_row, transfer_el],
+            };
+            let title = SECTIONS.get(*tab).copied().unwrap_or_default().to_string();
             ui! {
-                view(style = card_style.clone()) {
-                    { header }
-                    scroll_view(style = StyleRules { flex_grow: Some(runtime_core::Tokenized::Literal(1.0)), ..Default::default() }) {
-                        { name_row }
-                        { icon_row }
-                        { add_row }
-                        { transfer_el }
-                        { roles_el }
-                        { err_el }
-                    }
+                view(style = StyleRules {
+                    flex_direction: Some(FlexDirection::Column),
+                    gap: Some(px(20.0)),
+                    ..Default::default()
+                }) {
+                    text(style = StyleRules {
+                        font_size: Some(px(20.0)),
+                        font_weight: Some(FontWeight::SemiBold),
+                        color: Some(col(theme::TEXT_STRONG)),
+                        ..Default::default()
+                    }) { title }
+                    { sections }
+                    { err_el }
                 }
             }
         },
     );
 
-    // --- Full-screen backdrop + centered card --------------------------------
-    let open_chk = open;
+    // --- Sidebar: the server's name, then the sections ------------------------
+    let mut nav: Vec<Element> = vec![crate::settings_suite::nav_heading(
+        move || {
+            srv.get()
+                .iter()
+                .find(|s| Some(s.id) == sid.get())
+                .map(|s| s.name.to_uppercase())
+                .unwrap_or_default()
+        },
+        true,
+    )];
+    for (i, label) in SECTIONS.iter().enumerate() {
+        nav.push(crate::settings_suite::nav_row(label, false, section, i, None));
+    }
+
+    // --- Full-screen, like User Settings --------------------------------------
+    // Built once; collapsed to zero size while closed (the overlays' idiom).
     let wrap_style = move || StyleRules {
         position: Some(Position::Absolute),
         left: Some(px(0.0)),
         top: Some(px(0.0)),
-        width: Some(if open_chk.get() { pct(100.0) } else { px(0.0) }),
-        height: Some(if open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col(theme::OVERLAY)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
+        width: Some(if open.get() { pct(100.0) } else { px(0.0) }),
+        height: Some(if open.get() { pct(100.0) } else { px(0.0) }),
+        background: Some(col(theme::BG_PRIMARY)),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
     };
-    let card = ui! {
-        view {
-            { body }
-        }
-        .on_touch(move |_ev| TouchResponse::CONSUMED)
-    };
+    let on_close: Rc<dyn Fn()> = Rc::new(move || close.set(false));
+    let layout = crate::settings_suite::settings_layout(nav, body, Some(on_close));
     ui! {
         view(style = wrap_style) {
-            { card }
+            { layout }
         }
-        .on_touch(move |ev| {
-            if ev.phase == TouchPhase::Ended {
-                close.set(false);
-            }
-            TouchResponse::CONSUMED
-        })
+        .on_touch(move |_ev| TouchResponse::CONSUMED)
     }
 }

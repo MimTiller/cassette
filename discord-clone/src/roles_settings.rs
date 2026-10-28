@@ -3,7 +3,7 @@
 //! one. Admins and the owner edit; everyone else sees the list. Members are
 //! given roles from their profile card.
 
-use crate::style_helpers::{borderless_input, col, px, section_label};
+use crate::style_helpers::{borderless_input, col, px};
 use crate::theme;
 use discord_server::server_roles::{self, CustomRole};
 use runtime_core::{
@@ -191,9 +191,9 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
             })
             .collect();
         ui! {
-            view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(8.0)), margin_top: Some(px(8.0)), ..Default::default() }) {
+            view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(8.0)), margin_bottom: Some(px(8.0)), ..Default::default() }) {
                 view(style = StyleRules { flex_direction: Some(FlexDirection::Row), gap: Some(px(8.0)), ..Default::default() }) {
-                    text_input(value = name, placeholder = "New role name", style = StyleRules {
+                    text_input(value = name, on_change = move |v: String| name.set(v), placeholder = "New role name", style = StyleRules {
                         height: Some(px(34.0)),
                         flex_grow: Some(Tokenized::Literal(1.0)),
                         flex_shrink: Some(Tokenized::Literal(1.0)),
@@ -248,13 +248,12 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
     };
 
     ui! {
-        view(style = StyleRules { flex_direction: Some(FlexDirection::Column), margin_top: Some(px(14.0)), gap: Some(px(6.0)), ..Default::default() }) {
-            text(style = section_label()) { "Roles".to_string() }
+        view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(10.0)), max_width: Some(px(560.0)), ..Default::default() }) {
             text(style = small(theme::TEXT_MUTED)) {
                 "Roles colour names and can be @mentioned. Give a member a role from their profile card.".to_string()
             }
-            { list }
             { create }
+            { list }
             text(style = StyleRules { font_size: Some(px(12.0)), color: Some(col(theme::DANGER)), ..Default::default() }) {
                 move || error.get()
             }

@@ -121,6 +121,7 @@ pub(super) fn build(s: &ShellState) -> ModalsParts {
                             }
                         }
                         if let Ok(members) = crate::moderation::list_members(sid).await {
+                            crate::mentions::members_loaded(sid, &members);
                             live_members.set(members);
                         }
                         if let Ok(counts) = crate::servers::unread_counts(sid).await {

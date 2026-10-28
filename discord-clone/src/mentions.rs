@@ -57,7 +57,7 @@ pub fn open_user(user_id: i64, x: f32, y: f32) {
 }
 
 /// The active server's members, and the signed-in user's level there.
-pub fn set_members(server_id: Option<i64>, members: &[discord_server::server_settings::MemberInfo], self_id: i64) {
+fn set_members(server_id: Option<i64>, members: &[discord_server::server_settings::MemberInfo], self_id: i64) {
     with(|c| {
         if Some(c.roles.server_id) != server_id {
             c.roles = RolesSnapshot::default();
@@ -70,6 +70,14 @@ pub fn set_members(server_id: Option<i64>, members: &[discord_server::server_set
             .map(|m| m.role.clone())
             .unwrap_or_default();
     });
+}
+
+/// A freshly fetched roster for `server_id`: record it (and the signed-in
+/// user's level, which gates the role controls), then redraw.
+pub fn members_loaded(server_id: i64, members: &[discord_server::server_settings::MemberInfo]) {
+    let self_id = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+    set_members(Some(server_id), members, self_id);
+    bump();
 }
 
 /// Fetch `server_id`'s roles, then redraw.

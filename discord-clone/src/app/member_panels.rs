@@ -820,6 +820,7 @@ pub(super) fn live_member_panel(
                                     Ok(()) => {
                                         kick.set(None);
                                         if let Ok(fresh) = crate::moderation::list_members(sid).await {
+                                            crate::mentions::members_loaded(sid, &fresh);
                                             members.set(fresh);
                                         }
                                     }
@@ -864,6 +865,7 @@ pub(super) fn live_member_panel(
                                         Ok(()) => {
                                             kick.set(None);
                                             if let Ok(fresh) = crate::moderation::list_members(sid).await {
+                                                crate::mentions::members_loaded(sid, &fresh);
                                                 members.set(fresh);
                                             }
                                         }
@@ -914,6 +916,7 @@ pub(super) fn live_member_panel(
                                         Ok(()) => {
                                             ban.set(None);
                                             if let Ok(fresh) = crate::moderation::list_members(sid).await {
+                                                crate::mentions::members_loaded(sid, &fresh);
                                                 members.set(fresh);
                                             }
                                         }

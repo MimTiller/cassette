@@ -716,21 +716,35 @@ pub fn UserSettings(
     let mut nav: Vec<Element> = Vec::new();
     for (i, (group, label)) in SECTIONS.iter().enumerate() {
         if !group.is_empty() {
-            nav.push(ui! {
-                text(style = StyleRules {
-                    font_size: Some(px(12.0)),
-                    font_weight: Some(runtime_core::FontWeight::Bold),
-                    color: Some(col(theme::TEXT_MUTED)),
-                    padding_left: Some(px(10.0)),
-                    padding_top: Some(px(if i == 0 { 0.0 } else { 16.0 })),
-                    padding_bottom: Some(px(6.0)),
-                    ..Default::default()
-                }) { group.to_string() }
-            });
+            let group = group.to_string();
+            nav.push(nav_heading(move || group.clone(), i == 0));
         }
         nav.push(nav_row(label, false, active, i, None));
     }
-    nav.push(ui! {
+    nav.push(nav_divider());
+    nav.push(nav_row("Log Out", true, active, usize::MAX, on_logout));
+    settings_layout(nav, panel, on_close)
+}
+
+/// A sidebar group heading ("USER SETTINGS", a server's name). `first` drops
+/// the space above it.
+pub(crate) fn nav_heading(label: impl Fn() -> String + 'static, first: bool) -> Element {
+    ui! {
+        text(style = StyleRules {
+            font_size: Some(px(12.0)),
+            font_weight: Some(runtime_core::FontWeight::Bold),
+            color: Some(col(theme::TEXT_MUTED)),
+            padding_left: Some(px(10.0)),
+            padding_top: Some(px(if first { 0.0 } else { 16.0 })),
+            padding_bottom: Some(px(6.0)),
+            ..Default::default()
+        }) { move || label() }
+    }
+}
+
+/// The thin rule between sidebar groups.
+pub(crate) fn nav_divider() -> Element {
+    ui! {
         view(style = StyleRules {
             height: Some(px(1.0)),
             background: Some(col(theme::DIVIDER)),
@@ -740,10 +754,14 @@ pub fn UserSettings(
             margin_right: Some(px(10.0)),
             ..Default::default()
         }) {}
-    });
-    nav.push(nav_row("Log Out", true, active, usize::MAX, on_logout));
+    }
+}
 
-    let close = on_close;
+/// The full-screen settings layout shared by User Settings and Server
+/// Settings: `nav` in a sidebar on the left (right-aligned in its half like
+/// Discord's), `panel` in a centred scrolling column, and a close button with
+/// "ESC" on the right.
+pub(crate) fn settings_layout(nav: Vec<Element>, panel: Element, close: Option<Rc<dyn Fn()>>) -> Element {
     ui! {
         view(style = StyleRules {
             width: Some(pct(100.0)),
@@ -853,7 +871,7 @@ pub fn UserSettings(
 /// One sidebar row: a section (selects `index`), or with `danger` the Log
 /// Out row (runs `action`). Hover lightens it; the selected section is
 /// filled.
-fn nav_row(label: &str, danger: bool, active: Signal<usize>, index: usize, action: Option<Rc<dyn Fn()>>) -> Element {
+pub(crate) fn nav_row(label: &str, danger: bool, active: Signal<usize>, index: usize, action: Option<Rc<dyn Fn()>>) -> Element {
     let hovered = signal(false);
     let label = label.to_string();
     ui! {

@@ -964,6 +964,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 }
             }
             if let Ok(members) = crate::moderation::list_members(sid).await {
+                crate::mentions::members_loaded(sid, &members);
                 lmbrs.set(members);
             }
             crate::mentions::load_roles(sid);
