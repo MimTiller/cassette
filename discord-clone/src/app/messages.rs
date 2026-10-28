@@ -27,7 +27,6 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     };
     let hash_style = StyleRules { font_size: Some(px(20.0)), color: Some(col(TEXT_MUTED)), ..Default::default() };
     let title_style = StyleRules { font_size: Some(px(15.0)), font_weight: Some(FontWeight::SemiBold), color: Some(col(TEXT)), ..Default::default() };
-    let topic_style = StyleRules { font_size: Some(px(13.0)), color: Some(col(TEXT_MUTED)), max_width: Some(px(220.0)), height: Some(px(18.0)), overflow: Some(Overflow::Hidden), ..Default::default() };
     // Small muted-grey icon button (the gavel) that opens the Server
     // Moderation panel. A `Copy` handle on `moderation_open` is captured by
     // its `.on_touch` closure below.
@@ -46,8 +45,8 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
 
     // Live-mode header: a live channel's name has no mock counterpart, so it's
     // looked up from `live_channels` (fetched when the live server was
-    // selected) and the topic is the static "No topic set yet" (backend
-    // channels have no topic column). `live_channels` is a `Copy` `Signal`, so
+    // selected). Backend channels have no topic, so the header shows just the
+    // channel name. `live_channels` is a `Copy` `Signal`, so
     // capturing it here is cheap; the arm re-runs whenever
     // `active_live_channel` (in the key) changes. `None` falls through to the
     // mock header below, byte-for-byte unchanged.
@@ -99,7 +98,6 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
             let header_style = header_style.clone();
             let hash_style = hash_style.clone();
             let title_style = title_style.clone();
-            let topic_style = topic_style.clone();
             let moderation_style = moderation_style.clone();
             let search_server_name = live_servers.get().into_iter().find(|x| Some(x.id) == active_live_server.get()).map(|x| x.name).unwrap_or_default();
             // [Feature 16] Real account with no live channel: don't fall
@@ -123,7 +121,6 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                     .find(|c| c.id == live_id)
                     .map(|c| c.name.clone())
                     .unwrap_or_default();
-                let topic = "No topic set yet".to_string();
                 // Hoisted before `ui!` (the macro has no `let`-child form):
                 // `pin_live` feeds the pin icon's open handler; `pin_count_label`
                 // is the badge's count text (read from the `switch` key's tuple).
@@ -136,7 +133,6 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                     view(style = header_style) {
                         text(style = hash_style) { "#".to_string() }
                         text(style = title_style) { title }
-                        text(style = topic_style) { topic }
                         // Spacer: eats the row's remaining width so the pin /
                         // invite actions sit at the far right.
                         view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}

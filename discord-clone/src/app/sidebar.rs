@@ -162,6 +162,8 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                     margin_left: Some(px(8.0)),
                     margin_right: Some(px(8.0)),
                     padding_left: Some(px(12.0)),
+                    // Gap between the channel-type icon and the name.
+                    gap: Some(px(6.0)),
                     padding_right: Some(px(8.0)),
                     background: Some(col("transparent")),
                     border_top_left_radius: Some(px(8.0)),
@@ -244,7 +246,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                     // an `Rc<String>` (`Clone`), so neither handler moves a `String`
                     // out of this `Fn` closure (E0507) — the established idiom for
                     // non-`Copy` data in `'static` handlers here.
-                    let chan_actions = |cid: i64, nm: Rc<String>, u_count: i64, u_mentions: i64, hovered: Signal<bool>, row_ref: Ref<ViewHandle>| -> Element {
+                    let chan_actions = |cid: i64, nm: Rc<String>, u_mentions: i64, hovered: Signal<bool>, row_ref: Ref<ViewHandle>| -> Element {
                         // `nm` is an `Rc` (`Clone`, not `Copy`): each `move` tap
                         // handler captures its own clone, and reads the name via
                         // `(*nm)` without ever moving the `String` out of this
@@ -252,19 +254,10 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                         let nm_rename = nm.clone();
                         let nm_delete = nm.clone();
                         // The unread badge, fed by the REAL per-channel
-                        // `unread_counts` data: a red count pill whenever
-                        // `u_count > 0` (the same pill shape the mock rows and
-                        // this row used for mentions). When the channel also
-                        // has an unread @mention, the pill shows the
-                        // mention count — the exact distinction the mock
-                        // sidebar makes for "has an unread @mention".
-                        // Mirror the mock sidebar's badge treatment exactly
-                        // (see the mock `total_mentions`/`total_unread` branch
-                        // above): a red numbered pill for an unread @mention
-                        // (showing the mention count), a small plain white dot
-                        // for unread with no mention, and nothing for a read
-                        // channel. The live row's data is the real
-                        // `unread_counts` pair, not the mock `mentions` field.
+                        // `unread_counts` data: a red count pill showing the
+                        // mention count only when the channel has an unread
+                        // @mention (a plain unread has no pill here — its
+                        // unread pill sits at the row's left edge instead).
                         let badge = if u_mentions > 0 {
                             Some(ui! {
                                 view(style = StyleRules {
@@ -289,22 +282,6 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                         ..Default::default()
                                     }) { u_mentions.to_string() }
                                 }
-                            })
-                        } else if u_count > 0 {
-                            // Plain dot: unread but no mention — Discord shows a
-                            // small white indicator instead of the red badge.
-                            Some(ui! {
-                                view(style = StyleRules {
-                                    width: Some(px(10.0)),
-                                    height: Some(px(10.0)),
-                                    background: Some(col(TEXT)),
-                                    border_top_left_radius: Some(px(5.0)),
-                                    border_top_right_radius: Some(px(5.0)),
-                                    border_bottom_left_radius: Some(px(5.0)),
-                                    border_bottom_right_radius: Some(px(5.0)),
-                                    flex_shrink: Some(runtime_core::Tokenized::Literal(0.0)),
-                                    ..Default::default()
-                                }) {}
                             })
                         } else {
                             None
@@ -485,9 +462,61 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                             // (label also brightens) — nothing changes when no
                             // live channel is active, so the unselected rows
                             // render exactly as before.
+                            // Reactive, per-row — the mock path's rows work the
+                            // same way: background fills with the active colour
+                            // when selected, and the glyph/label go semi-bold
+                            // (label also brightens) — nothing changes when no
+                            // live channel is active, so the unselected rows
+                            // render exactly as before.
+                            // Hover + selection state minted here (before the
+                            // style closures below) so every closure reads the
+                            // same signals the row's handlers set.
+                            let hovered = signal(false);
+                            let row_ref: Ref<ViewHandle> = Ref::<ViewHandle>::new();
+                            // Unread with no mention shows Discord's unread
+                            // pill: a small white sliver at the very left edge
+                            // of the row (a mention keeps the red count pill on
+                            // the right instead, inside `chan_actions`).
+                            let unread_pill = ui! {
+                                switch(
+                                    move || u_count > 0 && u_mentions == 0,
+                                    move |on: &bool| {
+                                        if !*on {
+                                            ui! {
+                                                view(style = StyleRules {
+                                                    width: Some(px(0.0)),
+                                                    height: Some(px(0.0)),
+                                                    ..Default::default()
+                                                }) {}
+                                            }
+                                        } else {
+                                            ui! {
+                                                view(style = StyleRules {
+                                                    position: Some(Position::Absolute),
+                                                    // Row starts 8px inside the
+                                                    // sidebar — pull the pill to
+                                                    // the sidebar's left edge.
+                                                    left: Some(px(-8.0)),
+                                                    top: Some(px(13.0)),
+                                                    width: Some(px(4.0)),
+                                                    height: Some(px(8.0)),
+                                                    background: Some(col(PILL)),
+                                                    border_top_left_radius: Some(px(2.0)),
+                                                    border_top_right_radius: Some(px(2.0)),
+                                                    border_bottom_left_radius: Some(px(2.0)),
+                                                    border_bottom_right_radius: Some(px(2.0)),
+                                                    ..Default::default()
+                                                }) {}
+                                            }
+                                        }
+                                    },
+                                )
+                            };
                             let row_style = move || StyleRules {
                                 background: Some(col(if live_sel.get() == Some(cid) {
                                     BG_ACTIVE
+                                } else if hovered.get() {
+                                    BG_HOVER
                                 } else {
                                     "transparent"
                                 })),
@@ -502,19 +531,25 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                 ..live_glyph_style()
                             };
                             let label_style = move || StyleRules {
-                                font_weight: Some(if live_sel.get() == Some(cid) {
+                                font_weight: Some(if live_sel.get() == Some(cid) || u_count > 0 {
                                     FontWeight::SemiBold
                                 } else {
                                     FontWeight::Normal
                                 }),
-                                // A channel with real unread messages brightens
-                                // its name (the mock rows do the same for
-                                // `c.unread > 0`).
+                                // Inactive names sit in muted grey; a hovered
+                                // row brightens them, the open channel and any
+                                // channel with real unread messages go white.
                                 color: Some(col(if live_sel.get() == Some(cid) || u_count > 0 {
                                     TEXT
-                                } else {
+                                } else if hovered.get() {
                                     TEXT_CHANNEL
+                                } else {
+                                    TEXT_MUTED
                                 })),
+                                // Names clamp to one line so long ones end
+                                // "…" instead of pushing the action cluster.
+                                flex_shrink: Some(grow(1.0)),
+                                max_lines: Some(1u32),
                                 ..live_label_style()
                             };
                             // The right-side action cluster for this row (mention
@@ -522,15 +557,9 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                             // menu), built once per row. `chan_actions` is
                             // `Copy` (all `Copy` captures), so calling it here
                             // does not move it out of the `switch` render
-                            // closure. `hovered` is minted PER ROW here (not
-                            // threaded through the shared row builder — the
-                            // per-row idiom `message_action_bar` uses) so each
-                            // row's gear tracks its own hover, and `row_ref`
-                            // anchors the menu portal to this row.
-                            let hovered = signal(false);
-                            let row_ref: Ref<ViewHandle> = Ref::<ViewHandle>::new();
+                            // closure.
                             let actions =
-                                chan_actions(cid, Rc::new(name.clone()), u_count, u_mentions, hovered, row_ref);
+                                chan_actions(cid, Rc::new(name.clone()), u_mentions, hovered, row_ref);
                             let row = if is_text {
                                 // Voice rows stay non-clickable for now — a later
                                 // task handles voice selection. Text rows select
@@ -543,9 +572,10 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                     view(style = row_style) {
                                         icon(HASH)
                                             .color(|| theme::live(TEXT_MUTED))
-                                            .size(14.0)
+                                            .size(18.0)
                                         text(style = label_style) { name }
                                         { actions }
+                                        { unread_pill }
                                     }
                                     .on_touch(move |ev| {
                                         // Right-click: the channel menu (a
@@ -599,9 +629,10 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                     view(style = row_style) {
                                         icon(VOLUME_2)
                                             .color(|| theme::live(TEXT_MUTED))
-                                            .size(14.0)
+                                            .size(18.0)
                                         text(style = label_style) { name }
                                         { actions }
+                                        { unread_pill }
                                     }
                                     .bind(row_ref)
                                     .on_hover(move |on| hovered.set(on))
@@ -636,77 +667,20 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                             view { live_rows }
                         }
                     };
-                    // The "New Channel" "+" button on the live header's right
-                    // edge: opens the create-channel modal, resetting its
-                    // per-open state so a re-open starts fresh (the same
-                    // reset-on-open idiom the rail's Join flow uses).
-                    let add_btn = ui! {
-                        view(style = chan_btn_style.clone(), test_id = "live-channel-add") {
-                            icon(PLUS).color(|| theme::live(TEXT_MUTED)).size(14.0)
-                        }
-                        .on_touch(move |ev| {
-                            if ev.phase == TouchPhase::Ended {
-                                cc_name.set(String::new());
-                                cc_kind.set("text".to_string());
-                                cc_busy.set(false);
-                                cc_err.set(String::new());
-                                cc_open.set(true);
-                            }
-                            TouchResponse::CONSUMED
-                        })
+                    // The header's server-name label: clamped to one line
+                    // ("…" tails it when it doesn't fit), and `max_lines`
+                    // makes it shrink below its natural width so the chevron
+                    // next to it keeps its room.
+                    let header_label_style = move || StyleRules {
+                        font_size: Some(px(15.0)),
+                        font_weight: Some(FontWeight::SemiBold),
+                        color: Some(col(TEXT)),
+                        max_lines: Some(1u32),
+                        ..Default::default()
                     };
-                    // The "Invite People" (USERS) icon on the live header's
-                    // right edge (next to the gear / + buttons): opens the
-                    // LIVE invite overlay. On open it resets the expiry picker
-                    // to the default (30 min) and clears any previous mint /
-                    // error, so a re-open starts fresh — the same
-                    // reset-on-open idiom as the create-channel "+" above.
-                    let invite_btn = ui! {
-                        view(style = chan_btn_style.clone(), test_id = "live-invite") {
-                            icon(USERS).color(|| theme::live(TEXT_MUTED)).size(14.0)
-                        }
-                        .on_touch(move |ev| {
-                            if ev.phase == TouchPhase::Ended {
-                                invite_expiry.set(0);
-                                invite_created.set(None);
-                                invite_err.set(String::new());
-                                invite_mode.set(true);
-                            }
-                            TouchResponse::CONSUMED
-                        })
-                    };
-                    // The "Server Settings" gear on the live header's right edge
-                    // (next to the "+" button): opens the LIVE server-settings
-                    // overlay (rename / icon / transfer ownership). On open it
-                    // seeds the name + icon inputs from the active live server
-                    // (looked up in `live_servers`) and resets the transfer /
-                    // error / busy state, so a re-open starts fresh — the same
-                    // reset-on-open idiom as the create-channel "+" above.
-                    let gear_btn = ui! {
-                        view(style = chan_btn_style.clone(), test_id = "live-server-settings") {
-                            icon(SETTINGS).color(|| theme::live(TEXT_MUTED)).size(14.0)
-                        }
-                        .on_touch(move |ev| {
-                            if ev.phase == TouchPhase::Ended {
-                                if let Some(active_id) = active_live_server.get() {
-                                    let cur = live_servers.get().into_iter().find(|s| s.id == active_id);
-                                    if let Some(s) = cur {
-                                        ss_name.set(s.name.clone());
-                                        ss_icon.set(s.icon_url.clone().unwrap_or_default());
-                                    }
-                                }
-                                ss_owner.set(String::new());
-                                // Reset the add-member inputs too, so a re-open
-                                // starts with an empty id and the default role.
-                                ss_add_user_id.set(String::new());
-                                ss_add_role.set("member".to_string());
-                                ss_busy.set(false);
-                                ss_err.set(String::new());
-                                ss_open.set(true);
-                            }
-                            TouchResponse::CONSUMED
-                        })
-                    };
+                    // Hovering the name+chevron row previews the click that
+                    // opens the server dropdown — same hover fill as rows.
+                    let header_hovered = signal(false);
                     // The user profile bar is the bottom-left of the sidebar in
                     // BOTH branches (Discord convention). The mock branch builds
                     // it as `user` below; the live branch must do the same. Real
@@ -777,35 +751,32 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                     ui! {
                         view(style = sidebar_style.clone()) {
                             view(style = StyleRules { position: Some(Position::Relative), ..sidebar_header_style.clone() }) {
-                                view(style = StyleRules {
+                                view(style = move || StyleRules {
                                     flex_direction: Some(FlexDirection::Row),
                                     align_items: Some(AlignItems::Center),
                                     gap: Some(px(6.0)),
-                                    flex_shrink: Some(runtime_core::Tokenized::Literal(1.0)),
+                                    // The name+chevron row spans the header's
+                                    // full width so it is the whole click target
+                                    // for the dropdown.
+                                    flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
                                     overflow: Some(runtime_core::Overflow::Hidden),
+                                    background: Some(col(if header_hovered.get() { BG_HOVER } else { "transparent" })),
+                                    border_top_left_radius: Some(px(6.0)),
+                                    border_top_right_radius: Some(px(6.0)),
+                                    border_bottom_left_radius: Some(px(6.0)),
+                                    border_bottom_right_radius: Some(px(6.0)),
                                     ..Default::default()
                                 }, test_id = "server-header") {
-                                    text(style = StyleRules {
-                                        font_size: Some(px(15.0)),
-                                        font_weight: Some(FontWeight::SemiBold),
-                                        color: Some(col(TEXT)),
-                                        ..Default::default()
-                                    }) { move || header_name() }
+                                    text(style = header_label_style.clone()) { move || header_name() }
                                     icon(CHEVRON_DOWN).color(|| theme::live(TEXT_MUTED)).size(14.0)
                                 }
+                                .on_hover(move |on| header_hovered.set(on))
                                 .on_touch(move |ev| {
                                     if ev.phase == TouchPhase::Ended {
                                         server_menu_open.set(!server_menu_open.get());
                                     }
                                     TouchResponse::CONSUMED
                                 })
-                                view(style = StyleRules {
-                                    flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
-                                    ..Default::default()
-                                }) {}
-                                { invite_btn }
-                                { gear_btn }
-                                { add_btn }
                                 { server_menu }
                             }
                             // Channel list fills the available vertical space
