@@ -56,7 +56,7 @@ fn border_width(px: f32) -> Tokenized<f32> {
 /// One buffered live DM message: the wire fields needed to render a row —
 /// `author_username`, `content`, `created_at` (UTC epoch ms), and
 /// `edited_at` (UTC epoch ms, `None` until the first edit).
-type LiveDmMsg = (String, String, i64, Option<i64>);
+pub(crate) type LiveDmMsg = (String, String, i64, Option<i64>);
 /// How far above the composer strip the floating GIF picker anchors (same
 /// offset as the channel composer in `app/composer.rs`).
 const GIF_PICKER_BOTTOM_PX: f32 = 76.0;
@@ -299,11 +299,17 @@ fn live_dm_row(
         .cloned()
         .or_else(|| dm.participants.first().cloned());
     let dm_id = dm.channel_id;
-    let name = other
-        .as_ref()
-        .map(|p| p.username.clone())
-        .unwrap_or_else(|| format!("user #{}", dm_id));
-    let initial = name.chars().next().unwrap_or('?').to_string();
+    let is_group = dm.is_group;
+    let title = crate::group_dm::dm_title(&dm);
+    let subtitle = is_group.then(|| format!("{} Members", dm.participants.len()));
+    // A 1:1 row is keyed by the other person's username (avatar lookups); a
+    // group row has no avatar, just the group icon.
+    let name = if is_group {
+        String::new()
+    } else {
+        other.as_ref().map(|p| p.username.clone()).unwrap_or_else(|| format!("user #{}", dm_id))
+    };
+    let initial = title.chars().next().unwrap_or('?').to_string();
     // The other participant's uploaded avatar (from the shared client
     // registry, fed by `list_dms`), gated: only a resolvable URL (data:/http(s):)
     // may mount — an unresolvable src is what rendered a broken-image
@@ -387,6 +393,12 @@ fn live_dm_row(
                 },
             )
         }
+    } else if is_group {
+        ui! {
+            view(style = avatar_style) {
+                runtime_core::icon(icons_lucide::USERS).color(|| theme::live(theme::TEXT_STRONG)).size(18.0)
+            }
+        }
     } else {
         ui! {
             view(style = avatar_style) {
@@ -394,6 +406,9 @@ fn live_dm_row(
             }
         }
     };
+    let subtitle_el = subtitle.map(|line| {
+        ui! { text(style = StyleRules { font_size: Some(px(12.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { line } }
+    });
 
     // Selecting a DM: set `active` (rebuilds the list to highlight it) and
     // fetch its history. Clone the `Rc` before handing it to the `async move`
@@ -402,7 +417,17 @@ fn live_dm_row(
     ui! {
         view(style = row_style) {
             { avatar_chip }
-            text(style = name_style) { crate::auth::shown_name(&name) }
+            view(style = StyleRules {
+                flex_direction: Some(FlexDirection::Column),
+                flex_grow: Some(grow(1.0)),
+                min_width: Some(px(0.0)),
+                ..Default::default()
+            }) {
+                text(style = name_style) { title }
+                if let Some(el) = subtitle_el {
+                    el
+                }
+            }
         }
         .on_hover(move |on| hovered.set(on))
         .on_touch(move |ev| {
@@ -411,22 +436,7 @@ fn live_dm_row(
                 // Persist as this account's last open DM so a refresh re-opens
                 // THIS conversation (keyed by user id in localStorage).
                 crate::auth::save_last_view_dm(dm_id);
-                let msgs = msgs.clone();
-                let rev = rev.clone();
-                runtime_core::driver::spawn_async(async move {
-                    if let Ok(history) = dms::list_dm_messages(dm_id, None).await {
-                        msgs.borrow_mut().clear();
-                        msgs.borrow_mut().extend(history.into_iter().map(|m| {
-                            (
-                                m.author_username,
-                                m.content,
-                                m.created_at,
-                                m.edited_at,
-                            )
-                        }));
-                        rev.set(rev.get() + 1);
-                    }
-                });
+                crate::group_dm::load_history(dm_id, msgs.clone(), rev);
             }
             TouchResponse::CONSUMED
         })
@@ -448,6 +458,7 @@ fn live_dm_list(
     friends: Signal<Vec<crate::friends_view::FriendRow>>,
     members: Signal<Vec<crate::moderation::MemberInfo>>,
     friends_entry: Rc<dyn Fn() -> Element>,
+    picker: Signal<Option<crate::group_dm::Picker>>,
 ) -> Element {
     let column_style = StyleRules {
         width: Some(px(240.0)),
@@ -493,7 +504,23 @@ fn live_dm_list(
                 view(style = column_style) {
                     { find_row }
                     { entry }
-                    text(style = section_style) { "Direct Messages".to_string() }
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Row),
+                        align_items: Some(AlignItems::Center),
+                        padding_right: Some(px(16.0)),
+                        ..Default::default()
+                    }) {
+                        text(style = StyleRules { flex_grow: Some(grow(1.0)), ..section_style }) { "Direct Messages".to_string() }
+                        view(test_id = "new-group-dm") {
+                            runtime_core::icon(icons_lucide::PLUS).color(|| theme::live(theme::TEXT_MUTED)).size(16.0)
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                picker.set(Some(crate::group_dm::Picker::NewGroup));
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                    }
                     view(style = StyleRules {
                         flex_grow: Some(grow(1.0)),
                         overflow: Some(Overflow::Hidden),
@@ -524,7 +551,11 @@ fn live_dm_conversation(
     active: Signal<Option<i64>>,
     msgs: Rc<RefCell<Vec<LiveDmMsg>>>,
     rev: Signal<u32>,
+    picker: Signal<Option<crate::group_dm::Picker>>,
+    members_open: Signal<bool>,
 ) -> Element {
+    let renaming = signal(false);
+    let rename_text = signal(String::new());
     let pane_style = StyleRules {
         flex_grow: Some(grow(1.0)),
         background: Some(col(theme::BG_PRIMARY)),
@@ -590,8 +621,8 @@ fn live_dm_conversation(
     // channel list in `app.rs` uses. The whole pane (header + rows + composer)
     // is built inside this render, since the header name depends on `active`.
     let body = switch(
-        move || (active.get(), rev.get()),
-        move |(_cid, _r): &(Option<i64>, u32)| {
+        move || (active.get(), rev.get(), live_dms.get(), members_open.get(), renaming.get()),
+        move |(_cid, _r, _dms, _members, _renaming): &(Option<i64>, u32, Vec<Dm>, bool, bool)| {
             // `switch`'s render is `Fn` (re-called on every key change) — clone
             // the captured styles so we borrow them rather than move them out.
             let pane_style = pane_style.clone();
@@ -713,21 +744,14 @@ fn live_dm_conversation(
                     }
                 };
             }
-            // Header: the other participant's name.
-            let other_name = live_dms
-                .get()
-                .iter()
-                .find(|dm| dm.channel_id == cid)
-                .and_then(|dm| {
-                    let me = current_user_id();
-                    dm.participants
-                        .iter()
-                        .find(|p| p.user_id != me)
-                        .cloned()
-                        .or_else(|| dm.participants.first().cloned())
-                })
-                .map(|p| crate::auth::shown_name(&p.username))
+            // Header: the conversation's title; a group also gets rename,
+            // "add people" and "members" controls.
+            let this_dm = live_dms.get().into_iter().find(|dm| dm.channel_id == cid);
+            let other_name = this_dm
+                .as_ref()
+                .map(crate::group_dm::dm_title)
                 .unwrap_or_else(|| format!("user #{}", cid));
+            let is_group = this_dm.as_ref().is_some_and(|d| d.is_group);
             let header_style = StyleRules {
                 padding_top: Some(px(10.0)),
                 padding_bottom: Some(px(10.0)),
@@ -735,24 +759,139 @@ fn live_dm_conversation(
                 padding_right: Some(px(16.0)),
                 border_bottom_width: Some(border_width(1.0)),
                 border_bottom_color: Some(col(theme::BG_TERTIARY)),
+                flex_direction: Some(FlexDirection::Row),
+                align_items: Some(AlignItems::Center),
+                gap: Some(px(12.0)),
                 ..Default::default()
             };
             let title_style = StyleRules {
                 font_size: Some(px(15.0)),
                 font_weight: Some(FontWeight::SemiBold),
                 color: Some(col(theme::TEXT_STRONG)),
+                min_width: Some(px(0.0)),
                 ..Default::default()
+            };
+            let title_el = if is_group && renaming.get() {
+                let save = move |ev: &KeyEvent| match ev.key.as_str() {
+                    "Enter" => {
+                        let name = rename_text.get();
+                        runtime_core::driver::spawn_async(async move {
+                            let input = discord_server::dms::RenameGroupDmInput { dm_id: cid, name };
+                            if discord_server::dms::rename_group_dm(input).await.is_ok() {
+                                renaming.set(false);
+                            }
+                        });
+                        KeyOutcome::PreventDefault
+                    }
+                    "Escape" => {
+                        renaming.set(false);
+                        KeyOutcome::PreventDefault
+                    }
+                    _ => KeyOutcome::Default,
+                };
+                ui! {
+                    text_input(
+                        value = rename_text,
+                        on_change = move |v: String| rename_text.set(v),
+                        placeholder = "Group name (Enter to save, Esc to cancel)",
+                        style = StyleRules {
+                            width: Some(px(320.0)),
+                            height: Some(px(30.0)),
+                            padding_left: Some(px(8.0)),
+                            background: Some(col(theme::BG_TERTIARY)),
+                            color: Some(col(theme::TEXT_STRONG)),
+                            font_size: Some(px(15.0)),
+                            ..borderless_input()
+                        },
+                    )
+                    .on_key_down(save)
+                }
+            } else {
+                let current = this_dm.as_ref().and_then(|d| d.name.clone()).unwrap_or_default();
+                ui! {
+                    view(style = StyleRules { min_width: Some(px(0.0)), ..Default::default() }) {
+                        text(style = title_style) { other_name.clone() }
+                    }
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended && is_group {
+                            rename_text.set(current.clone());
+                            renaming.set(true);
+                        }
+                        TouchResponse::CONSUMED
+                    })
+                }
+            };
+            let group_controls = is_group.then(|| {
+                let member_count = this_dm.as_ref().map_or(0, |d| d.participants.len());
+                let members_color = move || theme::live(if members_open.get() { theme::TEXT_STRONG } else { theme::TEXT_MUTED });
+                ui! {
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Row),
+                        align_items: Some(AlignItems::Center),
+                        gap: Some(px(14.0)),
+                        ..Default::default()
+                    }) {
+                        text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) {
+                            format!("{member_count} members")
+                        }
+                        view(test_id = "group-add-people") {
+                            runtime_core::icon(icons_lucide::USER_PLUS).color(|| theme::live(theme::TEXT_MUTED)).size(18.0)
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                picker.set(Some(crate::group_dm::Picker::AddTo(cid)));
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                        view(test_id = "group-members-toggle") {
+                            runtime_core::icon(icons_lucide::USERS).color(members_color).size(18.0)
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                members_open.set(!members_open.get());
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                    }
+                }
+            });
+            let header_el = ui! {
+                view(style = header_style) {
+                    { title_el }
+                    view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
+                    if let Some(el) = group_controls {
+                        el
+                    }
+                }
+            };
+            // A group's members panel sits to the right of the conversation.
+            let side_panel = (is_group && members_open.get())
+                .then(|| this_dm.as_ref().map(crate::group_dm::members_panel))
+                .flatten();
+            let wrap = move |pane: Element| -> Element {
+                match side_panel {
+                    Some(panel) => ui! {
+                        view(style = StyleRules {
+                            flex_grow: Some(grow(1.0)),
+                            flex_direction: Some(FlexDirection::Row),
+                            overflow: Some(Overflow::Hidden),
+                            ..Default::default()
+                        }) {
+                            { pane }
+                            { panel }
+                        }
+                    },
+                    None => pane,
+                }
             };
 
             let now = crate::data::now_secs();
             let mine: Vec<LiveDmMsg> = msgs.borrow().clone();
             if mine.is_empty() {
                 // No messages yet: a centered, muted hint (plus the composer).
-                return ui! {
+                return wrap(ui! {
                     view(style = pane_style) {
-                        view(style = header_style) {
-                            text(style = title_style) { other_name }
-                        }
+                        { header_el }
                         view(style = StyleRules {
                             flex_grow: Some(grow(1.0)),
                             align_items: Some(AlignItems::Center),
@@ -767,7 +906,7 @@ fn live_dm_conversation(
                         }
                         composer_el
                     }
-                };
+                });
             }
             // Message-grouping state carried across rows (oldest-first):
             // the previous row's author + timestamp. An edited message keeps
@@ -794,11 +933,9 @@ fn live_dm_conversation(
                 ));
                 prev = Some((author.clone(), ts_s));
             }
-            ui! {
+            wrap(ui! {
                 view(style = pane_style) {
-                    view(style = header_style) {
-                        text(style = title_style) { other_name }
-                    }
+                    { header_el }
                     view(style = StyleRules {
                         flex_grow: Some(grow(1.0)),
                         overflow: Some(Overflow::Hidden),
@@ -816,7 +953,7 @@ fn live_dm_conversation(
                     }
                     composer_el
                 }
-            }
+            })
         },
     );
 
@@ -838,6 +975,7 @@ fn live_dm_conversation(
 /// the live DM overlay so it only does work when the overlay is open.
 pub fn dm_incoming_effect(
     frame_seq: Signal<Option<discord_server::server_settings::WsServerMsg>>,
+    live_dms: Signal<Vec<Dm>>,
     active: Signal<Option<i64>>,
     msgs: Rc<RefCell<Vec<LiveDmMsg>>>,
     rev: Signal<u32>,
@@ -848,6 +986,9 @@ pub fn dm_incoming_effect(
     switch(
         move || frame_seq.get(),
         move |frame: &Option<discord_server::server_settings::WsServerMsg>| {
+            if let Some(discord_server::server_settings::WsServerMsg::DmChanged { .. }) = frame {
+                crate::group_dm::refresh(live_dms, dm_active, dm_buf.clone(), dm_rev);
+            }
             if let Some(discord_server::server_settings::WsServerMsg::DmMessage {
                 message_id: _,
                 dm_id,
@@ -935,7 +1076,10 @@ pub fn live_dm_screen(
     friends_open: Signal<bool>,
     friends_panel: Rc<dyn Fn() -> Element>,
 ) -> Element {
-    let effect = dm_incoming_effect(frame_seq, active.clone(), msgs.clone(), rev.clone());
+    let effect = dm_incoming_effect(frame_seq, live_dms, active.clone(), msgs.clone(), rev.clone());
+    let picker: Signal<Option<crate::group_dm::Picker>> = signal(None);
+    let members_open = signal(true);
+    let picker_el = crate::group_dm::picker_dialog(picker, live_dms, active, msgs.clone(), rev);
     // Main area: the selected DM conversation, or — while the Friends panel
     // is open (toggled by the "Friends" entry at the top of the list column)
     // — the panel itself. `Element` is not `Clone`, so the panel and the
@@ -956,6 +1100,8 @@ pub fn live_dm_screen(
                     conv_active.clone(),
                     conv_msgs.clone(),
                     conv_rev.clone(),
+                    picker,
+                    members_open,
                 )
             }
         },
@@ -966,11 +1112,13 @@ pub fn live_dm_screen(
             height: Some(pct(100.0)),
             flex_direction: Some(FlexDirection::Row),
             overflow: Some(Overflow::Hidden),
+            position: Some(runtime_core::Position::Relative),
             ..Default::default()
         }) {
-            live_dm_list(live_dms.clone(), active.clone(), msgs.clone(), rev.clone(), new_id, friends, members, friends_entry)
+            live_dm_list(live_dms.clone(), active.clone(), msgs.clone(), rev.clone(), new_id, friends, members, friends_entry, picker)
             main
             effect
+            picker_el
         }
     }
 }
