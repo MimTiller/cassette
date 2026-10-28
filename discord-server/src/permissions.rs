@@ -26,6 +26,7 @@
 //! roles, members and overwrites in one go and answers questions from them.
 
 use serde::{Deserialize, Serialize};
+use server::{server, ServerError};
 
 #[cfg(feature = "server")]
 use crate::db::Db;
@@ -437,6 +438,252 @@ pub fn member_in(db: &Db, server_id: i64, user_id: i64) -> Result<(ServerContext
     Ok((ctx, member))
 }
 
+// ── service and endpoints ────────────────────────────────────────────────────
+
+/// The input for [`my_permissions`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MyPermissionsInput {
+    pub server_id: i64,
+}
+
+/// What the caller may do in one server: server-wide, and per channel (only
+/// the channels they can see are listed).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MyPermissions {
+    pub server_id: i64,
+    pub server: Permissions,
+    pub channels: Vec<(i64, Permissions)>,
+    pub rank: Rank,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelOverwritesInput {
+    pub channel_id: i64,
+}
+
+/// Set one target's overwrite on a channel. Allowing and denying nothing
+/// removes it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetOverwriteInput {
+    pub channel_id: i64,
+    pub target: Target,
+    pub allow: Permissions,
+    pub deny: Permissions,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetEveryoneInput {
+    pub server_id: i64,
+    pub permissions: Permissions,
+}
+
+/// Permission reads and edits; `caller` is the acting user.
+#[cfg(feature = "server")]
+pub struct PermissionService {
+    db: Db,
+}
+
+#[cfg(feature = "server")]
+impl PermissionService {
+    pub fn new(db: Db) -> Self {
+        Self { db }
+    }
+
+    pub fn mine(&self, caller: i64, server_id: i64) -> Result<MyPermissions, String> {
+        let (ctx, member) = member_in(&self.db, server_id, caller)?;
+        let channels = ctx
+            .all_channels(&member)
+            .into_iter()
+            .filter(|(_, p)| p.contains(Permissions::VIEW_CHANNEL))
+            .collect();
+        Ok(MyPermissions { server_id, server: member.server, channels, rank: member.rank })
+    }
+
+    /// The caller's context and permissions in `channel_id`, which they must
+    /// be able to manage. Returns the server context, the caller and their
+    /// permissions in the channel.
+    fn require_manage_channel(&self, caller: i64, channel_id: i64) -> Result<(ServerContext, Member, Permissions), String> {
+        let server_id = self.db.channel_full(channel_id).ok_or("channel not found")?.1;
+        let (ctx, member) = member_in(&self.db, server_id, caller)?;
+        let perms = ctx.in_channel(&member, channel_id);
+        if !perms.contains(Permissions::VIEW_CHANNEL) {
+            return Err("channel not found".into());
+        }
+        if !perms.contains(Permissions::MANAGE_CHANNELS) {
+            return Err(missing(Permissions::MANAGE_CHANNELS));
+        }
+        Ok((ctx, member, perms))
+    }
+
+    pub fn overwrites(&self, caller: i64, channel_id: i64) -> Result<Vec<Overwrite>, String> {
+        let (ctx, _, _) = self.require_manage_channel(caller, channel_id)?;
+        Ok(ctx.overwrites(channel_id).to_vec())
+    }
+
+    /// Set `target`'s overwrite on `channel_id` and return the channel's
+    /// overwrites afterwards. Returns the server id too, for the broadcast.
+    pub fn set_overwrite(
+        &self,
+        caller: i64,
+        channel_id: i64,
+        target: Target,
+        allow: Permissions,
+        deny: Permissions,
+    ) -> Result<(i64, Vec<Overwrite>), String> {
+        let (ctx, _, held) = self.require_manage_channel(caller, channel_id)?;
+        if allow.minus(Permissions::CHANNEL_SCOPED) != Permissions::NONE
+            || deny.minus(Permissions::CHANNEL_SCOPED) != Permissions::NONE
+        {
+            return Err("only channel permissions can be set on a channel".into());
+        }
+        if allow.intersect(deny) != Permissions::NONE {
+            return Err("a permission can't be both allowed and denied".into());
+        }
+        match target {
+            Target::Everyone => {}
+            Target::Role(id) => {
+                ctx.role_rank(id).ok_or("role not found")?;
+            }
+            Target::Member(id) => {
+                ctx.member(id).ok_or("member not found")?;
+            }
+        }
+        let old = ctx.overwrites(channel_id).iter().find(|o| o.target == target).copied();
+        let (old_allow, old_deny) = old.map_or((Permissions::NONE, Permissions::NONE), |o| (o.allow, o.deny));
+        let changed = Permissions((old_allow.0 ^ allow.0) | (old_deny.0 ^ deny.0));
+        if let Some(name) = changed.minus(held).names().first() {
+            return Err(format!("you can't allow or deny {name} here, because you don't have it yourself"));
+        }
+        let (kind, id) = target.db_parts();
+        {
+            let c = self.db.lock().map_err(|e| e.to_string())?;
+            if allow == Permissions::NONE && deny == Permissions::NONE {
+                c.execute(
+                    "DELETE FROM channel_overwrites WHERE channel_id = ?1 AND target_kind = ?2 AND target_id = ?3",
+                    rusqlite::params![channel_id, kind, id],
+                )
+            } else {
+                c.execute(
+                    "INSERT INTO channel_overwrites (channel_id, target_kind, target_id, allow, deny)
+                     VALUES (?1, ?2, ?3, ?4, ?5)
+                     ON CONFLICT (channel_id, target_kind, target_id) DO UPDATE SET allow = ?4, deny = ?5",
+                    rusqlite::params![channel_id, kind, id, allow.0 as i64, deny.0 as i64],
+                )
+            }
+            .map_err(|e| format!("failed to save the channel's permissions: {e}"))?;
+        }
+        let server_id = ctx.server_id;
+        let ctx = ServerContext::load(&self.db, server_id).ok_or("server not found")?;
+        Ok((server_id, ctx.overwrites(channel_id).to_vec()))
+    }
+
+    /// Set what @everyone may do in `server_id`. Needs Manage Roles, and only
+    /// bits the caller holds can change.
+    pub fn set_everyone(&self, caller: i64, server_id: i64, perms: Permissions) -> Result<Permissions, String> {
+        let (ctx, member) = member_in(&self.db, server_id, caller)?;
+        if !member.server.contains(Permissions::MANAGE_ROLES) {
+            return Err(missing(Permissions::MANAGE_ROLES));
+        }
+        let perms = perms.known().minus(Permissions::ADMINISTRATOR);
+        if let Some(name) = Permissions(ctx.everyone().0 ^ perms.0).minus(member.server).names().first() {
+            return Err(format!("you can't grant or remove {name}, because you don't have it yourself"));
+        }
+        let c = self.db.lock().map_err(|e| e.to_string())?;
+        c.execute(
+            "UPDATE servers SET everyone_permissions = ?2 WHERE id = ?1",
+            rusqlite::params![server_id, perms.0 as i64],
+        )
+        .map_err(|e| format!("failed to save @everyone's permissions: {e}"))?;
+        Ok(perms)
+    }
+}
+
+/// Make a new channel private: hidden from @everyone, visible to `creator`
+/// (so someone without Administrator doesn't lose the channel they made).
+#[cfg(feature = "server")]
+pub fn make_private(db: &Db, channel_id: i64, creator: i64) -> Result<(), String> {
+    let c = db.lock().map_err(|e| e.to_string())?;
+    c.execute(
+        "INSERT INTO channel_overwrites (channel_id, target_kind, target_id, allow, deny) VALUES
+            (?1, 'everyone', 0, 0, ?2), (?1, 'member', ?3, ?2, 0)",
+        rusqlite::params![channel_id, Permissions::VIEW_CHANNEL.0 as i64, creator],
+    )
+    .map_err(|e| format!("failed to make the channel private: {e}"))?;
+    Ok(())
+}
+
+#[cfg(feature = "server")]
+fn db_from_state() -> Result<Db, ServerError> {
+    server::use_state::<Db>().ok_or_else(|| ServerError::failed("database not installed"))
+}
+
+#[cfg(feature = "server")]
+fn caller() -> Result<i64, ServerError> {
+    crate::session::acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))
+}
+
+/// What the caller may do in a server and in each channel they can see.
+#[server]
+pub async fn my_permissions(input: MyPermissionsInput) -> Result<MyPermissions, ServerError> {
+    PermissionService::new(db_from_state()?)
+        .mine(caller()?, input.server_id)
+        .map_err(ServerError::failed)
+}
+
+/// A channel's overwrites. Needs Manage Channels in it.
+#[server]
+pub async fn channel_overwrites(input: ChannelOverwritesInput) -> Result<Vec<Overwrite>, ServerError> {
+    PermissionService::new(db_from_state()?)
+        .overwrites(caller()?, input.channel_id)
+        .map_err(ServerError::failed)
+}
+
+/// Set or clear one overwrite on a channel; returns the channel's overwrites.
+#[server]
+pub async fn set_channel_overwrite(input: SetOverwriteInput) -> Result<Vec<Overwrite>, ServerError> {
+    let db = db_from_state()?;
+    let (server_id, list) = PermissionService::new(db.clone())
+        .set_overwrite(caller()?, input.channel_id, input.target, input.allow, input.deny)
+        .map_err(ServerError::failed)?;
+    crate::server_roles::announce(&db, server_id);
+    Ok(list)
+}
+
+/// Set what @everyone may do in a server.
+#[server]
+pub async fn set_everyone_permissions(input: SetEveryoneInput) -> Result<Permissions, ServerError> {
+    let db = db_from_state()?;
+    let perms = PermissionService::new(db.clone())
+        .set_everyone(caller()?, input.server_id, input.permissions)
+        .map_err(ServerError::failed)?;
+    crate::server_roles::announce(&db, input.server_id);
+    Ok(perms)
+}
+
+/// What the old "moderator" level could do (see `0022_permissions.sql`).
+#[cfg(test)]
+pub const MODERATOR_LEVEL: Permissions = Permissions(480);
+/// What the old "admin" level could do.
+#[cfg(test)]
+pub const ADMIN_LEVEL: Permissions = Permissions(16352);
+
+/// Test helper: give `user_id` a new role in `server_id` with `perms` at
+/// `position`, and return the role's id.
+#[cfg(all(test, feature = "server"))]
+pub fn grant(db: &Db, server_id: i64, user_id: i64, perms: Permissions, position: i64) -> i64 {
+    let c = db.lock().unwrap();
+    c.execute(
+        "INSERT INTO server_roles (server_id, name, position, created_at, permissions)
+         VALUES (?1, 'test role ' || (SELECT COUNT(*) FROM server_roles), ?2, 1, ?3)",
+        rusqlite::params![server_id, position, perms.0 as i64],
+    )
+    .unwrap();
+    let role_id = c.last_insert_rowid();
+    c.execute("INSERT INTO member_roles (role_id, user_id) VALUES (?1, ?2)", rusqlite::params![role_id, user_id])
+        .unwrap();
+    role_id
+}
+
 /// The user-facing refusal for a missing permission.
 pub fn missing(perm: Permissions) -> String {
     let name = perm.names().first().copied().unwrap_or("that permission");
@@ -619,11 +866,13 @@ mod db_tests {
         assert_eq!(perms(&db, 1, 1), Permissions::ALL);
         assert_eq!(perms(&db, 1, 4), everyone);
         let moderator = perms(&db, 1, 3);
+        assert_eq!(moderator, everyone.union(MODERATOR_LEVEL));
         for p in [Permissions::KICK_MEMBERS, Permissions::MANAGE_MESSAGES, Permissions::MENTION_EVERYONE, Permissions::CREATE_INVITE] {
             assert!(moderator.contains(p), "moderator lost {:?}", p.names());
         }
         assert!(!moderator.contains(Permissions::BAN_MEMBERS));
         let admin = perms(&db, 1, 2);
+        assert_eq!(admin, everyone.union(ADMIN_LEVEL));
         for p in [Permissions::BAN_MEMBERS, Permissions::MODERATE_MEMBERS, Permissions::MANAGE_CHANNELS, Permissions::MANAGE_ROLES, Permissions::MANAGE_SERVER] {
             assert!(admin.contains(p), "admin lost {:?}", p.names());
         }
@@ -696,5 +945,65 @@ mod db_tests {
         assert!(member_in(&db, 1, 4).is_ok());
         assert_eq!(member_in(&db, 2, 4).err().unwrap(), "you're not a member of this server");
         assert_eq!(member_in(&db, 9, 1).err().unwrap(), "server not found");
+    }
+
+    #[test]
+    fn overwrite_edits_are_checked_and_saved() {
+        let (_d, db) = upgraded();
+        let svc = PermissionService::new(db.clone());
+        // dave (plain member) can't touch them; bob (admin) can.
+        assert_eq!(svc.overwrites(4, 10).unwrap_err(), "you need the Manage Channels permission to do that");
+        let hide = Permissions::VIEW_CHANNEL;
+        // bob keeps access for himself before hiding #staff from @everyone;
+        // without Administrator he'd otherwise lock himself out.
+        svc.set_overwrite(2, 11, Target::Member(2), hide, Permissions::NONE).unwrap();
+        let (_, list) = svc.set_overwrite(2, 11, Target::Everyone, Permissions::NONE, hide).unwrap();
+        assert!(list.contains(&Overwrite { target: Target::Everyone, allow: Permissions::NONE, deny: hide }));
+        assert_eq!(for_channel(&db, 4, 11), Some((1, Permissions::NONE)), "dave lost #staff");
+        svc.set_overwrite(2, 11, Target::Member(4), hide, Permissions::NONE).unwrap();
+        assert!(for_channel(&db, 4, 11).unwrap().1.contains(hide), "dave let back in");
+        // Clearing removes the row.
+        let (_, list) = svc.set_overwrite(2, 11, Target::Member(4), Permissions::NONE, Permissions::NONE).unwrap();
+        assert_eq!(list.len(), 2);
+        // Refusals.
+        assert!(svc.set_overwrite(2, 11, Target::Everyone, Permissions::BAN_MEMBERS, Permissions::NONE).is_err());
+        assert!(svc.set_overwrite(2, 11, Target::Everyone, hide, hide).unwrap_err().contains("both"));
+        assert_eq!(svc.set_overwrite(2, 11, Target::Role(999), hide, Permissions::NONE).unwrap_err(), "role not found");
+        assert_eq!(svc.set_overwrite(2, 11, Target::Member(99), hide, Permissions::NONE).unwrap_err(), "member not found");
+    }
+
+    #[test]
+    fn nobody_can_hand_out_channel_bits_they_lack() {
+        let (_d, db) = upgraded();
+        let svc = PermissionService::new(db.clone());
+        // In #general carol (moderator) may manage the channel but not its messages.
+        svc.set_overwrite(1, 10, Target::Member(3), Permissions::MANAGE_CHANNELS, Permissions::MANAGE_MESSAGES).unwrap();
+        assert!(svc
+            .set_overwrite(3, 10, Target::Member(4), Permissions::MANAGE_MESSAGES, Permissions::NONE)
+            .unwrap_err()
+            .contains("Manage Messages"));
+        svc.set_overwrite(3, 10, Target::Member(4), Permissions::ADD_REACTIONS, Permissions::NONE).unwrap();
+    }
+
+    #[test]
+    fn mine_lists_only_visible_channels_and_everyone_edits_are_limited() {
+        let (_d, db) = upgraded();
+        make_private(&db, 11, 2).unwrap();
+        let svc = PermissionService::new(db.clone());
+        let dave = svc.mine(4, 1).unwrap();
+        let ids: Vec<i64> = dave.channels.iter().map(|c| c.0).collect();
+        assert!(!ids.contains(&11), "the private channel is hidden from dave");
+        assert!(svc.mine(2, 1).unwrap().channels.iter().any(|c| c.0 == 11), "its creator sees it");
+        assert_eq!(dave.rank, Rank::Everyone);
+        // bob (admin, no Administrator) can't give @everyone Administrator or
+        // a bit he lacks; the owner can change anything but Administrator.
+        assert_eq!(svc.set_everyone(4, 1, Permissions::NONE).unwrap_err(), "you need the Manage Roles permission to do that");
+        let with_kick = Permissions::EVERYONE_DEFAULT.union(Permissions::KICK_MEMBERS);
+        assert_eq!(svc.set_everyone(2, 1, with_kick).unwrap(), with_kick);
+        // A role that can only manage roles can't hand @everyone Ban Members.
+        let _ = grant(&db, 1, 4, Permissions::MANAGE_ROLES, 1);
+        let with_ban = with_kick.union(Permissions::BAN_MEMBERS);
+        assert!(svc.set_everyone(4, 1, with_ban).unwrap_err().contains("Ban Members"));
+        assert_eq!(svc.set_everyone(1, 1, Permissions::ALL).unwrap(), Permissions::ALL.minus(Permissions::ADMINISTRATOR));
     }
 }

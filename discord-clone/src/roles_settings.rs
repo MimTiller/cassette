@@ -111,6 +111,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                                             name: t.name.clone(),
                                             color: t.color.clone(),
                                             mentionable: !t.mentionable,
+                                            permissions: None,
                                         };
                                         match server_roles::update_role(input).await {
                                             Ok(_) => reload(sid, roles),

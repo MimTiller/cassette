@@ -5,9 +5,8 @@
 //! A server has any number of named roles (`0020_custom_roles.sql`): a name,
 //! an optional `#rrggbb` colour, a `mentionable` flag and a position (higher
 //! is listed first and wins the name colour). Members hold any set of them.
-//! Permissions stay with the membership level in [`crate::roles`]; a named
-//! role is identity, colour and a mention group. Admins and the owner manage
-//! roles ([`Action::ManageRoles`]).
+//! A role also carries a permission set (see [`crate::permissions`]);
+//! members with Manage Roles manage the roles ranked below their own.
 //!
 //! ## Mentions
 //!
@@ -25,7 +24,7 @@ use server::{server, ServerError};
 #[cfg(feature = "server")]
 use crate::db::Db;
 #[cfg(feature = "server")]
-use crate::roles::{Action, Role};
+use crate::permissions::{self, Member, Permissions, ServerContext};
 #[cfg(feature = "server")]
 use crate::session::acting_user;
 
@@ -44,6 +43,9 @@ pub struct CustomRole {
     pub color: String,
     pub mentionable: bool,
     pub position: i64,
+    /// What holding the role allows (see [`crate::permissions`]).
+    #[serde(default)]
+    pub permissions: crate::permissions::Permissions,
 }
 
 /// A server's roles (highest position first) and who holds them.
@@ -92,6 +94,16 @@ pub struct UpdateRoleInput {
     pub name: String,
     pub color: String,
     pub mentionable: bool,
+    /// The role's new permissions; `None` leaves them as they are.
+    #[serde(default)]
+    pub permissions: Option<crate::permissions::Permissions>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoveRoleInput {
+    pub role_id: i64,
+    /// The new position; higher ranks above.
+    pub position: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -242,25 +254,27 @@ impl RoleService {
         RoleService { db }
     }
 
-    fn level(&self, server_id: i64, user_id: i64) -> Option<Role> {
-        self.db.membership_role(server_id, user_id).and_then(|r| Role::from_db_str(&r))
+    /// The caller, who must hold Manage Roles in `server_id`.
+    fn require_manage(&self, caller: i64, server_id: i64) -> Result<(ServerContext, Member), String> {
+        let (ctx, member) = permissions::member_in(&self.db, server_id, caller)?;
+        if !member.server.contains(Permissions::MANAGE_ROLES) {
+            return Err(permissions::missing(Permissions::MANAGE_ROLES));
+        }
+        Ok((ctx, member))
     }
 
-    fn require_manage(&self, caller: i64, server_id: i64) -> Result<(), String> {
-        match self.level(server_id, caller) {
-            None => Err("permission denied: not a member of this server".into()),
-            Some(r) if !r.can(Action::ManageRoles) => {
-                Err("permission denied: only admins and the owner can manage roles".into())
-            }
-            Some(_) => Ok(()),
+    /// The caller, who must hold Manage Roles and rank above `role`.
+    fn require_manage_role(&self, caller: i64, role: &CustomRole) -> Result<(ServerContext, Member), String> {
+        let (ctx, member) = self.require_manage(caller, role.server_id)?;
+        if !member.rank.outranks(permissions::Rank::Role(role.position)) {
+            return Err("you can only manage roles below your highest role".into());
         }
+        Ok((ctx, member))
     }
 
     /// The server's roles and assignments (any member may read them).
     pub fn snapshot(&self, caller: i64, server_id: i64) -> Result<RolesSnapshot, String> {
-        if self.level(server_id, caller).is_none() {
-            return Err("permission denied: not a member of this server".into());
-        }
+        permissions::member_in(&self.db, server_id, caller)?;
         Ok(load_snapshot(&self.db, server_id))
     }
 
@@ -275,7 +289,9 @@ impl RoleService {
         if snap.roles.iter().any(|r| r.name.eq_ignore_ascii_case(&name)) {
             return Err("a role with that name already exists".into());
         }
-        let position = snap.roles.iter().map(|r| r.position).max().unwrap_or(0) + 1;
+        // New roles start at the bottom, below every role (and so below the
+        // creator's), where the creator can manage them.
+        let position = snap.roles.iter().map(|r| r.position).min().map_or(0, |p| p - 1);
         let c = self.db.lock().map_err(|e| e.to_string())?;
         c.execute(
             "INSERT INTO server_roles (server_id, name, color, mentionable, position, created_at)
@@ -284,12 +300,22 @@ impl RoleService {
         )
         .map_err(|e| format!("failed to create role: {e}"))?;
         let id = c.last_insert_rowid();
-        Ok(CustomRole { id, server_id, name, color, mentionable, position })
+        Ok(CustomRole { id, server_id, name, color, mentionable, position, permissions: Permissions::NONE })
     }
 
-    pub fn update(&self, caller: i64, role_id: i64, name: &str, color: &str, mentionable: bool) -> Result<CustomRole, String> {
+    pub fn update(
+        &self,
+        caller: i64,
+        role_id: i64,
+        name: &str,
+        color: &str,
+        mentionable: bool,
+        perms: Option<Permissions>,
+    ) -> Result<CustomRole, String> {
         let role = self.role(role_id).ok_or("role not found")?;
-        self.require_manage(caller, role.server_id)?;
+        let (_, member) = self.require_manage_role(caller, &role)?;
+        let perms = perms.map(Permissions::known).unwrap_or(role.permissions);
+        refuse_unheld_change(&member, role.permissions, perms)?;
         let name = validate_name(name)?;
         let color = validate_color(color)?;
         let snap = load_snapshot(&self.db, role.server_id);
@@ -298,17 +324,31 @@ impl RoleService {
         }
         let c = self.db.lock().map_err(|e| e.to_string())?;
         c.execute(
-            "UPDATE server_roles SET name = ?2, color = ?3, mentionable = ?4 WHERE id = ?1",
-            rusqlite::params![role_id, name, color, mentionable],
+            "UPDATE server_roles SET name = ?2, color = ?3, mentionable = ?4, permissions = ?5 WHERE id = ?1",
+            rusqlite::params![role_id, name, color, mentionable, perms.0 as i64],
         )
         .map_err(|e| format!("failed to update role: {e}"))?;
-        Ok(CustomRole { name, color, mentionable, ..role })
+        Ok(CustomRole { name, color, mentionable, permissions: perms, ..role })
+    }
+
+    /// Move a role to `position`. The caller must outrank the role both where
+    /// it is and where it goes.
+    pub fn move_to(&self, caller: i64, role_id: i64, position: i64) -> Result<CustomRole, String> {
+        let role = self.role(role_id).ok_or("role not found")?;
+        let (_, member) = self.require_manage_role(caller, &role)?;
+        if !member.rank.outranks(permissions::Rank::Role(position)) {
+            return Err("you can't move a role up to or above your highest role".into());
+        }
+        let c = self.db.lock().map_err(|e| e.to_string())?;
+        c.execute("UPDATE server_roles SET position = ?2 WHERE id = ?1", rusqlite::params![role_id, position])
+            .map_err(|e| format!("failed to move role: {e}"))?;
+        Ok(CustomRole { position, ..role })
     }
 
     /// Delete a role; returns its server id.
     pub fn delete(&self, caller: i64, role_id: i64) -> Result<i64, String> {
         let role = self.role(role_id).ok_or("role not found")?;
-        self.require_manage(caller, role.server_id)?;
+        self.require_manage_role(caller, &role)?;
         let c = self.db.lock().map_err(|e| e.to_string())?;
         c.execute("DELETE FROM member_roles WHERE role_id = ?1", rusqlite::params![role_id])
             .and_then(|_| c.execute("DELETE FROM server_roles WHERE id = ?1", rusqlite::params![role_id]))
@@ -319,8 +359,8 @@ impl RoleService {
     /// Give `user_id` the role (or take it away); returns the server id.
     pub fn assign(&self, caller: i64, role_id: i64, user_id: i64, assigned: bool) -> Result<i64, String> {
         let role = self.role(role_id).ok_or("role not found")?;
-        self.require_manage(caller, role.server_id)?;
-        if self.level(role.server_id, user_id).is_none() {
+        let (ctx, _) = self.require_manage_role(caller, &role)?;
+        if ctx.member(user_id).is_none() {
             return Err("member not found".into());
         }
         let c = self.db.lock().map_err(|e| e.to_string())?;
@@ -337,7 +377,7 @@ impl RoleService {
     fn role(&self, role_id: i64) -> Option<CustomRole> {
         let c = self.db.lock().ok()?;
         c.query_row(
-            "SELECT id, server_id, name, color, mentionable, position FROM server_roles WHERE id = ?1",
+            "SELECT id, server_id, name, color, mentionable, position, permissions FROM server_roles WHERE id = ?1",
             rusqlite::params![role_id],
             row_to_role,
         )
@@ -354,7 +394,20 @@ fn row_to_role(r: &rusqlite::Row<'_>) -> rusqlite::Result<CustomRole> {
         color: r.get(3)?,
         mentionable: r.get(4)?,
         position: r.get(5)?,
+        permissions: Permissions(r.get::<_, i64>(6)? as u64),
     })
+}
+
+/// Refuse changing bits of a permission set that `member` doesn't hold
+/// themself (the owner and administrators hold every bit).
+#[cfg(feature = "server")]
+pub fn refuse_unheld_change(member: &Member, old: Permissions, new: Permissions) -> Result<(), String> {
+    let changed = Permissions(old.0 ^ new.0);
+    let unheld = changed.minus(member.server);
+    match unheld.names().first() {
+        None => Ok(()),
+        Some(name) => Err(format!("you can't grant or remove {name}, because you don't have it yourself")),
+    }
 }
 
 /// A server's roles (highest position first) and their current holders.
@@ -365,7 +418,7 @@ pub fn load_snapshot(db: &Db, server_id: i64) -> RolesSnapshot {
         return snap;
     };
     if let Ok(mut stmt) = c.prepare(
-        "SELECT id, server_id, name, color, mentionable, position FROM server_roles
+        "SELECT id, server_id, name, color, mentionable, position, permissions FROM server_roles
          WHERE server_id = ?1 ORDER BY position DESC, id",
     ) {
         if let Ok(rows) = stmt.query_map(rusqlite::params![server_id], row_to_role) {
@@ -385,24 +438,34 @@ pub fn load_snapshot(db: &Db, server_id: i64) -> RolesSnapshot {
     snap
 }
 
-/// The user ids a message from `author_id` in `server_id` notifies: named
+/// The user ids a message from `author_id` in `channel_id` notifies: named
 /// users, plus everyone / online members / role holders for `@everyone`,
-/// `@here` and role mentions (those three only from moderators and above,
-/// except roles marked mentionable). The author is never notified by a group
-/// mention. Sorted and de-duplicated.
+/// `@here` and role mentions. Only people who can see the channel are
+/// notified. The group mentions need Mention @everyone in the channel, except
+/// roles marked mentionable. The author is never notified by a group mention.
+/// Sorted and de-duplicated.
 #[cfg(feature = "server")]
-pub fn resolve_mentions(db: &Db, server_id: i64, author_id: i64, content: &str) -> Vec<i64> {
+pub fn resolve_mentions(db: &Db, channel_id: i64, author_id: i64, content: &str) -> Vec<i64> {
     if !content.contains('@') {
         return Vec::new();
     }
-    let members = db.server_members(server_id);
-    let users: Vec<(i64, String)> = members.iter().map(|(id, name, _)| (*id, name.clone())).collect();
+    let Some(server_id) = db.channel_full(channel_id).map(|c| c.1) else {
+        return Vec::new();
+    };
+    let Some(ctx) = ServerContext::load(db, server_id) else {
+        return Vec::new();
+    };
+    let viewers = ctx.members_with(channel_id, Permissions::VIEW_CHANNEL);
+    let users: Vec<(i64, String)> = db
+        .server_members(server_id)
+        .into_iter()
+        .filter(|(id, _, _)| viewers.contains(id))
+        .map(|(id, name, _)| (id, name))
+        .collect();
     let snap = load_snapshot(db, server_id);
-    let elevated = members
-        .iter()
-        .find(|(id, _, _)| *id == author_id)
-        .and_then(|(_, _, role)| Role::from_db_str(role))
-        .map(|r| r.can(Action::MentionEveryone))
+    let elevated = ctx
+        .member(author_id)
+        .map(|m| ctx.in_channel(&m, channel_id).contains(Permissions::MENTION_EVERYONE))
         .unwrap_or(false);
     let mut out: Vec<i64> = Vec::new();
     let mut group: Vec<i64> = Vec::new();
@@ -417,7 +480,12 @@ pub fn resolve_mentions(db: &Db, server_id: i64, author_id: i64, content: &str) 
             }
             MentionSeg::Role { id, .. } => {
                 if elevated || snap.roles.iter().any(|r| r.id == id && r.mentionable) {
-                    group.extend(snap.assignments.iter().filter(|(_, rid)| *rid == id).map(|(uid, _)| *uid));
+                    group.extend(
+                        snap.assignments
+                            .iter()
+                            .filter(|(uid, rid)| *rid == id && viewers.contains(uid))
+                            .map(|(uid, _)| *uid),
+                    );
                 }
             }
             _ => {}
@@ -444,9 +512,10 @@ fn db_from_state() -> Result<Db, ServerError> {
     server::use_state::<Db>().ok_or_else(|| ServerError::failed("database not installed"))
 }
 
-/// Tell the server's connected members to refetch its roles.
+/// Tell the server's connected members to refetch its roles, and with them
+/// their permissions and the channels they can see.
 #[cfg(feature = "server")]
-fn announce(db: &Db, server_id: i64) {
+pub fn announce(db: &Db, server_id: i64) {
     crate::realtime::hub().publish(
         &crate::realtime::server_audience(db, server_id),
         &crate::server_settings::WsServerMsg::RolesChanged { server_id },
@@ -461,7 +530,7 @@ pub async fn server_roles(input: ServerRolesInput) -> Result<RolesSnapshot, Serv
     RoleService::new(db).snapshot(caller, input.server_id).map_err(ServerError::failed)
 }
 
-/// Create a role. Admins and the owner.
+/// Create a role, at the bottom of the list. Needs Manage Roles.
 #[server]
 pub async fn create_role(input: CreateRoleInput) -> Result<CustomRole, ServerError> {
     let db = db_from_state()?;
@@ -473,13 +542,26 @@ pub async fn create_role(input: CreateRoleInput) -> Result<CustomRole, ServerErr
     Ok(role)
 }
 
-/// Rename / recolour a role or change whether anyone may mention it.
+/// Rename or recolour a role, change whether anyone may mention it, or change
+/// its permissions. Needs Manage Roles and a higher rank than the role.
 #[server]
 pub async fn update_role(input: UpdateRoleInput) -> Result<CustomRole, ServerError> {
     let db = db_from_state()?;
     let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
     let role = RoleService::new(db.clone())
-        .update(caller, input.role_id, &input.name, &input.color, input.mentionable)
+        .update(caller, input.role_id, &input.name, &input.color, input.mentionable, input.permissions)
+        .map_err(ServerError::failed)?;
+    announce(&db, role.server_id);
+    Ok(role)
+}
+
+/// Move a role up or down the list (which sets who outranks whom).
+#[server]
+pub async fn move_role(input: MoveRoleInput) -> Result<CustomRole, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let role = RoleService::new(db.clone())
+        .move_to(caller, input.role_id, input.position)
         .map_err(ServerError::failed)?;
     announce(&db, role.server_id);
     Ok(role)
@@ -512,7 +594,15 @@ mod tests {
     use super::*;
 
     fn role(id: i64, name: &str, mentionable: bool) -> CustomRole {
-        CustomRole { id, server_id: 10, name: name.into(), color: "#e91e63".into(), mentionable, position: id }
+        CustomRole {
+            id,
+            server_id: 10,
+            name: name.into(),
+            color: "#e91e63".into(),
+            mentionable,
+            position: id,
+            permissions: crate::permissions::Permissions::NONE,
+        }
     }
 
     fn users() -> Vec<(i64, String)> {
@@ -587,8 +677,9 @@ mod tests {
         use super::super::*;
         use std::path::Path;
 
-        /// alice (owner), bob (member, online), carol (moderator, offline),
-        /// dave (member, offline) in server 10.
+        /// alice (owner), bob (member, online), carol (a moderator role at
+        /// position 5, offline), dave (member, offline) in server 10, which
+        /// has text channel 20.
         fn setup() -> (tempfile::TempDir, Db) {
             let dir = tempfile::tempdir().unwrap();
             let migrations = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
@@ -600,9 +691,11 @@ mod tests {
                         (1, 'alice', 'a@x', 1), (2, 'bob', 'b@x', 1), (3, 'carol', 'c@x', 1), (4, 'dave', 'd@x', 1);
                      INSERT INTO servers (id, name, owner_id, created_at) VALUES (10, 'Hangout', 1, 1);
                      INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES
-                        (10, 1, 'owner', 1), (10, 2, 'member', 1), (10, 3, 'moderator', 1), (10, 4, 'member', 1);",
+                        (10, 1, 'owner', 1), (10, 2, 'member', 1), (10, 3, 'member', 1), (10, 4, 'member', 1);
+                     INSERT INTO channels (id, server_id, name, kind, position, created_at) VALUES (20, 10, 'general', 'text', 0, 1);",
                 )
                 .unwrap();
+            let _ = crate::permissions::grant(&db, 10, 3, crate::permissions::MODERATOR_LEVEL, 5);
             db.set_presence(2, "online").unwrap();
             db.set_presence(3, "offline").unwrap();
             db.set_presence(4, "offline").unwrap();
@@ -610,23 +703,50 @@ mod tests {
         }
 
         #[test]
-        fn only_admins_manage_roles() {
+        fn managing_roles_needs_the_permission() {
             let (_d, db) = setup();
             let svc = RoleService::new(db);
-            assert!(svc.create(2, 10, "Mods", "", true).unwrap_err().contains("permission denied"));
-            assert!(svc.create(3, 10, "Mods", "", true).unwrap_err().contains("permission denied"));
+            let refusal = "you need the Manage Roles permission to do that";
+            assert_eq!(svc.create(2, 10, "Mods", "", true).unwrap_err(), refusal);
+            assert_eq!(svc.create(3, 10, "Mods", "", true).unwrap_err(), refusal);
             let r = svc.create(1, 10, "Mods", "#FF0000", true).unwrap();
-            assert_eq!((r.color.as_str(), r.position), ("#ff0000", 1));
+            assert_eq!((r.color.as_str(), r.position), ("#ff0000", 4), "new roles go below the rest");
             assert!(svc.create(1, 10, "mods", "", true).unwrap_err().contains("already exists"));
             assert!(svc.assign(2, r.id, 2, true).is_err());
             svc.assign(1, r.id, 2, true).unwrap();
             assert!(svc.assign(1, r.id, 99, true).unwrap_err().contains("member not found"));
             let snap = svc.snapshot(4, 10).unwrap();
-            assert_eq!(snap.assignments, vec![(2, r.id)]);
+            assert!(snap.assignments.contains(&(2, r.id)));
             assert!(svc.snapshot(99, 10).is_err());
-            svc.update(1, r.id, "Moderators", "", false).unwrap();
+            svc.update(1, r.id, "Moderators", "", false, None).unwrap();
             svc.delete(1, r.id).unwrap();
-            assert!(svc.snapshot(1, 10).unwrap().roles.is_empty());
+            assert_eq!(svc.snapshot(1, 10).unwrap().roles.len(), 1, "only carol's role is left");
+        }
+
+        #[test]
+        fn the_hierarchy_limits_which_roles_someone_manages() {
+            let (_d, db) = setup();
+            // bob manages roles, but ranks below carol's role (5).
+            let bobs = crate::permissions::grant(&db, 10, 2, crate::permissions::ADMIN_LEVEL, 3);
+            let carols = load_snapshot(&db, 10).roles.iter().find(|r| r.position == 5).unwrap().id;
+            let svc = RoleService::new(db.clone());
+            let low = svc.create(2, 10, "Low", "", true).unwrap();
+            assert_eq!(low.position, 2);
+            svc.update(2, low.id, "Lower", "", true, Some(Permissions::KICK_MEMBERS)).unwrap();
+            let below = "you can only manage roles below your highest role";
+            assert_eq!(svc.update(2, carols, "Mine", "", true, None).unwrap_err(), below);
+            assert_eq!(svc.update(2, bobs, "Self", "", true, None).unwrap_err(), below, "not even his own");
+            assert_eq!(svc.delete(2, carols).unwrap_err(), below);
+            assert_eq!(svc.assign(2, carols, 4, true).unwrap_err(), below);
+            assert!(svc.move_to(2, low.id, 3).unwrap_err().contains("up to or above"));
+            assert_eq!(svc.move_to(2, low.id, 1).unwrap().position, 1);
+            assert!(
+                svc.update(2, low.id, "Lower", "", true, Some(Permissions::ADMINISTRATOR)).unwrap_err().contains("Administrator"),
+                "can't grant what he doesn't hold"
+            );
+            // The owner outranks every role.
+            svc.update(1, carols, "Head Mod", "", true, Some(Permissions::ADMINISTRATOR)).unwrap();
+            svc.move_to(1, low.id, 99).unwrap();
         }
 
         #[test]
@@ -636,7 +756,11 @@ mod tests {
             let r = svc.create(1, 10, "Crew", "", true).unwrap();
             svc.assign(1, r.id, 4, true).unwrap();
             db.lock().unwrap().execute("DELETE FROM server_memberships WHERE user_id = 4", []).unwrap();
-            let n: i64 = db.lock().unwrap().query_row("SELECT COUNT(*) FROM member_roles", [], |r| r.get(0)).unwrap();
+            let n: i64 = db
+                .lock()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM member_roles WHERE user_id = 4", [], |r| r.get(0))
+                .unwrap();
             assert_eq!(n, 0);
         }
 
@@ -649,15 +773,15 @@ mod tests {
             svc.assign(1, open.id, 4, true).unwrap();
             svc.assign(1, locked.id, 2, true).unwrap();
             // A plain member: @everyone/@here and the locked role do nothing.
-            assert_eq!(resolve_mentions(&db, 10, 4, "@everyone @here @Staff"), Vec::<i64>::new());
+            assert_eq!(resolve_mentions(&db, 20, 4, "@everyone @here @Staff"), Vec::<i64>::new());
             // ...but a mentionable role and a named user still work.
-            assert_eq!(resolve_mentions(&db, 10, 2, "@crew @carol"), vec![3, 4]);
+            assert_eq!(resolve_mentions(&db, 20, 2, "@crew @carol"), vec![3, 4]);
             // A moderator: everyone but themself; @here is the online ones.
-            assert_eq!(resolve_mentions(&db, 10, 3, "@everyone"), vec![1, 2, 4]);
-            assert_eq!(resolve_mentions(&db, 10, 3, "@here"), vec![2]);
-            assert_eq!(resolve_mentions(&db, 10, 3, "@Staff"), vec![2]);
+            assert_eq!(resolve_mentions(&db, 20, 3, "@everyone"), vec![1, 2, 4]);
+            assert_eq!(resolve_mentions(&db, 20, 3, "@here"), vec![2]);
+            assert_eq!(resolve_mentions(&db, 20, 3, "@Staff"), vec![2]);
             // Naming yourself still counts (as before).
-            assert_eq!(resolve_mentions(&db, 10, 3, "@carol"), vec![3]);
+            assert_eq!(resolve_mentions(&db, 20, 3, "@carol"), vec![3]);
         }
     }
 }

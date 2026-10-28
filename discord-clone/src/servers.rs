@@ -26,14 +26,6 @@ pub async fn list_servers() -> Result<Vec<ServerSummary>, String> {
         .map_err(|e| crate::errors::friendly(&e))
 }
 
-/// Join an existing server as a plain member.
-#[allow(dead_code)] // consumed by the UI in a follow-up task.
-pub async fn join_server(server_id: i64) -> Result<(), String> {
-    let input = discord_server::servers::JoinServerInput { server_id };
-    discord_server::servers::join_server(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))
-}
 
 /// List a server's channels, in position order.
 pub async fn list_channels(server_id: i64) -> Result<Vec<ChannelSummary>, String> {
@@ -59,6 +51,7 @@ pub async fn create_channel(
         name: name.to_string(),
         kind: kind.to_string(),
         parent_channel_id,
+        private: false,
     };
     discord_server::server_settings::create_channel(input)
         .await

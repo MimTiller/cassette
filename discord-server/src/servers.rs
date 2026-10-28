@@ -24,11 +24,6 @@ pub struct ServerSummary {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct JoinServerInput {
-    pub server_id: i64,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ListChannelsInput {
     pub server_id: i64,
 }
@@ -99,28 +94,19 @@ pub async fn list_servers(_input: ()) -> Result<Vec<ServerSummary>, ServerError>
         .collect())
 }
 
-/// Join an existing server as a plain member.
-#[server]
-pub async fn join_server(input: JoinServerInput) -> Result<(), ServerError> {
-    let db = db_from_state()?;
-    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
-    db.insert_membership(input.server_id, caller)
-        .map_err(|e| ServerError::failed(e.to_string()))?;
-    // A successful insert is a brand-new membership (duplicates error above),
-    // so tell the other members the roster grew.
-    crate::realtime::announce_membership(&db, input.server_id, caller, true);
-    Ok(())
-}
-
 /// List a server's channels, in position order.
 #[server]
 pub async fn list_channels(
     input: ListChannelsInput,
 ) -> Result<Vec<ChannelSummary>, ServerError> {
     let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let (ctx, member) =
+        crate::permissions::member_in(&db, input.server_id, caller).map_err(ServerError::failed)?;
     Ok(db
         .channels_for_server(input.server_id)
         .into_iter()
+        .filter(|(id, ..)| ctx.in_channel(&member, *id).contains(crate::permissions::Permissions::VIEW_CHANNEL))
         .map(|(id, name, kind, position, parent_channel_id)| ChannelSummary {
             id,
             name,

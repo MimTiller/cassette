@@ -20,6 +20,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::db::{Db, Message};
+use crate::permissions::{self, Permissions};
 use crate::rate_limit::RateLimiter;
 use crate::server_settings::WsServerMsg;
 
@@ -152,19 +153,15 @@ pub fn server_audience(db: &Db, server_id: i64) -> Vec<i64> {
         .collect()
 }
 
-/// Everyone who can see channel `channel_id` (all members of the channel's
-/// server), excluding `exclude_user_id` (the sender — they don't need their
-/// own echo). Returns an empty audience when the channel doesn't exist or
-/// the server has no other members.
-pub fn server_audience_for_channel(db: &Db, channel_id: i64, exclude_user_id: i64) -> Vec<i64> {
-    let Some((_id, server_id, _name, _kind, _pos, _parent)) = db.channel_full(channel_id)
-    else {
+/// Everyone who can see channel `channel_id`. Empty when the channel doesn't
+/// exist.
+pub fn channel_audience(db: &Db, channel_id: i64) -> Vec<i64> {
+    let Some((_id, server_id, _name, _kind, _pos, _parent)) = db.channel_full(channel_id) else {
         return Vec::new();
     };
-    server_audience(db, server_id)
-        .into_iter()
-        .filter(|&id| id != exclude_user_id)
-        .collect()
+    permissions::ServerContext::load(db, server_id)
+        .map(|ctx| ctx.members_with(channel_id, Permissions::VIEW_CHANNEL))
+        .unwrap_or_default()
 }
 
 /// Everyone who should hear about `user_id`'s presence: the user themself and
@@ -208,30 +205,38 @@ pub fn announce_membership(db: &Db, server_id: i64, user_id: i64, joined: bool) 
     );
 }
 
-/// Check that `user_id` may use text channel `channel_id`: the channel must
-/// exist, be a text channel, and belong to a server the user is a member of.
-/// Returns the channel's server id.
+/// Check that `user_id` holds `need` in text channel `channel_id`: the
+/// channel must exist, be a text channel the user can see, in a server they
+/// are a member of. Returns the channel's server id and the user's
+/// permissions in it.
 pub fn authorize_text_channel(
     db: &Db,
     user_id: i64,
     channel_id: i64,
-) -> Result<i64, &'static str> {
+    need: Permissions,
+) -> Result<(i64, Permissions), String> {
     let (_id, server_id, _name, kind, _pos, _parent) =
         db.channel_full(channel_id).ok_or("channel not found")?;
-    if db.membership_role(server_id, user_id).is_none() {
-        return Err("not a member of this server");
+    let ctx = permissions::ServerContext::load(db, server_id).ok_or("channel not found")?;
+    let member = ctx.member(user_id).ok_or("not a member of this server")?;
+    let perms = ctx.in_channel(&member, channel_id);
+    if !perms.contains(Permissions::VIEW_CHANNEL) {
+        return Err("channel not found".into());
     }
     if kind != "text" {
-        return Err("not a text channel");
+        return Err("not a text channel".into());
     }
-    Ok(server_id)
+    if !perms.contains(need) {
+        return Err(permissions::missing(need));
+    }
+    Ok((server_id, perms))
 }
 
-/// The user ids a message from `author_id` notifies: named members plus the
-/// `@everyone` / `@here` / role expansions (see
+/// The user ids a message from `author_id` in `channel_id` notifies: named
+/// members plus the `@everyone` / `@here` / role expansions (see
 /// [`crate::server_roles::resolve_mentions`]).
-pub fn resolve_mentions(db: &Db, server_id: i64, author_id: i64, content: &str) -> Vec<i64> {
-    crate::server_roles::resolve_mentions(db, server_id, author_id, content)
+pub fn resolve_mentions(db: &Db, channel_id: i64, author_id: i64, content: &str) -> Vec<i64> {
+    crate::server_roles::resolve_mentions(db, channel_id, author_id, content)
 }
 
 /// Validate one image attachment: allowed mime on BOTH the declared field and
@@ -278,9 +283,10 @@ fn media_store_attachment(data: &str, mime: &str) -> Result<String, String> {
     crate::media::store(bytes.as_slice(), mime, MAX_ATTACHMENT_BYTES)
 }
 
-/// Validate, persist and fan out one channel message. The audience is every
-/// member of the channel's server (including the sender's own sockets, which is
-/// how the sender receives its echo).
+/// Validate, persist and fan out one channel message. The audience is everyone
+/// who can see the channel (including the sender's own sockets, which is how
+/// the sender receives its echo). Needs Send Messages, plus Attach Files when
+/// there are attachments.
 ///
 /// A message must carry a body OR at least one image attachment (not neither);
 /// `attachments` are validated by [`validate_attachment`] (mime allowlist,
@@ -317,7 +323,10 @@ pub fn post_channel_message(
     if let Err(retry) = send_limiter().check(&user_id.to_string()) {
         return Err(format!("rate limited: retry in {}s", retry.as_secs() + 1));
     }
-    let server_id = authorize_text_channel(db, user_id, channel_id).map_err(String::from)?;
+    let (server_id, perms) = authorize_text_channel(db, user_id, channel_id, Permissions::SEND_MESSAGES)?;
+    if !attachments.is_empty() && !perms.contains(Permissions::ATTACH_FILES) {
+        return Err(permissions::missing(Permissions::ATTACH_FILES));
+    }
     // A timed-out member is blocked from posting (their membership still
     // exists — the timeout is a deadline, not a removal). `authorize_text_channel`
     // already confirmed membership; here we check the `timeout_until` deadline
@@ -344,7 +353,7 @@ pub fn post_channel_message(
             &media_rows,
         )
         .map_err(|e| e.to_string())?;
-    let mentioned_user_ids = resolve_mentions(db, server_id, user_id, content);
+    let mentioned_user_ids = resolve_mentions(db, channel_id, user_id, content);
     if let Err(e) = db.insert_message_mentions(message_id, &mentioned_user_ids) {
         return Err(format!("failed to store mentions: {e}"));
     }
@@ -365,7 +374,7 @@ pub fn post_channel_message(
         })
         .collect();
     hub().publish(
-        &server_audience(db, server_id),
+        &channel_audience(db, channel_id),
         &WsServerMsg::Message {
             message_id,
             channel_id,
@@ -396,8 +405,8 @@ pub fn post_channel_message(
 /// (content + a fresh `edited_at`) and the `@mention` rows are recomputed so
 /// the stored mention list matches the new text.
 ///
-/// The audience is the channel's server (including the editor's own echo), the
-/// same as a post, so every member sees the edit land.
+/// The audience is everyone who can see the channel (including the editor's
+/// own echo), the same as a post.
 pub fn edit_channel_message(
     db: &Db,
     user_id: i64,
@@ -418,18 +427,18 @@ pub fn edit_channel_message(
     if author != user_id {
         return Err("you can only edit your own messages".into());
     }
-    let server_id = authorize_text_channel(db, user_id, channel_id).map_err(String::from)?;
+    authorize_text_channel(db, user_id, channel_id, Permissions::VIEW_CHANNEL)?;
     let edited_at = now_millis();
     db.update_message(message_id, content, edited_at)
         .map_err(|e| format!("failed to update message: {e}"))?;
     // Recompute mentions against the NEW content and replace the stored rows so
     // the persisted mention list matches the text.
-    let mentioned_user_ids = resolve_mentions(db, server_id, user_id, content);
+    let mentioned_user_ids = resolve_mentions(db, channel_id, user_id, content);
     if let Err(e) = db.replace_message_mentions(message_id, &mentioned_user_ids) {
         return Err(format!("failed to store mentions: {e}"));
     }
     hub().publish(
-        &server_audience(db, server_id),
+        &channel_audience(db, channel_id),
         &WsServerMsg::MessageEdited {
             message_id,
             channel_id,
@@ -445,8 +454,8 @@ pub fn edit_channel_message(
 ///
 /// Authorization mirrors [`edit_channel_message`]: the message must exist and
 /// its `author_id` must be `user_id`. The row is removed (hard delete — the
-/// schema has no `deleted_at` on messages, same as `delete_channel`), and the
-/// channel's server audience is told to drop it.
+/// schema has no `deleted_at` on messages, same as `delete_channel`), and
+/// everyone who can see the channel is told to drop it.
 pub fn delete_channel_message(db: &Db, user_id: i64, message_id: i64) -> Result<(), String> {
     let Some((author, channel_id)) = db.message_row(message_id) else {
         return Err("message not found".into());
@@ -454,26 +463,24 @@ pub fn delete_channel_message(db: &Db, user_id: i64, message_id: i64) -> Result<
     if author != user_id {
         return Err("you can only delete your own messages".into());
     }
-    let server_id = authorize_text_channel(db, user_id, channel_id).map_err(String::from)?;
+    authorize_text_channel(db, user_id, channel_id, Permissions::VIEW_CHANNEL)?;
     db.delete_message(message_id)
         .map_err(|e| format!("failed to delete message: {e}"))?;
     hub().publish(
-        &server_audience(db, server_id),
+        &channel_audience(db, channel_id),
         &WsServerMsg::MessageDeleted { message_id, channel_id },
     );
     Ok(())
 }
 
 /// Persist that `user_id` reacted with `emoji` to `message_id`, then fan out a
-/// `ReactionAdd` frame carrying the new per-emoji count to the channel's server
-/// audience (the reactor's own echo included). The count is read back after the
+/// `ReactionAdd` frame carrying the new per-emoji count to everyone who can
+/// see the channel (the reactor's own echo included). The count is read back after the
 /// write, never incremented, so a duplicate add converges to the truth.
 /// Returns the resolved `(channel_id, count)` for the endpoint's result.
 ///
-/// Authorization: the message must exist AND its channel must be a text channel
-/// of a server the caller is a member of (`authorize_text_channel`, same bar as
-/// posting). Unlike pinning there is NO elevated-role check — Discord lets any
-/// member react.
+/// Authorization: the message must exist in a text channel where the caller
+/// holds Add Reactions.
 pub fn add_channel_reaction(
     db: &Db,
     user_id: i64,
@@ -487,12 +494,12 @@ pub fn add_channel_reaction(
         Some(pair) => pair,
         None => return Err("message not found".into()),
     };
-    let server_id = authorize_text_channel(db, user_id, channel_id).map_err(String::from)?;
+    authorize_text_channel(db, user_id, channel_id, Permissions::ADD_REACTIONS)?;
     db.add_reaction(message_id, user_id, emoji, now_millis())
         .map_err(|e| format!("failed to store reaction: {e}"))?;
     let count = reaction_count_for(db, message_id, emoji);
     hub().publish(
-        &server_audience(db, server_id),
+        &channel_audience(db, channel_id),
         &WsServerMsg::ReactionAdd {
             message_id,
             channel_id,
@@ -505,8 +512,8 @@ pub fn add_channel_reaction(
 }
 
 /// Drop `user_id`'s `emoji` reaction from `message_id` and fan out a
-/// `ReactionRemove` frame with the post-state count. Authorization as
-/// [`add_channel_reaction`]; idempotent (removing an absent reaction is a
+/// `ReactionRemove` frame with the post-state count. Taking back one's own
+/// reaction only needs to see the channel; idempotent (removing an absent reaction is a
 /// no-op that still broadcasts the unchanged count, so clients converge).
 pub fn remove_channel_reaction(
     db: &Db,
@@ -521,7 +528,7 @@ pub fn remove_channel_reaction(
         Some(pair) => pair,
         None => return Err("message not found".into()),
     };
-    let server_id = authorize_text_channel(db, user_id, channel_id).map_err(String::from)?;
+    authorize_text_channel(db, user_id, channel_id, Permissions::VIEW_CHANNEL)?;
     let removed = db
         .remove_reaction(message_id, user_id, emoji)
         .map_err(|e| format!("failed to remove reaction: {e}"))?;
@@ -530,7 +537,7 @@ pub fn remove_channel_reaction(
     let _ = removed;
     let count = reaction_count_for(db, message_id, emoji);
     hub().publish(
-        &server_audience(db, server_id),
+        &channel_audience(db, channel_id),
         &WsServerMsg::ReactionRemove {
             message_id,
             channel_id,
@@ -562,8 +569,8 @@ pub fn history_for(
     channel_id: i64,
     before_id: Option<i64>,
     limit: i64,
-) -> Result<Vec<Message>, &'static str> {
-    authorize_text_channel(db, user_id, channel_id)?;
+) -> Result<Vec<Message>, String> {
+    authorize_text_channel(db, user_id, channel_id, Permissions::VIEW_CHANNEL)?;
     Ok(db.older_messages(channel_id, before_id, limit))
 }
 
@@ -633,14 +640,57 @@ mod tests {
     #[test]
     fn channel_authorization_rules() {
         let (_d, db) = setup();
-        assert_eq!(authorize_text_channel(&db, 1, 1), Ok(1));
-        assert_eq!(authorize_text_channel(&db, 2, 1), Ok(1));
-        assert_eq!(authorize_text_channel(&db, 4, 1), Err("not a member of this server"));
-        assert_eq!(authorize_text_channel(&db, 1, 3), Err("not a member of this server"));
-        assert_eq!(authorize_text_channel(&db, 1, 2), Err("not a text channel"));
-        assert_eq!(authorize_text_channel(&db, 1, 99), Err("channel not found"));
+        let send = Permissions::SEND_MESSAGES;
+        assert_eq!(authorize_text_channel(&db, 1, 1, send).map(|r| r.0), Ok(1));
+        assert_eq!(authorize_text_channel(&db, 2, 1, send).map(|r| r.0), Ok(1));
+        assert_eq!(authorize_text_channel(&db, 4, 1, send), Err("not a member of this server".into()));
+        assert_eq!(authorize_text_channel(&db, 1, 3, send), Err("not a member of this server".into()));
+        assert_eq!(authorize_text_channel(&db, 1, 2, send), Err("not a text channel".into()));
+        assert_eq!(authorize_text_channel(&db, 1, 99, send), Err("channel not found".into()));
         assert!(history_for(&db, 4, 1, None, 50).is_err());
         assert!(history_for(&db, 1, 1, None, 50).is_ok());
+    }
+
+    /// Channel 4 in server 1 is private: @everyone can't see it, bob can't.
+    fn with_private_channel(db: &Db) {
+        db.lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO channels (id, server_id, name, kind, position, created_at) VALUES (4,1,'secret','text',2,1);
+                 INSERT INTO channel_overwrites (channel_id, target_kind, target_id, allow, deny)
+                    VALUES (4,'everyone',0,0,1);",
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn a_private_channel_is_invisible_to_members_without_access() {
+        let (_d, db) = setup();
+        with_private_channel(&db);
+        assert_eq!(authorize_text_channel(&db, 2, 4, Permissions::VIEW_CHANNEL), Err("channel not found".into()));
+        assert!(history_for(&db, 2, 4, None, 50).is_err());
+        assert_eq!(post_channel_message(&db, 2, 4, "let me in", None, Vec::new()).unwrap_err(), "channel not found");
+        assert!(post_channel_message(&db, 1, 4, "owner only", None, Vec::new()).is_ok());
+        assert_eq!(channel_audience(&db, 4), vec![1]);
+        assert_eq!(channel_audience(&db, 1), vec![1, 2]);
+        // bob isn't notified by name or by @everyone in a channel he can't see.
+        assert_eq!(resolve_mentions(&db, 4, 1, "@bob @everyone"), Vec::<i64>::new());
+        assert_eq!(resolve_mentions(&db, 1, 1, "@bob"), vec![2]);
+    }
+
+    #[test]
+    fn a_read_only_channel_refuses_posts_but_shows_history() {
+        let (_d, db) = setup();
+        db.lock()
+            .unwrap()
+            .execute_batch("INSERT INTO channel_overwrites (channel_id, target_kind, target_id, allow, deny) VALUES (1,'everyone',0,0,2);")
+            .unwrap();
+        assert!(history_for(&db, 2, 1, None, 50).is_ok());
+        assert_eq!(
+            post_channel_message(&db, 2, 1, "hi", None, Vec::new()).unwrap_err(),
+            "you need the Send Messages permission to do that"
+        );
+        assert!(post_channel_message(&db, 1, 1, "owner can", None, Vec::new()).is_ok());
     }
 
     #[test]
@@ -807,8 +857,12 @@ mod tests {
         let (_id, mut rx) = hub.register(1); // alice's (sender) socket
 
         assert!(post_channel_message(&db, 1, 1, "@bob @alice and @nobody", None, Vec::new()).is_ok());
-        // The echo frame carries the resolved mentions (bob=2, alice=1; nobody dropped).
-        let frame = rx.try_recv().expect("sender receives the echo");
+        // The echo frame carries the resolved mentions (bob=2, alice=1; nobody
+        // dropped). Tests elsewhere publish membership frames on the same hub
+        // without the lock, so skip anything that isn't a message.
+        let frame = std::iter::from_fn(|| rx.try_recv().ok())
+            .find(|f| matches!(f, WsServerMsg::Message { .. }))
+            .expect("sender receives the echo");
         match frame {
             WsServerMsg::Message { mentioned_user_ids, .. } => {
                 assert_eq!(mentioned_user_ids, vec![1, 2]);

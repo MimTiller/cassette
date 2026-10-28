@@ -51,11 +51,25 @@ server, so the WASM client never links SQLite.
 
 ### Permissions
 
-`src/roles.rs` defines four levels (`Owner > Admin > Moderator > Member`,
-stored in `server_memberships.role`) and an `Action` enum. Each action has a
-minimum level (`Action::minimum_role`), and services check with
-`role.can(Action::X)`. Named roles (`server_roles.rs`: colour, mentionable)
-are identity and mention groups only; they grant no permissions.
+`src/permissions.rs` is Discord's model:
+
+- **Permission bits** (`Permissions::VIEW_CHANNEL`, `KICK_MEMBERS`, …). Each
+  server stores what @everyone may do (`servers.everyone_permissions`), and
+  each named role (`server_roles.rs`) adds its own set. The owner, and
+  anyone holding `ADMINISTRATOR`, has everything.
+- **Channel overwrites** (`channel_overwrites`) allow or deny bits per
+  channel for @everyone, a role or one member. A channel inherits its
+  category's. A private channel denies `VIEW_CHANNEL` to @everyone; without
+  it a channel is invisible, and every other bit in it is off.
+- **Rank.** A member's highest role position. Managing a role, or kicking,
+  banning or timing out a member, needs a strictly higher rank.
+
+Services load a server once with `ServerContext::load` (or the
+`member_in` / `for_channel` helpers) and check `perms.contains(..)`. Anything
+that shows or sends a channel's messages must use the channel's permissions,
+not the server's: history, broadcasts (`realtime::channel_audience`),
+mentions, unread counts and the channel list all filter on `VIEW_CHANNEL`.
+The `server_memberships.role` column only still marks the owner.
 
 ### Database and migrations
 

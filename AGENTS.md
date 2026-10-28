@@ -19,8 +19,11 @@ For a UI change, also look at it in a browser (see "Testing in a browser").
 ### Server
 
 - **Every permission check happens on the server**, in the feature's
-  service, through `Role::can(Action::X)`. A new privileged operation gets a
-  new `Action` variant with its minimum level in `roles.rs`, plus a test.
+  service, against `crate::permissions` (see ARCHITECTURE.md). Check a
+  channel's permissions, not the server's, for anything about its messages,
+  and never send a channel's data to someone without `VIEW_CHANNEL` in it.
+  A new privileged operation reuses a permission bit where one fits, and
+  gets a test for both the allowed and the refused caller.
   Client-side checks only hide controls; they never protect anything.
 - **Refusals are user-facing text.** `ServerError::failed("…")` messages are
   shown to the user verbatim, so write them as plain sentences ("only admins

@@ -19,7 +19,7 @@
 //! (UTC epoch seconds; `None` = never expires), and an optional `max_uses`
 //! cap.
 //!
-//! - **Generate** — a moderator+ (owner/admin/moderator) of a server mints a
+//! - **Generate** — a member with Create Invite mints a
 //!   fresh code, optionally with an expiration and a use cap. The code is
 //!   drawn from an unambiguous alphabet and retried on the (astronomically
 //!   unlikely) global `UNIQUE` collision.
@@ -46,7 +46,9 @@ use server::{server, ServerError};
 #[cfg(feature = "server")]
 use crate::db::{Db, InviteRow};
 #[cfg(feature = "server")]
-use crate::roles::{Action, Role};
+use crate::permissions::{self, Permissions};
+#[cfg(feature = "server")]
+use crate::roles::Role;
 #[cfg(feature = "server")]
 use crate::session::acting_user;
 
@@ -221,7 +223,7 @@ impl InviteService {
     ///
     /// # Errors
     /// - `not found` — the server id doesn't exist.
-    /// - `permission denied` — the caller's role is below moderator.
+    /// - `you need the Create Invite permission to do that`.
     /// - `expiration must be in the future` — `expires_at` is at or before now.
     /// - `max_uses must be positive`.
     pub fn create_invite(
@@ -234,7 +236,10 @@ impl InviteService {
         self.db
             .server_by_id(server_id)
             .ok_or("server not found")?;
-        self.require(caller_id, server_id, Action::AddMember)?;
+        let (_, member) = permissions::member_in(&self.db, server_id, caller_id)?;
+        if !member.server.contains(Permissions::CREATE_INVITE) {
+            return Err(permissions::missing(Permissions::CREATE_INVITE));
+        }
         let now = (self.clock)();
         if let Some(exp) = expires_at {
             if exp <= now {
@@ -335,37 +340,13 @@ impl InviteService {
             role: "member".to_string(),
         })
     }
-
-    /// The caller's role in `server_id` (a membership is required).
-    fn caller_role(&self, server_id: i64, caller_id: i64) -> Result<Role, String> {
-        let role_str = self
-            .db
-            .membership_role(server_id, caller_id)
-            .ok_or_else(|| "permission denied: not a member of this server".to_string())?;
-        Role::from_db_str(&role_str)
-            .ok_or_else(|| format!("permission denied: unknown stored role {role_str:?}"))
-    }
-
-    /// Gate the caller on `action` in `server_id` (membership + policy).
-    fn require(&self, caller_id: i64, server_id: i64, action: Action) -> Result<Role, String> {
-        let role = self.caller_role(server_id, caller_id)?;
-        if !role.can(action) {
-            return Err(format!(
-                "permission denied: requires role '{}' or above (you are '{}')",
-                action.minimum_role().label(),
-                role.label()
-            ));
-        }
-        Ok(role)
-    }
 }
 
 // ── #[server] endpoints ─────────────────────────────────────────────────────
 
-/// Generate an invite code for a server. Moderator+ (owner, admin, or
-/// moderator) may create invites. `expires_at` / `max_uses` are optional.
-///
-/// The acting user is read from the `x-user-id` request header.
+/// Generate an invite code for a server. Needs Create Invite.
+/// `expires_at` / `max_uses` are optional. The acting user comes from the
+/// session.
 #[server]
 pub async fn create_invite(input: CreateInviteInput) -> Result<Invite, ServerError> {
     let db = db_from_state()?;
@@ -450,6 +431,7 @@ mod tests {
         )
         .unwrap();
         drop(c);
+        let _ = crate::permissions::grant(&db, 1, 2, crate::permissions::MODERATOR_LEVEL, 1);
         (dir, db)
     }
 
@@ -482,7 +464,7 @@ mod tests {
         let err = svc
             .create_invite(3, 1, None, None)
             .expect_err("plain member cannot create invites");
-        assert!(err.starts_with("permission denied"), "got: {err}");
+        assert_eq!(err, "you need the Create Invite permission to do that");
     }
 
     #[test]

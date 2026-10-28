@@ -41,7 +41,9 @@ use crate::db::Db;
 // this file uses its names (the `#[server]` client stubs do not reference the
 // arg types), so the import is gated too.
 #[cfg(feature = "server")]
-use crate::roles::{Action, ChannelKind, Role};
+use crate::permissions::{self, Member, Permissions, ServerContext};
+#[cfg(feature = "server")]
+use crate::roles::{ChannelKind, Role};
 
 /// The acting user for the current request, resolved from a verified session
 /// token (see [`crate::session`]); `None` when unauthenticated.
@@ -287,7 +289,7 @@ pub async fn message_gateway(
     token: String,
     cookies: server::Cookies,
 ) -> Result<(), ServerError> {
-    use crate::realtime::{announce_presence, history_for, hub, post_channel_message, server_audience_for_channel};
+    use crate::realtime::{announce_presence, history_for, hub, post_channel_message, channel_audience};
 
     let db = db_from_state()?;
     // The credential: the connect-URL wire arg (native clients, whose bearer
@@ -448,7 +450,11 @@ pub async fn message_gateway(
                 }
             },
             WsClientMsg::Typing { channel_id } => {
-                let audience = server_audience_for_channel(&db, channel_id, user_id);
+                // Only someone who could post here may say they're typing.
+                if crate::realtime::authorize_text_channel(&db, user_id, channel_id, Permissions::SEND_MESSAGES).is_err() {
+                    continue;
+                }
+                let audience: Vec<i64> = channel_audience(&db, channel_id).into_iter().filter(|&id| id != user_id).collect();
                 hub.publish(
                     &audience,
                     &WsServerMsg::Typing { channel_id, user_id },
@@ -497,6 +503,11 @@ pub struct ServerSettingsResult {
     pub owner_id: i64,
 }
 
+/// The refusal for the old owner/admin/moderator/member levels, which roles
+/// replaced.
+#[cfg(feature = "server")]
+const LEVELS_REPLACED: &str = "permission levels were replaced by roles; give them a role in Server Settings instead";
+
 /// The server-settings service. Wraps a `Db` handle.
 ///
 /// Every method takes the acting user id explicitly so the authorization is
@@ -525,11 +536,7 @@ impl ServerSettings {
             .db
             .server_by_id(server_id)
             .ok_or("server not found")?;
-        // Owner-only: the caller's standing in this server.
-        let role = self.caller_role(server_id, caller_id)?;
-        if !role.can(Action::RenameServer) {
-            return Err("permission denied: only the server owner can rename the server".into());
-        }
+        self.require(caller_id, server_id, Permissions::MANAGE_SERVER)?;
         self.db.rename_server(sid, new_name).map_err(|e| e.to_string())?;
         // Re-read to return a consistent snapshot (the rename already updated
         // the name; re-reading keeps the result faithful to disk).
@@ -557,10 +564,7 @@ impl ServerSettings {
             .db
             .server_by_id(server_id)
             .ok_or("server not found")?;
-        let role = self.caller_role(server_id, caller_id)?;
-        if !role.can(Action::SetServerIcon) {
-            return Err("permission denied: only the server owner or an admin can set the server icon".into());
-        }
+        self.require(caller_id, server_id, Permissions::MANAGE_SERVER)?;
         // Reject an empty string URL — treat it as an error rather than
         // silently storing garbage.
         if let Some(url) = icon {
@@ -635,36 +639,39 @@ impl ServerSettings {
 
     // ── shared authorization helpers ───────────────────────────────────────
 
-    /// Resolve the caller's [`Role`] in `server_id`.
-    ///
-    /// Returns `permission denied: not a member of this server` when the
-    /// caller has no membership row. An unparseable role string (schema
-    /// drift) is treated as a *denied* standing rather than trusted, so a
-    /// corrupt row can never grant power.
-    fn caller_role(&self, server_id: i64, caller_id: i64) -> Result<Role, String> {
-        let role_str = self
-            .db
-            .membership_role(server_id, caller_id)
-            .ok_or_else(|| "permission denied: not a member of this server".to_string())?;
-        Role::from_db_str(&role_str).ok_or_else(|| {
-            format!("permission denied: unknown stored role {role_str:?}")
-        })
+    /// Check that `caller_id` is a member of `server_id` holding `perm`
+    /// server-wide. Returns the loaded server and the caller.
+    fn require(&self, caller_id: i64, server_id: i64, perm: Permissions) -> Result<(ServerContext, Member), String> {
+        let (ctx, member) = permissions::member_in(&self.db, server_id, caller_id)?;
+        if !member.server.contains(perm) {
+            return Err(permissions::missing(perm));
+        }
+        Ok((ctx, member))
     }
 
-    /// Check that `caller_id` may perform `action` in `server_id`, and
-    /// return the caller's role on success. Combines membership resolution
-    /// with the [`Role::can`] policy in one call — the single gate every
-    /// mutation below goes through.
-    fn require(&self, caller_id: i64, server_id: i64, action: Action) -> Result<Role, String> {
-        let role = self.caller_role(server_id, caller_id)?;
-        if !role.can(action) {
-            return Err(format!(
-                "permission denied: requires role '{}' or above (you are '{}')",
-                action.minimum_role().label(),
-                role.label()
-            ));
+    /// Check that `caller_id` holds `perm` in `channel_id`, and return the
+    /// channel's server id. A channel the caller can't see is "not found".
+    fn require_in_channel(&self, caller_id: i64, channel_id: i64, perm: Permissions) -> Result<i64, String> {
+        let server_id = self.db.channel_full(channel_id).ok_or("channel not found")?.1;
+        let (ctx, member) = permissions::member_in(&self.db, server_id, caller_id)?;
+        let perms = ctx.in_channel(&member, channel_id);
+        if !perms.contains(Permissions::VIEW_CHANNEL) {
+            return Err("channel not found".into());
         }
-        Ok(role)
+        if !perms.contains(perm) {
+            return Err(permissions::missing(perm));
+        }
+        Ok(server_id)
+    }
+
+    /// Check that `caller` outranks member `user_id`; `what` is the verb for
+    /// the refusal ("kick", "ban", …).
+    fn require_outranks(ctx: &ServerContext, caller: &Member, user_id: i64, what: &str) -> Result<(), String> {
+        let target = ctx.member(user_id).ok_or("member not found")?;
+        match permissions::refuse_outranked(caller.rank, target.rank, what) {
+            Some(refusal) => Err(refusal),
+            None => Ok(()),
+        }
     }
 
     /// The current wall-clock seconds since the Unix epoch, for the
@@ -678,11 +685,12 @@ impl ServerSettings {
 
     // ── channel management ─────────────────────────────────────────────────
 
-    /// Create a channel in `server_id`. Admin+ (owner or admin).
+    /// Create a channel in `server_id`. Needs Manage Channels, in the
+    /// category too when there is one.
     ///
     /// # Errors
-    /// - `not found` — the server id doesn't exist.
-    /// - `permission denied` — the caller's role is below admin.
+    /// - `server not found` — the server id doesn't exist.
+    /// - `you need the Manage Channels permission to do that`.
     /// - `channel name must not be empty` / `channel name is already taken`.
     pub fn create_channel(
         &self,
@@ -698,18 +706,23 @@ impl ServerSettings {
         self.db
             .server_by_id(server_id)
             .ok_or("server not found")?;
-        self.require(caller_id, server_id, Action::CreateChannel)?;
+        self.require(caller_id, server_id, Permissions::MANAGE_CHANNELS)?;
+        if let Some(parent) = parent_channel_id {
+            if self.require_in_channel(caller_id, parent, Permissions::MANAGE_CHANNELS)? != server_id {
+                return Err("channel not found".into());
+            }
+        }
         self.db
             .insert_channel(server_id, name.trim(), kind, parent_channel_id, Self::now_secs())
             .map_err(|e| format!("failed to create channel: {e}"))
     }
 
-    /// Rename a channel. Moderator+ (owner, admin, or moderator).
+    /// Rename a channel. Needs Manage Channels in it.
     ///
     /// # Errors
-    /// - `channel not found` — the id doesn't exist.
-    /// - `permission denied` — the caller's role is below moderator, or the
-    ///   channel lives in a different server than `server_id`.
+    /// - `channel not found` — the id doesn't exist, the caller can't see it,
+    ///   or it lives in a different server than `server_id`.
+    /// - `you need the Manage Channels permission to do that`.
     pub fn rename_channel(
         &self,
         caller_id: i64,
@@ -730,17 +743,17 @@ impl ServerSettings {
         if chan_server != server_id {
             return Err("channel not found".into());
         }
-        self.require(caller_id, server_id, Action::RenameChannel)?;
+        self.require_in_channel(caller_id, channel_id, Permissions::MANAGE_CHANNELS)?;
         self.db
             .rename_channel(channel_id, new_name.trim())
             .map_err(|e| format!("failed to rename channel: {e}"))
     }
 
-    /// Delete a channel. Admin+ (owner or admin).
+    /// Delete a channel. Needs Manage Channels in it.
     ///
     /// # Errors
     /// - `channel not found` — the id doesn't exist (or is in another server).
-    /// - `permission denied` — the caller's role is below admin.
+    /// - `you need the Manage Channels permission to do that`.
     pub fn delete_channel(&self, caller_id: i64, server_id: i64, channel_id: i64) -> Result<(), String> {
         let (_cid, chan_server, _name, _kind, _pos, _parent) = self
             .db
@@ -749,7 +762,7 @@ impl ServerSettings {
         if chan_server != server_id {
             return Err("channel not found".into());
         }
-        self.require(caller_id, server_id, Action::DeleteChannel)?;
+        self.require_in_channel(caller_id, channel_id, Permissions::MANAGE_CHANNELS)?;
         let removed = self
             .db
             .delete_channel(channel_id)
@@ -762,14 +775,9 @@ impl ServerSettings {
 
     // ── member management ──────────────────────────────────────────────────
 
-    /// Add (or re-role) a member in `server_id` with `role`. Moderator+ for
-    /// `AddMember`; granting `admin`/`owner` additionally requires `admin+`
-    /// (enforced via `SetMemberRole`) because a plain moderator must not be
-    /// able to promote someone above themselves.
-    ///
-    /// The caller can never be demoted or removed from the server by this
-    /// path (that is `remove_member`), and the owner role cannot be granted
-    /// here — only `transfer_ownership` moves it.
+    /// Add a member to `server_id`. Needs Create Invite. `role` must be
+    /// `member`: the old levels were replaced by roles, which are handed out
+    /// with `server_roles::assign_role`.
     pub fn add_member(
         &self,
         caller_id: i64,
@@ -777,21 +785,10 @@ impl ServerSettings {
         user_id: i64,
         role: Role,
     ) -> Result<String, String> {
-        // The owner role is reserved for the creator; it moves only via
-        // transfer_ownership.
-        if role == Role::Owner {
-            return Err("cannot assign the owner role (use transfer_ownership)".into());
+        if role != Role::Member {
+            return Err(LEVELS_REPLACED.into());
         }
-        self.db
-            .server_by_id(server_id)
-            .ok_or("server not found")?;
-        // Adding someone (even as a plain member) is a moderator+ duty.
-        self.require(caller_id, server_id, Action::AddMember)?;
-        // Granting admin is an admin+ duty: a moderator may add members but
-        // not promote them to admin.
-        if role >= Role::Admin {
-            self.require(caller_id, server_id, Action::SetMemberRole)?;
-        }
+        self.require(caller_id, server_id, Permissions::CREATE_INVITE)?;
         // A banned user can't be re-added even by an admin — the ban table is
         // authoritative over a direct add (an unban must come first).
         if self.db.is_banned(server_id, user_id) {
@@ -809,26 +806,18 @@ impl ServerSettings {
         Ok(role.db_str().to_string())
     }
 
-    /// Remove a member from `server_id`. Moderator+ (owner, admin, or
-    /// moderator). The owner can never be removed through this path —
-    /// ownership must be transferred first (the DB layer demotes, never
-    /// deletes, the owner row, and this method refuses to target it).
+    /// Remove (kick) a member from `server_id`. Needs Kick Members and a
+    /// higher rank than the member, so the owner can never be kicked.
     ///
     /// # Errors
-    /// - `not found` — the server id doesn't exist.
-    /// - `permission denied` — the caller's role is below moderator.
-    /// - `cannot remove the server owner` — `user_id` is the owner.
+    /// - `server not found` — the server id doesn't exist.
+    /// - `you need the Kick Members permission to do that`.
+    /// - `you can't kick the server owner` / `you can only kick someone whose
+    ///   highest role is below yours`.
     /// - `member not found` — `user_id` has no membership row.
     pub fn remove_member(&self, caller_id: i64, server_id: i64, user_id: i64) -> Result<(), String> {
-        let (_sid, _name, owner_id, _icon_url) = self
-            .db
-            .server_by_id(server_id)
-            .ok_or("server not found")?;
-        self.require(caller_id, server_id, Action::RemoveMember)?;
-        // The owner is protected: removing them would orphan the server.
-        if user_id == owner_id {
-            return Err("cannot remove the server owner (transfer ownership first)".into());
-        }
+        let (ctx, caller) = self.require(caller_id, server_id, Permissions::KICK_MEMBERS)?;
+        Self::require_outranks(&ctx, &caller, user_id, "kick")?;
         let removed = self
             .db
             .remove_membership(server_id, user_id)
@@ -867,11 +856,9 @@ impl ServerSettings {
         Ok(())
     }
 
-    /// Ban a member from `server_id`: remove them AND bar rejoining. Admin+
-    /// (owner or admin) — a ban is more severe than a kick, so it clears a
-    /// higher bar than `remove_member` (moderator+). The owner can never be
-    /// banned through this path (ownership must be transferred first, and the
-    /// owner row is protected exactly as in `remove_member`).
+    /// Ban a member from `server_id`: remove them AND bar rejoining. Needs
+    /// Ban Members and a higher rank than the member, so the owner can never
+    /// be banned.
     ///
     /// The membership removal and the ban record happen atomically (a single
     /// DB transaction), so a failure can never leave the user kicked-but-not-
@@ -880,7 +867,7 @@ impl ServerSettings {
     ///
     /// # Errors
     /// - `not found` — the server id doesn't exist.
-    /// - `permission denied` — the caller's role is below admin.
+    /// - `you need the … permission to do that` — see above.
     /// - `cannot ban the server owner` — `user_id` is the owner.
     /// - `member not found` — `user_id` has no membership row.
     pub fn ban_member(
@@ -890,15 +877,8 @@ impl ServerSettings {
         user_id: i64,
         reason: Option<&str>,
     ) -> Result<(), String> {
-        let (_sid, _name, owner_id, _icon_url) = self
-            .db
-            .server_by_id(server_id)
-            .ok_or("server not found")?;
-        self.require(caller_id, server_id, Action::BanMember)?;
-        // The owner is protected: banning them would orphan the server.
-        if user_id == owner_id {
-            return Err("cannot ban the server owner (transfer ownership first)".into());
-        }
+        let (ctx, caller) = self.require(caller_id, server_id, Permissions::BAN_MEMBERS)?;
+        Self::require_outranks(&ctx, &caller, user_id, "ban")?;
         let removed = self
             .db
             .ban_and_remove(server_id, user_id, caller_id, reason, Self::now_secs())
@@ -913,10 +893,8 @@ impl ServerSettings {
 
     /// Time out a member of `server_id`: silence them from posting messages
     /// for `duration_secs` without removing their membership (a kick/ban drop
-    /// the row; a timeout only sets a deadline). Admin+ (owner or admin), the
-    /// same bar as a ban — a timeout restrains a member more strongly than a
-    /// kick. The owner is protected exactly as in `ban_member` (timing them
-    /// out would orphan the server). Re-timing overwrites the existing
+    /// the row; a timeout only sets a deadline). Needs Timeout Members and a
+    /// higher rank than the member. Re-timing overwrites the existing
     /// deadline in place (`db.set_timeout`), so a member can be extended.
     ///
     /// Enforcement is at the post boundary: [`crate::realtime::post_channel_message`]
@@ -925,7 +903,7 @@ impl ServerSettings {
     ///
     /// # Errors
     /// - `not found` — the server id doesn't exist.
-    /// - `permission denied` — the caller's role is below admin.
+    /// - `you need the … permission to do that` — see above.
     /// - `cannot time out the server owner` — `user_id` is the owner.
     /// - `member not found` — `user_id` has no membership row.
     pub fn timeout_member(
@@ -935,20 +913,13 @@ impl ServerSettings {
         user_id: i64,
         duration_secs: i64,
     ) -> Result<(), String> {
-        let (_sid, _name, owner_id, _icon_url) = self
-            .db
-            .server_by_id(server_id)
-            .ok_or("server not found")?;
-        self.require(caller_id, server_id, Action::TimeoutMember)?;
+        let (ctx, caller) = self.require(caller_id, server_id, Permissions::MODERATE_MEMBERS)?;
         // A timeout of zero or less would be instantly expired — reject it at
         // the boundary rather than silently no-op.
         if duration_secs <= 0 {
             return Err("timeout duration must be positive".into());
         }
-        // The owner is protected: timing them out would orphan the server.
-        if user_id == owner_id {
-            return Err("cannot time out the server owner (transfer ownership first)".into());
-        }
+        Self::require_outranks(&ctx, &caller, user_id, "time out")?;
         let timeout_until = Self::now_secs() + duration_secs;
         let updated = self
             .db
@@ -960,43 +931,11 @@ impl ServerSettings {
         Ok(())
     }
 
-    /// Change an existing member's role in `server_id`. Admin+ (owner or
-    /// admin). The owner's role can't be changed and the owner role can't be
-    /// assigned — ownership moves only via `transfer_ownership`.
-    ///
-    /// # Errors
-    /// - `not found` — the server id doesn't exist.
-    /// - `permission denied` — the caller's role is below admin.
-    /// - `cannot change the server owner's role` / `cannot assign the owner
-    ///   role`.
-    /// - `member not found` — `user_id` has no membership row.
-    pub fn set_member_role(
-        &self,
-        caller_id: i64,
-        server_id: i64,
-        user_id: i64,
-        new_role: Role,
-    ) -> Result<String, String> {
-        let (_sid, _name, owner_id, _icon_url) = self
-            .db
-            .server_by_id(server_id)
-            .ok_or("server not found")?;
-        self.require(caller_id, server_id, Action::SetMemberRole)?;
-        if new_role == Role::Owner {
-            return Err("cannot assign the owner role (use transfer_ownership)".into());
-        }
-        if user_id == owner_id {
-            return Err("cannot change the server owner's role (transfer ownership first)".into());
-        }
-        // The target must already be a member (this is a *change*, not an
-        // invite — invites go through add_member).
-        if self.db.membership_role(server_id, user_id).is_none() {
-            return Err("member not found".into());
-        }
-        self.db
-            .upsert_membership(server_id, user_id, new_role, Self::now_secs())
-            .map_err(|e| format!("failed to set member role: {e}"))?;
-        Ok(new_role.db_str().to_string())
+    /// Change a member's permission level. Levels were replaced by roles
+    /// (see `permissions`), so this always refuses; roles are handed out with
+    /// `server_roles::set_member_roles`.
+    pub fn set_member_role(&self, _caller_id: i64, _server_id: i64, _user_id: i64, _new_role: Role) -> Result<String, String> {
+        Err(LEVELS_REPLACED.into())
     }
 
     // ── channel reads / unread counts ──────────────────────────────────────
@@ -1018,7 +957,7 @@ impl ServerSettings {
     ///
     /// # Errors
     /// - `channel not found` — the id doesn't exist.
-    /// - `permission denied: not a member of this server` — no membership.
+    /// - `you're not a member of this server` — no membership.
     /// - `failed to mark channel read: …` — the write failed.
     pub fn mark_read(
         &self,
@@ -1028,13 +967,7 @@ impl ServerSettings {
     ) -> Result<(), String> {
         // Resolve the owning server from the channel (a channel id maps to
         // exactly one server); membership is then checked against that server.
-        let (_, server_id, _, _, _, _) = self
-            .db
-            .channel_full(channel_id)
-            .ok_or("channel not found")?;
-        if self.db.membership_role(server_id, caller_id).is_none() {
-            return Err("permission denied: not a member of this server".into());
-        }
+        self.require_in_channel(caller_id, channel_id, Permissions::VIEW_CHANNEL)?;
         let message_id = if message_id > 0 {
             message_id
         } else {
@@ -1053,21 +986,17 @@ impl ServerSettings {
     ///
     /// # Errors
     /// - `server not found` — the id doesn't exist.
-    /// - `permission denied: not a member of this server` — no membership.
+    /// - `you're not a member of this server` — no membership.
     pub fn unread_counts(
         &self,
         caller_id: i64,
         server_id: i64,
     ) -> Result<Vec<UnreadCount>, String> {
-        if self.db.server_by_id(server_id).is_none() {
-            return Err("server not found".into());
-        }
-        if self.db.membership_role(server_id, caller_id).is_none() {
-            return Err("permission denied: not a member of this server".into());
-        }
+        let (ctx, member) = permissions::member_in(&self.db, server_id, caller_id)?;
         let counts = self.db.unread_counts_for_server(caller_id, server_id);
         Ok(counts
             .into_iter()
+            .filter(|(channel_id, _, _)| ctx.in_channel(&member, *channel_id).contains(Permissions::VIEW_CHANNEL))
             .map(|(channel_id, count, unread_mentions)| UnreadCount {
                 channel_id,
                 count,
@@ -1081,14 +1010,9 @@ impl ServerSettings {
     ///
     /// # Errors
     /// - `server not found` — the id doesn't exist.
-    /// - `permission denied: not a member of this server` — no membership.
+    /// - `you're not a member of this server` — no membership.
     pub fn list_members(&self, caller_id: i64, server_id: i64) -> Result<Vec<MemberInfo>, String> {
-        if self.db.server_by_id(server_id).is_none() {
-            return Err("server not found".into());
-        }
-        if self.db.membership_role(server_id, caller_id).is_none() {
-            return Err("permission denied: not a member of this server".into());
-        }
+        permissions::member_in(&self.db, server_id, caller_id)?;
         Ok(self
             .db
             .server_members(server_id)
@@ -1104,31 +1028,25 @@ impl ServerSettings {
 
     // ── message pins ───────────────────────────────────────────────────────
     //
-    // Pinning a message in a channel. Pinning/unpinning is a moderator+ duty
-    // (`Action::PinMessage` — Discord "Manage Messages" parity); *reading* the
-    // pinned view is any membership (any member can see what is pinned). The
+    // Pinning a message in a channel. Pinning/unpinning needs Manage Messages
+    // in the channel; reading the pinned view needs only to see it. The
     // channel is resolved from the message id, so a caller cannot pin a
-    // message in a server they hold no role in by passing a foreign id.
+    // message in a channel they can't manage by passing a foreign id.
 
-    /// Pin `message_id` in its channel. Moderator+ (owner, admin, or
-    /// moderator) in the server that owns the message's channel. Idempotent: a
-    /// second pin is a no-op.
+    /// Pin `message_id` in its channel. Needs Manage Messages there.
+    /// Idempotent: a second pin is a no-op.
     ///
     /// # Errors
     /// - `message not found` — the id is not a stored guild message.
     /// - `channel not found` — the message's channel is gone.
-    /// - `permission denied: …` — the caller's role is below moderator, or the
-    ///   caller is not a member of the owning server.
+    /// - `you need the Manage Messages permission to do that`, or the caller
+    ///   is not a member of the owning server.
     pub fn pin_message(&self, caller_id: i64, message_id: i64) -> Result<PinResult, String> {
         let (_author_id, channel_id) = self
             .db
             .message_row(message_id)
             .ok_or("message not found")?;
-        let (_, server_id, _, _, _, _) = self
-            .db
-            .channel_full(channel_id)
-            .ok_or("channel not found")?;
-        self.require(caller_id, server_id, Action::PinMessage)?;
+        self.require_in_channel(caller_id, channel_id, Permissions::MANAGE_MESSAGES)?;
         self.db
             .pin_message(message_id, caller_id, Self::now_millis())
             .map_err(|e| format!("failed to pin message: {e}"))?;
@@ -1140,25 +1058,21 @@ impl ServerSettings {
         })
     }
 
-    /// Unpin `message_id` from its channel. Moderator+ (same bar as
-    /// [`Self::pin_message`]). Idempotent: unpinning an unpinned message is a
+    /// Unpin `message_id` from its channel. Same permission as
+    /// [`Self::pin_message`]. Idempotent: unpinning an unpinned message is a
     /// no-op (`pinned: false`) rather than an error.
     ///
     /// # Errors
     /// - `message not found` — the id is not a stored guild message.
     /// - `channel not found` — the message's channel is gone.
-    /// - `permission denied: …` — the caller's role is below moderator, or the
-    ///   caller is not a member of the owning server.
+    /// - `you need the Manage Messages permission to do that`, or the caller
+    ///   is not a member of the owning server.
     pub fn unpin_message(&self, caller_id: i64, message_id: i64) -> Result<PinResult, String> {
         let (_author_id, channel_id) = self
             .db
             .message_row(message_id)
             .ok_or("message not found")?;
-        let (_, server_id, _, _, _, _) = self
-            .db
-            .channel_full(channel_id)
-            .ok_or("channel not found")?;
-        self.require(caller_id, server_id, Action::PinMessage)?;
+        self.require_in_channel(caller_id, channel_id, Permissions::MANAGE_MESSAGES)?;
         let removed = self
             .db
             .unpin_message(message_id)
@@ -1182,15 +1096,9 @@ impl ServerSettings {
     ///
     /// # Errors
     /// - `channel not found` — the id doesn't exist.
-    /// - `permission denied: not a member of this server` — no membership.
+    /// - `you're not a member of this server` — no membership.
     pub fn list_pinned(&self, caller_id: i64, channel_id: i64) -> Result<Vec<PinnedMessage>, String> {
-        let (_, server_id, _, _, _, _) = self
-            .db
-            .channel_full(channel_id)
-            .ok_or("channel not found")?;
-        if self.db.membership_role(server_id, caller_id).is_none() {
-            return Err("permission denied: not a member of this server".into());
-        }
+        self.require_in_channel(caller_id, channel_id, Permissions::VIEW_CHANNEL)?;
         Ok(self
             .db
             .pinned_messages(channel_id)
@@ -1218,15 +1126,9 @@ impl ServerSettings {
     ///
     /// # Errors
     /// - `channel not found` — the id doesn't exist.
-    /// - `permission denied: not a member of this server` — no membership.
+    /// - `you're not a member of this server` — no membership.
     pub fn pinned_count(&self, caller_id: i64, channel_id: i64) -> Result<i64, String> {
-        let (_, server_id, _, _, _, _) = self
-            .db
-            .channel_full(channel_id)
-            .ok_or("channel not found")?;
-        if self.db.membership_role(server_id, caller_id).is_none() {
-            return Err("permission denied: not a member of this server".into());
-        }
+        self.require_in_channel(caller_id, channel_id, Permissions::VIEW_CHANNEL)?;
         Ok(self.db.pinned_count(channel_id))
     }
 
@@ -1285,13 +1187,16 @@ pub async fn create_channel(input: CreateChannelInput) -> Result<ChannelResult, 
     let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
     let kind = ChannelKind::from_db_str(&input.kind)
         .ok_or_else(|| ServerError::failed(format!("unknown channel kind: {}", input.kind)))?;
-    let id = ServerSettings::new(db)
+    let id = ServerSettings::new(db.clone())
         .create_channel(caller, input.server_id, &input.name, kind, input.parent_channel_id)
         .map_err(ServerError::failed)?;
+    if input.private {
+        permissions::make_private(&db, id, caller).map_err(ServerError::failed)?;
+    }
     Ok(ChannelResult { channel_id: id, server_id: input.server_id, name: Some(input.name) })
 }
 
-/// Rename a channel. Owner, admin, or moderator may call.
+/// Rename a channel. Needs Manage Channels in it.
 #[server]
 pub async fn rename_channel(input: RenameChannelInput) -> Result<ChannelResult, ServerError> {
     let db = db_from_state()?;
@@ -1315,8 +1220,8 @@ pub async fn delete_channel(input: DeleteChannelInput) -> Result<ChannelResult, 
 
 // ── member management endpoints ─────────────────────────────────────────────
 
-/// Add (or re-role) a member in a server. Moderator+ to add; admin+ to grant
-/// an admin role. The owner role is not assignable here.
+/// Add a member to a server. Needs Create Invite; only the `member` level
+/// is accepted (roles replaced the others).
 #[server]
 pub async fn add_member(input: AddMemberInput) -> Result<MemberResult, ServerError> {
     let db = db_from_state()?;
@@ -1329,8 +1234,8 @@ pub async fn add_member(input: AddMemberInput) -> Result<MemberResult, ServerErr
     Ok(MemberResult { server_id: input.server_id, user_id: input.user_id, role: role_str })
 }
 
-/// Remove a member from a server. Owner, admin, or moderator may call. The
-/// server owner can't be removed.
+/// Remove (kick) a member from a server. Needs Kick Members and a higher
+/// rank than the member.
 #[server]
 pub async fn remove_member(input: RemoveMemberInput) -> Result<MemberResult, ServerError> {
     let db = db_from_state()?;
@@ -1367,9 +1272,9 @@ pub async fn ban_member(input: BanMemberInput) -> Result<MemberResult, ServerErr
 
 /// Time out a member of a server: silence them from posting messages for
 /// `duration_secs` without removing their membership (a kick/ban drop the row;
-/// a timeout only sets a deadline they can post again after). Owner or admin
-/// may call (the same admin+ bar as a ban). The server owner can't be timed
-/// out. A re-timeout overwrites the existing deadline in place.
+/// a timeout only sets a deadline they can post again after). Needs Timeout
+/// Members and a higher rank than the member. A re-timeout overwrites the
+/// existing deadline in place.
 #[server]
 pub async fn timeout_member(input: TimeoutMemberInput) -> Result<MemberResult, ServerError> {
     let db = db_from_state()?;
@@ -1435,12 +1340,11 @@ pub async fn list_members(input: ListMembersInput) -> Result<Vec<MemberInfo>, Se
 
 // ── message pins ─────────────────────────────────────────────────────────────
 //
-// Pin/unpin a message in a channel (moderator+), and read a channel's pinned
-// view + count (any member). The acting user comes from the verified session
+// Pin/unpin a message in a channel (Manage Messages), and read a channel's
+// pinned view + count (anyone who can see it). The acting user comes from the verified session
 // token; the channel is resolved from the message on the pin/unpin path.
 
-/// Pin a message in its channel. Owner, admin, or moderator may call
-/// (Discord "Manage Messages" parity). Idempotent.
+/// Pin a message in its channel. Needs Manage Messages. Idempotent.
 #[server]
 pub async fn pin_message(input: PinInput) -> Result<PinResult, ServerError> {
     let db = db_from_state()?;
@@ -1450,7 +1354,7 @@ pub async fn pin_message(input: PinInput) -> Result<PinResult, ServerError> {
         .map_err(ServerError::failed)
 }
 
-/// Unpin a message from its channel. Same moderator+ bar as `pin_message`.
+/// Unpin a message from its channel. Same permission as `pin_message`.
 /// Idempotent — unpinning an unpinned message is a no-op.
 #[server]
 pub async fn unpin_message(input: PinInput) -> Result<PinResult, ServerError> {
@@ -1463,15 +1367,15 @@ pub async fn unpin_message(input: PinInput) -> Result<PinResult, ServerError> {
 
 // ── message reactions ─────────────────────────────────────────────────────
 //
-// Add/remove an emoji reaction on a channel message (any member — unlike the
-// moderator+ pin bar, Discord lets every member react), persisting a
-// `(message, user, emoji)` row in `message_reactions` and broadcasting the
-// post-state count to the channel's server audience over the gateway
+// Add/remove an emoji reaction on a channel message (adding needs Add
+// Reactions), persisting a `(message, user, emoji)` row in
+// `message_reactions` and broadcasting the post-state count to everyone who
+// can see the channel over the gateway
 // (`WsServerMsg::ReactionAdd` / `ReactionRemove`). The acting user comes from
 // the verified session token, never from the request.
 
-/// React to a message with an emoji. Any member of the message's channel's
-/// server may call (Discord parity: reacting needs no elevated role). Idempotent
+/// React to a message with an emoji. Needs Add Reactions in the message's
+/// channel. Idempotent
 /// for a repeat add; the result's `count` is the message's total for that emoji
 /// after the operation.
 #[server]
@@ -1575,6 +1479,10 @@ pub struct CreateChannelInput {
     /// Parent (category) channel id, or `None` for top-level.
     #[serde(default)]
     pub parent_channel_id: Option<i64>,
+    /// Hide the channel from @everyone; only its creator (and anyone given
+    /// access later) can see it.
+    #[serde(default)]
+    pub private: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]
@@ -1897,7 +1805,7 @@ mod tests {
         let (_dir, db) = setup_db();
         let svc = ServerSettings::new(db.clone());
         let err = svc.rename(2, 1, "Hacked").unwrap_err();
-        assert!(err.contains("permission denied"), "got: {err}");
+        assert_eq!(err, "you need the Manage Server permission to do that");
         // Name unchanged.
         assert_eq!(db.server_by_id(1).unwrap().1, "My Server");
     }
@@ -1941,7 +1849,7 @@ mod tests {
         let (_dir, db) = setup_db();
         let svc = ServerSettings::new(db.clone());
         let err = svc.set_icon(2, 1, Some("https://evil.example.com/x.png")).unwrap_err();
-        assert!(err.contains("permission denied"), "got: {err}");
+        assert_eq!(err, "you need the Manage Server permission to do that");
         // Icon unchanged.
         assert!(db.server_by_id(1).unwrap().3.is_none());
     }
@@ -2051,21 +1959,14 @@ mod tests {
 
     // ── member management: ban ───────────────────────────────────────────────
     //
-    // A ban removes a member AND bars rejoining. It clears a higher bar than a
-    // kick (admin+ vs moderator+), and the rejoin block is asserted through
+    // A ban removes a member AND bars rejoining (Ban Members, while a kick
+    // needs Kick Members), and the rejoin block is asserted through
     // `add_member` (the other rejoin path, `redeem_invite`, is covered by its
     // own e2e test in `invites`).
 
-    /// Give user 3 the admin role in server 1 so we can exercise the
-    /// admin-can-ban path (the default fixture only has one member, bob).
+    /// Give `user_id` a role with the old admin level's powers in server 1.
     fn promote_user_to_admin(db: &Db, user_id: i64) {
-        let c = db.lock().unwrap();
-        c.execute(
-            "UPDATE server_memberships SET role = 'admin' WHERE server_id = 1 AND user_id = ?1",
-            rusqlite::params![user_id],
-        )
-        .unwrap();
-        drop(c);
+        let _ = crate::permissions::grant(db, 1, user_id, crate::permissions::ADMIN_LEVEL, 2);
     }
 
     #[test]
@@ -2093,20 +1994,11 @@ mod tests {
     #[test]
     fn moderator_cannot_ban() {
         let (_dir, db) = setup_db();
-        // Give bob (3) the moderator role — a kick is allowed, a ban is not.
-        let c = db.lock().unwrap();
-        c.execute(
-            "UPDATE server_memberships SET role = 'moderator' WHERE server_id = 1 AND user_id = 3",
-            [],
-        )
-        .unwrap();
-        drop(c);
+        // Give bob (3) the moderator powers — a kick is allowed, a ban is not.
+        let _ = crate::permissions::grant(&db, 1, 3, crate::permissions::MODERATOR_LEVEL, 1);
         let svc = ServerSettings::new(db.clone());
         let err = svc.ban_member(3, 1, 2, None).unwrap_err();
-        assert!(
-            err.contains("permission denied"),
-            "a moderator may kick but not ban; got: {err}"
-        );
+        assert_eq!(err, "you need the Ban Members permission to do that");
         // alice is untouched.
         assert_eq!(db.membership_role(1, 2), Some("member".into()));
         assert!(!db.is_banned(1, 2));
@@ -2120,7 +2012,7 @@ mod tests {
         promote_user_to_admin(&db, 3);
         let svc = ServerSettings::new(db);
         let err = svc.ban_member(3, 1, 1, None).unwrap_err();
-        assert!(err.contains("cannot ban the server owner"), "got: {err}");
+        assert_eq!(err, "you can't ban the server owner");
     }
 
     #[test]
@@ -2370,7 +2262,7 @@ mod tests {
 
     // ── message pins ───────────────────────────────────────────────────────
     //
-    // Pinning a message is moderator+ (Discord "Manage Messages" parity);
+    // Pinning a message needs Manage Messages;
     // reading the pinned view / count is any member. The pin state lives in
     // `message_pins` and the channel is resolved from the message, so these
     // tests exercise: the happy path (owner pins), the authz matrix (member
@@ -2378,17 +2270,9 @@ mod tests {
     // are no-ops), pin-order preservation, the count, and the "unknown
     // message" rejection.
 
-    /// Seed user 3 (bob) as a moderator in server 1 so the moderator-can-pin
-    /// path can be exercised (the default fixture only has one owner + two
-    /// plain members).
+    /// Give user 3 (bob) the old moderator level's powers in server 1.
     fn make_user3_moderator(db: &Db) {
-        let c = db.lock().unwrap();
-        c.execute(
-            "UPDATE server_memberships SET role = 'moderator' WHERE server_id = 1 AND user_id = 3",
-            [],
-        )
-        .unwrap();
-        drop(c);
+        let _ = crate::permissions::grant(db, 1, 3, crate::permissions::MODERATOR_LEVEL, 1);
     }
 
     #[test]
@@ -2425,7 +2309,7 @@ mod tests {
         let msg = post_messages(&db, 1, 1, 2);
         // alice (2) is a plain member: pinning is refused…
         let err = svc.pin_message(2, msg).unwrap_err();
-        assert!(err.contains("permission denied"), "got: {err}");
+        assert_eq!(err, "you need the Manage Messages permission to do that");
         assert!(!db.message_is_pinned(msg), "no pin row was written");
         // …but she may still read the (empty) pinned view and count.
         assert!(svc.list_pinned(2, 1).unwrap().is_empty());
@@ -2473,7 +2357,7 @@ mod tests {
         assert!(db.message_is_pinned(msg));
         // alice (2, plain member) cannot unpin it.
         let err = svc.unpin_message(2, msg).unwrap_err();
-        assert!(err.contains("permission denied"), "got: {err}");
+        assert_eq!(err, "you need the Manage Messages permission to do that");
         assert!(db.message_is_pinned(msg), "the pin is untouched");
     }
 
