@@ -44,6 +44,8 @@ pub mod invites;
 // wasm client build, so the module itself is always compiled and only the
 // server-only internals are gated (see `src/auth.rs`).
 pub mod auth;
+// Operator-issued password reset links; compiled in both halves like `auth`.
+pub mod password_resets;
 pub mod servers;
 // Not feature-gated (like `servers` / `auth` above): the `#[server]` fns
 // compile to client RPC stubs by default; only the DB-touching internals are

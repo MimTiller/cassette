@@ -371,7 +371,9 @@ pub fn app() -> Element {
     // shell routes the failure back here (see `live_servers` fetch), clearing
     // the saved session and showing "session expired" on the login screen.
     let restored = matches!(crate::auth::load_session(), Some((_, user_id, _, _))
-        if user_id != 0);
+        if user_id != 0)
+        // A reset link opens the reset form even where someone is signed in.
+        && crate::auth::reset_token_in_url().is_none();
     // On web the restored token slot is intentionally EMPTY — the httpOnly
     // session cookie the browser replays authenticates every backend call
     // (and the WS upgrade). Identity keys alone decide the restore; a dead

@@ -650,3 +650,63 @@ pub(crate) fn load_last_view() -> Option<(i64, i64, i64)> {
     // Shared, tested parser (the pure half of the grammar).
     parse_last_view(&raw)
 }
+
+/// Set a new password with the token from a reset link. Returns the account's
+/// username so the login form can be filled in.
+pub async fn reset_password(token: &str, new_password: &str) -> Result<String, String> {
+    let input = discord_server::password_resets::ResetPasswordInput {
+        token: token.to_string(),
+        new_password: new_password.to_string(),
+    };
+    match discord_server::password_resets::reset_password(input).await {
+        Ok(result) => Ok(result.username),
+        Err(error) => Err(crate::errors::friendly(&error)),
+    }
+}
+
+/// The token from a password reset link (`/?reset=<token>`), if the page was
+/// opened from one.
+#[cfg(target_arch = "wasm32")]
+pub fn reset_token_in_url() -> Option<String> {
+    reset_token_from_query(&web_sys::window()?.location().search().ok()?)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn reset_token_in_url() -> Option<String> {
+    None
+}
+
+/// Take the reset token out of the address bar, so a reload shows the login
+/// form rather than a used-up link.
+#[cfg(target_arch = "wasm32")]
+pub fn clear_reset_token_from_url() {
+    if let Some(history) = web_sys::window().and_then(|w| w.history().ok()) {
+        let _ = history.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some("/"));
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn clear_reset_token_from_url() {}
+
+#[cfg(any(target_arch = "wasm32", test))]
+fn reset_token_from_query(search: &str) -> Option<String> {
+    search.trim_start_matches('?').split('&').find_map(|pair| {
+        let (key, value) = pair.split_once('=')?;
+        (key == discord_server::password_resets::URL_PARAM && !value.is_empty())
+            .then(|| value.to_string())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reset_token_from_query;
+
+    #[test]
+    fn finds_the_reset_token_in_a_query_string() {
+        assert_eq!(reset_token_from_query("?reset=abc123").as_deref(), Some("abc123"));
+        assert_eq!(reset_token_from_query("?x=1&reset=abc").as_deref(), Some("abc"));
+        assert_eq!(reset_token_from_query("?reset="), None);
+        assert_eq!(reset_token_from_query("?resets=abc"), None);
+        assert_eq!(reset_token_from_query(""), None);
+    }
+}

@@ -114,9 +114,23 @@ All settings are read by the server:
 | `DISCORD_SESSION_SECRET` | Hex key for signing session tokens. If unset, a random one is created in `<db>.session-secret` (mode 0600) and reused. |
 | `GIPHY_API_KEY` | Enables GIF search. Alternatively, put the key in a `giphy.key` file next to the database. |
 | `DISCORD_ALLOW_USER_ID_HEADER=1` | Accepts the legacy `x-user-id` header. Only for local test tooling; never enable it in production. |
+| `PUBLIC_URL` | The address people use to reach the site, e.g. `https://chat.example.com`. Password reset links start with it. Default: `http://localhost:<PORT>`. |
 
 The database, session secret, media folder and `giphy.key` are all
 gitignored.
+
+## Resetting a forgotten password
+
+There is no email, so whoever runs the server creates a reset link and
+passes it on. With the same settings as the running server:
+
+```bash
+server reset-link <username>
+```
+
+It prints a link that works once, for 24 hours. Opening it shows a form for
+choosing a new password; using it logs the account out everywhere and lifts
+any failed-login lockout. Creating a new link cancels the previous one.
 
 ## Security
 

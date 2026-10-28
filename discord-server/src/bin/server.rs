@@ -60,6 +60,22 @@ async fn media_route(Path(name): Path<String>, headers: HeaderMap) -> Response {
 
 #[tokio::main]
 async fn main() {
+    // `server reset-link <username>` prints a one-time password reset link
+    // for the account and exits (see `password_resets`). The link starts
+    // with PUBLIC_URL, else localhost on PORT. Arguments are checked before
+    // the database is opened, so a usage error creates nothing.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let reset_user = match args.first().map(String::as_str) {
+        Some("reset-link") => match args.get(1) {
+            Some(name) => Some(name.clone()),
+            None => {
+                eprintln!("usage: server reset-link <username>");
+                std::process::exit(2);
+            }
+        },
+        _ => None,
+    };
+
     // Open (or create + migrate) the SQLite database.
     let db_path = std::env::var("DISCORD_DB").unwrap_or_else(|_| "discord.db".to_string());
     let db_path = PathBuf::from(db_path);
@@ -76,6 +92,24 @@ async fn main() {
 
     let db = discord_server::db::Db::migrate(&db_path, &migrations)
         .unwrap_or_else(|e| panic!("failed to open/migrate database at {db_path:?}: {e}"));
+
+    if let Some(username) = reset_user {
+        use discord_server::password_resets::{now_ms, ResetService, URL_PARAM};
+        match ResetService::new(db).issue(&username, now_ms()) {
+            Ok(token) => {
+                let base = std::env::var("PUBLIC_URL").unwrap_or_else(|_| {
+                    format!("http://localhost:{}", std::env::var("PORT").unwrap_or_else(|_| "3000".into()))
+                });
+                println!("{}/?{URL_PARAM}={token}", base.trim_end_matches('/'));
+                println!("Works once, for 24 hours. Earlier links for {username} no longer work.");
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
 
     // Session signing secret: DISCORD_SESSION_SECRET, else a 0600 file next to
     // the database (so tokens survive a restart).
