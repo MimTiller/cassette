@@ -65,6 +65,8 @@ pub mod blocks;
 // Not feature-gated (like `friends` above): `get_user_profile` compiles to a
 // client RPC stub; the DB-backed `ProfileService` is server-only.
 pub mod profiles;
+// Message search (FTS5) with from:/in:/has: filters.
+pub mod search;
 
 // GIF search for the composer's GIF picker (Giphy, key kept server-side).
 pub mod gifs;
