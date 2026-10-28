@@ -19,9 +19,9 @@
 //!
 //! Standalone scaffold (NOT a member of the parent workspace): the empty
 //! `[workspace]` table below detaches it so cargo doesn't pull it in and it
-//! keeps its own warm `target/`. Framework crates are path deps to the local
-//! checkout (the idealyst registry is flaky in this environment) — same
-//! convention as the sibling `discord-clone` UI project.
+//! keeps its own warm `target/`. Framework crates come from the idealyst
+//! registry (configured in the repo's `.cargo/config.toml`), pinned to exact
+//! versions like the sibling `discord-clone` UI project.
 
 #[macro_use]
 pub mod components;

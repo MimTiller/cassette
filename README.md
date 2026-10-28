@@ -61,6 +61,10 @@ without the `server` feature, its `#[server]` functions compile to typed RPC
 calls; built with it, they are the real handlers. In production a single
 server binary hosts both the API and the client bundle on one port.
 
+For how the pieces fit together, see [ARCHITECTURE.md](ARCHITECTURE.md).
+Before making changes, read [AGENTS.md](AGENTS.md), the house rules for
+contributors (human or AI).
+
 ## Getting started
 
 ### Prerequisites
