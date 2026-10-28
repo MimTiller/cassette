@@ -11,7 +11,7 @@ pub(super) struct GatewayEffectsParts {
 }
 
 pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
-    let ShellState { active_live_channel, active_live_server, friends_snap, gateway, has_more_earlier, live_attachments, live_delete_confirm, live_edit_text, live_editing, live_members, live_mention_rev, live_mentioned, live_messages, live_presence, live_presence_rev, live_revision, live_typing, live_typing_rev, live_unread, live_unread_rev, load_busy, notif_level, notif_toast_body, notif_toast_title, notif_toast_visible, reaction_rev, reactions, send_failed, .. } = s.clone();
+    let ShellState { active_live_channel, active_live_server, friends_snap, gateway, has_more_earlier, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_members, live_mention_rev, live_mentioned, live_messages, live_presence, live_presence_rev, live_revision, live_typing, live_typing_rev, live_unread, live_unread_rev, load_busy, notif_level, notif_toast_body, notif_toast_title, notif_toast_visible, reaction_rev, reactions, send_failed, .. } = s.clone();
     // Realtime gateway: the signed session token authenticates the connect
     // (the backend verifies it). Declared above (before the auto-enter
     // effect) so that effect can send the restored channel's initial
@@ -511,6 +511,21 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             if let Some(discord_server::server_settings::WsServerMsg::RolesChanged { server_id }) = frame {
                 if crate::mentions::server_id() == Some(*server_id) {
                     crate::mentions::load_roles(*server_id);
+                }
+                // Roles and overwrites decide which channels this user can
+                // see; refetch them, and leave a channel that just vanished.
+                if active_live_server.get() == Some(*server_id) {
+                    let sid = *server_id;
+                    runtime_core::driver::spawn_async(async move {
+                        if let Ok(channels) = crate::servers::list_channels(sid).await {
+                            if let Some(open) = active_live_channel.get() {
+                                if !channels.iter().any(|c| c.id == open) {
+                                    active_live_channel.set(channels.iter().find(|c| c.kind == "text").map(|c| c.id));
+                                }
+                            }
+                            live_channels.set(channels);
+                        }
+                    });
                 }
             }
             if let Some(discord_server::server_settings::WsServerMsg::MemberChanged {
