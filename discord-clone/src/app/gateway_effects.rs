@@ -5,7 +5,6 @@ use crate::theme;
 use super::*;
 
 pub(super) struct GatewayEffectsParts {
-    pub(super) gateway_status: Element,
     pub(super) gateway_incoming_effect: Element,
     pub(super) mention_reset_effect: Element,
 }
@@ -16,56 +15,13 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
     // (the backend verifies it). Declared above (before the auto-enter
     // effect) so that effect can send the restored channel's initial
     // `History` frame — see the note there.
-    // Compact single-line status label for the 72px rail: "● Open" etc.
-    // (the wide `messaging: {:?}` form clipped/wrapped). The label is
-    // reactive: `switch` re-runs the arm whenever the status string
-    // changes, so the rail tracks Connecting -> Open -> Closed/Error live.
-    // Per-status color: green Open, amber Connecting, red Closed/Error —
-    // inline hex like the rest of the rail's status accents.
-    let gateway_status = switch(
-        move || format!("{:?}", gateway.status()),
-        move |status: &String| {
-            let (label, color) = match status.as_str() {
-                "Open" => ("Open", theme::SUCCESS),
-                "Connecting" => ("Connecting", theme::WARNING),
-                // Closed and Error share the red accent.
-                _ => ("Closed", theme::DANGER),
-            };
-            // The status dot: a small filled `view` circle in the same 11px
-            // shape as the member-list presence dots (Lucide's `circle` is an
-            // outline, so a plain colored view reads better at this size).
-            let dot_style = StyleRules {
-                width: Some(px(11.0)),
-                height: Some(px(11.0)),
-                background: Some(col(color)),
-                border_top_left_radius: Some(px(6.0)),
-                border_top_right_radius: Some(px(6.0)),
-                border_bottom_left_radius: Some(px(6.0)),
-                border_bottom_right_radius: Some(px(6.0)),
-                ..Default::default()
-            };
-            let status_style = StyleRules {
-                font_size: Some(px(10.0)),
-                color: Some(col(color)),
-                text_align: Some(TextAlign::Center),
-                ..Default::default()
-            };
-            ui! {
-                view(style = StyleRules {
-                    flex_direction: Some(FlexDirection::Row),
-                    align_items: Some(AlignItems::Center),
-                    gap: Some(px(6.0)),
-                    ..Default::default()
-                }) {
-                    view(style = dot_style) {}
-                    text(style = status_style) { label.to_string() }
-                }
-            }
-        },
-    );
+    //
+    // The rail shows connection state itself (see `rail.rs`: a red/yellow dot
+    // only while Closed/Error/Connecting, nothing while connected), so no
+    // status element is emitted here.
 
     // Connection-lost banner for the message column. Keyed on the same reactive
-    // status string as `gateway_status` above, but rendered as a full-width red
+    // socket status the rail's indicator reads, rendered as a full-width red
     // bar at the top of the message pane (NOT the rail dot). It shows only when
     // the socket is `Closed` or `Error`; while `Open` / `Connecting` it renders
     // a 0-height view (nothing), so the layout is unchanged in the healthy
@@ -677,5 +633,5 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
         },
     );
 
-    GatewayEffectsParts { gateway_status, gateway_incoming_effect, mention_reset_effect }
+    GatewayEffectsParts { gateway_incoming_effect, mention_reset_effect }
 }

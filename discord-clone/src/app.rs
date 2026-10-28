@@ -47,16 +47,16 @@ use runtime_core::primitives::portal::{AnchorTarget, ElementAlign, ElementSide};
 // picked file through `stage_attachment` (the same encode as avatars).
 use file_picker::{FilePicker, PickRequest, PickOutcome, MediaKind};
 use icons_lucide::{
-    CHEVRON_DOWN, CHEVRON_RIGHT, CIRCLE_HELP, COMPASS, GLOBE, HASH, HEADPHONES, MAIL,
+    CHEVRON_DOWN, CHEVRON_RIGHT, CIRCLE_HELP, HASH, HEADPHONES,
     MIC, MIC_OFF, PIN, PLUS, SETTINGS, SMILE, SMILE_PLUS,
-    USER_PLUS, USERS, VOLUME_2,
+    USER_PLUS, USERS, VOLUME_2, MESSAGE_CIRCLE,
 };
 use crate::idle_timer_badge::IdleTimerBadge;
 use crate::server_settings_panel::ServerSettingsPanel;
 
 use runtime_shared::time::local_offset_minutes;
 
-use crate::data::{SERVERS, Category, Member, Server, Status, TextChannel, USER};
+use crate::data::{SERVERS, Status, USER};
 use crate::ban_list_row::BanListRow;
 use crate::timeout_duration_picker::TimeoutDurationPicker;
 use crate::member_role_list::MemberRoleList;
@@ -77,7 +77,6 @@ use crate::create_server_modal::create_server_modal;
 use crate::create_channel_modal::CreateChannelModal;
 use crate::rename_channel_modal::RenameChannelModal;
 use crate::delete_channel_modal::DeleteChannelModal;
-use crate::discover_servers_modal::discover_servers_modal;
 use crate::typing_indicator::TypingIndicator;
 use crate::invite_link_display::InviteLinkDisplay;
 use crate::invite_expiry_selector::InviteExpirySelector;
@@ -260,73 +259,6 @@ fn border_width(px: f32) -> Tokenized<f32> {
 }
 
 // --- timestamps --------------------------------------------------------------
-
-/// Build a mock server created at runtime by the "Add a server" (+) flow.
-///
-/// The data model is `&'static`-based (every `Server`/`Category`/channel field
-/// is a static reference), so a server created while the app is running cannot
-/// live on the heap the usual way. The owned values are therefore **leaked** to
-/// a stable address and handed back as `&'static` references — the same trick
-/// the mock seed data in `data.rs` relies on. In a real build this would be a
-/// network call; the leak is a deliberate consequence of the static model and
-/// is harmless at this scale (the user can only create a handful of servers).
-///
-/// The new server gets a single default `general` text channel (empty) and the
-/// signed-in user as its only member, so the sidebar, header, and member panel
-/// all render without special-casing.
-fn create_server(
-    name: &str,
-    next_id: &Cell<u32>,
-    dynamic_servers: &Rc<RefCell<HashMap<u32, &'static Server>>>,
-) -> u32 {
-    let name = if name.is_empty() { "new-server" } else { name };
-    let initial: &str = if name.is_empty() {
-        "N"
-    } else {
-        // Leak the upper-cased first letter so it too is a `&'static str`.
-        let upper: String = name[..1].to_uppercase();
-        Box::leak(upper.into_boxed_str())
-    };
-    let name_static: &'static str = Box::leak(name.to_string().into_boxed_str());
-    let id = next_id.get();
-    next_id.set(id + 1);
-    let cat_id = id * 1000;
-    let chan_id = id * 1000 + 1;
-    let chan = Box::leak(Box::new(TextChannel {
-        id: chan_id,
-        name: "general",
-        topic: "",
-        // A freshly created channel has no slowmode yet — `None` keeps the
-        // header's `SlowmodeIndicator` from showing on it.
-        slowmode_secs: None,
-        messages: &[],
-        unread: 0,
-        mentions: 0,
-    }));
-    let category = Box::leak(Box::new(Category {
-        id: cat_id,
-        title: "TEXT CHANNELS",
-        text: std::slice::from_ref(chan),
-        voice: &[],
-    }));
-    let member = Box::leak(Box::new(Member {
-        name: USER.name,
-        color: USER.color,
-        status: Status::Online,
-        // The creator owns the server they just made.
-        role: "Owner",
-    }));
-    let server = Box::leak(Box::new(Server {
-        id,
-        name: name_static,
-        initial,
-        accent: BUTTON,
-        categories: std::slice::from_ref(category),
-        members: std::slice::from_ref(member),
-    }));
-    dynamic_servers.borrow_mut().insert(id, server);
-    id
-}
 
 // --- mock login screen -------------------------------------------------------
 
@@ -1300,38 +1232,20 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let ss_busy: Signal<bool> = signal(false);
     let ss_err: Signal<String> = signal(String::new());
 
-    // Shared by the rail's buttons and the modal dialogs they open.
-    // Reactive list of the mock servers shown in the rail. Seeded with the
-    // static `SERVERS` ids; the "Add a server" (+) flow appends new ids, and
-    // the rail `switch` below rebuilds on that signal so new rows appear.
-    let server_rail: Signal<Vec<u32>> = signal(SERVERS.iter().map(|s| s.id).collect());
-
     // --- "Create a Server" reactive plumbing -------------------------------
-    // `dynamic_servers` holds the servers the user creates this session
-    // (leaked `&'static` behind an id — the same heap-leak trick the static
-    // seed in `data.rs` uses). `next_id` mints fresh ids above the static max.
-    // `server_rail` (seeded with the static ids above) is the rail's re-render
-    // trigger: appending a new id makes the `switch` below rebuild and add the
-    // row. Both the `Cell` and the `HashMap` live behind an `Rc` so the
-    // `on_create` closure (a `Fn`) can mutate them through interior
-    // mutability.
-    let dynamic_servers: Rc<RefCell<HashMap<u32, &'static Server>>> =
-        Rc::new(RefCell::new(HashMap::new()));
-    let next_id: Rc<Cell<u32>> = Rc::new(Cell::new(
-        SERVERS.iter().map(|s| s.id).max().map(|m| m + 1).unwrap_or(1),
-    ));
+    // `create_open` gates the overlay; `create_name` is the typed name, and
+    // `create_error` / `create_busy` are the inline rejection text and
+    // in-flight guard the modal switches on. Owned here (app_shell scope) and
+    // reset per-open by whoever opens the modal.
     let create_open: Signal<bool> = signal(false);
     let create_name: Signal<String> = signal(String::new());
-
-    // The create modal's inline error (the backend's own rejection wording)
-    // and in-flight busy guard. Both owned by the app (like the join modal's
-    // `join_error` / `join_busy`) and reset on re-open below.
     let create_error: Signal<String> = signal(String::new());
     let create_busy: Signal<bool> = signal(false);
 
     // --- "Join a Server" (redeem an invite code) ---------------------------
-    // Entry point is the rail's green PLUS circle (Discord's Add-a-Server
-    // affordance). The modal's state lives here in `app_shell` scope so it
+    // The rail's green "+" opens the Create modal; the Create modal's
+    // "Have an invite already? Join a Server" link opens this one. The
+    // modal's state lives here in `app_shell` scope so it
     // survives rail rebuilds; `join_open` gates the overlay, `join_code` is the
     // typed code, `join_result`/`join_error`/`join_busy` are the three state
     // signals the modal switches on (the `invite_modal.rs` ownership idiom).
@@ -1344,14 +1258,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let join_error: Signal<String> = signal(String::new());
     let join_busy: Signal<bool> = signal(false);
 
-    // --- "Discover Servers" overlay ----------------------------------------
-    // Trigger is a third rail circle (GLOBE) below the PLUS and COMPASS
-    // circles — both existing icons are taken (Join / Create). `on_join`
-    // mints the suggested server the same way Create does: `create_server` +
-    // append to `server_rail` (the rail's re-render trigger), then close the
-    // overlay. The mock list itself is static; no join backend.
-    let discover_open: Signal<bool> = signal(false);
-
     // Everything the section builders below read, gathered once.
     let s = ShellState {
         user_popup: user_popup.clone(),
@@ -1363,9 +1269,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         revealed_blocked: revealed_blocked.clone(),
         user_profile: user_profile.clone(),
         live_collapsed: live_collapsed.clone(),
-        server_rail: server_rail.clone(),
-        dynamic_servers: dynamic_servers.clone(),
-        next_id: next_id.clone(),
         create_open: create_open.clone(),
         create_name: create_name.clone(),
         create_error: create_error.clone(),
@@ -1375,8 +1278,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         join_result: join_result.clone(),
         join_error: join_error.clone(),
         join_busy: join_busy.clone(),
-        discover_open: discover_open.clone(),
-        active_channel: active_channel.clone(),
         active_live_channel: active_live_channel.clone(),
         active_live_server: active_live_server.clone(),
         active_server: active_server.clone(),
@@ -1493,9 +1394,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // Before any section builds its rows: they read `popups::msg_menu`.
     let popups::PopupsParts { catcher_el: popup_catcher_el, exclusive_el: popup_exclusive_el } = popups::build(&s);
 
-    let gateway_effects::GatewayEffectsParts { gateway_status, gateway_incoming_effect, mention_reset_effect } = gateway_effects::build(&s);
-    let rail::RailParts { rail_style, server_rows, create_server_section, live_section, rail_actions } = rail::build(&s);
-    let modals::ModalsParts { join_el, create_el, discover_el, cc_el, rc_el, dc_el, invite_el, ss_el } = modals::build(&s);
+    let gateway_effects::GatewayEffectsParts { gateway_incoming_effect, mention_reset_effect } = gateway_effects::build(&s);
+    let rail::RailParts { rail_style, rail_top, live_section, rail_actions } = rail::build(&s);
+    let modals::ModalsParts { join_el, create_el, cc_el, rc_el, dc_el, invite_el, ss_el } = modals::build(&s);
     let user_popups::UserPopupsParts { user_popup_el } = user_popups::build(&s);
     let sidebar::SidebarParts { sidebar } = sidebar::build(&s);
     let messages::MessagesParts { header, sent_messages, typing_row } = messages::build(&s);
@@ -1622,7 +1523,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             overflow: Some(Overflow::Hidden),
             ..Default::default()
         }) {
-            view(style = rail_style) { server_rows create_server_section live_section rail_actions gateway_status gateway_incoming_effect mention_reset_effect }
+            view(style = rail_style) { rail_top live_section rail_actions gateway_incoming_effect mention_reset_effect }
             sidebar
             // Drag handle on the channel sidebar's right edge: dragging it
             // left/right resizes `sidebar_width` (right = grow, so sign `+1`).
@@ -1702,8 +1603,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
             join_el
             // "Create a Server" overlay: same full-screen, paint-last idiom.
             create_el
-            // "Discover Servers" overlay: same full-screen, paint-last idiom.
-            discover_el
             // Live channel management overlays (create / rename / delete): same
             // full-screen, paint-last idiom. Each collapses to zero size when
             // closed; `server_id` is read from `active_live_server` at submit

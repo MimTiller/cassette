@@ -77,7 +77,7 @@ pub(super) struct PopupsParts {
 
 pub(super) fn build(s: &ShellState) -> PopupsParts {
     let ShellState {
-        bug_reports_mode, cc_open, create_open, dc_open, discover_open, emoji_open, gif_open, invite_mode,
+        bug_reports_mode, cc_open, create_open, dc_open, emoji_open, gif_open, invite_mode,
         join_open, live_chan_menu, live_invite_mode, live_member_menu, moderation_mode, msg_menu, notif_mode,
         picker, pinned_panel_open, profile_mode, rc_open, server_menu_open, shortcuts_mode, ss_open,
         user_popup, ..
@@ -105,7 +105,6 @@ pub(super) fn build(s: &ShellState) -> PopupsParts {
         flag(ss_open),
         flag(create_open),
         flag(join_open),
-        flag(discover_open),
         flag(invite_mode),
         flag(live_invite_mode),
         flag(shortcuts_mode),

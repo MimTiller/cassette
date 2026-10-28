@@ -52,16 +52,12 @@ mod blocks;
 // Standalone component, not wired into any screen yet — same "declared so it
 // compiles, referenced by nothing" shape as `profile_settings`. Lives under
 // `components/`; the `#[path]` keeps this a one-file add (no `mod.rs`).
-#[path = "components/server_folder_group.rs"]
-mod server_folder_group;
 #[path = "components/idle_timer_badge.rs"]
 mod idle_timer_badge;
 #[path = "components/message_timestamp_tooltip.rs"]
 mod message_timestamp_tooltip;
 #[path = "components/edited_label.rs"]
 mod edited_label;
-#[path = "components/server_discovery_card.rs"]
-mod server_discovery_card;
 #[path = "components/verified_badge.rs"]
 mod verified_badge;
 #[path = "components/jump_to_bottom_button.rs"]
@@ -74,32 +70,22 @@ mod translate_toggle;
 mod permission_override_row;
 #[path = "components/message_action_bar.rs"]
 mod message_action_bar;
-#[path = "components/server_event_card.rs"]
-mod server_event_card;
 #[path = "components/read_receipt_indicator.rs"]
 mod read_receipt_indicator;
 #[path = "components/transfer_ownership_confirm.rs"]
 mod transfer_ownership_confirm;
 #[path = "components/avatar_chip.rs"]
 mod avatar_chip;
-#[path = "components/server_stats_card.rs"]
-mod server_stats_card;
 #[path = "components/link_embed_preview.rs"]
 mod link_embed_preview;
 #[path = "components/member_role_list.rs"]
 mod member_role_list;
 #[path = "components/timeout_duration_picker.rs"]
 mod timeout_duration_picker;
-#[path = "components/category_filter_chips.rs"]
-mod category_filter_chips;
 #[path = "components/send_failed_indicator.rs"]
 mod send_failed_indicator;
-#[path = "components/featured_server_banner.rs"]
-mod featured_server_banner;
 #[path = "components/user_bio_block.rs"]
 mod user_bio_block;
-#[path = "components/server_tag_chips.rs"]
-mod server_tag_chips;
 #[path = "components/pin_confirm_toast.rs"]
 mod pin_confirm_toast;
 #[path = "components/pinned_messages_panel.rs"]
@@ -108,8 +94,6 @@ mod pinned_messages_panel;
 mod notification_toast;
 #[path = "components/ban_reason_input.rs"]
 mod ban_reason_input;
-#[path = "components/template_gallery_grid.rs"]
-mod template_gallery_grid;
 #[path = "components/invite_expiry_selector.rs"]
 mod invite_expiry_selector;
 #[path = "components/poll_widget.rs"]
@@ -150,10 +134,6 @@ mod rename_channel_modal;
 mod delete_channel_modal;
 #[path = "components/server_settings_panel.rs"]
 mod server_settings_panel;
-#[path = "components/discover_servers_modal.rs"]
-mod discover_servers_modal;
-#[path = "components/server_template_card.rs"]
-mod server_template_card;
 #[path = "components/server_region_selector.rs"]
 mod server_region_selector;
 #[path = "components/slash_command_dropdown.rs"]

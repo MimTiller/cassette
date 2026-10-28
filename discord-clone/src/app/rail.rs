@@ -6,14 +6,13 @@ use super::*;
 
 pub(super) struct RailParts {
     pub(super) rail_style: StyleRules,
-    pub(super) server_rows: Vec<Element>,
-    pub(super) create_server_section: Element,
+    pub(super) rail_top: Element,
     pub(super) live_section: Element,
     pub(super) rail_actions: Element,
 }
 
 pub(super) fn build(s: &ShellState) -> RailParts {
-    let ShellState { active_channel, active_live_channel, active_live_server, active_server, create_busy, create_error, create_name, create_open, discover_open, dynamic_servers, friends_snap, gateway, join_busy, join_code, join_error, join_open, join_result, joined_voice, live_ban_confirm, live_channels, live_dm_active, live_dm_mode, live_dms, live_kick_confirm, live_member_error, live_members, live_servers, live_timeout_confirm, live_unread_rev, notif_mode, rail_unread, server_rail, .. } = s.clone();
+    let ShellState { active_live_channel, active_live_server, create_busy, create_error, create_name, create_open, friends_snap, gateway, live_ban_confirm, live_channels, live_dm_active, live_dm_mode, live_dms, live_kick_confirm, live_member_error, live_members, live_servers, live_timeout_confirm, live_unread_rev, rail_unread, .. } = s.clone();
     // --- server rail -----------------------------------------------------
     let rail_style = StyleRules {
         width: Some(px(72.0)),
@@ -26,147 +25,158 @@ pub(super) fn build(s: &ShellState) -> RailParts {
         ..Default::default()
     };
 
-    // [Feature 16] The mock demo servers are no longer rail content: every
-    // account is signed in, so the rail shows only its own live servers (the
-    // live section below) plus the create / join affordances. Kept as the
-    // (always-empty) slot in RailParts; the onboarding state is driven by the
-    // create affordance in the rail.
-    let server_rows: Vec<Element> = Vec::new();
+    // The 48px circle behind every rail action (DM, Create, Join).
+    let circle_style = StyleRules {
+        width: Some(px(48.0)),
+        height: Some(px(48.0)),
+        align_items: Some(AlignItems::Center),
+        justify_content: Some(JustifyContent::Center),
+        background: Some(col(BG_SIDEBAR)),
+        border_top_left_radius: Some(px(24.0)),
+        border_top_right_radius: Some(px(24.0)),
+        border_bottom_left_radius: Some(px(24.0)),
+        border_bottom_right_radius: Some(px(24.0)),
+        ..Default::default()
+    };
+    // Discord's rail separator: a thin 32px line between sections.
+    let divider_style = StyleRules {
+        width: Some(px(32.0)),
+        height: Some(px(1.0)),
+        background: Some(col(BORDER)),
+        ..Default::default()
+    };
 
-    // Dynamically created servers — a separate section below the mock rows.
-    // Rebuilt whenever `server_rail` changes (a new id appended). Each row
-    // mirrors the mock row: squircle + initial + selection.
-    let dyn_servers = dynamic_servers.clone();
-    let create_server_section = switch(
-        move || server_rail.get(),
-        move |ids: &Vec<u32>| {
-            let rows: Vec<Element> = ids.iter().filter_map(|id| {
-                let s = *dyn_servers.borrow().get(id)?;
-                let active = active_server.clone();
-                let channel = active_channel.clone();
-                let voice = joined_voice.clone();
-                let live_server = active_live_server.clone();
-                let live_channel = active_live_channel.clone();
-                let row_style = move || StyleRules {
-                    width: Some(px(48.0)),
-                    height: Some(px(48.0)),
-                    // Positioning ancestor for the active-server pill.
-                    position: Some(Position::Relative),
-                    align_items: Some(AlignItems::Center),
-                    justify_content: Some(JustifyContent::Center),
-                    // No white-invert on selection — the left-edge pill alone
-                    // signals the active created server (matches the mock rows).
-                    background: Some(col(BG_SIDEBAR)),
-                    // Discord's squircle is a 16px radius on a 48px icon.
-                    border_top_left_radius: Some(px(16.0)),
-                    border_top_right_radius: Some(px(16.0)),
-                    border_bottom_left_radius: Some(px(16.0)),
-                    border_bottom_right_radius: Some(px(16.0)),
-                    ..Default::default()
-                };
-                let label_style = move || StyleRules {
-                    font_size: Some(px(18.0)),
-                    font_weight: Some(FontWeight::Bold),
-                    color: Some(col(TEXT_CHANNEL)),
-                    ..Default::default()
-                };
-                Some(ui! {
-                    view(style = row_style) {
-                        // The active-server pill on the far-left rail edge — the
-                        // sole selection signal (the row is `Position::Relative`,
-                        // 48px centered in the 72px rail, so left: -12 is flush).
-                        view(style = move || StyleRules {
-                            position: Some(Position::Absolute),
-                            left: Some(px(-12.0)),
-                            top: Some(px(14.0)),
-                            width: Some(px(4.0)),
-                            height: Some(px(20.0)),
-                            background: Some(col(PILL)),
-                            border_top_left_radius: Some(px(2.0)),
-                            border_top_right_radius: Some(px(2.0)),
-                            border_bottom_left_radius: Some(px(2.0)),
-                            border_bottom_right_radius: Some(px(2.0)),
-                            opacity: Some(Tokenized::Literal(if active.get() == s.id {
-                                1.0
-                            } else {
-                                0.0
-                            })),
-                            ..Default::default()
-                        }) {}
-                        text(style = label_style) { s.initial }
-                    }
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            // Selecting a created server exits live mode (same
-                            // as a mock row) and defaults to its first text
-                            // channel.
-                            live_server.set(None);
-                            live_channel.set(None);
-                            active.set(s.id);
-                            channel.set(s.first_text_channel().id);
-                            voice.set(None);
-                        }
-                        TouchResponse::CONSUMED
-                    })
-                })
-            }).collect();
-            ui! {
-                view(style = StyleRules {
-                    flex_direction: Some(FlexDirection::Column),
-                    align_items: Some(AlignItems::Center),
-                    gap: Some(px(10.0)),
-                    ..Default::default()
-                }) {
-                    rows
+    // --- Top of the rail: Direct Messages ----------------------------------
+    // Discord's rail leads with DMs, above a thin divider, before the server
+    // tiles. The tile shows the same left-edge white pill as a server tile
+    // when the DM view is open (`live_dm_mode`), so the selection signal
+    // looks identical across the rail.
+    let dm_list = live_dms.clone();
+    let friends = friends_snap.clone();
+    // The connection indicator sits between the DM button and the divider:
+    // nothing while connected; a small yellow dot while reconnecting
+    // (`Connecting`) and a red one while `Closed` / `Error`.
+    let conn_indicator = switch(
+        move || format!("{:?}", gateway.status()),
+        move |status: &String| {
+            // Nothing while connected (`Open`) or before the first connect
+            // reaches a steady state; a small dot only for trouble:
+            // yellow while reconnecting, red while Closed / Error.
+            let color = match status.as_str() {
+                "Connecting" => Some(theme::WARNING),
+                "Open" => None,
+                // Closed and Error share the red accent.
+                _ => Some(theme::DANGER),
+            };
+            if let Some(color) = color {
+                ui! {
+                    view(style = StyleRules {
+                        width: Some(px(8.0)),
+                        height: Some(px(8.0)),
+                        background: Some(col(color)),
+                        border_top_left_radius: Some(px(4.0)),
+                        border_top_right_radius: Some(px(4.0)),
+                        border_bottom_left_radius: Some(px(4.0)),
+                        border_bottom_right_radius: Some(px(4.0)),
+                        ..Default::default()
+                    }) {}
+                }
+            } else {
+                ui! {
+                    view(style = StyleRules {
+                        height: Some(px(0.0)),
+                        ..Default::default()
+                    }) {}
                 }
             }
         },
     );
+    let rail_top = ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Column),
+            align_items: Some(AlignItems::Center),
+            gap: Some(px(10.0)),
+            ..Default::default()
+        }) {
+            view(style = StyleRules {
+                width: Some(px(48.0)),
+                height: Some(px(48.0)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                background: Some(col(BG_SIDEBAR)),
+                border_top_left_radius: Some(px(24.0)),
+                border_top_right_radius: Some(px(24.0)),
+                border_bottom_left_radius: Some(px(24.0)),
+                border_bottom_right_radius: Some(px(24.0)),
+                // Positioning ancestor for the selected pill below.
+                position: Some(Position::Relative),
+                ..Default::default()
+            }, test_id = "rail-direct-messages") {
+                // The DM selection pill on the far-left rail edge — the same
+                // white pill server tiles show when selected (the rail is
+                // 72px, the tile 48px centered, so left: -12 is flush).
+                view(style = move || StyleRules {
+                    position: Some(Position::Absolute),
+                    left: Some(px(-12.0)),
+                    top: Some(px(14.0)),
+                    width: Some(px(4.0)),
+                    height: Some(px(20.0)),
+                    background: Some(col(PILL)),
+                    border_top_left_radius: Some(px(2.0)),
+                    border_top_right_radius: Some(px(2.0)),
+                    border_bottom_left_radius: Some(px(2.0)),
+                    border_bottom_right_radius: Some(px(2.0)),
+                    opacity: Some(Tokenized::Literal(if live_dm_mode.get() { 1.0 } else { 0.0 })),
+                    ..Default::default()
+                }) {}
+                icon(MESSAGE_CIRCLE).color(|| theme::live(TEXT_MUTED)).size(20.0)
+            }
+            // Direct Messages. Every account is signed in, so this row always
+            // drives the live DM screen (the demo DM screen is gone).
+            //
+            // Live: every open re-fetches the conversation list and the friend
+            // list (the "Find or start a conversation" search reads it), and
+            // records the open conversation as the last view so a refresh
+            // re-opens it. Per-open state (`live_dm_active`, the fetched
+            // history) lives in `app_shell` scope and survives a close.
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    let now_open = !live_dm_mode.get();
+                    live_dm_mode.set(now_open);
+                    if now_open {
+                        if let Some(dm_id) = live_dm_active.get() {
+                            crate::auth::save_last_view_dm(dm_id);
+                        }
+                        runtime_core::driver::spawn_async(async move {
+                            if let Ok(dms) = crate::dms::list_dms().await {
+                                dm_list.set(dms);
+                            }
+                            if let Ok(f) = crate::friends::list_friends().await {
+                                friends.set(crate::friends_view::snapshot(f));
+                            }
+                        });
+                    }
+                }
+                TouchResponse::CONSUMED
+            })
+            conn_indicator
+            view(style = divider_style) {}
+        }
+    };
 
-    // Live (backend) servers — a visually separate section below the mock
-    // rows. Clicking a row enters live mode: it sets `active_live_server`
-    // (so the channel sidebar swaps to the live branch) and fetches that
-    // server's real channels into `live_channels`. The active row is
-    // highlighted reactively (its key is `live_servers`, and the render
-    // closure also reads `active_live_server` reactively). Tapping a mock
-    // rail row clears `active_live_server`, exiting live mode.
+    // Live (backend) servers — the tiles under the divider. Clicking a row
+    // enters live mode: it sets `active_live_server` (so the channel sidebar
+    // swaps to the live branch) and fetches that server's real channels into
+    // `live_channels`. The active row is highlighted reactively (its key is
+    // `live_servers`, and the render closure also reads
+    // `active_live_server` reactively).
     let live_section = switch(
         move || live_servers.get(),
         move |servers: &Vec<crate::servers::ServerSummary>| {
-            let divider_style = StyleRules {
-                width: Some(px(32.0)),
-                height: Some(px(1.0)),
-                background: Some(col(BORDER)),
-                ..Default::default()
-            };
-            // Small "LIVE" badge under the thin divider: 9px uppercase,
-            // semi-bold, muted text on a BG_SIDEBAR pill (radius 8). The bare
-            // unstyled text version read as a floating label with no chrome;
-            // the pill gives it badge styling and still marks the section's
-            // purpose — backend-connected servers, as opposed to the mock rows
-            // above the divider.
-            let label_style = StyleRules {
-                font_size: Some(px(9.0)),
-                font_weight: Some(FontWeight::SemiBold),
-                color: Some(col(TEXT_MUTED)),
-                letter_spacing: Some(Tokenized::Literal(0.5)),
-                text_transform: Some(TextTransform::Uppercase),
-                background: Some(col(BG_SIDEBAR)),
-                padding_top: Some(px(3.0)),
-                padding_bottom: Some(px(3.0)),
-                padding_left: Some(px(7.0)),
-                padding_right: Some(px(7.0)),
-                border_top_left_radius: Some(px(8.0)),
-                border_top_right_radius: Some(px(8.0)),
-                border_bottom_left_radius: Some(px(8.0)),
-                border_bottom_right_radius: Some(px(8.0)),
-                ..Default::default()
-            };
             let row_style = StyleRules {
                 width: Some(px(48.0)),
                 height: Some(px(48.0)),
-                // Positioning ancestor for the active-server pill (the mock rows
-                // do the same).
+                // Positioning ancestor for the active-server pill.
                 position: Some(Position::Relative),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
@@ -348,165 +358,35 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                     gap: Some(px(10.0)),
                     ..Default::default()
                 }) {
-                    view(style = divider_style) {}
-                    text(style = label_style) { "live".to_string() }
                     rows
                 }
             }
         },
     );
 
-    // (Live channel action cluster + new-channel "+" builder live inside the
-    // live arm of the sidebar `switch` render closure — see there. They need
-    // the render closure's owned copies of the modal `Signal`s, which a
-    // function-scope non-`move` closure could not borrow across the `move`
-    // capture boundary.)
-    // Bottom rail actions, grouped Discord-style: the server cluster (Add-a-
-    // Server (+), Explore (compass), plus the clone's Discover (globe) and
-    // Live-DM (speech-bubble) affordances, which power real functionality and
-    // so are kept reachable above the divider) sits with the server list, and
-    // the Direct Messages + Settings circles sit BELOW it. Real Discord's
-    // bottom rail row is DM + Settings only — that is exactly what the bottom
-    // holds here now.
     let rail_actions = {
-        let circle_style = StyleRules {
-            width: Some(px(48.0)),
-            height: Some(px(48.0)),
-            align_items: Some(AlignItems::Center),
-            justify_content: Some(JustifyContent::Center),
-            background: Some(col(BG_SIDEBAR)),
-            border_top_left_radius: Some(px(24.0)),
-            border_top_right_radius: Some(px(24.0)),
-            border_bottom_left_radius: Some(px(24.0)),
-            border_bottom_right_radius: Some(px(24.0)),
-            ..Default::default()
-        };
-        let divider_style = StyleRules {
-            width: Some(px(32.0)),
-            height: Some(px(1.0)),
-            background: Some(col(BORDER)),
-            ..Default::default()
-        };
-        let plus_open = join_open.clone();
-        let plus_code = join_code.clone();
-        let plus_result = join_result.clone();
-        let plus_error = join_error.clone();
-        let plus_busy = join_busy.clone();
-        let create_open = create_open.clone();
-        let create_name = create_name.clone();
-        let create_error = create_error.clone();
-        let create_busy = create_busy.clone();
-        let discover_open = discover_open.clone();
-        let settings_open = notif_mode.clone();
+        let plus_create_open = create_open.clone();
+        let plus_name = create_name.clone();
+        let plus_error = create_error.clone();
+        let plus_busy = create_busy.clone();
         ui! {
-            // --- Top cluster: server-related actions (above the divider) ----
-            // Add-a-Server (+) + Explore (compass) sit with the server list;
-            // the clone's Discover (globe) and Live-DM (speech-bubble)
-            // affordances live here too — they power real functionality, so
-            // they're kept reachable above the divider rather than in the
-            // bottom DM+Settings row (which must stay DM + Settings only).
-            view(style = circle_style.clone(), test_id = "rail-join-server") {
+            view(style = circle_style.clone(), test_id = "rail-create-server") {
                 icon(PLUS).color(|| theme::live(theme::SUCCESS)).size(20.0)
             }
-            // Add-a-Server: open the join modal. Reset the per-open state so a
-            // re-open always starts fresh (the same reset the caller owns).
+            // Add a Server: reset the per-open state (name, inline error,
+            // busy) and open the create modal — the same reset-on-open
+            // `create_server_modal`'s docs describe.
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
-                    plus_code.set(String::new());
-                    plus_result.set(None);
+                    plus_name.set(String::new());
                     plus_error.set(String::new());
                     plus_busy.set(false);
-                    plus_open.set(true);
+                    plus_create_open.set(true);
                 }
                 TouchResponse::CONSUMED
             })
-            view(style = circle_style.clone(), test_id = "rail-explore-servers") {
-                icon(COMPASS).color(|| theme::live(TEXT_MUTED)).size(20.0)
-            }
-            // Explore/Create-a-Server: reset the name field and open the create
-            // modal (the same reset-on-open `create_server_modal`'s docs
-            // describe). The compass is Discord's Explore affordance. Also
-            // clear the prior attempt's inline error and busy state so a
-            // re-open always starts fresh (the same per-open reset the join
-            // modal applies to its `join_error` / `join_busy`).
-            .on_touch(move |ev| {
-                if ev.phase == TouchPhase::Ended {
-                    create_name.set(String::new());
-                    create_error.set(String::new());
-                    create_busy.set(false);
-                    create_open.set(true);
-                }
-                TouchResponse::CONSUMED
-            })
-            // Discover-a-Server: open the discover overlay (no per-open state
-            // to reset — the suggested list is static). It sits above the DM
-            // row so it stays reachable without cluttering the DM row.
-            view(style = circle_style.clone(), test_id = "rail-discover-servers") {
-                icon(GLOBE).color(|| theme::live(TEXT_MUTED)).size(20.0)
-            }
-            .on_touch(move |ev| {
-                if ev.phase == TouchPhase::Ended {
-                    discover_open.set(true);
-                }
-                TouchResponse::CONSUMED
-            })
-            // The divider between the top (server-related) cluster and the
-            // bottom (DM + Settings) row — Discord's rail separator.
-            view(style = divider_style) {}
-            // --- Bottom row: Direct Messages + Settings --------------------
-            // Real Discord's bottom rail row is DM + Settings only.
-            view(style = circle_style.clone(), test_id = "rail-direct-messages") {
-                icon(MAIL).color(|| theme::live(TEXT_MUTED)).size(20.0)
-            }
-            // Direct Messages. Every account is signed in, so this row always
-            // drives the live DM screen (the demo DM screen is gone).
-            //
-            // Live: every open re-fetches the conversation list and the friend
-            // list (the "Find or start a conversation" search reads it), and
-            // records the open conversation as the last view so a refresh
-            // re-opens it. Per-open state (`live_dm_active`, the fetched
-            // history) lives in `app_shell` scope and survives a close.
-            .on_touch(move |ev| {
-                if ev.phase == TouchPhase::Ended {
-                    let now_open = !live_dm_mode.get();
-                    live_dm_mode.set(now_open);
-                    if now_open {
-                        if let Some(dm_id) = live_dm_active.get() {
-                            crate::auth::save_last_view_dm(dm_id);
-                        }
-                        let list = live_dms.clone();
-                        let friends = friends_snap.clone();
-                        runtime_core::driver::spawn_async(async move {
-                            if let Ok(dms) = crate::dms::list_dms().await {
-                                list.set(dms);
-                            }
-                            if let Ok(f) = crate::friends::list_friends().await {
-                                friends.set(crate::friends_view::snapshot(f));
-                            }
-                        });
-                    }
-                }
-                TouchResponse::CONSUMED
-            })
-            view(style = circle_style.clone(), test_id = "rail-settings") {
-                icon(SETTINGS).color(|| theme::live(TEXT_MUTED)).size(20.0)
-            }
-            // Settings: opens the full-screen Notification Settings overlay
-            // (the same toggle idiom the user-panel's settings gear uses —
-            // `notif_mode` is the same signal that one controls).
-            .on_touch(move |ev| {
-                if ev.phase == TouchPhase::Ended {
-                    settings_open.set(true);
-                }
-                TouchResponse::CONSUMED
-            })
-            // server_folder_group/server_template_card/TemplateGalleryGrid/
-            // server_tag_chips/FeaturedServerBanner render in the Discover
-            // Servers overlay (discover_servers_modal.rs), not in this 72px
-            // icon rail — keeping the rail to the add-server/DM/settings
-            // controls so those stay above the fold.
         }
     };
 
-    RailParts { rail_style, server_rows, create_server_section, live_section, rail_actions }
+    RailParts { rail_style, rail_top, live_section, rail_actions }
 }

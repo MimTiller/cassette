@@ -5,7 +5,6 @@ use super::*;
 
 #[derive(Clone)]
 pub(super) struct ShellState {
-    pub(super) active_channel: Signal<u32>,
     pub(super) active_live_channel: Signal<Option<i64>>,
     pub(super) active_live_server: Signal<Option<i64>>,
     pub(super) active_server: Signal<u32>,
@@ -118,9 +117,7 @@ pub(super) struct ShellState {
     pub(super) ss_owner: Signal<String>,
     pub(super) translate_key: Signal<Option<MessageKey>>,
     pub(super) user_status: Signal<Status>,
-    pub(super) server_rail: Signal<Vec<u32>>,
-    pub(super) dynamic_servers: Rc<RefCell<HashMap<u32, &'static Server>>>,
-    pub(super) next_id: Rc<Cell<u32>>,
+
     pub(super) create_open: Signal<bool>,
     pub(super) create_name: Signal<String>,
     pub(super) create_error: Signal<String>,
@@ -130,7 +127,6 @@ pub(super) struct ShellState {
     pub(super) join_result: Signal<Option<discord_server::invites::RedeemResult>>,
     pub(super) join_error: Signal<String>,
     pub(super) join_busy: Signal<bool>,
-    pub(super) discover_open: Signal<bool>,
     pub(super) live_collapsed: Signal<Vec<i64>>,
     pub(super) user_popup: Signal<Option<super::user_popups::UserPopup>>,
     pub(super) user_profile: Signal<Option<discord_server::profiles::UserProfile>>,

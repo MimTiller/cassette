@@ -1,5 +1,5 @@
-//! The rail's modal dialogs: join a server, create a server, discover
-//! servers, and the live channel create / rename / delete, invite and server
+//! The rail's modal dialogs: join a server, create a server, and the live
+//! channel create / rename / delete, invite and server
 //! settings panels. Split out of `rail.rs`; reads the shared dialog state
 //! through `ShellState`.
 
@@ -8,7 +8,6 @@ use super::*;
 pub(super) struct ModalsParts {
     pub(super) join_el: Element,
     pub(super) create_el: Element,
-    pub(super) discover_el: Element,
     pub(super) cc_el: Element,
     pub(super) rc_el: Element,
     pub(super) dc_el: Element,
@@ -17,7 +16,7 @@ pub(super) struct ModalsParts {
 }
 
 pub(super) fn build(s: &ShellState) -> ModalsParts {
-    let ShellState { active_live_channel, active_live_server, cc_busy, cc_err, cc_kind, cc_name, cc_open, create_busy, create_error, create_name, create_open, dc_busy, dc_cid, dc_err, dc_name, dc_open, discover_open, dynamic_servers, gateway, invite_created, invite_err, invite_expiry, invite_mode, join_busy, join_code, join_error, join_open, join_result, live_channels, live_kick_confirm, live_member_error, live_members, live_servers, live_unread, live_unread_rev, next_id, rc_busy, rc_cid, rc_err, rc_name, rc_open, server_rail, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, .. } = s.clone();
+    let ShellState { active_live_channel, active_live_server, cc_busy, cc_err, cc_kind, cc_name, cc_open, create_busy, create_error, create_name, create_open, dc_busy, dc_cid, dc_err, dc_name, dc_open, gateway, invite_created, invite_err, invite_expiry, invite_mode, join_busy, join_code, join_error, join_open, join_result, live_channels, live_kick_confirm, live_member_error, live_members, live_servers, live_unread, live_unread_rev, rc_busy, rc_cid, rc_err, rc_name, rc_open, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, .. } = s.clone();
     // The `#[component]` `name = expr` call form is only parsed inside `ui!`,
     // so the modal is wrapped in a `view` (the wrapper is a positioned
     // ancestor for the full-screen overlay, like the Profile/notif regions).
@@ -35,8 +34,8 @@ pub(super) fn build(s: &ShellState) -> ModalsParts {
     };
 
     // --- "Create a Server" modal ------------------------------------------
-    // Trigger is the rail's COMPASS circle (the green PLUS is taken by the
-    // Join flow). `on_create` mints a REAL backend server via the
+    // Trigger is the rail's green PLUS circle ("Add a Server"). `on_create`
+    // mints a REAL backend server via the
     // `crate::servers::create_server` RPC (the backend seeds the owner's
     // membership row plus a default `#general` text channel, so the fresh
     // server is immediately usable), then re-fetches `live_servers` so the new
@@ -153,31 +152,28 @@ pub(super) fn build(s: &ShellState) -> ModalsParts {
             });
         }
     });
+    // The create modal's secondary "Have an invite already? Join a Server"
+    // link hands the Join flow to this caller: per-open resets (code, result,
+    // error, busy) then open the join overlay.
+    let create_on_join: Rc<dyn Fn()> = Rc::new({
+        let join_code = join_code.clone();
+        let join_result = join_result.clone();
+        let join_error = join_error.clone();
+        let join_busy = join_busy.clone();
+        let join_open = join_open.clone();
+        move || {
+            join_code.set(String::new());
+            join_result.set(None);
+            join_error.set(String::new());
+            join_busy.set(false);
+            join_open.set(true);
+        }
+    });
     let create_modal_el: Element =
-        create_server_modal(create_open, create_name, create_error, create_busy, create_on_create);
+        create_server_modal(create_open, create_name, create_error, create_busy, create_on_create, create_on_join);
     let create_el = ui! {
         view {
             { create_modal_el }
-        }
-    };
-
-    let discover_on_join: Rc<dyn Fn(String)> = Rc::new({
-        let next_id = next_id.clone();
-        let dynamic_servers = dynamic_servers.clone();
-        let server_rail = server_rail.clone();
-        let discover_open = discover_open;
-        move |name: String| {
-            let new_id = create_server(&name, &*next_id, &dynamic_servers);
-            let mut ids = server_rail.get();
-            ids.push(new_id);
-            server_rail.set(ids);
-            discover_open.set(false);
-        }
-    });
-    let discover_modal_el: Element = discover_servers_modal(discover_open, discover_on_join);
-    let discover_el = ui! {
-        view {
-            { discover_modal_el }
         }
     };
 
@@ -248,5 +244,5 @@ pub(super) fn build(s: &ShellState) -> ModalsParts {
             )
         }
     };
-    ModalsParts { join_el, create_el, discover_el, cc_el, rc_el, dc_el, invite_el, ss_el }
+    ModalsParts { join_el, create_el, cc_el, rc_el, dc_el, invite_el, ss_el }
 }

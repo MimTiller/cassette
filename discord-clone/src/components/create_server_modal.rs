@@ -17,7 +17,9 @@
 //! modal stays open (the name field remains editable so it can be corrected
 //! and resubmitted); on success the caller closes the modal. `busy` guards
 //! against a double-tap firing two RPCs and drives the button's
-//! "Creating…" pending label.
+//! "Creating…" pending label. `on_join` is called when the secondary
+//! "Have an invite already? Join a Server" link is tapped: this modal closes
+//! and the caller opens the Join modal (with its usual per-open resets).
 //!
 //! Idioms: the button `.on_touch` chains are built as `let` bindings (the
 //! `close_btn` idiom in `invite_modal.rs`) so the method chain lives outside
@@ -44,12 +46,14 @@ pub fn create_server_modal(
     error: Signal<String>,
     busy: Signal<bool>,
     on_create: Rc<dyn Fn(String)>,
+    on_join: Rc<dyn Fn()>,
 ) -> Element {
     let close = open;
     let n = name;
     let e = error;
     let b = busy;
     let create = on_create.clone();
+    let join = on_join.clone();
 
     // Shared card/field/button styles (one static pass).
     let card_style = StyleRules {
@@ -184,6 +188,34 @@ pub fn create_server_modal(
             TouchResponse::CONSUMED
         })
     };
+    // Secondary link: Discord's create card offers "Have an invite already?
+    // Join a Server" next to Create. Tapping it closes THIS modal and hands
+    // the caller the Join flow (`on_join` opens the join modal with its
+    // usual per-open resets).
+    let join_btn_style = StyleRules {
+        height: Some(px(32.0)),
+        margin_top: Some(px(10.0)),
+        align_items: Some(AlignItems::Center),
+        justify_content: Some(JustifyContent::Center),
+        background: Some(col(theme::BG_TERTIARY)),
+        border_top_left_radius: Some(px(8.0)),
+        border_top_right_radius: Some(px(8.0)),
+        border_bottom_left_radius: Some(px(8.0)),
+        border_bottom_right_radius: Some(px(8.0)),
+        ..Default::default()
+    };
+    let join_btn = ui! {
+        view(style = join_btn_style.clone(), test_id = "create-server-join-link") {
+            text(style = btn_label_style.clone()) { "Have an invite already? Join a Server".to_string() }
+        }
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                close.set(false);
+                join();
+            }
+            TouchResponse::CONSUMED
+        })
+    };
 
     let card = ui! {
         view(style = card_style.clone()) {
@@ -223,6 +255,7 @@ pub fn create_server_modal(
                 { create_btn }
                 { cancel_btn }
             }
+            { join_btn }
         }
         .on_touch(move |_ev| TouchResponse::CONSUMED)
     };
