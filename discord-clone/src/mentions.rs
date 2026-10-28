@@ -23,6 +23,8 @@ struct Ctx {
     roles: RolesSnapshot,
     mentions_me: HashSet<i64>,
     rev: Option<Signal<u32>>,
+    /// Counts changes to names, members and roles (see [`names_version`]).
+    names_version: u64,
     open_user: Option<Rc<dyn Fn(i64, f32, f32)>>,
 }
 
@@ -35,9 +37,19 @@ fn with<R>(f: impl FnOnce(&mut Ctx) -> R) -> R {
 }
 
 fn bump() {
-    if let Some(rev) = with(|c| c.rev) {
+    if let Some(rev) = with(|c| {
+        c.names_version += 1;
+        c.rev
+    }) {
         rev.set(rev.get() + 1);
     }
+}
+
+/// How many times names, members or roles have changed. Unlike
+/// [`revision`] (the message list's counter, bumped by every message), this
+/// only moves when what a row shows about its author can change.
+pub fn names_version() -> u64 {
+    with(|c| c.names_version)
 }
 
 /// Read the revision signal, so a reactive closure that calls this redraws

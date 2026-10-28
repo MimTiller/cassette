@@ -273,276 +273,152 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     let pinned_count_k = pinned_count.clone();
     let pinned_rev_k = pinned_revision.clone();
     let pinned_err_k = pinned_error.clone();
-    let sent_messages = switch(
-        move || (
-            active_live_channel.get(),
-            live_revision.get(),
-            live_editing_k.get(),
-            live_delete_k.get(),
-            reaction_rev.get(),
-            load_busy.get(),
-            live_at_bottom.get(),
-            has_more_earlier.get(),
-        ),
-        move |(live_cid, _live_rev, _editing, _confirm, _react_rev, _load_busy, _at_bottom, _has_more): &(Option<i64>, u32, Option<i64>, Option<i64>, u32, bool, bool, bool)| {
-            // [Feature 16] Real account with no live channel: don't fall
-            // through to the mock message list (it would render the demo
-            // `SERVERS[0]` seed messages). Show a neutral onboarding hint
-            // during the login -> server-fetch race / for a zero-server account.
-            if live_cid.is_none() {
-                return ui! {
-                    view(style = StyleRules {
-                        flex_grow: Some(grow(1.0)),
-                        align_items: Some(AlignItems::Center),
-                        justify_content: Some(JustifyContent::Center),
-                        padding_top: Some(px(24.0)),
-                        ..Default::default()
-                    }) {
-                        text(style = StyleRules {
-                            font_size: Some(px(14.0)),
-                            color: Some(col(TEXT_MUTED)),
-                            ..Default::default()
-                        }) { "Create or join a server to start messaging.".to_string() }
-                    }
-                };
+    // The message list. `rows` turns the channel's buffer into plain row
+    // data; the keyed `for` renders it. A row's key hashes everything it
+    // shows, so a new message, an edit or a reaction rebuilds only the rows
+    // it touches and every other row keeps its nodes.
+    let popup_ctx = user_popups::UserPopupCtx {
+        popup: user_popup,
+        profile: user_profile,
+        server: active_live_server,
+        blocked: blocked_users,
+        live_rev: live_revision,
+    };
+    crate::mentions::set_open_user(Rc::new(move |uid, x, y| popup_ctx.open(uid, x, y, false)));
+    let reactions_read = reactions.clone();
+    let rows = memo(move || -> Vec<ListRow> {
+        let names_rev = crate::mentions::names_version();
+        let _ = (live_revision.get(), reaction_rev.get());
+        let Some(live_id) = active_live_channel.get() else { return Vec::new() };
+        let mine: Vec<LiveMsg> = live_read.borrow().get(&live_id).cloned().unwrap_or_default();
+        if mine.is_empty() {
+            return Vec::new();
+        }
+        let now = crate::data::now_secs();
+        let self_id = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+        let editing = live_editing_k.get();
+        let confirming = live_delete_k.get();
+        let jumped = super::jump::target();
+        let blocked_now = blocked_users.get();
+        let revealed_now = revealed_blocked.get();
+        let channel = live_channels
+            .get()
+            .iter()
+            .find(|c| c.id == live_id)
+            .map(|c| c.name.clone())
+            .unwrap_or_default();
+        let mut out = vec![ListRow::Top {
+            more: has_more_earlier.get(),
+            busy: load_busy.get(),
+            channel,
+            channel_id: live_id,
+            oldest: mine.first().map(|m| m.0),
+        }];
+        // The previous row's author and time (for grouping) and local day
+        // (a new day gets a divider and breaks the group).
+        let mut prev: Option<(String, i64)> = None;
+        let mut prev_day: Option<i64> = None;
+        // Messages from blocked users collapse into one row per run.
+        let mut hidden_run: Vec<i64> = Vec::new();
+        for (mid, aid, author, body, ts, edited_at, reply_to) in mine.iter() {
+            if crate::blocks::is_blocked(&blocked_now, *aid) && !revealed_now.contains(mid) {
+                hidden_run.push(*mid);
+                continue;
             }
-            // Live channel active (the only path left — the mock seed-message
-            // render was deleted with guest mode): render the gateway-fed buffer.
-            if let Some(live_id) = *live_cid {
-                let now = crate::data::now_secs();
-                let mine: Vec<LiveMsg> = live_read
-                    .borrow()
-                    .get(&live_id)
-                    .cloned()
-                    .unwrap_or_default();
-                if mine.is_empty() {
-                    // No history and nothing received yet: a centered, muted
-                    // hint instead of a blank pane. The wrapper `flex_grow`s to
-                    // fill the (tall) scroll pane, then centers the single line.
+            if !hidden_run.is_empty() {
+                out.push(ListRow::Hidden(std::mem::take(&mut hidden_run)));
+                prev = None;
+            }
+            let day = local_day_clock(*ts).0;
+            let new_day = prev_day != Some(day);
+            if new_day {
+                out.push(ListRow::Day(format_day_label(*ts)));
+            }
+            // An edited message or a reply keeps its own header, so neither
+            // joins the group above.
+            let grouped = prev.as_ref().is_some_and(|(pa, pts)| same_group(pa, *pts, author.as_str(), *ts))
+                && edited_at.is_none()
+                && !new_day
+                && reply_to.is_none();
+            let reply = reply_to.and_then(|orig_id| {
+                mine.iter()
+                    .find(|o| o.0 == orig_id)
+                    .map(|o| (o.2.clone(), crate::reply_reference_strip::reply_snippet(&o.3)))
+            });
+            out.push(ListRow::Message(Box::new(MsgRow {
+                id: *mid,
+                author_id: *aid,
+                author: author.clone(),
+                body: body.clone(),
+                when: format_when(*ts, now),
+                full: format_full_when(*ts),
+                edited: edited_at.is_some(),
+                mine: self_id != 0 && *aid == self_id,
+                grouped,
+                reply,
+                editing: editing == Some(*mid),
+                confirming: confirming == Some(*mid),
+                mentions_me: crate::mentions::mentions_me(*mid),
+                jumped: jumped == Some(*mid),
+                attachments: attach_render.borrow().get(mid).cloned().unwrap_or_default(),
+                reactions: reactions_read.borrow().get(&MessageKey::Live { id: *mid }).cloned().unwrap_or_default(),
+                names_rev,
+            })));
+            prev = Some((author.clone(), *ts));
+            prev_day = Some(day);
+        }
+        if !hidden_run.is_empty() {
+            out.push(ListRow::Hidden(hidden_run));
+        }
+        out
+    });
+    let ctx = RowCtx {
+        gateway,
+        editing: live_editing,
+        edit_text: live_edit_text,
+        delete_confirm: live_delete_confirm,
+        picker,
+        reply_ctx: reply_ctx_k,
+        reply_target: reply_target_k,
+        pin_visible: pin_visible_k,
+        translate_key: translate_key_k,
+        pinned_messages: pinned_msgs_k,
+        pinned_count: pinned_count_k,
+        pinned_revision: pinned_rev_k,
+        pinned_error: pinned_err_k,
+        reactions: reactions.clone(),
+        revealed_blocked,
+        live_revision,
+        load_busy,
+        popup_ctx,
+    };
+    // Which of the list's three states shows: no channel, an empty channel,
+    // or the messages.
+    let list_state = memo(move || match active_live_channel.get() {
+        None => 0u8,
+        Some(_) if rows.get().is_empty() => 1,
+        Some(_) => 2,
+    });
+    let sent_messages = switch(
+        move || list_state.get(),
+        move |state: &u8| {
+            let hint = match *state {
+                0 => "Create or join a server to start messaging.",
+                1 => "No messages yet -- say hi!",
+                _ => {
+                    let ctx = ctx.clone();
                     return ui! {
                         view(style = StyleRules {
-                            flex_grow: Some(grow(1.0)),
-                            align_items: Some(AlignItems::Center),
-                            justify_content: Some(JustifyContent::Center),
-                            padding_top: Some(px(24.0)),
+                            flex_direction: Some(FlexDirection::Column),
                             ..Default::default()
                         }) {
-                            text(style = StyleRules {
-                                font_size: Some(px(14.0)),
-                                color: Some(col(TEXT_MUTED)),
-                                ..Default::default()
-                            }) { "No messages yet -- say hi!".to_string() }
+                            for row in rows, key = row.key() {
+                                { ctx.render(&row) }
+                            }
                         }
                     };
                 }
-                let self_id = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
-                let editing = live_editing;
-                let delete_c = live_delete_confirm;
-                let edit_text = live_edit_text;
-                let gw = gateway;
-                let picker_l = picker;
-                let reply_l = reply_ctx_k;
-                let trans_l = translate_key_k;
-                let mut rows: Vec<Element> = Vec::with_capacity(mine.len() * 2);
-                // Top-of-list scrollback affordance: a "Load earlier messages"
-                // pill while more older history exists (`has_more_earlier`), or
-                // a "beginning of channel" anchor once the reader has reached
-                // the start (nothing older left to load). Both sit in-flow
-                // above the oldest row — the reader scrolls up to find them
-                // (NOT a floating pill, so no `live_at_bottom` gating). The
-                // channel name resolves from `live_channels` (the same lookup
-                // the header title uses). `mine` is oldest-first, so `mine[0]`
-                // is the scrollback cursor for the next `History` page.
-                let oldest_id = mine.first().map(|m| m.0);
-                let chan_name: String = live_channels
-                    .get()
-                    .iter()
-                    .find(|c| c.id == live_id)
-                    .map(|c| c.name.clone())
-                    .unwrap_or_default();
-                if has_more_earlier.get() {
-                    // `on_load` sets `load_busy` (gates the pill's tap + mutes
-                    // its label) and fires the scrollback page. `load_busy` is
-                    // cleared by the gateway effect on the `History` marker
-                    // frame, which arrives before the page's `Message` frames.
-                    let on_load = Rc::new({
-                        let busy = load_busy.clone();
-                        let cid2 = live_id;
-                        let oldest = oldest_id;
-                        move || {
-                            busy.set(true);
-                            if let Some(before) = oldest {
-                                gw.send(discord_server::server_settings::WsClientMsg::History {
-                                    channel_id: cid2,
-                                    before_id: Some(before),
-                                });
-                            }
-                        }
-                    });
-                    rows.push(load_earlier_button(load_busy.clone(), on_load));
-                } else {
-                    rows.push(channel_anchor(&chan_name));
-                }
-                // Message-grouping state carried across iterations (the
-                // buffer is oldest-first): the previous row's author label +
-                // timestamp, for the `same_group` test below.
-                let mut prev: Option<(String, i64)> = None;
-                // Local calendar day of the previous message — a new day gets
-                // a `date_divider` row above the message and breaks any
-                // continuation group (the first row also has `None`, so the
-                // first loaded message gets a divider too).
-                let mut prev_day: Option<i64> = None;
-                let popup_ctx = user_popups::UserPopupCtx {
-                    popup: user_popup,
-                    profile: user_profile,
-                    server: active_live_server,
-                    blocked: blocked_users,
-                    live_rev: live_revision,
-                };
-                crate::mentions::set_open_user(Rc::new(move |uid, x, y| popup_ctx.open(uid, x, y, false)));
-                // Messages from blocked users collapse into one "N Blocked
-                // Messages — Show" row per consecutive run, unless revealed.
-                let blocked_now = blocked_users.get();
-                let revealed_now = revealed_blocked.get();
-                let mut hidden_run: Vec<i64> = Vec::new();
-                for m in mine.iter() {
-                    let (mid, aid, author, body, ts, edited_at, reply_to) = m;
-                    if crate::blocks::is_blocked(&blocked_now, *aid) && !revealed_now.contains(mid) {
-                        hidden_run.push(*mid);
-                        continue;
-                    }
-                    if !hidden_run.is_empty() {
-                        rows.push(crate::blocks::hidden_run_row(
-                            std::mem::take(&mut hidden_run),
-                            revealed_blocked,
-                            live_revision,
-                        ));
-                        prev = None;
-                    }
-                    let when = format_when(*ts, now);
-                    let full = format_full_when(*ts);
-                    let is_mine = self_id != 0 && *aid == self_id;
-                    let lkey = MessageKey::Live { id: *mid };
-                    // Day divider: when this row's local calendar day differs
-                    // from the previous row's (or there is no previous row —
-                    // the first loaded message), a date-divider row sits
-                    // above it and any continuation group is broken.
-                    let cur_day = local_day_clock(*ts).0;
-                    let new_day = prev_day != Some(cur_day);
-                    if new_day {
-                        rows.push(date_divider(format_day_label(*ts)));
-                    }
-                    // Grouped with the row above? (same author, within the
-                    // window). Edited messages keep their own header: an
-                    // `(edited)` marker on a headerless row would be
-                    // orphaned, so `edited_at.is_some()` breaks the group.
-                    // A reply also always starts a new group: its reference
-                    // strip sits above the row's header, which would be
-                    // orphaned (and the strip stranded mid-group) otherwise.
-                    let grouped = prev
-                        .as_ref()
-                        .map(|(pa, pts)| same_group(pa, *pts, author.as_str(), *ts))
-                        .unwrap_or(false)
-                        && edited_at.is_none()
-                        && !new_day
-                        && reply_to.is_none();
-                    // Feature 5: a row with a `reply_to_message_id` gets the
-                    // quoted reference strip rendered above it. The original's
-                    // author + body are resolved from the already-loaded buffer
-                    // (`mine`); if it isn't there yet (not loaded / deleted)
-                    // there is nothing to quote, so no strip.
-                    if let Some(orig_id) = *reply_to {
-                        if let Some(orig) = mine.iter().find(|o| o.0 == orig_id) {
-                            rows.push(crate::reply_reference_strip::reply_reference_strip(
-                                orig.2.clone(),
-                                crate::reply_reference_strip::reply_snippet(&orig.3),
-                            ));
-                        }
-                    }
-                    // Real "Pin message": persist via the backend `pin_message`
-                    // RPC (moderator+), then update the header badge from the
-                    // result's fresh `pinned_count` and refresh the panel's
-                    // list (the result carries `channel_id`, so no extra id is
-                    // needed). A rejection (e.g. a plain member) lands in
-                    // `pinned_error` and bumps `pinned_revision` so the panel
-                    // body surfaces it. `mid2` + the `Copy` pin signals are
-                    // captured by the `move` handler so it owns them.
-                    let mid2 = *mid;
-                    let pin_msgs = pinned_msgs_k;
-                    let pin_cnt = pinned_count_k;
-                    let pin_rev = pinned_rev_k;
-                    let pin_err = pinned_err_k;
-                    let pin_c = Rc::new(move || {
-                        runtime_core::driver::spawn_async(async move {
-                            match crate::pins::pin_message(mid2).await {
-                                Ok(res) => {
-                                    pin_cnt.set(res.pinned_count);
-                                    if let Ok(list) = crate::pins::list_pinned(res.channel_id).await {
-                                        pin_msgs.set(list);
-                                    }
-                                    pin_rev.set(pin_rev.get() + 1);
-                                }
-                                Err(e) => {
-                                    pin_err.set(e);
-                                    pin_rev.set(pin_rev.get() + 1);
-                                }
-                            }
-                        });
-                    });
-                    let row = live_edit_row(
-                        *mid,
-                        author.as_str(),
-                        BUTTON,
-                        body.as_str(),
-                        when,
-                        full,
-                        edited_at.is_some(),
-                        is_mine,
-                        grouped,
-                        editing,
-                        edit_text,
-                        delete_c,
-                        gw,
-                        lkey,
-                        picker_l,
-                        reply_l,
-                        reply_target_k,
-                        pin_visible_k,
-                        pin_c,
-                        trans_l,
-                        Some(Rc::new(popup_ctx.on_press(*aid))),
-                    );
-                    rows.push(if crate::mentions::mentions_me(*mid) { mention_highlight(row) } else { row });
-                    // Image attachments render UNDER the body: the persisted
-                    // list the gateway effect stored for this wire id (empty
-                    // rows push nothing, so every other row is unchanged).
-                    let atts = attach_render.borrow().get(&*mid).cloned().unwrap_or_default();
-                    if !atts.is_empty() {
-                        rows.push(attachment_row(&atts));
-                    }
-                    // Reaction strip under each live row, keyed by the real wire
-                    // `message_id` — the same session-local pill store the mock
-                    // rows use, so live reactions behave exactly like mock ones.
-                    rows.push(reaction_area(
-                        lkey,
-                        reactions.clone(),
-                        picker_l,
-                    ));
-                    prev = Some((author.clone(), *ts));
-                    prev_day = Some(cur_day);
-                }
-                if !hidden_run.is_empty() {
-                    rows.push(crate::blocks::hidden_run_row(hidden_run, revealed_blocked, live_revision));
-                }
-                return ui! {
-                    view(style = StyleRules {
-                        flex_direction: Some(FlexDirection::Column),
-                        ..Default::default()
-                    }) { rows }
-                };
-            }
-            // No live channel: the neutral onboarding hint (the mock seed-message
-            // render was deleted with guest mode).
+            };
             ui! {
                 view(style = StyleRules {
                     flex_grow: Some(grow(1.0)),
@@ -555,7 +431,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         font_size: Some(px(14.0)),
                         color: Some(col(TEXT_MUTED)),
                         ..Default::default()
-                    }) { "Create or join a server to start messaging.".to_string() }
+                    }) { hint.to_string() }
                 }
             }
         },
@@ -613,4 +489,158 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     );
 
     MessagesParts { header, sent_messages, typing_row }
+}
+
+/// One row of the message list, as plain data (see `build`'s `rows`).
+#[derive(Debug, Clone, PartialEq)]
+enum ListRow {
+    /// "Load earlier messages", or the start-of-channel anchor.
+    Top { more: bool, busy: bool, channel: String, channel_id: i64, oldest: Option<i64> },
+    /// A date divider.
+    Day(String),
+    /// A run of messages from blocked users, collapsed.
+    Hidden(Vec<i64>),
+    Message(Box<MsgRow>),
+}
+
+/// Everything one message row shows.
+#[derive(Debug, Clone, PartialEq)]
+struct MsgRow {
+    id: i64,
+    author_id: i64,
+    author: String,
+    body: String,
+    when: String,
+    full: String,
+    edited: bool,
+    mine: bool,
+    grouped: bool,
+    /// The quoted original (author, snippet) when this is a reply.
+    reply: Option<(String, String)>,
+    editing: bool,
+    confirming: bool,
+    mentions_me: bool,
+    jumped: bool,
+    attachments: Vec<discord_server::server_settings::MessageAttachment>,
+    reactions: Vec<super::reactions_ui::Reaction>,
+    /// Bumped when names or roles change, so rows redraw them.
+    names_rev: u64,
+}
+
+impl ListRow {
+    /// The keyed list's key: a hash of the whole row, so any change to what
+    /// it shows rebuilds it. Rows are unique (messages by id, days by date,
+    /// hidden runs by their ids, one top row).
+    fn key(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        format!("{self:?}").hash(&mut h);
+        h.finish()
+    }
+}
+
+/// The handles rows need for their actions.
+#[derive(Clone)]
+struct RowCtx {
+    gateway: server::UseSocket<discord_server::server_settings::WsServerMsg, discord_server::server_settings::WsClientMsg>,
+    editing: Signal<Option<i64>>,
+    edit_text: Signal<String>,
+    delete_confirm: Signal<Option<i64>>,
+    picker: Signal<Option<MessageKey>>,
+    reply_ctx: Signal<Option<(String, String)>>,
+    reply_target: Signal<Option<i64>>,
+    pin_visible: Signal<bool>,
+    translate_key: Signal<Option<MessageKey>>,
+    pinned_messages: Signal<Vec<crate::pins::PinnedMessage>>,
+    pinned_count: Signal<i64>,
+    pinned_revision: Signal<u32>,
+    pinned_error: Signal<String>,
+    reactions: Rc<RefCell<super::reactions_ui::ReactionMap>>,
+    revealed_blocked: Signal<Vec<i64>>,
+    live_revision: Signal<u32>,
+    load_busy: Signal<bool>,
+    popup_ctx: user_popups::UserPopupCtx,
+}
+
+impl RowCtx {
+    fn render(&self, row: &ListRow) -> Element {
+        match row {
+            ListRow::Top { more: true, channel_id, oldest, .. } => {
+                let (busy, gw, cid, oldest) = (self.load_busy, self.gateway, *channel_id, *oldest);
+                let on_load = Rc::new(move || {
+                    busy.set(true);
+                    if let Some(before) = oldest {
+                        gw.send(discord_server::server_settings::WsClientMsg::History { channel_id: cid, before_id: Some(before) });
+                    }
+                });
+                load_earlier_button(self.load_busy, on_load)
+            }
+            ListRow::Top { channel, .. } => channel_anchor(channel),
+            ListRow::Day(label) => date_divider(label.clone()),
+            ListRow::Hidden(ids) => crate::blocks::hidden_run_row(ids.clone(), self.revealed_blocked, self.live_revision),
+            ListRow::Message(m) => self.message(m),
+        }
+    }
+
+    fn message(&self, m: &MsgRow) -> Element {
+        let key = MessageKey::Live { id: m.id };
+        let mid = m.id;
+        let (pin_msgs, pin_cnt, pin_rev, pin_err) = (self.pinned_messages, self.pinned_count, self.pinned_revision, self.pinned_error);
+        let on_pin = Rc::new(move || {
+            runtime_core::driver::spawn_async(async move {
+                match crate::pins::pin_message(mid).await {
+                    Ok(res) => {
+                        pin_cnt.set(res.pinned_count);
+                        if let Ok(list) = crate::pins::list_pinned(res.channel_id).await {
+                            pin_msgs.set(list);
+                        }
+                    }
+                    Err(e) => pin_err.set(e),
+                }
+                pin_rev.set(pin_rev.get() + 1);
+            });
+        });
+        let row = live_edit_row(
+            m.id,
+            m.author.as_str(),
+            BUTTON,
+            m.body.as_str(),
+            m.when.clone(),
+            m.full.clone(),
+            m.edited,
+            m.mine,
+            m.grouped,
+            self.editing,
+            self.edit_text,
+            self.delete_confirm,
+            self.gateway,
+            key,
+            self.picker,
+            self.reply_ctx,
+            self.reply_target,
+            self.pin_visible,
+            on_pin,
+            self.translate_key,
+            Some(Rc::new(self.popup_ctx.on_press(m.author_id))),
+        );
+        let row = if m.mentions_me { mention_highlight(row) } else { row };
+        let reply = m
+            .reply
+            .clone()
+            .map(|(author, snippet)| crate::reply_reference_strip::reply_reference_strip(author, snippet));
+        let attachments = (!m.attachments.is_empty()).then(|| attachment_row(&m.attachments));
+        let reactions = reaction_area(key, self.reactions.clone(), self.picker);
+        ui! {
+            view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) {
+                if let Some(el) = reply {
+                    el
+                }
+                row
+                if let Some(el) = attachments {
+                    el
+                }
+                reactions
+            }
+        }
+    }
 }
