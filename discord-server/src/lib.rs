@@ -25,6 +25,8 @@
 
 #[macro_use]
 pub mod components;
+// Permission sets, channel overwrites and the role hierarchy.
+pub mod permissions;
 pub mod roles;
 pub mod server_roles;
 pub mod server_settings;
