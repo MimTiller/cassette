@@ -6,10 +6,10 @@ use super::Message;
 impl Db {
     // ── DM channels ────────────────────────────────────────────────────────
     //
-    // Private 1:1 conversations (`dm_channels` + `dm_participants`, migration
-    // `0007_dm_channels.sql`). A DM channel has no name — its identity is the
-    // pair of participants. The app layer enforces exactly two.
-    // DM *messages* are a separate follow-up (they need their own table).
+    // Private conversations (`dm_channels` + `dm_participants`, migrations
+    // `0007_dm_channels.sql` and `0025_group_dms.sql`). A 1:1 DM has exactly
+    // two participants and no name; a group DM (`is_group`) has up to ten,
+    // an optional name and an owner. The service layer enforces the sizes.
 
     /// Create a DM channel and add `user_a` and `user_b` as its participants
     /// in one transaction. Returns the new `dm_channels.id`.
@@ -38,14 +38,14 @@ impl Db {
         Ok(channel_id)
     }
 
-    /// The DM channel shared by `user_a` and `user_b`, if one exists.
-    /// The `JOIN` on distinct users is the pair-existence check: exactly one
-    /// row is produced when both users participate in the same channel.
+    /// The 1:1 DM channel shared by `user_a` and `user_b`, if one exists
+    /// (group DMs they are both in don't count).
     pub fn dm_channel_between(&self, user_a: i64, user_b: i64) -> Option<i64> {
         let c = self.lock().ok()?;
         c.query_row(
             "SELECT d.id FROM dm_channels d
-             WHERE d.id IN (SELECT dm_channel_id FROM dm_participants WHERE user_id = ?1)
+             WHERE d.is_group = 0
+               AND d.id IN (SELECT dm_channel_id FROM dm_participants WHERE user_id = ?1)
                AND d.id IN (SELECT dm_channel_id FROM dm_participants WHERE user_id = ?2)
              ORDER BY d.id DESC LIMIT 1",
             rusqlite::params![user_a, user_b],
@@ -78,6 +78,87 @@ impl Db {
             Err(_) => return Vec::new(),
         };
         rows.filter_map(Result::ok).collect()
+    }
+
+    /// Create a group DM owned by `owner` with `members` (the owner
+    /// included) and an optional name. Returns the new channel id.
+    pub fn insert_group_dm(
+        &self,
+        owner: i64,
+        members: &[i64],
+        name: Option<&str>,
+        created_at: i64,
+    ) -> Result<i64, rusqlite::Error> {
+        let mut c = self.lock()?;
+        let tx = c.transaction()?;
+        tx.execute(
+            "INSERT INTO dm_channels (created_at, is_group, name, owner_id) VALUES (?1, 1, ?2, ?3)",
+            rusqlite::params![created_at, name, owner],
+        )?;
+        let channel_id = tx.last_insert_rowid();
+        for user in members {
+            tx.execute(
+                "INSERT INTO dm_participants (dm_channel_id, user_id, joined_at) VALUES (?1, ?2, ?3)",
+                rusqlite::params![channel_id, user, created_at],
+            )?;
+        }
+        tx.commit()?;
+        Ok(channel_id)
+    }
+
+    /// `(is_group, name, owner_id)` of a DM channel, or `None` if it doesn't
+    /// exist.
+    pub fn dm_channel_info(&self, channel_id: i64) -> Option<(bool, Option<String>, Option<i64>)> {
+        let c = self.lock().ok()?;
+        c.query_row(
+            "SELECT is_group, name, owner_id FROM dm_channels WHERE id = ?1",
+            rusqlite::params![channel_id],
+            |r| Ok((r.get::<_, i64>(0)? != 0, r.get(1)?, r.get(2)?)),
+        )
+        .ok()
+    }
+
+    pub fn add_dm_participant(&self, channel_id: i64, user_id: i64, joined_at: i64) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        c.execute(
+            "INSERT OR IGNORE INTO dm_participants (dm_channel_id, user_id, joined_at) VALUES (?1, ?2, ?3)",
+            rusqlite::params![channel_id, user_id, joined_at],
+        )
+    }
+
+    /// Remove `user_id` from a group DM. If they owned it, the member who
+    /// joined earliest becomes the owner; the last one out deletes the group.
+    pub fn remove_dm_participant(&self, channel_id: i64, user_id: i64) -> Result<(), rusqlite::Error> {
+        let mut c = self.lock()?;
+        let tx = c.transaction()?;
+        tx.execute(
+            "DELETE FROM dm_participants WHERE dm_channel_id = ?1 AND user_id = ?2",
+            rusqlite::params![channel_id, user_id],
+        )?;
+        let next: Option<i64> = tx
+            .query_row(
+                "SELECT user_id FROM dm_participants WHERE dm_channel_id = ?1 ORDER BY joined_at, id LIMIT 1",
+                rusqlite::params![channel_id],
+                |r| r.get(0),
+            )
+            .ok();
+        match next {
+            None => {
+                tx.execute("DELETE FROM dm_channels WHERE id = ?1", rusqlite::params![channel_id])?;
+            }
+            Some(next) => {
+                tx.execute(
+                    "UPDATE dm_channels SET owner_id = ?2 WHERE id = ?1 AND (owner_id = ?3 OR owner_id IS NULL)",
+                    rusqlite::params![channel_id, next, user_id],
+                )?;
+            }
+        }
+        tx.commit()
+    }
+
+    pub fn set_dm_name(&self, channel_id: i64, name: Option<&str>) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        c.execute("UPDATE dm_channels SET name = ?2 WHERE id = ?1", rusqlite::params![channel_id, name])
     }
 
     /// A DM channel's `created_at` (UTC epoch milliseconds), or `None` if the

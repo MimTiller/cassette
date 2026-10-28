@@ -198,6 +198,9 @@ pub enum WsServerMsg {
     History { channel_id: i64, has_more: bool },
     /// A direct message pushed to a participant of the DM (always `new`).
     DmMessage { message_id: i64, dm_id: i64, author_id: i64, author_username: String, #[serde(default)] author_avatar: Option<String>, content: String, created_at: i64 },
+    /// A DM's members or name changed (or the DM was created). Sent to its
+    /// members, including anyone just removed; clients refetch `list_dms`.
+    DmChanged { dm_id: i64 },
     /// A presence status change for a user: 'online' / 'away' / 'offline'.
     Presence { user_id: i64, status: String },
     /// A channel member started typing. The client shows this transiently

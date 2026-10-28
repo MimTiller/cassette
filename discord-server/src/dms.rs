@@ -82,14 +82,67 @@ pub struct DmParticipant {
     pub avatar_url: Option<String>,
 }
 
-/// The wire record of a DM channel: its id, creation time, and both
-/// participants.
+/// Most people in a group DM, its creator included.
+pub const MAX_GROUP_MEMBERS: usize = 10;
+/// Longest group DM name, in characters.
+pub const MAX_GROUP_NAME_CHARS: usize = 100;
+
+/// The wire record of a DM channel: its id, creation time and participants.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct Dm {
     pub channel_id: i64,
     pub created_at: i64,
-    /// Both members (the caller's own DM list always includes themselves).
+    /// Every member, the caller included.
     pub participants: Vec<DmParticipant>,
+    /// A group DM (up to [`MAX_GROUP_MEMBERS`] people) rather than 1:1.
+    #[serde(default)]
+    pub is_group: bool,
+    /// A group's name; `None` shows the members' names instead.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Who can remove people from a group.
+    #[serde(default)]
+    pub owner_id: Option<i64>,
+}
+
+/// Input for [`create_group_dm`]: the friends to include (not the caller)
+/// and an optional name.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CreateGroupDmInput {
+    pub user_ids: Vec<i64>,
+    #[serde(default)]
+    pub name: String,
+}
+
+/// Input for [`add_group_dm_member`] and [`remove_group_dm_member`]
+/// (removing yourself is leaving).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct GroupDmMemberInput {
+    pub dm_id: i64,
+    pub user_id: i64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RenameGroupDmInput {
+    pub dm_id: i64,
+    /// Empty clears the name.
+    pub name: String,
+}
+
+/// Check a group DM name: trimmed, at most [`MAX_GROUP_NAME_CHARS`], no
+/// control characters. Empty means no name.
+pub fn validate_group_name(name: &str) -> Result<Option<String>, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Ok(None);
+    }
+    if name.chars().count() > MAX_GROUP_NAME_CHARS {
+        return Err(format!("group names can be at most {MAX_GROUP_NAME_CHARS} characters"));
+    }
+    if name.chars().any(char::is_control) {
+        return Err("group names can't contain line breaks".into());
+    }
+    Ok(Some(name.to_string()))
 }
 
 /// Input for [`send_dm_message`]: the DM channel to post into and the text.
@@ -308,6 +361,98 @@ impl DmService {
         message
     }
 
+    /// Refuse adding `other` to a group unless they are `caller`'s friend and
+    /// neither has blocked the other.
+    fn require_friend(&self, caller: i64, other: i64) -> Result<(), String> {
+        let (_, name) = self.db.user_by_id(other).ok_or("user not found")?;
+        if !matches!(self.db.friendship_between(caller, other), Some((_, _, _, status)) if status == "accepted") {
+            return Err(format!("you can only add friends to a group DM, and {name} isn't one"));
+        }
+        if self.db.blocks_pair(caller, other) {
+            return Err(format!("you can't add {name}: one of you has blocked the other"));
+        }
+        Ok(())
+    }
+
+    /// The group's owner, after checking `dm_id` is a group `caller` is in.
+    fn require_group_member(&self, caller: i64, dm_id: i64) -> Result<Option<i64>, String> {
+        let (is_group, _, owner) = self.db.dm_channel_info(dm_id).ok_or("dm channel not found")?;
+        if !is_group {
+            return Err("that's not a group DM".into());
+        }
+        if !self.db.is_dm_participant(dm_id, caller) {
+            return Err("not a participant of this DM".into());
+        }
+        Ok(owner)
+    }
+
+    /// Start a group DM with `others` (the caller's friends) and an optional
+    /// name. The caller owns it.
+    pub fn create_group(&self, caller: i64, others: &[i64], name: &str) -> Result<Dm, String> {
+        let name = validate_group_name(name)?;
+        let mut members = vec![caller];
+        for &other in others {
+            if !members.contains(&other) {
+                members.push(other);
+            }
+        }
+        if members.len() < 3 {
+            return Err("pick at least two friends for a group DM".into());
+        }
+        if members.len() > MAX_GROUP_MEMBERS {
+            return Err(format!("a group DM can have at most {MAX_GROUP_MEMBERS} people"));
+        }
+        for &other in &members[1..] {
+            self.require_friend(caller, other)?;
+        }
+        let id = self
+            .db
+            .insert_group_dm(caller, &members, name.as_deref(), now_ms())
+            .map_err(|e| format!("failed to create the group: {e}"))?;
+        Ok(self.dm(id))
+    }
+
+    /// Add `user_id` (a friend of the caller) to a group the caller is in.
+    pub fn add_to_group(&self, caller: i64, dm_id: i64, user_id: i64) -> Result<Dm, String> {
+        self.require_group_member(caller, dm_id)?;
+        if self.db.is_dm_participant(dm_id, user_id) {
+            return Err("they're already in this group".into());
+        }
+        if self.db.dm_participants_of(dm_id).len() >= MAX_GROUP_MEMBERS {
+            return Err(format!("a group DM can have at most {MAX_GROUP_MEMBERS} people"));
+        }
+        self.require_friend(caller, user_id)?;
+        self.db
+            .add_dm_participant(dm_id, user_id, now_ms())
+            .map_err(|e| format!("failed to add them: {e}"))?;
+        Ok(self.dm(dm_id))
+    }
+
+    /// Remove `user_id` from a group: anyone may leave; only the owner may
+    /// remove someone else.
+    pub fn remove_from_group(&self, caller: i64, dm_id: i64, user_id: i64) -> Result<(), String> {
+        let owner = self.require_group_member(caller, dm_id)?;
+        if user_id != caller && owner != Some(caller) {
+            return Err("only the group's owner can remove people".into());
+        }
+        if !self.db.is_dm_participant(dm_id, user_id) {
+            return Err("they're not in this group".into());
+        }
+        self.db
+            .remove_dm_participant(dm_id, user_id)
+            .map_err(|e| format!("failed to remove them: {e}"))
+    }
+
+    /// Rename a group (any member may); an empty name clears it.
+    pub fn rename_group(&self, caller: i64, dm_id: i64, name: &str) -> Result<Dm, String> {
+        self.require_group_member(caller, dm_id)?;
+        let name = validate_group_name(name)?;
+        self.db
+            .set_dm_name(dm_id, name.as_deref())
+            .map_err(|e| format!("failed to rename the group: {e}"))?;
+        Ok(self.dm(dm_id))
+    }
+
     /// Assemble the wire record for a DM channel id.
     fn dm(&self, channel_id: i64) -> Dm {
         let created_at = self
@@ -325,10 +470,14 @@ impl DmService {
                 avatar_url: self.db.user_avatar(user_id),
             })
             .collect();
+        let (is_group, name, owner_id) = self.db.dm_channel_info(channel_id).unwrap_or((false, None, None));
         Dm {
             channel_id,
             created_at,
             participants,
+            is_group,
+            name,
+            owner_id,
         }
     }
 }
@@ -405,6 +554,64 @@ pub async fn list_dm_messages(input: ListDmMessagesInput) -> Result<Vec<DmMessag
         .map_err(ServerError::failed)
 }
 
+/// Tell a DM's members (and `also`, e.g. someone just removed) to refetch
+/// their DM list.
+#[cfg(feature = "server")]
+fn announce_dm(db: &Db, dm_id: i64, also: &[i64]) {
+    let mut audience: Vec<i64> = db.dm_participants_of(dm_id).into_iter().map(|(id, _)| id).collect();
+    audience.extend_from_slice(also);
+    crate::realtime::hub().publish(&audience, &crate::server_settings::WsServerMsg::DmChanged { dm_id });
+}
+
+/// Start a group DM with some of the caller's friends.
+#[server]
+pub async fn create_group_dm(input: CreateGroupDmInput) -> Result<Dm, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let dm = DmService::new(db.clone())
+        .create_group(caller, &input.user_ids, &input.name)
+        .map_err(ServerError::failed)?;
+    announce_dm(&db, dm.channel_id, &[]);
+    Ok(dm)
+}
+
+/// Add one of the caller's friends to a group DM the caller is in.
+#[server]
+pub async fn add_group_dm_member(input: GroupDmMemberInput) -> Result<Dm, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let dm = DmService::new(db.clone())
+        .add_to_group(caller, input.dm_id, input.user_id)
+        .map_err(ServerError::failed)?;
+    announce_dm(&db, dm.channel_id, &[]);
+    Ok(dm)
+}
+
+/// Remove someone from a group DM (owner only), or leave it (`user_id` is
+/// the caller).
+#[server]
+pub async fn remove_group_dm_member(input: GroupDmMemberInput) -> Result<(), ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    DmService::new(db.clone())
+        .remove_from_group(caller, input.dm_id, input.user_id)
+        .map_err(ServerError::failed)?;
+    announce_dm(&db, input.dm_id, &[input.user_id]);
+    Ok(())
+}
+
+/// Rename a group DM; an empty name clears it.
+#[server]
+pub async fn rename_group_dm(input: RenameGroupDmInput) -> Result<Dm, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let dm = DmService::new(db.clone())
+        .rename_group(caller, input.dm_id, &input.name)
+        .map_err(ServerError::failed)?;
+    announce_dm(&db, dm.channel_id, &[]);
+    Ok(dm)
+}
+
 /// Pull the shared `Db` out of server state (installed at startup by the
 /// server bin via `server::install_state(db)`). `Db` is cheap to clone.
 #[cfg(feature = "server")]
@@ -442,6 +649,76 @@ mod tests {
         .unwrap();
         drop(c);
         (dir, db)
+    }
+
+    // ── group DMs ───────────────────────────────────────────────────────────
+
+    /// On top of `setup_db`: dave (4) and erin (5); alice is friends with
+    /// bob, carol and dave, not erin.
+    fn with_friends(db: &Db) {
+        db.lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO users (id, username, email, created_at) VALUES
+                    (4, 'dave', 'd@example.com', 1000), (5, 'erin', 'e@example.com', 1000);
+                 INSERT INTO friendships (min_user_id, max_user_id, requester_id, addressee_id, status, created_at) VALUES
+                    (1, 2, 1, 2, 'accepted', 1), (1, 3, 1, 3, 'accepted', 1), (1, 4, 4, 1, 'accepted', 1),
+                    (1, 5, 1, 5, 'pending', 1);",
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn a_group_needs_friends_and_has_an_owner_and_a_size_limit() {
+        let (_dir, db) = setup_db();
+        with_friends(&db);
+        let svc = DmService::new(db.clone());
+        assert!(svc.create_group(1, &[2], "").unwrap_err().contains("at least two"));
+        assert!(svc.create_group(1, &[2, 5], "").unwrap_err().contains("erin isn't one"));
+        let g = svc.create_group(1, &[2, 3, 2], "  Weekend plans ").unwrap();
+        assert!(g.is_group);
+        assert_eq!(g.name.as_deref(), Some("Weekend plans"));
+        assert_eq!(g.owner_id, Some(1));
+        assert_eq!(g.participants.iter().map(|p| p.user_id).collect::<Vec<_>>(), vec![1, 2, 3]);
+        // A group with alice and bob in it is not their 1:1 DM.
+        assert_eq!(db.dm_channel_between(1, 2), None);
+        let one_to_one = svc.start_dm(1, 2).unwrap();
+        assert!(!one_to_one.is_group);
+        assert_ne!(one_to_one.channel_id, g.channel_id);
+        // Every member can post and read.
+        svc.send_message(3, g.channel_id, "hi all").unwrap();
+        assert_eq!(svc.list_messages(2, g.channel_id, None).unwrap().len(), 1);
+        assert!(svc.create_group(1, &(2..=11).collect::<Vec<_>>(), "").unwrap_err().contains("at most"));
+    }
+
+    #[test]
+    fn adding_removing_leaving_and_renaming() {
+        let (_dir, db) = setup_db();
+        with_friends(&db);
+        let svc = DmService::new(db.clone());
+        let g = svc.create_group(1, &[2, 3], "").unwrap().channel_id;
+        // Members add their own friends; dave is alice's friend, not bob's.
+        assert!(svc.add_to_group(2, g, 4).unwrap_err().contains("isn't one"));
+        assert_eq!(svc.add_to_group(1, g, 4).unwrap().participants.len(), 4);
+        assert!(svc.add_to_group(1, g, 4).unwrap_err().contains("already"));
+        // Only the owner removes others; anyone may leave.
+        assert_eq!(svc.remove_from_group(2, g, 3).unwrap_err(), "only the group's owner can remove people");
+        svc.remove_from_group(1, g, 3).unwrap();
+        assert!(!db.is_dm_participant(g, 3));
+        assert!(svc.send_message(3, g, "let me back").is_err());
+        svc.rename_group(2, g, "Crew").unwrap();
+        assert_eq!(svc.rename_group(4, g, &"x".repeat(101)).unwrap_err(), "group names can be at most 100 characters");
+        // The owner leaving hands the group to the longest-standing member.
+        svc.remove_from_group(1, g, 1).unwrap();
+        let after = svc.list_dms(2).unwrap().into_iter().find(|d| d.channel_id == g).unwrap();
+        assert_eq!((after.owner_id, after.name.as_deref()), (Some(2), Some("Crew")));
+        // The last one out deletes it.
+        svc.remove_from_group(2, g, 2).unwrap();
+        svc.remove_from_group(4, g, 4).unwrap();
+        assert_eq!(db.dm_channel_info(g), None);
+        // Group operations refuse 1:1 DMs.
+        let dm = svc.start_dm(1, 2).unwrap().channel_id;
+        assert_eq!(svc.rename_group(1, dm, "x").unwrap_err(), "that's not a group DM");
     }
 
     // ── start_dm ────────────────────────────────────────────────────────────
