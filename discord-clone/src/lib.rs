@@ -94,16 +94,12 @@ mod link_embed_preview;
 mod member_role_list;
 #[path = "components/timeout_duration_picker.rs"]
 mod timeout_duration_picker;
-#[path = "components/notification_permission_prompt.rs"]
-mod notification_permission_prompt;
 #[path = "components/category_filter_chips.rs"]
 mod category_filter_chips;
 #[path = "components/send_failed_indicator.rs"]
 mod send_failed_indicator;
 #[path = "components/featured_server_banner.rs"]
 mod featured_server_banner;
-#[path = "components/code_block.rs"]
-mod code_block;
 #[path = "components/user_bio_block.rs"]
 mod user_bio_block;
 #[path = "components/server_tag_chips.rs"]
@@ -132,8 +128,6 @@ mod soundboard_button;
 mod poll_widget;
 #[path = "components/thread_list_row.rs"]
 mod thread_list_row;
-#[path = "components/spoiler_image_placeholder.rs"]
-mod spoiler_image_placeholder;
 #[path = "components/attachment_preview_card.rs"]
 mod attachment_preview_card;
 #[path = "components/reply_preview_bar.rs"]
@@ -182,8 +176,6 @@ mod discover_servers_modal;
 mod voice_join_button;
 #[path = "components/server_template_card.rs"]
 mod server_template_card;
-#[path = "components/forward_message_dialog.rs"]
-mod forward_message_dialog;
 #[path = "components/server_region_selector.rs"]
 mod server_region_selector;
 #[path = "components/volume_slider.rs"]
@@ -192,8 +184,6 @@ mod volume_slider;
 mod slowmode_indicator;
 #[path = "components/message_search_bar.rs"]
 mod message_search_bar;
-#[path = "components/member_count_display.rs"]
-mod member_count_display;
 #[path = "components/slash_command_dropdown.rs"]
 mod slash_command_dropdown;
 #[path = "components/emoji_picker.rs"]
