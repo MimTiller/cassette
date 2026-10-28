@@ -50,6 +50,25 @@ async fn tag_peer_ip(ConnectInfo(peer): ConnectInfo<SocketAddr>, mut req: Reques
 /// `..`, is a 404 without touching the filesystem), and only to a signed-in
 /// user, so a leaked image link (a DM's or a private channel's) shows nothing
 /// to a stranger. The browser sends the session cookie with `<img>` loads.
+/// Mark a bundle file whose name carries a build hash
+/// (`discord_clone_bg.7865764ab0eca34a.wasm`) as cacheable for a year; dev
+/// builds use plain names and get no caching header.
+async fn cache_hashed_bundle(request: Request, next: Next) -> Response {
+    let hashed = request
+        .uri()
+        .path()
+        .rsplit('/')
+        .next()
+        .is_some_and(|name| name.split('.').any(|part| part.len() == 16 && part.bytes().all(|b| b.is_ascii_hexdigit())));
+    let mut response = next.run(request).await;
+    if hashed && response.status().is_success() {
+        response
+            .headers_mut()
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=31536000, immutable"));
+    }
+    response
+}
+
 async fn media_route(Path(name): Path<String>, headers: HeaderMap) -> Response {
     let header = |n: header::HeaderName| headers.get(n).and_then(|v| v.to_str().ok());
     if discord_server::session::identity_from_headers(header(header::AUTHORIZATION), header(header::COOKIE)).is_none() {
@@ -148,7 +167,13 @@ async fn main() {
                 pkg_dir.display()
             );
         }
-        app = app.nest_service("/pkg", ServeDir::new(&pkg_dir)).fallback_service(
+        // A release build writes `.br` / `.gz` siblings; send those to
+        // browsers that accept them. Files whose names carry the build hash
+        // never change, so browsers may keep them for a year.
+        let pkg = Router::new()
+            .fallback_service(ServeDir::new(&pkg_dir).precompressed_br().precompressed_gzip())
+            .layer(axum::middleware::from_fn(cache_hashed_bundle));
+        app = app.nest("/pkg", pkg).fallback_service(
             ServeDir::new(&dist)
                 .not_found_service(ServeDir::new(&dist).append_index_html_on_directories(true)),
         );
