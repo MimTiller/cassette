@@ -10,7 +10,7 @@
 //!
 //! The wrapper flattens the backend's `Result<LoginResult, ServerError>` into
 //! the numeric user id on success or a human-readable message on failure, so
-//! the login UI (a separate follow-up) can work with a plain
+//! the login UI ([`app/login_screen.rs`]) can work with a plain
 //! `Result<i64, String>`. On success it also records the signed session token
 //! process-wide ([`CURRENT_TOKEN`]) so every subsequent call authenticates as
 //! `Authorization: Bearer <token>`.
@@ -44,7 +44,6 @@ pub async fn set_avatar(avatar: Option<String>) -> Result<Option<String>, String
 /// Returns `Err(message)` for any failure — bad credentials, account
 /// lockout, or a transport/protocol-level `ServerError` (network, codec,
 /// version). The message is the `ServerError`'s `Display` form.
-#[allow(dead_code)] // consumed by the login UI in a follow-up task.
 pub async fn login(username: &str, password: &str) -> Result<i64, String> {
     let creds = discord_server::auth::LoginInput {
         username: username.to_string(),
@@ -98,7 +97,6 @@ pub async fn login(username: &str, password: &str) -> Result<i64, String> {
 /// Returns `Err(message)` for any failure — a duplicate username, or a
 /// transport/protocol-level `ServerError` (network, codec, version). The
 /// message is the `ServerError`'s `Display` form.
-#[allow(dead_code)] // consumed by the login UI's sign-up mode.
 pub async fn signup(username: &str, password: &str) -> Result<i64, String> {
     let input = discord_server::auth::SignupInput {
         username: username.to_string(),
