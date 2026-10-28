@@ -83,6 +83,23 @@ idealyst build --web
 
 Serves the static bundle + API from `http://127.0.0.1:8010/`.
 
+## Configuration
+
+Server-side environment variables and files (all read by `discord-server`):
+
+- `DISCORD_DB` — path to the SQLite database file (default `./discord.db`).
+- `DISCORD_SESSION_SECRET` — hex signing secret for session tokens. If
+  unset, the server creates `<db>.session-secret` (e.g. `discord.db.session-secret`)
+  beside the database with a fresh random secret (mode 0600 on unix);
+  tokens survive restarts as long as that file does. Gitignored.
+- `DISCORD_ALLOW_USER_ID_HEADER=1` — opt back in to the legacy `x-user-id`
+  header session (local dev/test tooling only; rejected by default).
+- `GIPHY_API_KEY` — the Giphy API key for GIF search, kept server-side
+  (the client never sees it). Alternatively, the key can live in a
+  gitignored `giphy.key` file next to the database file (`DISCORD_DB`);
+  the env var wins if both are present. Without a key, GIF search returns
+  "GIF search isn't set up yet (no Giphy key)".
+
 ## Architecture notes
 
 - `discord-server`'s `server` binary is both the API host (axum) **and** the
@@ -92,10 +109,32 @@ Serves the static bundle + API from `http://127.0.0.1:8010/`.
   functions that POST to the backend; the server build (`--features server`)
   gets the real implementations plus axum route registration. Same source,
   two compiled shapes.
-- Auth is a stand-in session convention: the signed-in user's id is carried
-  as an `x-user-id` header (or, for the WebSocket gateway, a connect-time
-  `?args=` wire argument, since browsers can't set custom WebSocket
-  handshake headers) — not a token/cookie session yet.
+- Auth uses HMAC-signed session tokens. `login` returns a token formatted
+  `v1.<user_id>.<expires_unix_secs>.<hex hmac-sha256>` (the MAC covers the
+  `v1.<user_id>.<expires>` prefix, keyed with the server's session secret)
+  and valid for 12 hours, and also sets it as an httpOnly `session` cookie
+  (SameSite=Lax; `Secure` only when the request came over https). The
+  browser replays that cookie on every later request — and on the
+  WebSocket upgrade handshake, where JS cannot read it — so the web client
+  never holds the token itself; native clients instead send it back as
+  `Authorization: Bearer <token>`. Identity comes only from a token whose
+  signature verifies against the server secret, never from a client-supplied
+  user id.
+- The legacy `x-user-id` header (the old stand-in session) is REJECTED by
+  default. Set `DISCORD_ALLOW_USER_ID_HEADER=1` to accept it for local
+  development or test tooling; a request that presents a bearer token never
+  falls back to the legacy header — a bad token is simply unauthenticated.
+- Login throttling (server-side, per account): after 5 failed logins within
+  a trailing 300-second window the account is locked and even the correct
+  password is rejected until the window slides past the oldest failure; a
+  successful login clears the failure log. Wrong-password errors are
+  uniform ("invalid username or password") so the endpoint never leaks which
+  usernames are registered.
+- Sessions are revocable: `logout` clears the session cookie (deleted with
+  the same flags), tokens expire on their 12-hour TTL, and the signing
+  secret — from `DISCORD_SESSION_SECRET` or a mode-0600 `<db>.session-secret`
+  file beside the database — can be rotated to invalidate every issued
+  token at once.
 - Data model: users, servers, channels, categories, messages, DM channels,
   server memberships, roles, invites, mentions, read-state — see
   `discord-server/migrations/` for the authoritative schema.
