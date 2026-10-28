@@ -63,10 +63,9 @@ pub(super) fn resize_handle(width: Signal<f32>, sign: f32, id: &'static str) -> 
 
 // --- responsive sidebar widths (window-resize driven) ----------------------
 // The two side columns keep the user's manual drag choice in `sidebar_width` /
-// `member_panel_width` (the previous task's drag handles write straight to
-// those signals). But when the *window* itself narrows — a live
-// `viewport_size()` change, not a drag — the fixed columns stop fitting and
-// the layout used to just clip. These helpers fold the viewport into the
+// `member_panel_width` (the drag handles write straight to those signals). But when the *window*
+// itself narrows — a live `viewport_size()` change, not a drag — the fixed columns stop fitting.
+// These helpers fold the viewport into the
 // *rendered* width without ever writing back to the user's signal, so
 // widening the window back up past the collapse threshold automatically
 // restores the manual width (we only read it here — we never overwrite it, so

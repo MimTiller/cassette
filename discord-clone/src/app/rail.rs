@@ -575,8 +575,8 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                 TouchResponse::CONSUMED
             })
             // Discover-a-Server: open the discover overlay (no per-open state
-            // to reset — the suggested list is static). Moved up from the old
-            // bottom slot so it stays reachable without cluttering the DM row.
+            // to reset — the suggested list is static). It sits above the DM
+            // row so it stays reachable without cluttering the DM row.
             view(style = circle_style.clone(), test_id = "rail-discover-servers") {
                 icon(GLOBE).color(|| theme::live(TEXT_MUTED)).size(20.0)
             }
@@ -641,13 +641,11 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                 }
                 TouchResponse::CONSUMED
             })
-            // (server_folder_group/server_template_card/TemplateGalleryGrid/
-            // server_tag_chips/FeaturedServerBanner used to be spliced directly
-            // into this 72px icon rail -- a real usability regression, it
-            // pushed the real rail controls (add-server/DM/settings) below the
-            // fold. Moved into the Discover Servers overlay instead, alongside
-            // the other discovery cards that were already re-homed there for
-            // the same reason -- see fa4bf410 and discover_servers_modal.rs.)
+            // server_folder_group/server_template_card/TemplateGalleryGrid/
+            // server_tag_chips/FeaturedServerBanner render in the Discover
+            // Servers overlay (discover_servers_modal.rs), not in this 72px
+            // icon rail — keeping the rail to the add-server/DM/settings
+            // controls so those stay above the fold.
         }
     };
 

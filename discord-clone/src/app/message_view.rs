@@ -121,7 +121,7 @@ mod attachment_size_tests {
 /// One buffered live (gateway-fed) message: the server's wire `message_id`,
 /// then `author_id` + `author_label`, `content`, `created_at_secs`, and
 /// `edited_at` (the `MessageEdited` timestamp in seconds, `None` until edited).
-/// The display fields mirror the old 4-tuple; `message_id` + `edited_at` are
+/// The leading fields are the mock display tuple; `message_id` + `edited_at` are
 /// what the per-row edit/delete affordance and the "(edited)" marker need on
 /// top of them (the mock path carries no wire id, so it renders `None`).
 pub(super) type LiveMsg = (i64, i64, String, String, i64, Option<i64>, Option<i64>);
@@ -573,7 +573,7 @@ mod linkify_tests {
             "see <https://example.com> now");
     }
 
-    /// Inline code no longer vetoes linkification for the whole body: the
+    /// Inline code does not veto linkification for the whole body: the
     /// `` `code` `` span passes through verbatim and the URL after it links.
     #[test]
     fn url_outside_inline_code_links() {

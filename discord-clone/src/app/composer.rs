@@ -637,8 +637,8 @@ pub(super) fn build(s: &ShellState, slowmode_el: Element) -> ComposerParts {
     };
 
 
-    // The composer column (moved here from the final layout: it is built from
-    // the closures above).
+    // The composer column: built from the send handlers (enter/stop/close)
+    // defined in the closures above.
     let composer_area = ui! {
         view(style = StyleRules {
             position: Some(Position::Relative),

@@ -141,8 +141,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                 // bottom-left sidebar bar is present for the login -> fetch
                 // race and the zero-server state, not just once a live server
                 // is entered. Without it this onboarding hint is the only thing
-                // in the sidebar, leaving the same "missing profile bar" the
-                // live branch used to have. `user_panel` renders the presence
+                // in the sidebar, leaving it without a profile bar. `user_panel` renders the presence
                 // status dot ON the avatar, coexisting with the gateway badge.
                 let user = user_panel(
                     user_status,

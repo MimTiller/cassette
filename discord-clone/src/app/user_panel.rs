@@ -547,9 +547,8 @@ pub(super) fn user_panel(
             // unmounts this tree and re-mounts the login screen (the `switch`
             // key in `app()` re-evaluates on it). Same view+on_touch pill the
             // Leave button uses, so it fits the row's styling.
-            // Compact pill: 6px padding + 11px type. This row now also holds
-            // the mic/deafen/settings icons, so the old 8px padding (which
-            // only had to fit avatar + name + 2 pills) no longer fits — the
+            // Compact pill: 6px padding + 11px type. This row holds the
+            // avatar, name, 2 pills, and the mic/deafen/settings icons, so the
             // tight 6px is part of the width budget in
             // `controls_row_fits_224px_sidebar`.
             let logout_style = StyleRules {

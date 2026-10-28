@@ -502,12 +502,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // never set for a guest). This is read once, here in `app_shell` scope:
     // `app_shell` is re-invoked on every `authed` flip (see the `switch` in
     // `app`), so the value is always the signed-in one at build time (the
-    // `user_panel` idiom). NOTE: this used to key off `current_username()`
-    // instead, but a restored session (page refresh) only re-seeds
-    // `CURRENT_TOKEN`/`CURRENT_USER_ID` from localStorage — not the username —
-    // so that check was always false after a refresh, incorrectly treating a
-    // real, still-logged-in account as a guest and showing the mock demo
-    // servers again.
+    // `user_panel` idiom). A restored session (page refresh) re-seeds
+    // `CURRENT_TOKEN`/`CURRENT_USER_ID` from localStorage, so the id check
+    // sees a real account, not a guest.
     let is_real_user =
         crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst) != 0;
     // [Feature 16] `active_server`/`active_channel` are the *mock* selection.
@@ -527,7 +524,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let active_channel: Signal<u32> = signal(SERVERS[0].first_text_channel().id);
     // Resizable column widths (CSS pixels), driven by the thin drag handles
     // between the channel sidebar / main view and the main view / member list.
-    // Both start at the 240px the columns used to be hard-coded to; the handles
+    // Both start at 240px; the handles
     // clamp to 180..=400. `Signal` is `Copy`, so the drag closures and the
     // reactive style closures below each capture their own handle.
     let sidebar_width: Signal<f32> = signal(240.0);

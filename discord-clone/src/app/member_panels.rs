@@ -583,8 +583,8 @@ pub(super) fn live_member_panel(
         color: Some(col(TEXT_CHANNEL)),
         ..Default::default()
     };
-    // The Kick/Ban/Timeout pills that used to render here are gone: those
-    // actions live in the row-tap `action_menu` popup (red TEXT labels only).
+    // The Kick/Ban/Timeout actions live in the row-tap `action_menu` popup
+    // (red TEXT labels only); this panel renders no moderation pills.
     let confirm_bg_style = StyleRules {
         background: Some(col(BG_ACTIVE)),
         border_top_left_radius: Some(px(8.0)),
@@ -1064,8 +1064,7 @@ pub(super) fn live_member_panel(
 
     // Section headers: same treatment as the mock panel's group labels
     // (uppercase, small, muted, semibold via section_label()) — one per
-    // non-empty group, each carrying its count. The old single "MEMBERS — N"
-    // header is now redundant (the two group counts sum to it), so it's gone.
+    // non-empty group, each carrying its count.
     let section_header_style = StyleRules {
         padding_top: Some(px(10.0)),
         padding_bottom: Some(px(2.0)),
