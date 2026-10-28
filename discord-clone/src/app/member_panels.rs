@@ -289,11 +289,9 @@ pub(super) fn member_panel(
         ..Default::default()
     };
     // Message-search bar lives at the top of the right member panel (Discord's
-    // "far right" position) instead of in the channel header row. Wrap it in a
-    // 12px-padded `view` so it isn't flush against the panel's edges — the bar's
-    // own input is flex-sized to this width, so 240px − 24px padding (216px) fits
-    // comfortably (the bar's fixed 288px width used to overflow the header's
-    // 180px slot and would clip the 240px panel).
+    // "far right" position). Wrap it in a 12px-padded `view` so it isn't flush
+    // against the panel's edges — the bar's own input is flex-sized to this
+    // width, so 240px − 24px padding (216px) fits comfortably.
     body.push(
         ui! {
             view(style = StyleRules {
@@ -618,8 +616,8 @@ pub(super) fn live_member_panel(
         color: Some(col(TEXT_CHANNEL)),
         ..Default::default()
     };
-    // The Kick/Ban/Timeout pills that used to render here are gone: those
-    // actions live in the row-tap `action_menu` popup (red TEXT labels only).
+    // The Kick/Ban/Timeout actions live in the row-tap `action_menu` popup
+    // (red TEXT labels only); this panel renders no moderation pills.
     let confirm_bg_style = StyleRules {
         background: Some(col(BG_ACTIVE)),
         border_top_left_radius: Some(px(8.0)),
@@ -1099,8 +1097,7 @@ pub(super) fn live_member_panel(
 
     // Section headers: same treatment as the mock panel's group labels
     // (uppercase, small, muted, semibold via section_label()) — one per
-    // non-empty group, each carrying its count. The old single "MEMBERS — N"
-    // header is now redundant (the two group counts sum to it), so it's gone.
+    // non-empty group, each carrying its count.
     let section_header_style = StyleRules {
         padding_top: Some(px(10.0)),
         padding_bottom: Some(px(2.0)),
