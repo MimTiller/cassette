@@ -9,7 +9,7 @@ pub(super) struct SidebarParts {
 }
 
 pub(super) fn build(s: &ShellState) -> SidebarParts {
-    let ShellState { active_channel, active_live_channel, active_live_server, active_server, authed, bug_reports_mode, cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, joined_voice, live_at_bottom, live_chan_menu, live_channels, live_collapsed, live_members, live_mention_rev, live_scroll_handle, live_servers, live_unread, live_unread_rev, member_panel_width, muted, notif_mode, profile_mode, rc_busy, rc_cid, rc_err, rc_name, rc_open, server_menu_open, shortcuts_mode, sidebar_width, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, user_status, .. } = s.clone();
+    let ShellState { active_live_channel, active_live_server, authed, cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, joined_voice, live_at_bottom, live_chan_menu, live_channels, live_collapsed, live_members, live_mention_rev, live_scroll_handle, live_servers, live_unread, live_unread_rev, member_panel_width, muted, notif_mode, profile_mode, rc_busy, rc_cid, rc_err, rc_name, rc_open, server_menu_open, shortcuts_mode, sidebar_width, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, user_status, .. } = s.clone();
     // --- channel sidebar -------------------------------------------------
     // Width is driven by the `sidebar_width` signal (a thin drag handle on the
     // sidebar's right edge resizes it). A rules *closure* so the width
@@ -44,12 +44,6 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
         gap: Some(px(6.0)),
         ..Default::default()
     };
-    let sidebar_title_style = StyleRules {
-        font_size: Some(px(16.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT)),
-        ..Default::default()
-    };
     // Category section header: the small uppercase "TEXT CHANNELS" label.
     let cat_style = StyleRules {
         padding_top: Some(px(14.0)),
@@ -70,7 +64,6 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
     // isn't `Copy`). The key and render closures are both `move`, so each
     // captures its own clone; the shared `RefCell` inside keeps them in sync.
     let collapsed_key = collapsed.clone();
-    let collapsed_render = collapsed.clone();
     let sidebar = switch(
         move || {
             // Fingerprint (id, name, kind) so the key is `PartialEq` even
@@ -99,8 +92,6 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                 v
             };
             (
-                active_server.get(),
-                active_channel.get(),
                 joined_voice.get(),
                 active_live_server.get(),
                 live_fp,
@@ -114,9 +105,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                 live_chan_menu.get(),
             )
         },
-        move |(server_id, _channel_id, _voice, _live_server, _live_fp, _mention_rev, _unread_rev, _cat_collapsed, _chan_menu): &(
-            u32,
-            u32,
+        move |(_voice, _live_server, _live_fp, _mention_rev, _unread_rev, _cat_collapsed, _chan_menu): &(
             Option<(u32, u32)>,
             Option<i64>,
             Vec<(i64, String, String)>,
@@ -128,14 +117,8 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
             // `switch`'s render is `Fn` — clone the captured styles so the
             // closure borrows them rather than moving them out (whiteboard idiom).
             let sidebar_style = sidebar_style.clone();
-            // [Feature 16] A signed-in account with no live channel selected must
-            // never fall through to the mock render: its default `active_server`
-            // / `active_channel` point at the demo `SERVERS[0]`, and the mock
-            // branch below would render those demo identities (the "Nova"
-            // confusion). During the login -> server-fetch race (and for an
-            // account with zero servers) there is no live channel, so show an
-            // onboarding hint instead — the live auto-enter effect settles the
-            // steady state once the first server resolves.
+            // [Feature 16] A signed-in account with no live channel selected
+            // renders the onboarding hint (below) instead of any mock render.
             if _live_server.is_none() {
                 // The profile bar still shows here — a real (authed) user's
                 // bottom-left sidebar bar is present for the login -> fetch
@@ -163,11 +146,9 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                     }
                 };
             }
+            let sidebar_style = sidebar_style.clone();
             let sidebar_header_style = sidebar_header_style.clone();
-            let sidebar_title_style = sidebar_title_style.clone();
             let cat_style = cat_style.clone();
-            let bug_reports_open = bug_reports_mode.clone();
-            let channel = active_channel;
 
             // Live (backend) mode: build the live channel rows up front
             // (harmless when not in live mode — `live_channels` is empty).
@@ -210,7 +191,6 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                     color: Some(col(TEXT_CHANNEL)),
                     ..Default::default()
                 };
-                if _live_server.is_some() {
                     // Build the live channel rows here, inside the live arm, so
                     // they're a local of this block. Splatting a captured outer
                     // `Vec<Element>` out of the inner `ui!` closure would be a
@@ -846,208 +826,6 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                             user
                         }
                     }
-                } else {
-                    let server = SERVERS.iter().find(|x| x.id == *server_id).unwrap();
-                    let mut rows: Vec<Element> = Vec::new();
-            // Category sections, in data order: each section is a small
-            // uppercase header, its text-channel rows, then its voice rows.
-            for cat in server.categories {
-                let cat_label = cat.title.to_string();
-                // The category's per-category collapse signal (created up front
-                // in `app_shell` scope, see the `collapsed` map). The header
-                // toggles it; the row loop below re-runs when it flips (the
-                // switch key fingerprints it) and re-gates the rows.
-                let cat_collapsed_signal = collapsed_render
-                    .borrow()
-                    .get(&cat.id)
-                    .cloned()
-                    .unwrap_or_else(|| signal(false));
-                rows.push(ui! {
-                    CategoryHeader(
-                        title = cat_label,
-                        collapsed = cat_collapsed_signal,
-                    )
-                });
-                if cat_collapsed_signal.get() {
-                    continue; // rows for this category are collapsed
-                }
-                for c in cat.text {
-                    let active = channel;
-                    // Discord's channel rows are compact (~34px) with a
-                    // rounded pill (inset 8px each side) that fills with the
-                    // hover colour, and the active colour when selected — the
-                    // row itself stays transparent otherwise.
-                    let hovered = signal(false);
-                    // Per-channel mute state, owned by the row (the same
-                    // per-row `Signal` ownership as `hovered`). Starts unmuted;
-                    // a press on the hover-revealed icon below flips it. It
-                    // survives a sidebar rebuild within a selection (the
-                    // `switch` key doesn't include it), which is the desired
-                    // "my mute choice persists" behavior.
-                    let muted = signal(false);
-                    let row_style = move || {
-                        let on = active.get() == c.id;
-                        StyleRules {
-                            height: Some(px(34.0)),
-                            margin_left: Some(px(8.0)),
-                            margin_right: Some(px(8.0)),
-                            padding_left: Some(px(12.0)),
-                            padding_right: Some(px(8.0)),
-                            background: Some(col(if on {
-                                BG_ACTIVE
-                            } else if hovered.get() {
-                                BG_HOVER
-                            } else {
-                                "transparent"
-                            })),
-                            border_top_left_radius: Some(px(8.0)),
-                            border_top_right_radius: Some(px(8.0)),
-                            border_bottom_left_radius: Some(px(8.0)),
-                            border_bottom_right_radius: Some(px(8.0)),
-                            // Positioning ancestor for the absolutely-positioned
-                            // unread pill (default Static would anchor it to the
-                            // sidebar instead of the row).
-                            position: Some(Position::Relative),
-                            flex_direction: Some(FlexDirection::Row),
-                            align_items: Some(AlignItems::Center),
-                            ..Default::default()
-                        }
-                    };
-                    let label_style = move || StyleRules {
-                        flex_grow: Some(grow(1.0)),
-                        flex_shrink: Some(grow(0.0)),
-                        font_size: Some(px(15.0)),
-                        font_weight: Some(if active.get() == c.id {
-                            FontWeight::SemiBold
-                        } else {
-                            FontWeight::Normal
-                        }),
-                        color: Some(col(if active.get() == c.id || c.unread > 0 {
-                            TEXT
-                        } else {
-                            TEXT_CHANNEL
-                        })),
-                        ..Default::default()
-                    };
-                    let name = c.name.to_string();
-                    rows.push(ui! {
-                        view(style = row_style, test_id = channel_test_id(c.id)) {
-                            icon(HASH)
-                                .color(|| theme::live(TEXT_MUTED))
-                                .size(14.0)
-                            text(style = label_style) { name }
-                            // Hover-revealed per-channel mute control. A `when`
-                            // gated on `hovered || muted`: the icon appears only
-                            // while the row is hovered, OR while the channel is
-                            // already muted (the persistent red glyph is the
-                            // mute affordance — Discord keeps a muted channel's
-                            // marker visible, not just on hover). A press on it
-                            // flips `muted`; the icon's own `on_touch` CONSUMEs
-                            // so the row's channel-select `on_touch` (below) is
-                            // not also fired. Deliberate per-row OPTION, not a
-                            // persistent widget on every row (the graveyard
-                            // anti-pattern).
-                            if hovered.get() || muted.get() {
-                                crate::mute_channel_toggle::MuteChannelToggle(muted)
-                            }
-                            // The unread pill on the row's right edge, vertically
-                            // centered in the 34px row. Mock count per channel;
-                            // the real value comes from the gateway later.
-                            if c.mentions > 0 {
-                                view(style = StyleRules {
-                                    position: Some(Position::Absolute),
-                                    top: Some(px(9.0)),
-                                    right: Some(px(8.0)),
-                                    min_width: Some(px(16.0)),
-                                    height: Some(px(16.0)),
-                                    background: Some(col(BADGE)),
-                                    border_top_left_radius: Some(px(8.0)),
-                                    border_top_right_radius: Some(px(8.0)),
-                                    border_bottom_left_radius: Some(px(8.0)),
-                                    border_bottom_right_radius: Some(px(8.0)),
-                                    align_items: Some(AlignItems::Center),
-                                    justify_content: Some(JustifyContent::Center),
-                                    padding_left: Some(px(4.0)),
-                                    padding_right: Some(px(4.0)),
-                                    ..Default::default()
-                                }) {
-                                    text(style = StyleRules {
-                                        font_size: Some(px(11.0)),
-                                        font_weight: Some(FontWeight::Bold),
-                                        color: Some(col(TEXT)),
-                                        ..Default::default()
-                                    }) { c.mentions.to_string() }
-                                }
-                            }
-                        }
-                        .on_touch(move |ev| {
-                            if ev.phase == TouchPhase::Ended {
-                                active.set(c.id);
-                            }
-                            TouchResponse::CONSUMED
-                        })
-                        .on_hover(move |on| hovered.set(on))
-                    });
-                }
-                rows.extend(voice_section(
-                    cat,
-                    server.id,
-                    active_server.clone(),
-                    joined_voice.clone(),
-                    user_status.clone(),
-                ));
-            }
-            let title = server.name.to_string();
-            // Discord shows active threads as a persistent list near the bottom
-            // of the sidebar (above the user bar), not interleaved with the
-            // scrollable channel rows. Kept fixed (non-scrolling) so it stays
-            // put regardless of channel-list scroll position.
-            let thread_list_style = StyleRules {
-                flex_direction: Some(FlexDirection::Column),
-                padding_top: Some(px(8.0)),
-                padding_left: Some(px(8.0)),
-                padding_right: Some(px(8.0)),
-                ..Default::default()
-            };
-            // The user profile is the bottom-left of the sidebar (Discord
-            // convention). The member list is a separate right-side panel —
-            // see `members_switch` further down — so it's not built here.
-            let user = user_panel(user_status, joined_voice, authed, user_profile_mode, user_notif_mode, user_shortcuts_mode, muted, deafened);
-            ui! {
-                view(style = sidebar_style) {
-                    view(style = sidebar_header_style) {
-                        icon(CHEVRON_DOWN)
-                            .color(|| theme::live(TEXT_MUTED))
-                            .size(11.0)
-                        text(style = sidebar_title_style) { title }
-                    }
-                    view(style = StyleRules {
-                        flex_grow: Some(grow(1.0)),
-                        overflow: Some(Overflow::Hidden),
-                        ..Default::default()
-                    }) {
-                        scroll_view(style = StyleRules {
-                            flex_grow: Some(grow(1.0)),
-                            ..Default::default()
-                        }) { rows }
-                    }
-                    // Mock thread list near the channel sidebar: a `ThreadListRow`
-                    // above the user panel. Local mock data, no backend. Clicking
-                    // it opens the "Bug reports" full-screen overlay (flips
-                    // `bug_reports_mode`; the overlay's "Done" pill closes it).
-                    view(style = thread_list_style) {
-                        ThreadListRow()
-                    }
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            bug_reports_open.set(!bug_reports_open.get());
-                        }
-                        TouchResponse::CONSUMED
-                    })
-                    user
-                }
-            }
-            }
         },
     );
 

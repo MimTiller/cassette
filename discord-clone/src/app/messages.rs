@@ -11,7 +11,7 @@ pub(super) struct MessagesParts {
 }
 
 pub(super) fn build(s: &ShellState) -> MessagesParts {
-    let ShellState { active_channel, active_live_channel, active_live_server, active_server, blocked_users, gateway, has_more_earlier, live_at_bottom, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_invite_mode, live_messages, live_revision, live_servers, live_typing, live_typing_rev, load_busy, members_pref, moderation_mode, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, revealed_blocked, revision, sent, translate_key, user_popup, user_profile, .. } = s.clone();
+    let ShellState { active_live_channel, active_live_server, blocked_users, gateway, has_more_earlier, live_at_bottom, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_invite_mode, live_messages, live_revision, live_servers, live_typing, live_typing_rev, load_busy, members_pref, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, revealed_blocked, translate_key, user_popup, user_profile, .. } = s.clone();
     // --- main view -------------------------------------------------------
     let header_style = StyleRules {
         padding_top: Some(px(10.0)),
@@ -51,9 +51,8 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     // capturing it here is cheap; the arm re-runs whenever
     // `active_live_channel` (in the key) changes. `None` falls through to the
     // mock header below, byte-for-byte unchanged.
-    // `app_shell` owns `moderation_mode` and renders the overlay when it flips
-    // on; the gavel button in the header below sets this copy.
-    let moderation_open = moderation_mode.clone();
+    // (the mock moderation panel this copy drove was removed with the mock
+    // data, so `moderation_mode` isn't read here anymore)
     // Live-mode invite entry: the `USER_PLUS` action in the live header flips
     // this (a clone of `live_invite_mode`, declared above). The live header arm
     // is the only place a real backend `server_id` (`active_live_server`) is
@@ -516,7 +515,6 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                     rows.push(reaction_area(
                         lkey,
                         reactions.clone(),
-                        reaction_rev,
                         picker_l,
                     ));
                     prev = Some((author.clone(), *ts));
@@ -559,9 +557,6 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     // typing...") is kept for the mock path. Both branches render a row with
     // the same line-box height (4/4/16/16 paddings + 12px font) so the
     // composer's y-offset never jumps on channel switch.
-    let typing_live_chan = active_live_channel.clone();
-    let typing_rev_for_key = live_typing_rev.clone();
-    let typing_map_for_key = live_typing.clone();
     let typing_live_chan = active_live_channel.clone();
     let typing_rev_for_key = live_typing_rev.clone();
     let typing_map_for_key = live_typing.clone();

@@ -61,8 +61,6 @@ mod message_timestamp_tooltip;
 mod edited_label;
 #[path = "components/server_discovery_card.rs"]
 mod server_discovery_card;
-#[path = "components/mic_selector.rs"]
-mod mic_selector;
 #[path = "components/verified_badge.rs"]
 mod verified_badge;
 #[path = "components/jump_to_bottom_button.rs"]
@@ -77,8 +75,6 @@ mod permission_override_row;
 mod message_action_bar;
 #[path = "components/server_event_card.rs"]
 mod server_event_card;
-#[path = "components/connection_quality_indicator.rs"]
-mod connection_quality_indicator;
 #[path = "components/read_receipt_indicator.rs"]
 mod read_receipt_indicator;
 #[path = "components/transfer_ownership_confirm.rs"]
@@ -103,10 +99,6 @@ mod featured_server_banner;
 mod user_bio_block;
 #[path = "components/server_tag_chips.rs"]
 mod server_tag_chips;
-#[path = "components/nickname_edit_field.rs"]
-mod nickname_edit_field;
-#[path = "components/pin_count_badge.rs"]
-mod pin_count_badge;
 #[path = "components/pin_confirm_toast.rs"]
 mod pin_confirm_toast;
 #[path = "components/pinned_messages_panel.rs"]
@@ -119,34 +111,22 @@ mod ban_reason_input;
 mod template_gallery_grid;
 #[path = "components/invite_expiry_selector.rs"]
 mod invite_expiry_selector;
-#[path = "components/latency_badge.rs"]
-mod latency_badge;
-#[path = "components/soundboard_button.rs"]
-mod soundboard_button;
 #[path = "components/poll_widget.rs"]
 mod poll_widget;
-#[path = "components/thread_list_row.rs"]
-mod thread_list_row;
 #[path = "components/attachment_preview_card.rs"]
 mod attachment_preview_card;
 #[path = "components/reply_preview_bar.rs"]
 mod reply_preview_bar;
 #[path = "components/reply_reference_strip.rs"]
 mod reply_reference_strip;
-#[path = "components/mute_channel_toggle.rs"]
-mod mute_channel_toggle;
 #[path = "components/server_icon_upload_placeholder.rs"]
 mod server_icon_upload_placeholder;
 #[path = "components/kick_confirm_dialog.rs"]
 mod kick_confirm_dialog;
-#[path = "components/category_header.rs"]
-mod category_header;
 #[path = "components/ban_list_row.rs"]
 mod ban_list_row;
 #[path = "components/blocked_user_row.rs"]
 mod blocked_user_row;
-#[path = "components/screen_share_indicator.rs"]
-mod screen_share_indicator;
 #[path = "components/delete_message_confirm.rs"]
 mod delete_message_confirm;
 #[path = "components/channel_topic_banner.rs"]
@@ -171,16 +151,10 @@ mod delete_channel_modal;
 mod server_settings_panel;
 #[path = "components/discover_servers_modal.rs"]
 mod discover_servers_modal;
-#[path = "components/voice_join_button.rs"]
-mod voice_join_button;
 #[path = "components/server_template_card.rs"]
 mod server_template_card;
 #[path = "components/server_region_selector.rs"]
 mod server_region_selector;
-#[path = "components/volume_slider.rs"]
-mod volume_slider;
-#[path = "components/slowmode_indicator.rs"]
-mod slowmode_indicator;
 #[path = "components/message_search_bar.rs"]
 mod message_search_bar;
 #[path = "components/slash_command_dropdown.rs"]

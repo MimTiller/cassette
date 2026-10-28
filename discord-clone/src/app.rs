@@ -35,7 +35,7 @@ use std::rc::Rc;
 use runtime_core::{
     after_ms_detached, AlignItems, AlignSelf, Cursor, Element,
     FlexDirection, FlexWrap, FontFamily, FontWeight, JustifyContent, KeyEvent, KeyOutcome, Overflow,
-    PanEvent, PanRecognizer, Position, Ref, ReadSignal, ScrollViewHandle, Signal, StyleRules,
+    PanEvent, PanRecognizer, Position, Ref, ScrollViewHandle, Signal, StyleRules,
     TextAlign, TextTransform, Tokenized, TouchEvent, TouchPhase, TouchResponse, ViewHandle, memo,
     pan, signal, switch, ui, viewport_size, ObjectFit,
 };
@@ -47,7 +47,7 @@ use runtime_core::primitives::portal::{AnchorTarget, ElementAlign, ElementSide};
 // picked file through `stage_attachment` (the same encode as avatars).
 use file_picker::{FilePicker, PickRequest, PickOutcome, MediaKind};
 use icons_lucide::{
-    CHEVRON_DOWN, CHEVRON_RIGHT, CIRCLE_HELP, COMPASS, GAVEL, GLOBE, HASH, HEADPHONES, MAIL,
+    CHEVRON_DOWN, CHEVRON_RIGHT, CIRCLE_HELP, COMPASS, GLOBE, HASH, HEADPHONES, MAIL,
     MIC, MIC_OFF, PIN, PLUS, SETTINGS, SMILE, SMILE_PLUS,
     USER_PLUS, USERS, VOLUME_2,
 };
@@ -58,7 +58,6 @@ use runtime_shared::time::local_offset_minutes;
 
 use crate::data::{SERVERS, Category, Member, Server, Status, TextChannel, USER};
 use crate::message_search_bar::MessageSearchBar;
-use crate::pin_count_badge::PinCountBadge;
 use crate::ban_list_row::BanListRow;
 use crate::timeout_duration_picker::TimeoutDurationPicker;
 use crate::member_role_list::MemberRoleList;
@@ -66,20 +65,10 @@ use crate::verified_badge::VerifiedBadge;
 use crate::ban_reason_input::BanReasonInput;
 
 use crate::blocked_user_row::BlockedUserRow;
-use crate::category_header::CategoryHeader;
-use crate::mic_selector::MicSelector;
-
-use crate::screen_share_indicator::ScreenShareIndicator;
 
 use crate::send_failed_indicator::SendFailedIndicator;
-use crate::slowmode_indicator::SlowmodeIndicator;
-use crate::latency_badge::LatencyBadge;
 use crate::jump_to_bottom_button::JumpToBottomButton;
 use crate::load_earlier_button::load_earlier_button;
-use crate::connection_quality_indicator::ConnectionQualityIndicator;
-use crate::voice_join_button::VoiceJoinButton;
-use crate::volume_slider::VolumeSlider;
-use crate::soundboard_button::SoundboardButton;
 use crate::edited_label::EditedLabel;
 use crate::settings_suite::UserSettings;
 use crate::keyboard_shortcuts_overlay::keyboard_shortcuts_overlay;
@@ -93,10 +82,8 @@ use crate::discover_servers_modal::discover_servers_modal;
 use crate::typing_indicator::TypingIndicator;
 use crate::invite_link_display::InviteLinkDisplay;
 use crate::invite_expiry_selector::InviteExpirySelector;
-use crate::thread_list_row::ThreadListRow;
 use crate::slash_command_dropdown::SlashCommandDropdown;
 use crate::emoji_picker::EmojiPicker;
-use crate::nickname_edit_field::NicknameEditField;
 use crate::kick_confirm_dialog::KickConfirmDialog;
 use crate::delete_message_confirm::DeleteMessageConfirm;
 use crate::transfer_ownership_confirm::TransferOwnershipConfirm;
@@ -129,41 +116,6 @@ mod messages;
 mod composer;
 mod member_list;
 mod overlays;
-
-// Robot test ids: stable, `'static` strings the automation robot
-// (`find_element`/`tap`) matches on to locate interactive elements. The
-// per-server / per-channel / per-voice ids are derived from the mock ids in
-// `data.rs` — fixed at compile time — so each maps to a `&'static str` (the
-// `test_id` builder requires a static string, so a runtime `format!` would
-// not typecheck).
-fn server_test_id(id: u32) -> &'static str {
-    match id {
-        1 => "server-1",
-        2 => "server-2",
-        3 => "server-3",
-        _ => "server",
-    }
-}
-fn channel_test_id(id: u32) -> &'static str {
-    match id {
-        101 => "channel-101",
-        102 => "channel-102",
-        103 => "channel-103",
-        201 => "channel-201",
-        202 => "channel-202",
-        301 => "channel-301",
-        _ => "channel",
-    }
-}
-fn voice_test_id(id: u32) -> &'static str {
-    match id {
-        104 => "voice-104",
-        105 => "voice-105",
-        203 => "voice-203",
-        302 => "voice-302",
-        _ => "voice",
-    }
-}
 
 // Discord dark palette (Blurple-flavoured).
 const BG_RAIL: &str = theme::BG_TERTIARY;
@@ -556,9 +508,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // swaps to a slashed glyph when muted, deafen colors the icon red.
     let muted: Signal<bool> = signal(false);
     let deafened: Signal<bool> = signal(false);
-    // (channel_id, author, body, ts_secs) of every message the user has sent
-    // this session, so each channel keeps its own additions. Read at rebuild.
-    let sent: Rc<RefCell<Vec<(u32, &'static str, String, i64)>>> = Rc::new(RefCell::new(Vec::new()));
     // Bumped on every send. `switch` dedups on its scrutinee VALUE (equal
     // re-fire keeps the mounted arm), so re-setting `active_channel` to its
     // current value does NOT rebuild the message list — this counter does.
@@ -1003,12 +952,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // a full-screen overlay (built once, shown/hidden by this signal — the same
     // toggle idiom as the DM rail). No re-mount, no rebuild of the underlying tree.
     let profile_mode: Signal<bool> = signal(false);
-
-    // Selected member: tapping a member row in the right-hand list sets this
-    // to that member's name and opens the full-screen `member_profile_panel`
-    // overlay (built once, shown/hidden by this signal — the same toggle
-    // idiom as `profile_mode`). `None` while no profile is open.
-    let selected_member: Signal<Option<&'static str>> = signal(None);
 
     // Notification Settings screen: the user panel's settings gear opens it as
     // a full-screen overlay, the same build-once/toggle idiom as `profile_mode`.
@@ -1530,10 +1473,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         reactions: reactions.clone(),
         reply_ctx: reply_ctx.clone(),
         reply_target: reply_target.clone(),
-        revision: revision.clone(),
-        selected_member: selected_member.clone(),
         send_failed: send_failed.clone(),
-        sent: sent.clone(),
         shortcuts_mode: shortcuts_mode.clone(),
         sidebar_width: sidebar_width.clone(),
         ss_add_role: ss_add_role.clone(),

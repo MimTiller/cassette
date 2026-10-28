@@ -121,7 +121,6 @@ pub(super) fn apply_reaction(
 pub(super) fn reaction_area(
     key: MessageKey,
     reactions: Rc<RefCell<ReactionMap>>,
-    reaction_rev: Signal<u32>,
     picker: Signal<Option<MessageKey>>,
 ) -> Element {
     // Current pills for this message (a clone — the borrow is released before
