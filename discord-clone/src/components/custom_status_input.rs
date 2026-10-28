@@ -45,7 +45,6 @@ const TEXT_MUTED: &str = "#949ba4"; // header label (Discord secondary text)
 /// resets the input's local state back to empty. No backend call, no props —
 /// local state only.
 #[component]
-#[allow(non_snake_case)]
 pub fn CustomStatusInput() -> Element {
     // Local controlled state: the status text. Empty until the user types; the
     // input's `value` reads it (typing writes back) and `Clear` resets it.

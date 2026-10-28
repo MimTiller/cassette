@@ -61,7 +61,6 @@ const RADIUS: f32 = 6.0;
 /// back). `text` arrives as a `String` prop with a hardcoded default so the
 /// component still compiles standalone; no backend.
 #[component]
-#[allow(non_snake_case)]
 pub fn SpoilerTag(
     #[prop(default = "the twist was all along")] text: String,
 ) -> Element {

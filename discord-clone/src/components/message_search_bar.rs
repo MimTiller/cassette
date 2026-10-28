@@ -57,7 +57,6 @@ const ACCENT: &str = "#5865f2"; // author-name accent (Discord blurple)
 /// matches, clearing shows everything, and a dead-end query shows a muted
 /// "no matches" line.
 #[component]
-#[allow(non_snake_case)]
 /// `server_name` titles the bar "Search <server>" (Discord's wording); empty
 /// keeps the generic "Search messages".
 pub fn MessageSearchBar(corpus: ReadSignal<Vec<(String, String)>>, server_name: String) -> Element {

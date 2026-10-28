@@ -51,7 +51,6 @@ const WARNING: &str = "#faa61a"; // counter over the warn threshold (Discord yel
 /// character count and turns warning-yellow once `n` exceeds 1900. No backend
 /// call, no props, no navigation wiring yet.
 #[component]
-#[allow(non_snake_case)]
 pub fn CharCounter() -> Element {
     // Local controlled state: the message text (empty until the user types).
     let text = signal(String::new());

@@ -47,7 +47,6 @@ const LABEL_DONE: &str = "#6d7178"; // a done task's label (muted, crossed out)
 /// the task is done. `label` is the hardcoded task text; `done` is the local
 /// completion flag (a `Signal` so a later `.set` flips the row live).
 #[component]
-#[allow(non_snake_case)]
 pub fn SetupChecklistItem(label: String, done: Signal<bool>) -> Element {
     // `switch` keyed on the flag: rebuilds the row only when the value
     // changes. The render is `Fn` (many rebuilds), so each arm's icon/color/
@@ -107,7 +106,6 @@ pub fn SetupChecklistItem(label: String, done: Signal<bool>) -> Element {
 /// exercise both arms of `SetupChecklistItem` so the component compiles with
 /// real, hardcoded inputs; it is not wired into any screen.
 #[component]
-#[allow(non_snake_case)]
 pub fn SetupChecklistDemo() -> Element {
     // The local completion flags: exactly one true, one false (hardcoded).
     let done_one = signal(true);

@@ -30,7 +30,6 @@ const VERIFIED_BLUE: &str = "#5865f2";
 /// `isVerified` signal is set (hardcoded `true` for now); otherwise it
 /// renders nothing.
 #[component]
-#[allow(non_snake_case)]
 pub fn VerifiedBadge() -> Element {
     let isVerified = signal(true);
 

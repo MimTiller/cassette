@@ -31,7 +31,6 @@ const TEXT_MUTED: &str = "#949ba4"; // muted timestamp text
 /// A single audit-log row. Renders the `text` event line with a muted
 /// `timestamp` next to it on the same line. No backend.
 #[component]
-#[allow(non_snake_case)]
 pub fn AuditLogRow(
     #[prop(default = "Alex kicked Sam")] text: String,
     #[prop(default = "2 hours ago")] timestamp: String,

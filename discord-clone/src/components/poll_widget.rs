@@ -55,7 +55,6 @@ const TEXT: &str = "#dbdee1"; // primary labels / count numerals (Discord primar
 /// independent — there is no mutual exclusion, so either or both counters can
 /// climb on their own.
 #[component]
-#[allow(non_snake_case)]
 pub fn PollWidget() -> Element {
     // Two INDEPENDENT vote-count signals, both starting at `0`. Each is `Copy`,
     // so the `on_click` closure captures a copy of the same underlying signal

@@ -60,7 +60,6 @@ const PLAYING: &str = "#57f287"; // "now playing" highlight (Discord online gree
 /// a `▶` glyph) for a brief moment, after which a timer flips `playing` back
 /// to `false` and the button returns to its normal style.
 #[component]
-#[allow(non_snake_case)]
 pub fn SoundboardButton() -> Element {
     let playing = signal(false);
 

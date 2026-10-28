@@ -65,7 +65,6 @@ const DASHES: &[(u32, u32, u32, u32)] = &[
 /// `hasEmoji` signal is `false` (the start state), and a colored circle while
 /// it is `true`; tapping the square toggles the signal.
 #[component]
-#[allow(non_snake_case)]
 pub fn EmojiUploadSlot() -> Element {
     let hasEmoji = signal(false);
 

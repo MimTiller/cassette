@@ -40,7 +40,6 @@ const TEXT_MUTED: &str = "#949ba4"; // dismiss "x" glyph
 /// and a dismiss "x"; renders nothing once the local `dismissed` signal is set
 /// (starts `false`).
 #[component]
-#[allow(non_snake_case)]
 pub fn WelcomeBanner(#[prop(default = "Sam")] name: String) -> Element {
     let dismissed = signal(false);
     // The name is a prop (never `.set`), so read it once into an owned String

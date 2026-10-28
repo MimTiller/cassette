@@ -49,7 +49,6 @@ const TEXT: &str = "#f2f3f5"; // the "Failed to send - Retry" label (Discord nea
 /// pill clears `failed` (dismissing the banner). While `failed` is unset it
 /// renders nothing.
 #[component]
-#[allow(non_snake_case)]
 pub fn SendFailedIndicator(failed: runtime_core::Signal<bool>) -> Element {
     ui! {
         if failed.get() {

@@ -50,7 +50,6 @@ const DESCRIPTION: &str = "For gaming communities";
 /// button shows (pressing it sets `selected`), and once `selected` is set the
 /// "Selected!" text renders in its place.
 #[component]
-#[allow(non_snake_case)]
 pub fn ServerTemplateCard() -> Element {
     let selected = signal(false);
 

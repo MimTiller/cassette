@@ -43,7 +43,6 @@ const TEXT_MUTED: &str = "#949ba4";
 /// standalone — the `RoleBadge` idiom); no backend, no reactivity (each prop
 /// is read once at build and baked to static text).
 #[component]
-#[allow(non_snake_case)]
 pub fn LinkEmbedPreview(
     #[prop(default = "example.com")] site_name: String,
     #[prop(default = "Example Article")] title: String,

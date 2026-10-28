@@ -51,7 +51,6 @@ const BG_PILL: &str = "#2b2d31"; // the pill surface (Discord sidebar gray)
 /// mounts the pill with that channel's actual cooldown. This is what lets the
 /// channel header show the indicator only for slowmode-enabled channels.
 #[component]
-#[allow(non_snake_case)]
 pub fn SlowmodeIndicator(#[prop(default = 0)] secs: u32) -> Element {
     // `secs` is a data param, so the macro wraps it `Reactive<u32>`; read it
     // into a plain `u32` once at build. The label is a one-shot `format!` of

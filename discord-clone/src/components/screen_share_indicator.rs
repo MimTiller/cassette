@@ -56,7 +56,6 @@ const TAG_TEXT: &str = "#43b581"; // Discord's bright green, for the "Presenting
 /// signals an active screen share with this small tag, not a large filled
 /// button.
 #[component]
-#[allow(non_snake_case)]
 pub fn ScreenShareIndicator() -> Element {
     let isSharing = signal(true);
 

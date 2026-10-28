@@ -51,7 +51,6 @@ const TEXT_CHANNEL: &str = "#c8cacf"; // input text
 /// redeem so the new server appears in the rail. All signals are owned by the
 /// caller and reset on re-open.
 #[component]
-#[allow(non_snake_case)]
 pub fn JoinServerModal(
     open: Signal<bool>,
     code: Signal<String>,

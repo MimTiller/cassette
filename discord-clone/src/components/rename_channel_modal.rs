@@ -46,7 +46,6 @@ const TEXT_MUTED: &str = "#949ba4";
 /// is the live channel list, re-fetched on a successful rename. All signals
 /// are owned by the caller and reset on re-open.
 #[component]
-#[allow(non_snake_case)]
 pub fn RenameChannelModal(
     open: Signal<bool>,
     server_id: Signal<Option<i64>>,

@@ -56,7 +56,6 @@ const ICON_OFF: &str = "#f23f43"; // muted speaker glyph (Discord danger red)
 /// look (a red `🔇` on a red-tinted surface), and another press flips it back.
 /// The signal is owned by the caller — no backend call.
 #[component]
-#[allow(non_snake_case)]
 pub fn MuteChannelToggle(muted: Signal<bool>) -> Element {
     // Toggle: flip `muted` on every press. `Signal` is `Copy`, so the `move`
     // handler captures a copy of the same underlying signal (the one the
