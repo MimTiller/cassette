@@ -177,11 +177,7 @@ pub(super) fn action_menu(
 /// The live-server member panel: the real membership of the active backend
 /// server (fetched from the `#[server]` `list_members` endpoint, owner-first)
 /// rendered as a right-side column — the live counterpart of the mock
-/// `member_panel`. A `MessageSearchBar` tops the panel (same position as the
-/// mock panel's): `search_corpus` is the active live channel's gateway
-/// message buffer as `(author, text)` rows (derived by the caller's
-/// `live_search_corpus` memo), so a live server's search actually searches
-/// real messages instead of the mock seed data. Each member row shows the
+/// `member_panel`. Each member row shows the
 /// presence dot, the member's avatar chip (when the backend carries one) and
 /// their username + role chip — the same content contract as the mock
 /// `member_row` / the current user's row. Moderation actions (Kick / Ban /

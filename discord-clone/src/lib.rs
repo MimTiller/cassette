@@ -155,8 +155,6 @@ mod discover_servers_modal;
 mod server_template_card;
 #[path = "components/server_region_selector.rs"]
 mod server_region_selector;
-#[path = "components/message_search_bar.rs"]
-mod message_search_bar;
 #[path = "components/slash_command_dropdown.rs"]
 mod slash_command_dropdown;
 #[path = "components/emoji_picker.rs"]

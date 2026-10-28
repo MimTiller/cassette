@@ -1253,8 +1253,10 @@ pub(super) fn message_row_with_actions(
     // a deliberate single instance, never spliced into every row.
     let orig = body.to_string();
     let trans = format!("Translated (mock): {body}");
+    let MessageKey::Live { id: row_id } = key;
+    let jumped_to = super::jump::target() == Some(row_id);
 
-    ui! {
+    let row = ui! {
         view(style = StyleRules {
             position: Some(Position::Relative),
             flex_direction: Some(FlexDirection::Column),
@@ -1282,6 +1284,18 @@ pub(super) fn message_row_with_actions(
             }
             TouchResponse::IGNORED
         })
+    };
+    // The message a search result jumped to: highlighted, and measured so
+    // the list can scroll to it.
+    if jumped_to {
+        ui! {
+            view(style = StyleRules { background: Some(col(theme::MENTION_ROW)), ..Default::default() }) {
+                row
+            }
+            .bind(super::jump::row_ref())
+        }
+    } else {
+        row
     }
 }
 

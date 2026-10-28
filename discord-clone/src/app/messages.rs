@@ -11,7 +11,7 @@ pub(super) struct MessagesParts {
 }
 
 pub(super) fn build(s: &ShellState) -> MessagesParts {
-    let ShellState { active_live_channel, active_live_server, blocked_users, gateway, has_more_earlier, live_at_bottom, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_invite_mode, live_messages, live_revision, live_servers, live_typing, live_typing_rev, load_busy, members_pref, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, revealed_blocked, translate_key, user_popup, user_profile, .. } = s.clone();
+    let ShellState { active_live_channel, active_live_server, blocked_users, gateway, has_more_earlier, live_at_bottom, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_invite_mode, live_messages, live_revision, live_scroll_handle, live_servers, live_typing, live_typing_rev, load_busy, members_pref, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, revealed_blocked, translate_key, user_popup, user_profile, .. } = s.clone();
     // --- main view -------------------------------------------------------
     let header_style = StyleRules {
         padding_top: Some(px(10.0)),
@@ -59,19 +59,34 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     // in scope, so the invite flow lives here — the mock moderation panel has
     // no real server to mint against.
     let live_invite_open = live_invite_mode.clone();
-    // The header search's corpus: the active live channel's buffered
-    // messages, (author, text). `live_messages` is not reactive, so
-    // `live_revision` (bumped on every gateway message or scrollback page)
-    // is read to subscribe.
-    let search_messages = live_messages.clone();
-    let search_corpus = memo(move || -> Vec<(String, String)> {
-        let _rev = live_revision.get();
-        let Some(cid) = active_live_channel.get() else { return Vec::new() };
-        search_messages
-            .borrow()
-            .get(&cid)
-            .map(|msgs| msgs.iter().map(|m| (m.2.clone(), m.3.clone())).collect())
-            .unwrap_or_default()
+    // Opening a search result: switch to its channel the way the sidebar
+    // does, then let `jump` page back until the message is loaded.
+    let on_jump: Rc<dyn Fn(i64, i64)> = Rc::new({
+        let live_messages = live_messages.clone();
+        let live_scroll_handle = live_scroll_handle.clone();
+        let gw = gateway;
+        move |channel_id: i64, message_id: i64| {
+            if active_live_channel.get() != Some(channel_id) {
+                active_live_channel.set(Some(channel_id));
+                if let Some(sid) = active_live_server.get() {
+                    crate::auth::save_last_view_channel(sid, channel_id);
+                }
+                *live_scroll_handle.borrow_mut() = None;
+                gw.send(discord_server::server_settings::WsClientMsg::History { channel_id, before_id: None });
+            }
+            live_at_bottom.set(false);
+            super::jump::start(super::jump::Jump {
+                channel_id,
+                message_id,
+                live_messages: live_messages.clone(),
+                has_more_earlier,
+                load_busy,
+                live_revision,
+                load_older: Rc::new(move |before: i64| {
+                    gw.send(discord_server::server_settings::WsClientMsg::History { channel_id, before_id: Some(before) });
+                }),
+            });
+        }
     });
     let header = switch(
         move || {
@@ -215,7 +230,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                             }
                             TouchResponse::CONSUMED
                         })
-                        MessageSearchBar(corpus = search_corpus.read_only(), server_name = search_server_name.clone())
+                        { super::search::search_box(active_live_server, search_server_name.clone(), on_jump.clone()) }
                     }
                 };
             }

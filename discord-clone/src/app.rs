@@ -57,7 +57,6 @@ use crate::server_settings_panel::ServerSettingsPanel;
 use runtime_shared::time::local_offset_minutes;
 
 use crate::data::{SERVERS, Category, Member, Server, Status, TextChannel, USER};
-use crate::message_search_bar::MessageSearchBar;
 use crate::ban_list_row::BanListRow;
 use crate::timeout_duration_picker::TimeoutDurationPicker;
 use crate::member_role_list::MemberRoleList;
@@ -113,6 +112,8 @@ mod user_popups;
 mod popups;
 mod sidebar;
 mod messages;
+mod jump;
+mod search;
 mod composer;
 mod member_list;
 mod overlays;
@@ -1523,6 +1524,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let msg_scroll_ref: Ref<ScrollViewHandle> = Ref::<ScrollViewHandle>::new();
     let msg_viewport_ref: Ref<ViewHandle> = Ref::<ViewHandle>::new();
     let msg_content_ref: Ref<ViewHandle> = Ref::<ViewHandle>::new();
+    jump::install(msg_scroll_ref, msg_content_ref);
     // Recompute "away from bottom?" from the live measured sizes. `on_scroll`
     // only delivers the offset, so read the content column and the scroll
     // viewport boxes here; both are read on every scroll, which also refreshes
@@ -1586,7 +1588,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 // cancels its callback. The first pass runs once the rebuilt
                 // list has laid out; a channel open or a send gets a second
                 // pass for rows that settle late.
-                if switched || forced || !away.get() {
+                // A jump to a search result does its own scrolling.
+                if jump::target().is_none() && (switched || forced || !away.get()) {
                     let passes: &[i32] = if switched || forced { &[30, 300] } else { &[30] };
                     for &ms in passes {
                         let scroll = scroll.clone();
