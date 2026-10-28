@@ -127,62 +127,19 @@ pub(super) fn reaction_area(
     // this call returns, so the list `switch` body can borrow again freely).
     let list: Vec<Reaction> = reactions.borrow().get(&key).cloned().unwrap_or_default();
 
-    // One pill per current reaction, built as a `Vec<Element>` and splatted
-    // below. Styled like the unwired `components/reaction_summary.rs` pill:
-    // `reacted` selects a blurple border + tinted fill, otherwise a muted-gray
-    // border on a neutral fill. Each pill's `.on_touch` gets fresh `Rc`/`Copy`
-    // handles (`r`/`rev`) plus its own emoji clone (`em` for the label,
-    // `em_close` for the closure), so it never moves the outer closure's values.
-    // LIVE rows route the tap through `on_toggle` (the RPC-backed pill toggle —
-    // the pill map then updates via the server's echo frames); MOCK rows keep
-    // the direct session-local mutation.
+    // One pill per current reaction (`styles::ReactionPill`, tinted when the
+    // signed-in user reacted). A tap toggles it through the server; the pill
+    // map then updates from the server's echo frames.
     let pills: Vec<Element> = list.iter().map(|(emoji, count, reacted)| {
-        let (bg, border) = if *reacted {
-            (REACTED_BG, REACTED_BORDER)
-        } else {
-            (PLAIN_BG, PLAIN_BORDER)
-        };
         let em = emoji.to_string();
         let em_close = em.clone();
         let cnt = *count;
         let will_remove = *reacted;
+        let reacted = if *reacted { crate::styles::ReactionPillReacted::On } else { crate::styles::ReactionPillReacted::Off };
         ui! {
-            view(style = StyleRules {
-                flex_direction: Some(FlexDirection::Row),
-                align_items: Some(AlignItems::Center),
-                gap: Some(px(5.0)),
-                padding_left: Some(px(8.0)),
-                padding_right: Some(px(8.0)),
-                padding_top: Some(px(3.0)),
-                padding_bottom: Some(px(3.0)),
-                height: Some(px(22.0)),
-                background: Some(col(bg)),
-                border_top_left_radius: Some(px(11.0)),
-                border_top_right_radius: Some(px(11.0)),
-                border_bottom_left_radius: Some(px(11.0)),
-                border_bottom_right_radius: Some(px(11.0)),
-                // 1px border in the arm's color — `Tokenized<f32>` (not `px()`),
-                // per the `reaction_summary` / `connection_quality_indicator` idiom.
-                border_top_width: Some(Tokenized::Literal(1.0)),
-                border_right_width: Some(Tokenized::Literal(1.0)),
-                border_bottom_width: Some(Tokenized::Literal(1.0)),
-                border_left_width: Some(Tokenized::Literal(1.0)),
-                border_top_color: Some(col(border)),
-                border_right_color: Some(col(border)),
-                border_bottom_color: Some(col(border)),
-                border_left_color: Some(col(border)),
-                ..Default::default()
-            }) {
-                text(style = StyleRules {
-                    font_size: Some(px(14.0)),
-                    ..Default::default()
-                }) { em }
-                text(style = StyleRules {
-                    font_size: Some(px(12.0)),
-                    font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col(TEXT)),
-                    ..Default::default()
-                }) { cnt.to_string() }
+            view(style = crate::styles::ReactionPill().reacted(reacted)) {
+                text(style = crate::styles::ReactionEmoji()) { em }
+                text(style = crate::styles::ReactionCount()) { cnt.to_string() }
             }
             .on_touch(move |ev| {
                 // LIVE row: route the tap through the backend RPC — `request_live_reaction`
@@ -205,19 +162,7 @@ pub(super) fn reaction_area(
     let add = picker;
     let add_key = key;
     let add_button = ui! {
-        view(style = StyleRules {
-            position: Some(Position::Relative),
-            width: Some(px(26.0)),
-            height: Some(px(26.0)),
-            align_items: Some(AlignItems::Center),
-            justify_content: Some(JustifyContent::Center),
-            background: Some(col(COMPOSER)),
-            border_top_left_radius: Some(px(13.0)),
-            border_top_right_radius: Some(px(13.0)),
-            border_bottom_left_radius: Some(px(13.0)),
-            border_bottom_right_radius: Some(px(13.0)),
-            ..Default::default()
-        }) {
+        view(style = crate::styles::AddReactionButton()) {
             icon(SMILE_PLUS).color(|| theme::live(TEXT_MUTED)).size(15.0)
         }
         .on_touch(move |ev| {
@@ -240,20 +185,9 @@ pub(super) fn reaction_area(
     // aligns it with the message body (row padding 16 + avatar 40 + gap 10) so
     // the pills sit under the text, Discord-style.
     ui! {
-        view(style = StyleRules {
-            flex_direction: Some(FlexDirection::Row),
-            align_items: Some(AlignItems::Center),
-            gap: Some(px(4.0)),
-            padding_top: Some(px(2.0)),
-            padding_left: Some(px(66.0)),
-            padding_right: Some(px(16.0)),
-            ..Default::default()
-        }) {
+        view(style = crate::styles::ReactionStrip()) {
             pills
-            view(style = StyleRules {
-                flex_grow: Some(grow(1.0)),
-                ..Default::default()
-            }) {}
+            view(style = crate::styles::Spacer()) {}
             add_button
         }
     }

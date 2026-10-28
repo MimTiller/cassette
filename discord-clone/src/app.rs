@@ -138,15 +138,6 @@ const BUTTON: &str = theme::ACCENT;
 const PILL: &str = theme::TEXT_STRONG;
 /// Discord's unread badge red (the pill on channels + the rail count).
 const BADGE: &str = theme::DANGER;
-/// Reaction-pill palette — kept identical to `components/reaction_summary.rs`
-/// (the unwired single-example pill this feature generalizes) so the live
-/// pills reuse that exact visual language: a blurple border + tinted fill
-/// when the current user reacted, a muted-gray border on a neutral fill
-/// otherwise.
-const REACTED_BG: &str = theme::BG_ACCENT_SUBTLE;
-const REACTED_BORDER: &str = theme::ACCENT;
-const PLAIN_BG: &str = theme::BG_PRIMARY;
-const PLAIN_BORDER: &str = theme::BUTTON_SECONDARY;
 /// The user-profile section at the bottom of the sidebar sits a shade darker
 /// than the channel list above it.
 const USER_BAR: &str = theme::BG_USER_PANEL;

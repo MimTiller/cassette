@@ -214,31 +214,9 @@ pub(super) fn channel_anchor(channel_name: &str) -> Element {
 /// local calendar day (see the live loop in `messages.rs`).
 pub(super) fn date_divider(label: String) -> Element {
     ui! {
-        view(style = StyleRules {
-            flex_direction: Some(FlexDirection::Column),
-            align_items: Some(AlignItems::Center),
-            padding_left: Some(px(16.0)),
-            padding_right: Some(px(16.0)),
-            margin_top: Some(px(16.0)),
-            margin_bottom: Some(px(8.0)),
-            ..Default::default()
-        }) {
-            text(style = StyleRules {
-                font_size: Some(px(12.0)),
-                font_weight: Some(FontWeight::SemiBold),
-                color: Some(col(TEXT_MUTED)),
-                margin_bottom: Some(px(4.0)),
-                ..Default::default()
-            }) { label }
-            // The 1px rule: a zero-height view with a 1px bottom border spans
-            // the divider's padded width (the message column).
-            view(style = StyleRules {
-                height: Some(px(0.0)),
-                width: Some(pct(100.0)),
-                border_bottom_width: Some(border_width(1.0)),
-                border_bottom_color: Some(col(BORDER)),
-                ..Default::default()
-            })
+        view(style = crate::styles::DateDivider()) {
+            text(style = crate::styles::DateDividerLabel()) { label }
+            view(style = crate::styles::DateDividerRule())
         }
     }
 }
@@ -253,11 +231,6 @@ pub(super) fn date_divider(label: String) -> Element {
 /// the body. A body with no `||…||` marker renders exactly as one plain text
 /// run (the previous behavior), so this is a content-dependent upgrade, not an
 /// unconditional per-row widget.
-/// Message text size, and the emoji sizes Discord-style: emoji among text
-/// at ~1.5x, a message that is nothing but emoji at 2x.
-const BODY_PX: f32 = 15.0;
-const INLINE_EMOJI_PX: f32 = 22.0;
-const EMOJI_ONLY_PX: f32 = 30.0;
 
 /// Whether `c` draws as (part of) an emoji: the pictographic blocks, plus
 /// the joiners, variation selectors, skin tones, keycap and tag characters
@@ -312,22 +285,8 @@ fn mention_pill(seg: discord_server::server_roles::MentionSeg) -> Element {
         MentionSeg::Everyone(w) => (format!("@{w}"), col(theme::MENTION_TEXT), col(theme::MENTION_BG), None),
         MentionSeg::Text(t) => (t, col(TEXT), col("transparent"), None),
     };
-    let style = StyleRules {
-        padding_left: Some(px(2.0)),
-        padding_right: Some(px(2.0)),
-        background: Some(bg),
-        border_top_left_radius: Some(px(3.0)),
-        border_top_right_radius: Some(px(3.0)),
-        border_bottom_left_radius: Some(px(3.0)),
-        border_bottom_right_radius: Some(px(3.0)),
-        ..Default::default()
-    };
-    let text_style = StyleRules {
-        font_size: Some(px(BODY_PX)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(fg),
-        ..Default::default()
-    };
+    let style = crate::styles::MentionPill().background(bg);
+    let text_style = crate::styles::MentionPillText().color(fg);
     match user {
         Some(id) => ui! {
             view(style = style) { text(style = text_style) { label } }
@@ -347,12 +306,7 @@ fn mention_pill(seg: discord_server::server_roles::MentionSeg) -> Element {
 /// left, like Discord.
 pub(super) fn mention_highlight(row: Element) -> Element {
     ui! {
-        view(style = StyleRules {
-            background: Some(col(theme::MENTION_ROW)),
-            border_left_width: Some(runtime_core::Tokenized::Literal(2.0)),
-            border_left_color: Some(col(theme::WARNING)),
-            ..Default::default()
-        }) { row }
+        view(style = crate::styles::MentionHighlight()) { row }
     }
 }
 
@@ -445,7 +399,7 @@ pub(super) fn message_body(body: &str) -> Element {
         runs.push((false, String::new()));
     }
 
-    let emoji_px = if is_emoji_only(body) { EMOJI_ONLY_PX } else { INLINE_EMOJI_PX };
+    let emoji_size = if is_emoji_only(body) { crate::styles::BodyTextSize::EmojiOnly } else { crate::styles::BodyTextSize::Emoji };
     let runs_el: Vec<Element> = runs
         .iter()
         .flat_map(|(is_spoiler, text)| -> Vec<Element> {
@@ -476,11 +430,7 @@ pub(super) fn message_body(body: &str) -> Element {
                             discord_server::server_roles::MentionSeg::Text(t) => emoji_runs(&t)
                                 .into_iter()
                                 .map(|(is_emoji, piece)| ui! {
-                                    text(style = StyleRules {
-                                        font_size: Some(px(if is_emoji { emoji_px } else { BODY_PX })),
-                                        color: Some(col(TEXT)),
-                                        ..Default::default()
-                                    }) { piece }
+                                    text(style = crate::styles::BodyText().size(if is_emoji { emoji_size } else { crate::styles::BodyTextSize::Text })) { piece }
                                 })
                                 .collect(),
                             mention => vec![mention_pill(mention)],
@@ -492,14 +442,7 @@ pub(super) fn message_body(body: &str) -> Element {
         .collect();
 
     ui! {
-        view(style = StyleRules {
-            flex_direction: Some(FlexDirection::Row),
-            flex_wrap: Some(FlexWrap::Wrap),
-            // Text and the bigger emoji share a baseline.
-            align_items: Some(AlignItems::Baseline),
-            flex_grow: Some(grow(1.0)),
-            ..Default::default()
-        }) { runs_el }
+        view(style = crate::styles::MessageBodyFlow()) { runs_el }
     }
 }
 
@@ -811,58 +754,9 @@ pub(crate) fn message_row(
     grouped: bool,
     on_author: Option<AuthorPress>,
 ) -> Element {
-    let row_style = StyleRules {
-        padding_top: Some(px(8.0)),
-        padding_bottom: Some(px(2.0)),
-        padding_left: Some(px(16.0)),
-        padding_right: Some(px(16.0)),
-        gap: Some(px(10.0)),
-        flex_direction: Some(FlexDirection::Row),
-        // Top-align so the avatar sits against the message head and a
-        // multi-line body never stretches it into a vertical pill.
-        align_items: Some(AlignItems::FlexStart),
-        ..Default::default()
-    };
-    let avatar_style = StyleRules {
-        width: Some(px(40.0)),
-        height: Some(px(40.0)),
-        flex_shrink: Some(grow(0.0)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        background: Some(col(color)),
-        border_top_left_radius: Some(px(20.0)),
-        border_top_right_radius: Some(px(20.0)),
-        border_bottom_left_radius: Some(px(20.0)),
-        border_bottom_right_radius: Some(px(20.0)),
-        ..Default::default()
-    };
-    let avatar_text_style = StyleRules {
-        font_size: Some(px(15.0)),
-        font_weight: Some(FontWeight::Bold),
-        color: Some(col(TEXT)),
-        ..Default::default()
-    };
-    let stack_style = StyleRules {
-        flex_direction: Some(FlexDirection::Column),
-        flex_grow: Some(grow(1.0)),
-        gap: Some(px(2.0)),
-        ..Default::default()
-    };
-    let meta_style = StyleRules {
-        flex_direction: Some(FlexDirection::Row),
-        align_items: Some(AlignItems::Baseline),
-        gap: Some(px(6.0)),
-        ..Default::default()
-    };
-    // The name takes the colour of the author's highest coloured role.
-    let author_style = StyleRules {
-        font_size: Some(px(15.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(match crate::mentions::name_color(author) {
-            Some(c) => theme::fixed(&c),
-            None => col(TEXT),
-        }),
-        ..Default::default()
+    let name_color = match crate::mentions::name_color(author) {
+        Some(c) => theme::fixed(&c),
+        None => col(TEXT),
     };
     let initial = author.chars().next().unwrap_or(' ').to_string();
     // The author's avatar chip: the uploaded image (round-cropped, cover-fit)
@@ -876,23 +770,13 @@ pub(crate) fn message_row(
             image(
                 src = url,
                 alt = format!("{} avatar", author),
-                style = StyleRules {
-                    width: Some(px(40.0)),
-                    height: Some(px(40.0)),
-                    flex_shrink: Some(grow(0.0)),
-                    object_fit: Some(ObjectFit::Cover),
-                    border_top_left_radius: Some(px(20.0)),
-                    border_top_right_radius: Some(px(20.0)),
-                    border_bottom_left_radius: Some(px(20.0)),
-                    border_bottom_right_radius: Some(px(20.0)),
-                    ..Default::default()
-                },
+                style = crate::styles::Avatar40(),
             )
         }
     } else {
         ui! {
-            view(style = avatar_style) {
-                text(style = avatar_text_style) { initial }
+            view(style = crate::styles::Avatar40().background(col(color))) {
+                text(style = crate::styles::AvatarInitial()) { initial }
             }
         }
     };
@@ -902,15 +786,8 @@ pub(crate) fn message_row(
         // (3px vs the 8px of a fresh header row) and left-aligned under
         // where the name would start: 16px pad + 40px avatar + 10px gap.
         // No right padding — at this width the body is full-width anyway.
-        let grouped_style = StyleRules {
-            padding_top: Some(px(3.0)),
-            padding_bottom: Some(px(2.0)),
-            padding_left: Some(px(66.0)),
-            padding_right: Some(px(16.0)),
-            ..Default::default()
-        };
         return ui! {
-            view(style = grouped_style) {
+            view(style = crate::styles::MessageGroupedBox()) {
                 // `message_body` renders markdown-bearing bodies through the
                 // SDK; a plain body is one `text` run at the same 15px/TEXT
                 // styling, so grouped consecutive rows keep their tight look.
@@ -934,16 +811,16 @@ pub(crate) fn message_row(
             let press2 = press.clone();
             (
                 ui! { view { { avatar_chip } }.on_touch(move |ev| (press)(ev)) },
-                ui! { view { text(style = author_style) { crate::auth::shown_name(author) } }.on_touch(move |ev| (press2)(ev)) },
+                ui! { view { text(style = crate::styles::AuthorName().color(name_color)) { crate::auth::shown_name(author) } }.on_touch(move |ev| (press2)(ev)) },
             )
         }
-        None => (avatar_chip, ui! { text(style = author_style) { crate::auth::shown_name(author) } }),
+        None => (avatar_chip, ui! { text(style = crate::styles::AuthorName().color(name_color)) { crate::auth::shown_name(author) } }),
     };
     ui! {
-        view(style = row_style) {
+        view(style = crate::styles::MessageRowBox()) {
             { avatar_el }
-            view(style = stack_style) {
-                view(style = meta_style) {
+            view(style = crate::styles::MessageStack()) {
+                view(style = crate::styles::MessageMeta()) {
                     { name_el }
                     if author == "miri" { VerifiedBadge() }
                     // The relative "when" label is a real hover target now:
