@@ -16,7 +16,7 @@ use crate::style_helpers::{borderless_input, col, px};
 use discord_server::gifs::{Gif, GifPage, GifSearchInput};
 use icons_lucide::SEARCH;
 use runtime_core::{
-    after_ms_detached, component, icon, signal, switch, ui, AlignItems, Element,
+    after_ms_detached, component, icon, memo, signal, switch, ui, AlignItems, Element,
     FlexDirection, FontWeight, JustifyContent, ObjectFit, Overflow, Shadow, Signal, StyleRules,
     TouchPhase, TouchResponse, Tokenized,
 };
@@ -94,6 +94,14 @@ fn masonry(gifs: &[Gif]) -> [Vec<(Gif, f32)>; 2] {
     cols
 }
 
+/// One tile of the grid: its key, GIF and height in its column.
+#[derive(Clone, PartialEq)]
+struct Tile {
+    key: String,
+    gif: Gif,
+    h: f32,
+}
+
 /// The picker's results so far, the offset of the next page, and a status
 /// line ("" while results show).
 #[derive(Clone, PartialEq, Default)]
@@ -155,123 +163,140 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
         });
     };
 
-    let grid = switch(
-        move || results.get(),
-        move |r: &Results| {
-            if !r.status.is_empty() {
-                let status = r.status.clone();
-                return ui! {
-                    view(style = StyleRules {
-                        height: Some(px(200.0)),
-                        align_items: Some(AlignItems::Center),
-                        justify_content: Some(JustifyContent::Center),
-                        padding_left: Some(px(24.0)),
-                        padding_right: Some(px(24.0)),
-                        ..Default::default()
-                    }) {
-                        text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { status }
-                    }
-                };
-            }
-            let columns: Vec<Element> = masonry(&r.gifs)
-                .into_iter()
-                .map(|col_gifs| {
-                    let tiles: Vec<Element> = col_gifs
-                        .into_iter()
-                        .map(|(gif, h)| {
-                            let pick = on_pick.clone();
-                            let (src, alt) = (gif.preview_url.clone(), gif.title.clone());
-                            ui! {
-                                view(style = StyleRules {
-                                    width: Some(px(COL_W)),
-                                    height: Some(px(h)),
-                                    background: Some(col(theme::BG_PRIMARY)),
-                                    border_top_left_radius: Some(px(6.0)),
-                                    border_top_right_radius: Some(px(6.0)),
-                                    border_bottom_left_radius: Some(px(6.0)),
-                                    border_bottom_right_radius: Some(px(6.0)),
-                                    overflow: Some(Overflow::Hidden),
-                                    ..Default::default()
-                                }) {
-                                    image(
-                                        src = src,
-                                        alt = alt,
-                                        style = StyleRules {
-                                            width: Some(px(COL_W)),
-                                            height: Some(px(h)),
-                                            object_fit: Some(ObjectFit::Cover),
-                                            ..Default::default()
-                                        },
-                                    )
-                                }
-                                .on_touch(move |ev| {
-                                    if ev.phase == TouchPhase::Ended {
-                                        if let Some(p) = &pick {
-                                            (p)(gif.clone());
-                                        }
-                                    }
-                                    TouchResponse::CONSUMED
-                                })
-                            }
-                        })
-                        .collect();
-                    ui! {
-                        view(style = StyleRules {
-                            width: Some(px(COL_W)),
-                            flex_direction: Some(FlexDirection::Column),
-                            gap: Some(px(GAP)),
-                            ..Default::default()
-                        }) { tiles }
-                    }
-                })
-                .collect();
-            let more: Element = match r.next {
-                Some(next) => ui! {
-                    view(style = StyleRules {
-                        height: Some(px(36.0)),
-                        margin_top: Some(px(GAP)),
-                        align_items: Some(AlignItems::Center),
-                        justify_content: Some(JustifyContent::Center),
-                        background: Some(col(theme::BG_PRIMARY)),
-                        border_top_left_radius: Some(px(6.0)),
-                        border_top_right_radius: Some(px(6.0)),
-                        border_bottom_left_radius: Some(px(6.0)),
-                        border_bottom_right_radius: Some(px(6.0)),
-                        ..Default::default()
-                    }) {
-                        text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { "Load more".to_string() }
-                    }
-                    .on_touch({
-                        let alive = alive.clone();
-                        move |ev| {
-                            if ev.phase == TouchPhase::Ended {
-                                fetch(&alive, query.get().trim().to_string(), next, results, gen);
-                            }
-                            TouchResponse::CONSUMED
-                        }
-                    })
-                },
-                None => ui! { view {} },
-            };
+    // The grid's two masonry columns, each a keyed list, so "Load more" adds
+    // tiles instead of rebuilding the ones already shown. The key is the
+    // tile's place in its column plus the GIF id (Giphy can repeat an id
+    // across pages).
+    let column = move |i: usize| {
+        memo(move || -> Vec<Tile> {
+            masonry(&results.get().gifs)[i]
+                .iter()
+                .enumerate()
+                .map(|(n, (gif, h))| Tile { key: format!("{n}:{}", gif.id), gif: gif.clone(), h: *h })
+                .collect()
+        })
+    };
+    let (left, right) = (column(0), column(1));
+    let tile: Rc<dyn Fn(&Tile) -> Element> = {
+        let on_pick = on_pick.clone();
+        Rc::new(move |t: &Tile| -> Element {
+            let pick = on_pick.clone();
+            let gif = t.gif.clone();
+            let h = t.h;
+            let (src, alt) = (gif.preview_url.clone(), gif.title.clone());
             ui! {
                 view(style = StyleRules {
-                    flex_direction: Some(FlexDirection::Column),
-                    padding_left: Some(px(PAD)),
-                    padding_right: Some(px(PAD)),
-                    padding_bottom: Some(px(PAD)),
+                    width: Some(px(COL_W)),
+                    height: Some(px(h)),
+                    background: Some(col(theme::BG_PRIMARY)),
+                    border_top_left_radius: Some(px(6.0)),
+                    border_top_right_radius: Some(px(6.0)),
+                    border_bottom_left_radius: Some(px(6.0)),
+                    border_bottom_right_radius: Some(px(6.0)),
+                    overflow: Some(Overflow::Hidden),
                     ..Default::default()
                 }) {
-                    view(style = StyleRules {
-                        flex_direction: Some(FlexDirection::Row),
-                        align_items: Some(AlignItems::FlexStart),
-                        gap: Some(px(GAP)),
-                        ..Default::default()
-                    }) { columns }
-                    { more }
+                    image(
+                        src = src,
+                        alt = alt,
+                        style = StyleRules {
+                            width: Some(px(COL_W)),
+                            height: Some(px(h)),
+                            object_fit: Some(ObjectFit::Cover),
+                            ..Default::default()
+                        },
+                    )
                 }
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        if let Some(p) = &pick {
+                            (p)(gif.clone());
+                        }
+                    }
+                    TouchResponse::CONSUMED
+                })
             }
+        })
+    };
+    let (tile_left, tile_right) = (tile.clone(), tile);
+    let column_style = || StyleRules {
+        width: Some(px(COL_W)),
+        flex_direction: Some(FlexDirection::Column),
+        gap: Some(px(GAP)),
+        ..Default::default()
+    };
+    let more = switch(
+        move || results.get().next,
+        move |next: &Option<u32>| match *next {
+            Some(next) => ui! {
+                view(style = StyleRules {
+                    height: Some(px(36.0)),
+                    margin_top: Some(px(GAP)),
+                    align_items: Some(AlignItems::Center),
+                    justify_content: Some(JustifyContent::Center),
+                    background: Some(col(theme::BG_PRIMARY)),
+                    border_top_left_radius: Some(px(6.0)),
+                    border_top_right_radius: Some(px(6.0)),
+                    border_bottom_left_radius: Some(px(6.0)),
+                    border_bottom_right_radius: Some(px(6.0)),
+                    ..Default::default()
+                }) {
+                    text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { "Load more".to_string() }
+                }
+                .on_touch({
+                    let alive = alive.clone();
+                    move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            fetch(&alive, query.get().trim().to_string(), next, results, gen);
+                        }
+                        TouchResponse::CONSUMED
+                    }
+                })
+            },
+            None => ui! { view {} },
         },
     );
+    let status = memo(move || results.get().status);
+    let grid = ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Column),
+            padding_left: Some(px(PAD)),
+            padding_right: Some(px(PAD)),
+            padding_bottom: Some(px(PAD)),
+            ..Default::default()
+        }) {
+            if !status.get().is_empty() {
+                view(style = StyleRules {
+                    height: Some(px(200.0)),
+                    align_items: Some(AlignItems::Center),
+                    justify_content: Some(JustifyContent::Center),
+                    padding_left: Some(px(24.0)),
+                    padding_right: Some(px(24.0)),
+                    ..Default::default()
+                }) {
+                    text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { move || status.get() }
+                }
+            }
+            view(style = StyleRules {
+                flex_direction: Some(FlexDirection::Row),
+                align_items: Some(AlignItems::FlexStart),
+                gap: Some(px(GAP)),
+                ..Default::default()
+            }) {
+                view(style = column_style()) {
+                    for t in left, key = t.key.clone() {
+                        { tile_left(&t) }
+                    }
+                }
+                view(style = column_style()) {
+                    for t in right, key = t.key.clone() {
+                        { tile_right(&t) }
+                    }
+                }
+            }
+            { more }
+        }
+    };
 
     ui! {
         view(style = StyleRules {

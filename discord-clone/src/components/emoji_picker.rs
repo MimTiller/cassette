@@ -130,6 +130,23 @@ struct Section {
     emojis: Vec<&'static emoji_data::Emoji>,
 }
 
+/// One item of the emoji grid: a section header, or a cell (its section,
+/// glyph and name).
+#[derive(Clone, PartialEq)]
+enum GridItem {
+    Header(&'static str),
+    Cell(&'static str, &'static str, &'static str),
+}
+
+impl GridItem {
+    fn key(&self) -> String {
+        match self {
+            GridItem::Header(label) => format!("h:{label}"),
+            GridItem::Cell(section, glyph, _) => format!("c:{section}:{glyph}"),
+        }
+    }
+}
+
 /// The full (non-search) grid: Recent (if any picks) + all 9 categories, in
 /// the data's tab order.
 fn full_sections(recent: &[&'static emoji_data::Emoji]) -> Vec<Section> {
@@ -336,32 +353,41 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
         (pick_cb)(glyph);
     });
 
-    // --- grid body: rebuild when the section list changes ---
-    let grid_body = switch(
-        move || sections.get(),
-        move |secs: &Vec<Section>| {
-            let mut rows: Vec<Element> = Vec::new();
-            for s in secs.iter() {
-                rows.push(section_header(s.label));
-                for e in s.emojis.iter() {
-                    rows.push(emoji_cell(e.glyph, e.name, hovered.clone(), on_pick_wrap.clone()));
+    // --- grid body: one keyed item per header and cell, so typing in the
+    // search box keeps the cells that still match instead of rebuilding all
+    // of them. "Recent" repeats emoji from the categories, so a cell's key
+    // includes its section.
+    let grid_items = memo(move || -> Vec<GridItem> {
+        sections
+            .get()
+            .iter()
+            .flat_map(|s| {
+                std::iter::once(GridItem::Header(s.label))
+                    .chain(s.emojis.iter().map(move |e| GridItem::Cell(s.label, e.glyph, e.name)))
+            })
+            .collect()
+    });
+    let grid_body = ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            flex_wrap: Some(FlexWrap::Wrap),
+            gap: Some(px(4.0)),
+            padding_top: Some(px(4.0)),
+            padding_right: Some(px(4.0)),
+            padding_bottom: Some(px(4.0)),
+            padding_left: Some(px(4.0)),
+            ..Default::default()
+        }) {
+            for item in grid_items, key = item.key() {
+                {
+                    match item {
+                        GridItem::Header(label) => section_header(label),
+                        GridItem::Cell(_, glyph, name) => emoji_cell(glyph, name, hovered.clone(), on_pick_wrap.clone()),
+                    }
                 }
             }
-            // A wrapping row of `COLS` cells per line (the grid).
-            ui! {
-                view(style = StyleRules {
-                    flex_direction: Some(FlexDirection::Row),
-                    flex_wrap: Some(FlexWrap::Wrap),
-                    gap: Some(px(4.0)),
-                    padding_top: Some(px(4.0)),
-                    padding_right: Some(px(4.0)),
-                    padding_bottom: Some(px(4.0)),
-                    padding_left: Some(px(4.0)),
-                    ..Default::default()
-                }) { rows }
-            }
-        },
-    );
+        }
+    };
 
     // --- left category rail: Recent + the 9 groups ---
     // Each tab: highlight when it is the current section; tap scrolls its
