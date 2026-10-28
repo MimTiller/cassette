@@ -46,7 +46,6 @@ pub(super) struct ShellState {
     pub(super) invite_err: Signal<String>,
     pub(super) invite_expiry: Signal<usize>,
     pub(super) invite_mode: Signal<bool>,
-    pub(super) is_real_user: bool,
     pub(super) joined_voice: Signal<Option<(u32, u32)>>,
     pub(super) live_at_bottom: Signal<bool>,
     pub(super) live_attachments: Rc<RefCell<HashMap<i64, Vec<discord_server::server_settings::MessageAttachment>>>>,

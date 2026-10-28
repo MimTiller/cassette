@@ -9,7 +9,7 @@ pub(super) struct SidebarParts {
 }
 
 pub(super) fn build(s: &ShellState) -> SidebarParts {
-    let ShellState { active_channel, active_live_channel, active_live_server, active_server, authed, bug_reports_mode, cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, is_real_user, joined_voice, live_at_bottom, live_chan_menu, live_channels, live_collapsed, live_members, live_mention_rev, live_scroll_handle, live_servers, live_unread, live_unread_rev, member_panel_width, muted, notif_mode, profile_mode, rc_busy, rc_cid, rc_err, rc_name, rc_open, server_menu_open, shortcuts_mode, sidebar_width, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, user_status, .. } = s.clone();
+    let ShellState { active_channel, active_live_channel, active_live_server, active_server, authed, bug_reports_mode, cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, joined_voice, live_at_bottom, live_chan_menu, live_channels, live_collapsed, live_members, live_mention_rev, live_scroll_handle, live_servers, live_unread, live_unread_rev, member_panel_width, muted, notif_mode, profile_mode, rc_busy, rc_cid, rc_err, rc_name, rc_open, server_menu_open, shortcuts_mode, sidebar_width, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, user_status, .. } = s.clone();
     // --- channel sidebar -------------------------------------------------
     // Width is driven by the `sidebar_width` signal (a thin drag handle on the
     // sidebar's right edge resizes it). A rules *closure* so the width
@@ -128,15 +128,15 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
             // `switch`'s render is `Fn` — clone the captured styles so the
             // closure borrows them rather than moving them out (whiteboard idiom).
             let sidebar_style = sidebar_style.clone();
-            // [Feature 16] A real account with no live channel selected must
+            // [Feature 16] A signed-in account with no live channel selected must
             // never fall through to the mock render: its default `active_server`
             // / `active_channel` point at the demo `SERVERS[0]`, and the mock
             // branch below would render those demo identities (the "Nova"
-            // confusion). During the login -> server-fetch race (and for a real
+            // confusion). During the login -> server-fetch race (and for an
             // account with zero servers) there is no live channel, so show an
             // onboarding hint instead — the live auto-enter effect settles the
             // steady state once the first server resolves.
-            if is_real_user && _live_server.is_none() {
+            if _live_server.is_none() {
                 // The profile bar still shows here — a real (authed) user's
                 // bottom-left sidebar bar is present for the login -> fetch
                 // race and the zero-server state, not just once a live server

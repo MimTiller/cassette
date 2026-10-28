@@ -12,7 +12,7 @@ pub(super) struct MessagesParts {
 }
 
 pub(super) fn build(s: &ShellState) -> MessagesParts {
-    let ShellState { active_channel, active_live_channel, active_live_server, active_server, blocked_users, gateway, has_more_earlier, is_real_user, live_at_bottom, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_invite_mode, live_members, live_messages, live_revision, live_servers, live_typing, live_typing_rev, load_busy, members_pref, moderation_mode, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, revealed_blocked, revision, sent, translate_key, user_popup, user_profile, .. } = s.clone();
+    let ShellState { active_channel, active_live_channel, active_live_server, active_server, blocked_users, gateway, has_more_earlier, live_at_bottom, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_invite_mode, live_members, live_messages, live_revision, live_servers, live_typing, live_typing_rev, load_busy, members_pref, moderation_mode, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, revealed_blocked, revision, sent, translate_key, user_popup, user_profile, .. } = s.clone();
     // --- main view -------------------------------------------------------
     let header_style = StyleRules {
         padding_top: Some(px(10.0)),
@@ -95,7 +95,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
             // through to the mock header (it would show the demo `SERVERS[0]`
             // channel). Show a neutral onboarding title during the login ->
             // server-fetch race / for a zero-server account.
-            if is_real_user && live_cid.is_none() {
+            if live_cid.is_none() {
                 return ui! {
                     view(style = header_style) {
                         text(style = StyleRules {
@@ -333,7 +333,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
             // through to the mock message list (it would render the demo
             // `SERVERS[0]` seed messages). Show a neutral onboarding hint
             // during the login -> server-fetch race / for a zero-server account.
-            if is_real_user && live_cid.is_none() {
+            if live_cid.is_none() {
                 return ui! {
                     view(style = StyleRules {
                         flex_grow: Some(grow(1.0)),
@@ -726,7 +726,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
             // [Feature 16] Real account with no live channel: render an empty
             // spacer (no mock typing indicator) during the login ->
             // server-fetch race / for a zero-server account.
-            if is_real_user && live_chan.is_none() {
+            if live_chan.is_none() {
                 return ui! {
                     view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
                 };

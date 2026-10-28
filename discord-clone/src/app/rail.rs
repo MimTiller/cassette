@@ -13,7 +13,7 @@ pub(super) struct RailParts {
 }
 
 pub(super) fn build(s: &ShellState) -> RailParts {
-    let ShellState { active_channel, active_live_channel, active_live_server, active_server, create_busy, create_error, create_name, create_open, discover_open, dm_mode, dynamic_servers, friends_snap, gateway, is_real_user, join_busy, join_code, join_error, join_open, join_result, joined_voice, live_ban_confirm, live_channels, live_dm_active, live_dm_mode, live_dms, live_kick_confirm, live_member_error, live_members, live_servers, live_timeout_confirm, live_unread_rev, notif_mode, rail_unread, server_rail, .. } = s.clone();
+    let ShellState { active_channel, active_live_channel, active_live_server, active_server, create_busy, create_error, create_name, create_open, discover_open, dm_mode, dynamic_servers, friends_snap, gateway, join_busy, join_code, join_error, join_open, join_result, joined_voice, live_ban_confirm, live_channels, live_dm_active, live_dm_mode, live_dms, live_kick_confirm, live_member_error, live_members, live_servers, live_timeout_confirm, live_unread_rev, notif_mode, rail_unread, server_rail, .. } = s.clone();
     // --- server rail -----------------------------------------------------
     let rail_style = StyleRules {
         width: Some(px(72.0)),
@@ -26,147 +26,12 @@ pub(super) fn build(s: &ShellState) -> RailParts {
         ..Default::default()
     };
 
-    // [Feature 16] The mock demo servers are guest-only rail content. A real
-    // account sees only its own live servers (the live section below) plus the
-    // create / join affordances — the demo `SERVERS` are not theirs, so the
-    // mock rows are gated off for real users (empty here; the onboarding
-    // state is driven by the create affordance in the rail). Guests keep the
-    // full demo rail.
-    let server_rows: Vec<Element> = if is_real_user {
-        Vec::new()
-    } else {
-        SERVERS.iter().map(|s| {
-        let active = active_server.clone();
-        let channel = active_channel.clone();
-        let voice = joined_voice.clone();
-        let live_server = active_live_server.clone();
-        let live_channel = active_live_channel.clone();
-        // Reactive style: re-runs whenever `active_server` changes.
-        let row_style = move || StyleRules {
-            width: Some(px(48.0)),
-            height: Some(px(48.0)),
-            // Positioning ancestor for the absolutely-positioned pill.
-            position: Some(Position::Relative),
-            align_items: Some(AlignItems::Center),
-            justify_content: Some(JustifyContent::Center),
-            // The row keeps its squircle background on selection (Discord does
-            // not invert the icon to white); the active-server pill on the far
-            // left edge is the sole selection signal. Background is static
-            // `BG_SIDEBAR` — no reactive white-invert.
-            background: Some(col(BG_SIDEBAR)),
-            // Discord's squircle is a 16px radius on a 48px icon, not a full
-            // circle.
-            border_top_left_radius: Some(px(16.0)),
-            border_top_right_radius: Some(px(16.0)),
-            border_bottom_left_radius: Some(px(16.0)),
-            border_bottom_right_radius: Some(px(16.0)),
-            ..Default::default()
-        };
-        let label_style = move || StyleRules {
-            font_size: Some(px(18.0)),
-            font_weight: Some(FontWeight::Bold),
-            // The label keeps its own color on selection (no white-invert);
-            // the left-edge pill alone signals the active server.
-            color: Some(col(TEXT_CHANNEL)),
-            ..Default::default()
-        };
-        ui! {
-            view(style = row_style, test_id = server_test_id(s.id)) {
-                // The active-server pill: Discord's white vertical sliver on
-                // the far-left edge of the rail. The row is the positioning
-                // ancestor (default Static is not, so the pill would anchor
-                // to the rail — we want it at the row's left edge). The row
-                // is 48px centered in the 72px rail (12px offset), so
-                // left: -12 puts the pill flush with the screen edge.
-                view(style = move || StyleRules {
-                    position: Some(Position::Absolute),
-                    left: Some(px(-12.0)),
-                    top: Some(px(14.0)),
-                    width: Some(px(4.0)),
-                    height: Some(px(20.0)),
-                    background: Some(col(PILL)),
-                    border_top_left_radius: Some(px(2.0)),
-                    border_top_right_radius: Some(px(2.0)),
-                    border_bottom_left_radius: Some(px(2.0)),
-                    border_bottom_right_radius: Some(px(2.0)),
-                    opacity: Some(Tokenized::Literal(if active.get() == s.id {
-                        1.0
-                    } else {
-                        0.0
-                    })),
-                    ..Default::default()
-                }) {}
-                text(style = label_style) { s.initial }
-                // The badge: a red numbered pill for @mentions, a small
-                // plain white dot for unread (no mention), nothing for read.
-                // The row is the positioning ancestor (`position: Relative`
-                // above); the mock totals are computed once at build — swap
-                // for a gateway-fed signal later.
-                if s.total_mentions() > 0 {
-                    view(style = move || StyleRules {
-                        position: Some(Position::Absolute),
-                        right: Some(px(-4.0)),
-                        bottom: Some(px(-4.0)),
-                        min_width: Some(px(18.0)),
-                        height: Some(px(18.0)),
-                        background: Some(col(BADGE)),
-                        border_top_left_radius: Some(px(9.0)),
-                        border_top_right_radius: Some(px(9.0)),
-                        border_bottom_left_radius: Some(px(9.0)),
-                        border_bottom_right_radius: Some(px(9.0)),
-                        align_items: Some(AlignItems::Center),
-                        justify_content: Some(JustifyContent::Center),
-                        padding_left: Some(px(4.0)),
-                        padding_right: Some(px(4.0)),
-                        ..Default::default()
-                    }) {
-                        text(style = move || StyleRules {
-                            font_size: Some(px(12.0)),
-                            font_weight: Some(FontWeight::Bold),
-                            color: Some(col(TEXT)),
-                            ..Default::default()
-                        }) { s.total_mentions().to_string() }
-                    }
-                } else if s.total_unread() > 0 {
-                    // Plain dot: unread but no mention — Discord shows a
-                    // small white indicator instead of the red badge.
-                    view(style = StyleRules {
-                        position: Some(Position::Absolute),
-                        right: Some(px(-4.0)),
-                        bottom: Some(px(-4.0)),
-                        width: Some(px(10.0)),
-                        height: Some(px(10.0)),
-                        background: Some(col(TEXT)),
-                        border_top_left_radius: Some(px(5.0)),
-                        border_top_right_radius: Some(px(5.0)),
-                        border_bottom_left_radius: Some(px(5.0)),
-                        border_bottom_right_radius: Some(px(5.0)),
-                        ..Default::default()
-                    }) {}
-                }
-            }
-            .on_touch(move |ev| {
-                if ev.phase == TouchPhase::Ended {
-                    // Selecting a mock server exits live mode so the channel
-                    // sidebar shows the mock channels, not the live ones.
-                    live_server.set(None);
-                    live_channel.set(None);
-                    active.set(s.id);
-                    if let Some(srv) = SERVERS.iter().find(|x| x.id == s.id) {
-                        // Default to the first *text* channel — voice channels
-                        // aren't selectable in this build.
-                        channel.set(srv.first_text_channel().id);
-                    }
-                    // Switching servers drops the voice join: you can't stay
-                    // connected in a channel you're no longer looking at
-                    // (Discord's per-server voice behavior, simplified).
-                    voice.set(None);
-                }
-                TouchResponse::CONSUMED
-            })
-        }
-    }).collect()
-    };
+    // [Feature 16] The mock demo servers are no longer rail content: every
+    // account is signed in, so the rail shows only its own live servers (the
+    // live section below) plus the create / join affordances. Kept as the
+    // (always-empty) slot in RailParts; the onboarding state is driven by the
+    // create affordance in the rail.
+    let server_rows: Vec<Element> = Vec::new();
 
     // Dynamically created servers — a separate section below the mock rows.
     // Rebuilt whenever `server_rail` changes (a new id appended). Each row
@@ -594,9 +459,8 @@ pub(super) fn build(s: &ShellState) -> RailParts {
             view(style = circle_style.clone(), test_id = "rail-direct-messages") {
                 icon(MAIL).color(|| theme::live(TEXT_MUTED)).size(20.0)
             }
-            // Direct Messages. A signed-in account gets its REAL DMs (the live
-            // DM screen); a guest has no backend identity, so it keeps the
-            // demo DM screen (`dm_screen`).
+            // Direct Messages. Every account is signed in, so this row always
+            // drives the live DM screen (the demo DM screen is gone).
             //
             // Live: every open re-fetches the conversation list and the friend
             // list (the "Find or start a conversation" search reads it), and
@@ -605,10 +469,6 @@ pub(super) fn build(s: &ShellState) -> RailParts {
             // history) lives in `app_shell` scope and survives a close.
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
-                    if !is_real_user {
-                        dm_open.set(!dm_open.get());
-                        return TouchResponse::CONSUMED;
-                    }
                     let now_open = !live_dm_mode.get();
                     live_dm_mode.set(now_open);
                     if now_open {

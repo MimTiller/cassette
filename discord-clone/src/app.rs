@@ -495,31 +495,10 @@ fn mention_active_query(text: &str) -> Option<String> {
 }
 
 fn app_shell(authed: Signal<bool>) -> Element {
-    // `app_shell` is only reached once `authed` is true, which a "Continue as
-    // guest" also flips — so `authed` alone can't tell a real account from a
-    // guest. The real-account sentinel is a non-zero signed-in user id
-    // (`CURRENT_USER_ID`, set on login/signup and on a restored session, and
-    // never set for a guest). This is read once, here in `app_shell` scope:
-    // `app_shell` is re-invoked on every `authed` flip (see the `switch` in
-    // `app`), so the value is always the signed-in one at build time (the
-    // `user_panel` idiom). A restored session (page refresh) re-seeds
-    // `CURRENT_TOKEN`/`CURRENT_USER_ID` from localStorage, so the id check
-    // sees a real account, not a guest.
-    let is_real_user =
-        crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst) != 0;
-    // [Feature 16] `active_server`/`active_channel` are the *mock* selection.
-    // They keep their `SERVERS[0]` default (a demo server) but that default is
-    // only ever rendered for guests: a real account either lands on its own
-    // live server (the auto-enter effect below sets the live-mode signals) or
-    // sees the onboarding empty state, and the panes' mock fallback branches
-    // are suppressed for real users (see each pane's `is_real_user` gate).
-    // `app_shell` is only reached once `authed` is true, which a "Continue as
-    // guest" also flips — so `authed` alone can't tell a real account from a
-    // guest; the real-account sentinel is a non-empty signed-in username
-    // (`current_username` records it on login/signup and clears on logout).
-    // Read once here in `app_shell` scope: `app_shell` is re-invoked on every
-    // `authed` flip (see the `switch` in `app`), so this is the signed-in value
-    // at build time (the `user_panel` idiom).
+    // [Feature 16] `active_server`/`active_channel` are the *mock* selection
+    // signals: every pane renders live (backend) content now, so these keep a
+    // `SERVERS[0]` default that no real user path ever displays (see each
+    // pane's live/empty-state gate below).
     let active_server: Signal<u32> = signal(SERVERS[0].id);
     let active_channel: Signal<u32> = signal(SERVERS[0].first_text_channel().id);
     // Resizable column widths (CSS pixels), driven by the thin drag handles
@@ -682,9 +661,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let msg_menu: Signal<Option<MessageKey>> = signal(None);
     // The live sidebar header's server dropdown.
     let server_menu_open: Signal<bool> = signal(false);
-    if is_real_user {
-        crate::blocks::load(blocked_users, live_revision);
-    }
+    crate::blocks::load(blocked_users, live_revision);
     {
         let s = active_server.get();
         if let Some(server) = SERVERS.iter().find(|x| x.id == s) {
@@ -917,11 +894,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         // to capture its own scroll handle).
         let latbot = live_at_bottom.clone();
         let lhandle = live_scroll_handle.clone();
-        let is_real = is_real_user;
         runtime_core::driver::spawn_async(async move {
-            if !is_real {
-                return;
-            }
             // Fetch directly rather than reading `ls.get()`: `live_servers`
             // is populated by a SEPARATE spawn_async'd fetch above with no
             // ordering guarantee relative to this one, so reading the signal
@@ -1266,16 +1239,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // panel + the server fallback the auto-enter effect already applied).
     {
         let saved = crate::auth::load_last_view();
-        let is_real = is_real_user;
         let mode = live_dm_mode.clone();
         let list = live_dms.clone();
         let act = live_dm_active.clone();
         let buf = live_dm_messages.clone();
         let rev = live_dm_revision.clone();
         runtime_core::driver::spawn_async(async move {
-            if !is_real {
-                return;
-            }
             let Some((kind, dm_id, _)) = saved.filter(|(k, _, _)| *k == 1) else { return; };
             if kind != 1 {
                 return;
@@ -1521,7 +1490,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         invite_err: invite_err.clone(),
         invite_expiry: invite_expiry.clone(),
         invite_mode: invite_mode.clone(),
-        is_real_user: is_real_user.clone(),
         joined_voice: joined_voice.clone(),
         live_at_bottom: live_at_bottom.clone(),
         live_attachments: live_attachments.clone(),
