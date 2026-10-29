@@ -12,7 +12,12 @@ pub(super) struct RailParts {
 }
 
 pub(super) fn build(s: &ShellState) -> RailParts {
-    let ShellState { create_busy, create_error, create_name, create_open, gateway, nav, messages, members, dm, .. } = s.clone();
+    let ShellState { gateway, nav, messages, members, dm, dialogs, .. } = s.clone();
+    let Dialogs { create_server, .. } = dialogs.clone();
+    let create_busy = create_server.busy;
+    let create_error = create_server.error;
+    let create_name = create_server.name;
+    let create_open = create_server.open;
     let Dm { friends_snap, live_dm_active, live_dms, .. } = dm.clone();
     let Members { live_ban_confirm, live_kick_confirm, live_member_error, live_members, live_timeout_confirm, .. } = members.clone();
     let Messages { live_unread_rev, rail_unread, .. } = messages.clone();

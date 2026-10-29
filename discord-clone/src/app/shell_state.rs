@@ -5,6 +5,7 @@ use super::*;
 
 #[derive(Clone)]
 pub(super) struct ShellState {
+    pub(super) dialogs: Dialogs,
     pub(super) dm: Dm,
     pub(super) overlays: Overlays,
     pub(super) members: Members,
@@ -13,46 +14,9 @@ pub(super) struct ShellState {
     pub(super) layout: Layout,
     pub(super) nav: Nav,
     pub(super) authed: Signal<bool>,
-    pub(super) cc_busy: Signal<bool>,
-    pub(super) cc_err: Signal<String>,
-    pub(super) cc_kind: Signal<String>,
-    pub(super) cc_name: Signal<String>,
-    pub(super) cc_open: Signal<bool>,
-    pub(super) dc_busy: Signal<bool>,
-    pub(super) dc_cid: Signal<Option<i64>>,
-    pub(super) dc_err: Signal<String>,
-    pub(super) dc_name: Signal<String>,
-    pub(super) dc_open: Signal<bool>,
     pub(super) friends_entry: Rc<dyn Fn() -> Element>,
     pub(super) gateway: server::UseSocket<discord_server::server_settings::WsServerMsg, discord_server::server_settings::WsClientMsg>,
-    pub(super) invite_created: Signal<Option<discord_server::invites::Invite>>,
-    pub(super) invite_err: Signal<String>,
-    pub(super) invite_expiry: Signal<usize>,
-    pub(super) invite_mode: Signal<bool>,
     pub(super) on_dm_message: Rc<dyn Fn(i64)>,
-    pub(super) rc_busy: Signal<bool>,
-    pub(super) rc_cid: Signal<Option<i64>>,
-    pub(super) rc_err: Signal<String>,
-    pub(super) rc_name: Signal<String>,
-    pub(super) rc_open: Signal<bool>,
-    pub(super) ss_add_role: Signal<String>,
-    pub(super) ss_add_user_id: Signal<String>,
-    pub(super) ss_busy: Signal<bool>,
-    pub(super) ss_err: Signal<String>,
-    pub(super) ss_icon: Signal<String>,
-    pub(super) ss_name: Signal<String>,
-    pub(super) ss_open: Signal<bool>,
-    pub(super) ss_owner: Signal<String>,
-
-    pub(super) create_open: Signal<bool>,
-    pub(super) create_name: Signal<String>,
-    pub(super) create_error: Signal<String>,
-    pub(super) create_busy: Signal<bool>,
-    pub(super) join_open: Signal<bool>,
-    pub(super) join_code: Signal<String>,
-    pub(super) join_result: Signal<Option<discord_server::invites::RedeemResult>>,
-    pub(super) join_error: Signal<String>,
-    pub(super) join_busy: Signal<bool>,
 }
 
 
@@ -694,6 +658,155 @@ impl Dm {
             user_profile: user_profile,
             blocked_users: blocked_users,
             revealed_blocked: revealed_blocked,
+        }
+    }
+}
+
+
+#[derive(Clone)]
+pub(super) struct ServerSettings {
+    // --- Live Server Settings (rename / icon / add member / transfer) --------
+    // LIVE mode only: the gear in the live sidebar's header opens this full-screen
+    // overlay. `server_id` is `active_live_server` (read at submit time, `None`
+    // outside live mode = a no-op, the same inert-outside-live idiom as the
+    // channel-management modals above). `name`/`icon`/`new_owner_id` are the
+    // inputs, seeded from the active live server on open; `add_member_user_id` /
+    // `add_member_role` seed the add-member section (numeric id + a role that
+    // starts as `'member'` and cycles via the panel's chip); `busy`/`error` are
+    // the RPC state; `servers` is re-fetched by the panel on any successful
+    // op so the rail's live section shows the new name/icon. There is no
+    // client-side permission logic beyond the panel's owner-only gate on the
+    // transfer section — the backend decides and its message is surfaced verbatim.
+    pub(super) open: Signal<bool>,
+    pub(super) name: Signal<String>,
+    pub(super) icon: Signal<String>,
+    pub(super) owner: Signal<String>,
+    // Add-member section inputs: the numeric user id and the role to grant
+    // (starts at `'member'`; the panel's chip cycles it member→moderator→admin
+    // →owner→member). Seeded on open, below, like `ss_owner`.
+    pub(super) add_user_id: Signal<String>,
+    pub(super) add_role: Signal<String>,
+    pub(super) busy: Signal<bool>,
+    pub(super) err: Signal<String>,
+}
+
+
+#[derive(Clone)]
+pub(super) struct CreateChannel {
+    // --- Live channel management (create / rename / delete) -----------------
+    // Only active in live mode: the `server_id` for every call is read from
+    // `active_live_server` at submit time (the modals are built once and live
+    // across re-opens, so a `None` server is a no-op). The three modals reuse
+    // the build-once/toggle backdrop idiom of `join_modal.rs`; the live channel
+    // list they refresh is the same `live_channels` the live sidebar renders,
+    // so a successful op re-fetches `list_channels` and the sidebar's `switch`
+    // (keyed on the channel fingerprint) rebuilds with the new rows. There is
+    // no client-side permission logic — the backend decides and its message is
+    // surfaced inline by the modal on failure.
+    pub(super) open: Signal<bool>,
+    pub(super) name: Signal<String>,
+    pub(super) kind: Signal<String>,
+    pub(super) busy: Signal<bool>,
+    pub(super) err: Signal<String>,
+}
+
+
+#[derive(Clone)]
+pub(super) struct RenameChannel {
+    pub(super) open: Signal<bool>,
+    pub(super) cid: Signal<Option<i64>>,
+    pub(super) name: Signal<String>,
+    pub(super) busy: Signal<bool>,
+    pub(super) err: Signal<String>,
+}
+
+
+#[derive(Clone)]
+pub(super) struct DeleteChannel {
+    pub(super) open: Signal<bool>,
+    pub(super) cid: Signal<Option<i64>>,
+    pub(super) name: Signal<String>,
+    pub(super) busy: Signal<bool>,
+    pub(super) err: Signal<String>,
+}
+
+
+#[derive(Clone)]
+pub(super) struct InvitePeople {
+    // --- "Invite People" (mint a server invite) ------------------------------
+    // LIVE mode only: the USERS icon in the live sidebar header opens this
+    // full-screen overlay. `server_id` is `active_live_server` (read at submit
+    // time, `None` outside live mode = a no-op, the same inert-outside-live
+    // idiom as the channel-management modals above). `expiry` is the selected
+    // option (0 = 30 min, 1 = 1 day, 2 = never), `created` / `created_err` are
+    // the RPC outcome; on a successful mint the modal switches to the
+    // copy-the-link view. All four state signals are owned here so the modal
+    // survives sidebar rebuilds, and reset on re-open (see the header trigger
+    // below).
+    pub(super) mode: Signal<bool>,
+    pub(super) expiry: Signal<usize>,
+    pub(super) created: Signal<Option<discord_server::invites::Invite>>,
+    pub(super) err: Signal<String>,
+}
+
+
+#[derive(Clone)]
+pub(super) struct CreateServer {
+    // --- "Create a Server" reactive plumbing -------------------------------
+    // `create_open` gates the overlay; `create_name` is the typed name, and
+    // `create_error` / `create_busy` are the inline rejection text and
+    // in-flight guard the modal switches on. Owned here (app_shell scope) and
+    // reset per-open by whoever opens the modal.
+    pub(super) open: Signal<bool>,
+    pub(super) name: Signal<String>,
+    pub(super) error: Signal<String>,
+    pub(super) busy: Signal<bool>,
+}
+
+
+#[derive(Clone)]
+pub(super) struct JoinServer {
+    // --- "Join a Server" (redeem an invite code) ---------------------------
+    // The rail's green "+" opens the Create modal; the Create modal's
+    // "Have an invite already? Join a Server" link opens this one. The
+    // modal's state lives here in `app_shell` scope so it
+    // survives rail rebuilds; `join_open` gates the overlay, `join_code` is the
+    // typed code, `join_result`/`join_error`/`join_busy` are the three state
+    // signals the modal switches on (the `invite_modal.rs` ownership idiom).
+    // On a successful redeem the backend membership is persisted, so we
+    // re-fetch `live_servers` (the same RPC the rail's live section already
+    // uses) to make the newly-joined server appear without a reload.
+    pub(super) open: Signal<bool>,
+    pub(super) code: Signal<String>,
+    pub(super) result: Signal<Option<discord_server::invites::RedeemResult>>,
+    pub(super) error: Signal<String>,
+    pub(super) busy: Signal<bool>,
+}
+
+
+#[derive(Clone)]
+pub(super) struct Dialogs {
+    pub(super) server_settings: ServerSettings,
+    pub(super) create_channel: CreateChannel,
+    pub(super) rename_channel: RenameChannel,
+    pub(super) delete_channel: DeleteChannel,
+    pub(super) invite_people: InvitePeople,
+    pub(super) create_server: CreateServer,
+    pub(super) join_server: JoinServer,
+}
+
+impl Dialogs {
+    /// Fresh signals for this group; wiring around them stays in `app_shell`.
+    pub(super) fn new() -> Dialogs {
+
+        Dialogs {
+            server_settings: ServerSettings { open: signal(false), name: signal(String::new()), icon: signal(String::new()), owner: signal(String::new()), add_user_id: signal(String::new()), add_role: signal("member".to_string()), busy: signal(false), err: signal(String::new()) },
+            create_channel: CreateChannel { open: signal(false), name: signal(String::new()), kind: signal("text".to_string()), busy: signal(false), err: signal(String::new()) },
+            rename_channel: RenameChannel { open: signal(false), cid: signal(None), name: signal(String::new()), busy: signal(false), err: signal(String::new()) },
+            delete_channel: DeleteChannel { open: signal(false), cid: signal(None), name: signal(String::new()), busy: signal(false), err: signal(String::new()) },
+            invite_people: InvitePeople { mode: signal(false), expiry: signal(0), created: signal(None), err: signal(String::new()) },
+            create_server: CreateServer { open: signal(false), name: signal(String::new()), error: signal(String::new()), busy: signal(false) },
+            join_server: JoinServer { open: signal(false), code: signal(String::new()), result: signal(None), error: signal(String::new()), busy: signal(false) },
         }
     }
 }

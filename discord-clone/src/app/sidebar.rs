@@ -9,7 +9,35 @@ pub(super) struct SidebarParts {
 }
 
 pub(super) fn build(s: &ShellState) -> SidebarParts {
-    let ShellState { cc_busy, cc_err, cc_kind, cc_name, cc_open, dc_busy, dc_cid, dc_err, dc_name, dc_open, gateway, invite_created, invite_err, invite_expiry, invite_mode, rc_busy, rc_cid, rc_err, rc_name, rc_open, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, nav, layout, messages, members, overlays, .. } = s.clone();
+    let ShellState { gateway, nav, layout, messages, members, overlays, dialogs, .. } = s.clone();
+    let Dialogs { server_settings, create_channel, rename_channel, delete_channel, invite_people, .. } = dialogs.clone();
+    let ss_add_role = server_settings.add_role;
+    let ss_add_user_id = server_settings.add_user_id;
+    let ss_busy = server_settings.busy;
+    let ss_err = server_settings.err;
+    let ss_icon = server_settings.icon;
+    let ss_name = server_settings.name;
+    let ss_open = server_settings.open;
+    let ss_owner = server_settings.owner;
+    let cc_busy = create_channel.busy;
+    let cc_err = create_channel.err;
+    let cc_kind = create_channel.kind;
+    let cc_name = create_channel.name;
+    let cc_open = create_channel.open;
+    let rc_busy = rename_channel.busy;
+    let rc_cid = rename_channel.cid;
+    let rc_err = rename_channel.err;
+    let rc_name = rename_channel.name;
+    let rc_open = rename_channel.open;
+    let dc_busy = delete_channel.busy;
+    let dc_cid = delete_channel.cid;
+    let dc_err = delete_channel.err;
+    let dc_name = delete_channel.name;
+    let dc_open = delete_channel.open;
+    let invite_created = invite_people.created;
+    let invite_err = invite_people.err;
+    let invite_expiry = invite_people.expiry;
+    let invite_mode = invite_people.mode;
     let Overlays { deafened, muted, notif_mode, profile_mode, status_menu, user_status, .. } = overlays.clone();
     let Members { live_chan_menu, live_members, .. } = members.clone();
     let Messages { live_at_bottom, live_mention_rev, live_scroll_handle, live_unread, live_unread_rev, .. } = messages.clone();

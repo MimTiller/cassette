@@ -102,7 +102,7 @@ use login_screen::*;
 mod layout;
 use layout::*;
 mod shell_state;
-use shell_state::{ShellState, Nav, Layout, Composer, Messages, Members, Overlays, Dm};
+use shell_state::{ShellState, Nav, Layout, Composer, Messages, Members, Overlays, Dm, Dialogs};
 mod gateway_effects;
 mod rail;
 mod modals;
@@ -813,97 +813,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
 
 
 
-    // --- Live channel management (create / rename / delete) -----------------
-    // Only active in live mode: the `server_id` for every call is read from
-    // `active_live_server` at submit time (the modals are built once and live
-    // across re-opens, so a `None` server is a no-op). The three modals reuse
-    // the build-once/toggle backdrop idiom of `join_modal.rs`; the live channel
-    // list they refresh is the same `live_channels` the live sidebar renders,
-    // so a successful op re-fetches `list_channels` and the sidebar's `switch`
-    // (keyed on the channel fingerprint) rebuilds with the new rows. There is
-    // no client-side permission logic — the backend decides and its message is
-    // surfaced inline by the modal on failure.
-    let cc_open: Signal<bool> = signal(false);
-    let cc_name: Signal<String> = signal(String::new());
-    let cc_kind: Signal<String> = signal("text".to_string());
-    let cc_busy: Signal<bool> = signal(false);
-    let cc_err: Signal<String> = signal(String::new());
-    let rc_open: Signal<bool> = signal(false);
-    let rc_cid: Signal<Option<i64>> = signal(None);
-    let rc_name: Signal<String> = signal(String::new());
-    let rc_busy: Signal<bool> = signal(false);
-    let rc_err: Signal<String> = signal(String::new());
-    let dc_open: Signal<bool> = signal(false);
-    let dc_cid: Signal<Option<i64>> = signal(None);
-    let dc_name: Signal<String> = signal(String::new());
-    let dc_busy: Signal<bool> = signal(false);
-    let dc_err: Signal<String> = signal(String::new());
-    // --- "Invite People" (mint a server invite) ------------------------------
-    // LIVE mode only: the USERS icon in the live sidebar header opens this
-    // full-screen overlay. `server_id` is `active_live_server` (read at submit
-    // time, `None` outside live mode = a no-op, the same inert-outside-live
-    // idiom as the channel-management modals above). `expiry` is the selected
-    // option (0 = 30 min, 1 = 1 day, 2 = never), `created` / `created_err` are
-    // the RPC outcome; on a successful mint the modal switches to the
-    // copy-the-link view. All four state signals are owned here so the modal
-    // survives sidebar rebuilds, and reset on re-open (see the header trigger
-    // below).
-    let invite_mode: Signal<bool> = signal(false);
-    let invite_expiry: Signal<usize> = signal(0);
-    let invite_created: Signal<Option<discord_server::invites::Invite>> = signal(None);
-    let invite_err: Signal<String> = signal(String::new());
-    // --- Live Server Settings (rename / icon / add member / transfer) --------
-    // LIVE mode only: the gear in the live sidebar's header opens this full-screen
-    // overlay. `server_id` is `active_live_server` (read at submit time, `None`
-    // outside live mode = a no-op, the same inert-outside-live idiom as the
-    // channel-management modals above). `name`/`icon`/`new_owner_id` are the
-    // inputs, seeded from the active live server on open; `add_member_user_id` /
-    // `add_member_role` seed the add-member section (numeric id + a role that
-    // starts as `'member'` and cycles via the panel's chip); `busy`/`error` are
-    // the RPC state; `servers` is re-fetched by the panel on any successful
-    // op so the rail's live section shows the new name/icon. There is no
-    // client-side permission logic beyond the panel's owner-only gate on the
-    // transfer section — the backend decides and its message is surfaced verbatim.
-    let ss_open: Signal<bool> = signal(false);
-    let ss_name: Signal<String> = signal(String::new());
-    let ss_icon: Signal<String> = signal(String::new());
-    let ss_owner: Signal<String> = signal(String::new());
-    // Add-member section inputs: the numeric user id and the role to grant
-    // (starts at `'member'`; the panel's chip cycles it member→moderator→admin
-    // →owner→member). Seeded on open, below, like `ss_owner`.
-    let ss_add_user_id: Signal<String> = signal(String::new());
-    let ss_add_role: Signal<String> = signal("member".to_string());
-    let ss_busy: Signal<bool> = signal(false);
-    let ss_err: Signal<String> = signal(String::new());
+    // --- dialogs: shared app-shell state (signals built in shell_state.rs) ---
+    let dialogs = Dialogs::new();
 
-    // --- "Create a Server" reactive plumbing -------------------------------
-    // `create_open` gates the overlay; `create_name` is the typed name, and
-    // `create_error` / `create_busy` are the inline rejection text and
-    // in-flight guard the modal switches on. Owned here (app_shell scope) and
-    // reset per-open by whoever opens the modal.
-    let create_open: Signal<bool> = signal(false);
-    let create_name: Signal<String> = signal(String::new());
-    let create_error: Signal<String> = signal(String::new());
-    let create_busy: Signal<bool> = signal(false);
 
-    // --- "Join a Server" (redeem an invite code) ---------------------------
-    // The rail's green "+" opens the Create modal; the Create modal's
-    // "Have an invite already? Join a Server" link opens this one. The
-    // modal's state lives here in `app_shell` scope so it
-    // survives rail rebuilds; `join_open` gates the overlay, `join_code` is the
-    // typed code, `join_result`/`join_error`/`join_busy` are the three state
-    // signals the modal switches on (the `invite_modal.rs` ownership idiom).
-    // On a successful redeem the backend membership is persisted, so we
-    // re-fetch `live_servers` (the same RPC the rail's live section already
-    // uses) to make the newly-joined server appear without a reload.
-    let join_open: Signal<bool> = signal(false);
-    let join_code: Signal<String> = signal(String::new());
-    let join_result: Signal<Option<discord_server::invites::RedeemResult>> = signal(None);
-    let join_error: Signal<String> = signal(String::new());
-    let join_busy: Signal<bool> = signal(false);
 
     // Everything the section builders below read, gathered once.
     let s = ShellState {
+        dialogs: dialogs.clone(),
         dm: dm.clone(),
         overlays: overlays.clone(),
         members: members.clone(),
@@ -911,46 +828,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
         composer_state: composer_state.clone(),
         layout: layout.clone(),
         nav: nav.clone(),
-        create_open: create_open.clone(),
-        create_name: create_name.clone(),
-        create_error: create_error.clone(),
-        create_busy: create_busy.clone(),
-        join_open: join_open.clone(),
-        join_code: join_code.clone(),
-        join_result: join_result.clone(),
-        join_error: join_error.clone(),
-        join_busy: join_busy.clone(),
         authed: authed.clone(),
-        cc_busy: cc_busy.clone(),
-        cc_err: cc_err.clone(),
-        cc_kind: cc_kind.clone(),
-        cc_name: cc_name.clone(),
-        cc_open: cc_open.clone(),
-        dc_busy: dc_busy.clone(),
-        dc_cid: dc_cid.clone(),
-        dc_err: dc_err.clone(),
-        dc_name: dc_name.clone(),
-        dc_open: dc_open.clone(),
         friends_entry: friends_entry.clone(),
         gateway: gateway.clone(),
-        invite_created: invite_created.clone(),
-        invite_err: invite_err.clone(),
-        invite_expiry: invite_expiry.clone(),
-        invite_mode: invite_mode.clone(),
         on_dm_message: on_dm_message.clone(),
-        rc_busy: rc_busy.clone(),
-        rc_cid: rc_cid.clone(),
-        rc_err: rc_err.clone(),
-        rc_name: rc_name.clone(),
-        rc_open: rc_open.clone(),
-        ss_add_role: ss_add_role.clone(),
-        ss_add_user_id: ss_add_user_id.clone(),
-        ss_busy: ss_busy.clone(),
-        ss_err: ss_err.clone(),
-        ss_icon: ss_icon.clone(),
-        ss_name: ss_name.clone(),
-        ss_open: ss_open.clone(),
-        ss_owner: ss_owner.clone(),
     };
     // Before any section builds its rows: they read `popups::msg_menu`.
     let popups::PopupsParts { catcher_el: popup_catcher_el, exclusive_el: popup_exclusive_el } = popups::build(&s);

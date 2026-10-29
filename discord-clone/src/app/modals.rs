@@ -16,7 +16,44 @@ pub(super) struct ModalsParts {
 }
 
 pub(super) fn build(s: &ShellState) -> ModalsParts {
-    let ShellState { cc_busy, cc_err, cc_kind, cc_name, cc_open, create_busy, create_error, create_name, create_open, dc_busy, dc_cid, dc_err, dc_name, dc_open, gateway, invite_created, invite_err, invite_expiry, invite_mode, join_busy, join_code, join_error, join_open, join_result, rc_busy, rc_cid, rc_err, rc_name, rc_open, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, nav, messages, members, .. } = s.clone();
+    let ShellState { gateway, nav, messages, members, dialogs, .. } = s.clone();
+    let Dialogs { server_settings, create_channel, rename_channel, delete_channel, invite_people, create_server, join_server, .. } = dialogs.clone();
+    let ss_add_role = server_settings.add_role;
+    let ss_add_user_id = server_settings.add_user_id;
+    let ss_busy = server_settings.busy;
+    let ss_err = server_settings.err;
+    let ss_icon = server_settings.icon;
+    let ss_name = server_settings.name;
+    let ss_open = server_settings.open;
+    let ss_owner = server_settings.owner;
+    let cc_busy = create_channel.busy;
+    let cc_err = create_channel.err;
+    let cc_kind = create_channel.kind;
+    let cc_name = create_channel.name;
+    let cc_open = create_channel.open;
+    let rc_busy = rename_channel.busy;
+    let rc_cid = rename_channel.cid;
+    let rc_err = rename_channel.err;
+    let rc_name = rename_channel.name;
+    let rc_open = rename_channel.open;
+    let dc_busy = delete_channel.busy;
+    let dc_cid = delete_channel.cid;
+    let dc_err = delete_channel.err;
+    let dc_name = delete_channel.name;
+    let dc_open = delete_channel.open;
+    let invite_created = invite_people.created;
+    let invite_err = invite_people.err;
+    let invite_expiry = invite_people.expiry;
+    let invite_mode = invite_people.mode;
+    let create_busy = create_server.busy;
+    let create_error = create_server.error;
+    let create_name = create_server.name;
+    let create_open = create_server.open;
+    let join_busy = join_server.busy;
+    let join_code = join_server.code;
+    let join_error = join_server.error;
+    let join_open = join_server.open;
+    let join_result = join_server.result;
     let Members { live_kick_confirm, live_member_error, live_members, .. } = members.clone();
     let Messages { live_unread, live_unread_rev, .. } = messages.clone();
 let Nav { active_live_channel, active_live_server, live_channels, live_servers, .. } = nav.clone();
