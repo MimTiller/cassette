@@ -770,24 +770,31 @@ pub(crate) fn settings_layout(nav: Vec<Element>, panel: Element, close: Option<R
             ..Default::default()
         }) {
             // Left: the sidebar, right-aligned in its half like Discord's.
-            view(style = StyleRules {
-                flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
-                flex_shrink: Some(runtime_core::Tokenized::Literal(0.0)),
-                flex_basis: Some(px(218.0)),
-                flex_direction: Some(FlexDirection::Row),
-                justify_content: Some(JustifyContent::FlexEnd),
-                background: Some(col(theme::BG_SECONDARY)),
-                ..Default::default()
+            // On a phone it fills the window until a section opens.
+            view(style = move || {
+                let hidden = crate::app::mobile::settings_hidden(true);
+                StyleRules {
+                    flex_grow: Some(runtime_core::Tokenized::Literal(if hidden { 0.0 } else { 1.0 })),
+                    flex_shrink: Some(runtime_core::Tokenized::Literal(0.0)),
+                    flex_basis: Some(px(if crate::app::mobile::is_phone() { 0.0 } else { 218.0 })),
+                    width: hidden.then(|| px(0.0)),
+                    flex_direction: Some(FlexDirection::Row),
+                    justify_content: Some(if crate::app::mobile::is_phone() { JustifyContent::FlexStart } else { JustifyContent::FlexEnd }),
+                    background: Some(col(theme::BG_SECONDARY)),
+                    overflow: Some(runtime_core::Overflow::Hidden),
+                    ..Default::default()
+                }
             }) {
-                scroll_view(style = StyleRules {
-                    width: Some(px(218.0)),
+                scroll_view(style = move || StyleRules {
+                    width: (!crate::app::mobile::is_phone()).then(|| px(218.0)),
+                    flex_grow: crate::app::mobile::is_phone().then(|| runtime_core::Tokenized::Literal(1.0)),
                     scrollbar: Some(runtime_core::ScrollbarVisibility::Hidden),
                     ..Default::default()
                 }) {
-                    view(style = StyleRules {
+                    view(style = move || StyleRules {
                         flex_direction: Some(FlexDirection::Column),
                         gap: Some(px(2.0)),
-                        padding_top: Some(px(60.0)),
+                        padding_top: Some(px(if crate::app::mobile::is_phone() { 16.0 } else { 60.0 })),
                         padding_bottom: Some(px(60.0)),
                         padding_left: Some(px(6.0)),
                         padding_right: Some(px(6.0)),
@@ -796,27 +803,39 @@ pub(crate) fn settings_layout(nav: Vec<Element>, panel: Element, close: Option<R
                 }
             }
             // Right: the section in a centred column, and the close button.
-            view(style = StyleRules {
-                flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
-                flex_shrink: Some(runtime_core::Tokenized::Literal(1.0)),
-                flex_basis: Some(px(800.0)),
-                flex_direction: Some(FlexDirection::Row),
-                background: Some(col(theme::BG_PRIMARY)),
-                ..Default::default()
+            // On a phone, while the section list shows, only the close
+            // button column stays visible here.
+            view(style = move || {
+                let hidden = crate::app::mobile::settings_hidden(false);
+                StyleRules {
+                    flex_grow: Some(runtime_core::Tokenized::Literal(if hidden { 0.0 } else { 1.0 })),
+                    flex_shrink: Some(runtime_core::Tokenized::Literal(1.0)),
+                    flex_basis: (!hidden).then(|| px(if crate::app::mobile::is_phone() { 0.0 } else { 800.0 })),
+                    flex_direction: Some(FlexDirection::Row),
+                    background: Some(col(theme::BG_PRIMARY)),
+                    ..Default::default()
+                }
             }) {
-                scroll_view(style = StyleRules {
-                    flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
+                scroll_view(style = move || StyleRules {
+                    flex_grow: Some(runtime_core::Tokenized::Literal(if crate::app::mobile::settings_hidden(false) { 0.0 } else { 1.0 })),
+                    width: crate::app::mobile::settings_hidden(false).then(|| px(0.0)),
                     ..Default::default()
                 }) {
-                    view(style = StyleRules {
-                        flex_direction: Some(FlexDirection::Column),
-                        max_width: Some(px(740.0)),
-                        padding_top: Some(px(60.0)),
-                        padding_bottom: Some(px(80.0)),
-                        padding_left: Some(px(40.0)),
-                        padding_right: Some(px(40.0)),
-                        ..Default::default()
-                    }) { panel }
+                    view(style = move || {
+                        let pad = if crate::app::mobile::is_phone() { 16.0 } else { 40.0 };
+                        StyleRules {
+                            flex_direction: Some(FlexDirection::Column),
+                            max_width: Some(px(740.0)),
+                            padding_top: Some(px(if crate::app::mobile::is_phone() { 16.0 } else { 60.0 })),
+                            padding_bottom: Some(px(80.0)),
+                            padding_left: Some(px(pad)),
+                            padding_right: Some(px(pad)),
+                            ..Default::default()
+                        }
+                    }) {
+                        { crate::app::mobile::back_button("settings-back", || crate::app::mobile::show_settings_nav(true)) }
+                        { panel }
+                    }
                 }
                 view(style = StyleRules {
                     width: Some(px(72.0)),
@@ -851,6 +870,8 @@ pub(crate) fn settings_layout(nav: Vec<Element>, panel: Element, close: Option<R
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
                             if let Some(c) = &close {
+                                // The next settings screen opens on its list.
+                                crate::app::mobile::show_settings_nav(true);
                                 c();
                             }
                         }
@@ -906,7 +927,10 @@ pub(crate) fn nav_row(label: &str, danger: bool, active: Signal<usize>, index: u
             if ev.phase == TouchPhase::Ended {
                 match &action {
                     Some(a) => a(),
-                    None => active.set(index),
+                    None => {
+                        active.set(index);
+                        crate::app::mobile::show_settings_nav(false);
+                    }
                 }
             }
             TouchResponse::CONSUMED

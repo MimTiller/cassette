@@ -313,6 +313,8 @@ pub fn ProfileSettings() -> Element {
     };
 
     let input_style = StyleRules {
+        // Full width, like the labels above the fields.
+        align_self: Some(runtime_core::AlignSelf::Stretch),
         flex_grow: Some(grow(1.0)),
         height: Some(px(40.0)),
         padding_left: Some(px(12.0)),
@@ -541,6 +543,8 @@ pub fn ProfileSettings() -> Element {
             // (reactive closures re-run when `av_busy` / `av_picking` flip).
             view(style = StyleRules {
                 height: Some(px(34.0)),
+                padding_left: Some(px(16.0)),
+                padding_right: Some(px(16.0)),
                 background: Some(col(theme::SUCCESS)),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
@@ -575,7 +579,9 @@ pub fn ProfileSettings() -> Element {
             })
             view(style = StyleRules {
                 height: Some(px(34.0)),
-                background: Some(col(theme::SUCCESS)),
+                padding_left: Some(px(16.0)),
+                padding_right: Some(px(16.0)),
+                background: Some(col(theme::BUTTON_SECONDARY)),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
                 border_top_left_radius: Some(px(8.0)),

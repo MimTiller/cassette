@@ -42,7 +42,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
     }
 
     let card_style = StyleRules {
-        width: Some(px(400.0)),
+        width: Some(px(crate::app::mobile::fit_width(400.0))),
         padding_top: Some(px(32.0)),
         padding_bottom: Some(px(32.0)),
         padding_left: Some(px(32.0)),

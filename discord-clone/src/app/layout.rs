@@ -27,7 +27,8 @@ pub(super) fn resize_handle(width: Signal<f32>, sign: f32, id: &'static str) -> 
     // fill once hovered so the affordance is discoverable. `ColResize` gives
     // the east-west resize cursor over the strip.
     let handle_style = move || StyleRules {
-        width: Some(px(6.0)),
+        // No drag handles on a phone: the panes fill the window.
+        width: Some(px(if mobile::is_phone() { 0.0 } else { 6.0 })),
         background: Some(col(if hovered.get() { BG_HOVER } else { "transparent" })),
         cursor: Some(Cursor::ColResize),
         // A fixed grab strip: never shrinks below 6px in the flex row, so it

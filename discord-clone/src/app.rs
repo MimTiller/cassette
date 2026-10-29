@@ -49,7 +49,7 @@ use file_picker::{FilePicker, PickRequest, PickOutcome, MediaKind};
 use icons_lucide::{
     CHEVRON_DOWN, CHEVRON_RIGHT, CIRCLE_HELP, HASH, HEADPHONES,
     MIC, MIC_OFF, PIN, PLUS, SETTINGS, SMILE, SMILE_PLUS,
-    USER_PLUS, USERS, VOLUME_2, MESSAGE_CIRCLE,
+    USER_PLUS, USERS, VOLUME_2, MESSAGE_CIRCLE, MENU,
 };
 use crate::idle_timer_badge::IdleTimerBadge;
 use crate::server_settings_panel::ServerSettingsPanel;
@@ -71,7 +71,7 @@ use crate::load_earlier_button::load_earlier_button;
 use crate::edited_label::EditedLabel;
 use crate::settings_suite::UserSettings;
 use crate::keyboard_shortcuts_overlay::keyboard_shortcuts_overlay;
-use crate::style_helpers::{borderless_input, col, pct, px, section_label};
+use crate::style_helpers::{borderless_input, col, pct, px, rounded, section_label};
 use crate::join_modal::JoinServerModal;
 use crate::create_server_modal::create_server_modal;
 use crate::create_channel_modal::CreateChannelModal;
@@ -116,6 +116,7 @@ mod search;
 mod composer;
 mod member_list;
 mod overlays;
+pub(crate) mod mobile;
 
 // Discord dark palette (Blurple-flavoured).
 const BG_RAIL: &str = theme::BG_TERTIARY;
@@ -386,6 +387,7 @@ pub(crate) fn shell_alive() -> runtime_core::ScopeAlive {
 
 fn app_shell(authed: Signal<bool>) -> Element {
     SHELL_ALIVE.with(|s| *s.borrow_mut() = Some(runtime_core::ScopeAlive::current()));
+    mobile::install(signal(mobile::Pane::default()), signal(true));
     // [Feature 16] `active_server`/`active_channel` are the *mock* selection
     // signals: every pane renders live (backend) content now, so these keep a
     // `SERVERS[0]` default that no real user path ever displays (see each
@@ -1012,6 +1014,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     let now_open = !friends_open_entry.get();
                     friends_open_entry.set(now_open);
                     if now_open {
+                        mobile::show(mobile::Pane::Chat);
+                    }
+                    if now_open {
                         // On open: reset the Add Friend draft + error (the same
                         // per-open reset the join/create modals apply to their
                         // fields) and re-fetch the relationship list so the
@@ -1408,8 +1413,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let composer::ComposerParts { composer_area } = composer::build(&s);
     let member_list::MemberListParts { members_switch } = member_list::build(&s);
 
-    let main_style = StyleRules {
-        flex_grow: Some(grow(1.0)),
+    // On a phone the chat column gives way to the channel list (see `mobile`).
+    let main_style = move || StyleRules {
+        flex_grow: Some(grow(if mobile::hidden(mobile::Pane::Chat) { 0.0 } else { 1.0 })),
+        width: mobile::hidden(mobile::Pane::Chat).then(|| px(0.0)),
         background: Some(col(BG_MAIN)),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
@@ -1528,11 +1535,22 @@ fn app_shell(authed: Signal<bool>) -> Element {
             overflow: Some(Overflow::Hidden),
             ..Default::default()
         }) {
-            view(style = rail_style) { rail_top live_section rail_actions gateway_incoming_effect mention_reset_effect }
-            sidebar
-            // Drag handle on the channel sidebar's right edge: dragging it
-            // left/right resizes `sidebar_width` (right = grow, so sign `+1`).
-            resize_handle(sidebar_width, 1.0, "resize-sidebar")
+            // The rail and channel list; on a phone they fill the window
+            // while the list pane shows and fold away while the chat does.
+            view(style = move || StyleRules {
+                flex_direction: Some(FlexDirection::Row),
+                flex_shrink: Some(grow(0.0)),
+                flex_grow: Some(grow(if mobile::is_phone() && !mobile::hidden(mobile::Pane::List) { 1.0 } else { 0.0 })),
+                width: mobile::hidden(mobile::Pane::List).then(|| px(0.0)),
+                overflow: Some(Overflow::Hidden),
+                ..Default::default()
+            }) {
+                view(style = rail_style) { rail_top live_section rail_actions gateway_incoming_effect mention_reset_effect }
+                sidebar
+                // Drag handle on the channel sidebar's right edge: dragging it
+                // left/right resizes `sidebar_width` (right = grow, so sign `+1`).
+                resize_handle(sidebar_width, 1.0, "resize-sidebar")
+            }
             view(style = main_style) {
                 header
                 // `Position::Relative` wrapper around the scroll surface: it
@@ -1587,12 +1605,33 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // resizes `member_panel_width` (left = grow, so sign `-1`).
             // The member list and its drag handle, collapsed to nothing while
             // hidden (the header toggle, or automatically on narrow windows).
-            view(style = move || StyleRules {
-                flex_direction: Some(FlexDirection::Row),
-                width: if members_visible(members_pref) { None } else { Some(px(0.0)) },
-                overflow: Some(Overflow::Hidden),
-                ..Default::default()
+            // On a phone the list slides over the chat from the right, with
+            // a dimmed strip to its left that closes it.
+            view(style = move || {
+                let shown = members_visible(members_pref);
+                let phone = mobile::is_phone();
+                StyleRules {
+                    flex_direction: Some(FlexDirection::Row),
+                    width: if !shown { Some(px(0.0)) } else if phone { Some(pct(100.0)) } else { None },
+                    height: phone.then(|| pct(100.0)),
+                    position: phone.then_some(Position::Absolute),
+                    top: phone.then(|| px(0.0)),
+                    right: phone.then(|| px(0.0)),
+                    background: phone.then(|| col(theme::OVERLAY)),
+                    overflow: Some(Overflow::Hidden),
+                    ..Default::default()
+                }
             }) {
+                view(style = move || StyleRules {
+                    flex_grow: Some(grow(if mobile::is_phone() { 1.0 } else { 0.0 })),
+                    ..Default::default()
+                }, test_id = "members-scrim") {}
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            members_pref.set(None);
+                        }
+                        TouchResponse::CONSUMED
+                    })
                 resize_handle(member_panel_width, -1.0, "resize-members")
                 members_switch
             }

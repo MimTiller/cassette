@@ -107,6 +107,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
             match *live_cid {
             None => ui! {
                     view(style = header_style) {
+                        { mobile::back_button("mobile-back", || mobile::show(mobile::Pane::List)) }
                         text(style = StyleRules {
                             color: Some(col(TEXT_MUTED)),
                             ..hash_style
@@ -131,6 +132,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                 // `unwrap()` a non-mock id and panic in live mode).
                 return ui! {
                     view(style = header_style) {
+                        { mobile::back_button("mobile-back", || mobile::show(mobile::Pane::List)) }
                         text(style = hash_style) { "#".to_string() }
                         text(style = title_style) { title }
                         // Spacer: eats the row's remaining width so the pin /

@@ -170,7 +170,7 @@ pub(super) fn search_box(server: Signal<Option<i64>>, server_name: String, on_ju
                     position: Some(Position::Absolute),
                     top: Some(px(34.0)),
                     right: Some(px(0.0)),
-                    width: Some(px(420.0)),
+                    width: Some(px(420.0f32.min(viewport_size().peek().width - 24.0))),
                     max_height: Some(px(520.0)),
                     flex_direction: Some(FlexDirection::Column),
                     background: Some(col(theme::BG_SECONDARY)),
@@ -234,9 +234,11 @@ pub(super) fn search_box(server: Signal<Option<i64>>, server_name: String, on_ju
     );
 
     ui! {
-        view(style = StyleRules {
+        // Narrower on a phone, where it shares the header with the title.
+        view(style = move || StyleRules {
             position: Some(Position::Relative),
-            width: Some(px(220.0)),
+            width: Some(px(if super::mobile::is_phone() { 120.0 } else { 220.0 })),
+            flex_shrink: Some(grow(0.0)),
             ..Default::default()
         }) {
             view(style = StyleRules {
@@ -259,7 +261,11 @@ pub(super) fn search_box(server: Signal<Option<i64>>, server_name: String, on_ju
                     placeholder = placeholder,
                     test_id = "message-search",
                     style = StyleRules {
+                        // Zero basis: the input takes the room left beside the
+                        // icon instead of its intrinsic width.
+                        width: Some(px(0.0)),
                         flex_grow: Some(grow(1.0)),
+                        background: Some(col("transparent")),
                         font_size: Some(px(13.0)),
                         color: Some(col(theme::TEXT_STRONG)),
                         ..borderless_input()

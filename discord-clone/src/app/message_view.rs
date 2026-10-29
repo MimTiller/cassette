@@ -57,7 +57,7 @@ pub(super) fn attachment_row(atts: &[discord_server::server_settings::MessageAtt
     let cells: Vec<Element> = atts.iter().map(|a| {
         let data = crate::auth::media_url(a.url.clone());
         let name = a.filename.clone();
-        let (w, h) = attachment_box(a.width.zip(a.height), max_w, max_h);
+        let (w, h) = attachment_box(a.width.zip(a.height), mobile::media_max_width(max_w), max_h);
         ui! {
             image(
                 src = data,
@@ -315,7 +315,7 @@ pub(super) fn message_body(body: &str) -> Element {
     // a pasted one) shows as the animated image, sized from the link's
     // `#WxH` fragment like an attachment.
     if let Some((url, size)) = discord_server::gifs::gif_body(body) {
-        let (w, h) = attachment_box(size, ATTACHMENT_MAX_W, ATTACHMENT_MAX_H);
+        let (w, h) = attachment_box(size, mobile::media_max_width(ATTACHMENT_MAX_W), ATTACHMENT_MAX_H);
         return ui! {
             image(
                 src = url,

@@ -517,7 +517,7 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
     // --- the card: search field / rail + scrollable grid / hover footer ---
     ui! {
         view(style = StyleRules {
-            width: Some(px(420.0)),
+            width: Some(px(crate::app::mobile::fit_width(420.0))),
             height: Some(px(440.0)),
             flex_direction: Some(FlexDirection::Column),
             background: Some(col(theme::BG_SECONDARY)),

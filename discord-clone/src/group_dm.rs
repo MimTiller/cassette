@@ -77,6 +77,7 @@ fn open(dm: Dm, live_dms: Signal<Vec<Dm>>, active: Signal<Option<i64>>, msgs: Rc
     }
     live_dms.set(list);
     active.set(Some(id));
+    crate::app::mobile::show(crate::app::mobile::Pane::Chat);
     crate::auth::save_last_view_dm(id);
     load_history(id, msgs, rev);
 }
@@ -313,7 +314,7 @@ pub(crate) fn picker_dialog(
                     ..Default::default()
                 }) {
                     view(style = StyleRules {
-                        width: Some(px(440.0)),
+                        width: Some(px(crate::app::mobile::fit_width(440.0))),
                         max_width: Some(pct(92.0)),
                         max_height: Some(pct(85.0)),
                         flex_direction: Some(FlexDirection::Column),

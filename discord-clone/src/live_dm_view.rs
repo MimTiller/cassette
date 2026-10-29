@@ -98,6 +98,7 @@ pub(crate) fn open_dm_with(
             live_dms.set(list);
         }
         active.set(Some(dm_id));
+        crate::app::mobile::show(crate::app::mobile::Pane::Chat);
         crate::auth::save_last_view_dm(dm_id);
         crate::group_dm::load_history(dm_id, msgs, rev);
     });
@@ -429,6 +430,7 @@ fn live_dm_row(
         .on_touch(move |ev| {
             if ev.phase == TouchPhase::Ended {
                 active.set(Some(dm_id));
+                crate::app::mobile::show(crate::app::mobile::Pane::Chat);
                 // Persist as this account's last open DM so a refresh re-opens
                 // THIS conversation (keyed by user id in localStorage).
                 crate::auth::save_last_view_dm(dm_id);
@@ -456,8 +458,10 @@ fn live_dm_list(
     friends_entry: Rc<dyn Fn() -> Element>,
     picker: Signal<Option<crate::group_dm::Picker>>,
 ) -> Element {
-    let column_style = StyleRules {
-        width: Some(px(240.0)),
+    // Fills the window on a phone, where it is the whole list pane.
+    let column_style = move || StyleRules {
+        width: (!crate::app::mobile::is_phone()).then(|| px(240.0)),
+        flex_grow: crate::app::mobile::is_phone().then(|| grow(1.0)),
         background: Some(col(theme::BG_SECONDARY)),
         border_right_width: Some(border_width(1.0)),
         border_right_color: Some(col(theme::BG_TERTIARY)),
@@ -853,6 +857,7 @@ fn live_dm_conversation(
             });
             let header_el = ui! {
                 view(style = header_style) {
+                    { crate::app::mobile::back_button("dm-mobile-back", || crate::app::mobile::show(crate::app::mobile::Pane::List)) }
                     { title_el }
                     view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
                     if let Some(el) = group_controls {
@@ -861,7 +866,7 @@ fn live_dm_conversation(
                 }
             };
             // A group's members panel sits to the right of the conversation.
-            let side_panel = (is_group && members_open.get())
+            let side_panel = (is_group && members_open.get() && !crate::app::mobile::is_phone())
                 .then(|| this_dm.as_ref().map(crate::group_dm::members_panel))
                 .flatten();
             let wrap = move |pane: Element| -> Element {
@@ -1111,8 +1116,26 @@ pub fn live_dm_screen(
             position: Some(runtime_core::Position::Relative),
             ..Default::default()
         }) {
-            live_dm_list(live_dms.clone(), active.clone(), msgs.clone(), rev.clone(), new_id, friends, members, friends_entry, picker)
-            main
+            // On a phone only one of the list and the conversation shows.
+            view(style = move || StyleRules {
+                flex_direction: Some(FlexDirection::Row),
+                flex_shrink: Some(grow(0.0)),
+                flex_grow: Some(grow(if crate::app::mobile::is_phone() && !crate::app::mobile::hidden(crate::app::mobile::Pane::List) { 1.0 } else { 0.0 })),
+                width: crate::app::mobile::hidden(crate::app::mobile::Pane::List).then(|| px(0.0)),
+                overflow: Some(Overflow::Hidden),
+                ..Default::default()
+            }) {
+                live_dm_list(live_dms.clone(), active.clone(), msgs.clone(), rev.clone(), new_id, friends, members, friends_entry, picker)
+            }
+            view(style = move || StyleRules {
+                flex_direction: Some(FlexDirection::Row),
+                flex_grow: Some(grow(if crate::app::mobile::hidden(crate::app::mobile::Pane::Chat) { 0.0 } else { 1.0 })),
+                width: crate::app::mobile::hidden(crate::app::mobile::Pane::Chat).then(|| px(0.0)),
+                overflow: Some(Overflow::Hidden),
+                ..Default::default()
+            }) {
+                main
+            }
             effect
             picker_el
         }

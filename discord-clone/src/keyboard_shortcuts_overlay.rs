@@ -131,7 +131,7 @@ pub fn keyboard_shortcuts_overlay(open: Signal<bool>) -> Element {
 
     // The panel: centered, fixed width, scrollable content.
     let panel_style = StyleRules {
-        width: Some(px(380.0)),
+        width: Some(px(crate::app::mobile::fit_width(380.0))),
         background: Some(col(theme::BG_SECONDARY)),
         border_top_left_radius: Some(px(10.0)),
         border_top_right_radius: Some(px(10.0)),

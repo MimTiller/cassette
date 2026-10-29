@@ -18,8 +18,10 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
     // `Clone`, which the `switch` render below relies on (`sidebar_style.clone()`).
     let sidebar_style = move || {
         let (s, _m) = effective_panel_widths(sidebar_width, member_panel_width);
+        let phone = mobile::is_phone();
         StyleRules {
-            width: Some(px(s)),
+            width: (!phone).then(|| px(s)),
+            flex_grow: phone.then(|| grow(1.0)),
             // flex_shrink:0 so the flex row never shrinks the sidebar below
             // the viewport-responsive width computed above — the main column
             // (flex_grow:1) absorbs any residual slack instead.
@@ -589,6 +591,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                         }
                                         if ev.phase == TouchPhase::Ended {
                                             live_sel.set(Some(cid));
+                                            mobile::show(mobile::Pane::Chat);
                                             // Persist THIS channel (and its
                                             // server) as the account's last
                                             // view: the tap path is the
