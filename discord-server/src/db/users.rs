@@ -230,10 +230,12 @@ impl Db {
 
     // ── presence ───────────────────────────────────────────────────────────
     //
-    // One status per user: 'online' / 'away' / 'offline', driven entirely by
-    // the realtime gateway (set on connect, idle-timeout, and disconnect).
+    // Two columns per user. `status_choice` is what they picked in the user
+    // panel ('online' / 'idle' / 'dnd' / 'invisible'). `presence_status` is
+    // what others see ('online' / 'away' / 'dnd' / 'offline'), set by the
+    // realtime gateway from that choice and the user's activity.
 
-    /// The user's current presence status ('online' / 'away' / 'offline').
+    /// The user's current presence status ('online' / 'away' / 'dnd' / 'offline').
     /// `None` if the user row doesn't exist.
     pub fn presence(&self, user_id: i64) -> Option<String> {
         let c = self.lock().ok()?;
@@ -251,7 +253,7 @@ impl Db {
     /// non-status string or a DB failure.
     pub fn set_presence(&self, user_id: i64, status: &str) -> Result<bool, rusqlite::Error> {
         match status {
-            "online" | "away" | "offline" => {}
+            "online" | "away" | "dnd" | "offline" => {}
             other => return Err(sqlite_err(format!("invalid presence status: {other}"))),
         }
         let c = self.lock()?;
@@ -267,5 +269,34 @@ impl Db {
             rusqlite::params![user_id, status],
         )?;
         Ok(old != status)
+    }
+
+    /// The status the user picked ('online' / 'idle' / 'dnd' / 'invisible');
+    /// 'online' when the user row doesn't exist.
+    pub fn status_choice(&self, user_id: i64) -> String {
+        self.lock()
+            .ok()
+            .and_then(|c| {
+                c.query_row(
+                    "SELECT status_choice FROM users WHERE id = ?1",
+                    rusqlite::params![user_id],
+                    |r| r.get::<_, String>(0),
+                )
+                .ok()
+            })
+            .unwrap_or_else(|| "online".to_string())
+    }
+
+    /// Record the status the user picked. `Err` on an unknown status.
+    pub fn set_status_choice(&self, user_id: i64, status: &str) -> Result<(), rusqlite::Error> {
+        match status {
+            "online" | "idle" | "dnd" | "invisible" => {}
+            other => return Err(sqlite_err(format!("invalid status: {other}"))),
+        }
+        self.lock()?.execute(
+            "UPDATE users SET status_choice = ?2 WHERE id = ?1",
+            rusqlite::params![user_id, status],
+        )?;
+        Ok(())
     }
 }

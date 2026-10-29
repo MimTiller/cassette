@@ -33,6 +33,15 @@ const KEY_THEME: &str = "idealyst.discord.theme";
 
 // ── browser notification (wasm/web only) ─────────────────────────────────────
 
+thread_local! {
+    static DO_NOT_DISTURB: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Do Not Disturb (the user panel's status) silences every notification.
+pub fn set_do_not_disturb(on: bool) {
+    DO_NOT_DISTURB.with(|d| d.set(on));
+}
+
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen_futures::JsFuture;
 #[cfg(target_arch = "wasm32")]
@@ -60,7 +69,7 @@ pub fn notify_message(
     title: runtime_core::Signal<String>,
     body: runtime_core::Signal<String>,
 ) {
-    if mode == NOTHING {
+    if mode == NOTHING || DO_NOT_DISTURB.with(|d| d.get()) {
         return;
     }
     if mode == MENTIONS_ONLY && !is_mention {

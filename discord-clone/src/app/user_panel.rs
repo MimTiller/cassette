@@ -12,9 +12,9 @@ use super::*;
 /// `user_status` signal, so the strip can show Idle / DND without touching
 /// the data.
 ///
-/// Clicking the avatar opens the user's own profile: `profile_mode` flips
-/// and `app_shell` shows the full-screen User Settings at its Profile
-/// section. Log Out and the keyboard shortcuts are not repeated here — both
+/// Clicking the avatar opens the status menu (`status_menu`): Online, Idle,
+/// Do Not Disturb, Invisible, and Edit Profile, which flips `profile_mode`
+/// to show User Settings at its Profile section. Log Out and the keyboard shortcuts are not repeated here — both
 /// are rows in the User Settings sidebar the gear opens ("Log Out" under the
 /// divider; "Keybinds" among the APP SETTINGS sections).
 ///
@@ -31,6 +31,8 @@ pub(super) fn user_panel(
     notif_mode: Signal<bool>,
     muted: Signal<bool>,
     deafened: Signal<bool>,
+    status_menu: Signal<bool>,
+    gateway: server::UseSocket<discord_server::server_settings::WsServerMsg, discord_server::server_settings::WsClientMsg>,
 ) -> Element {
     switch(
         move || (user_status.get(), voice_name_for(joined_voice.get())),
@@ -55,6 +57,8 @@ pub(super) fn user_panel(
             };
             let voice_name = voice_name.clone();
             let panel_style = StyleRules {
+                // The status menu floats above the panel.
+                position: Some(Position::Relative),
                 padding_top: Some(px(8.0)),
                 padding_bottom: Some(px(8.0)),
                 padding_left: Some(px(8.0)),
@@ -202,11 +206,10 @@ pub(super) fn user_panel(
                 None => None,
             };
 
-            // Click the avatar to open the user's own profile settings —
-            // Discord's user-panel behavior of tapping the avatar/name area.
-            // The touch target is the avatar only (not the whole row) so the
-            // Leave button keeps its own region while connected.
-            let profile_open = profile_mode.clone();
+            // Click the avatar to open the status menu. The touch target is
+            // the avatar only (not the whole row) so the Leave button keeps
+            // its own region while connected.
+            let menu_toggle = status_menu;
             // When the signed-in account has an uploaded avatar, the image
             // sits under the status dot (same 32px circle, cover-cropped);
             // the initial-circle branch renders exactly as before.
@@ -234,7 +237,7 @@ pub(super) fn user_panel(
                     }
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
-                            profile_open.set(true);
+                            menu_toggle.set(!menu_toggle.get());
                         }
                         TouchResponse::CONSUMED
                     })
@@ -247,7 +250,7 @@ pub(super) fn user_panel(
                     }
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
-                            profile_open.set(true);
+                            menu_toggle.set(!menu_toggle.get());
                         }
                         TouchResponse::CONSUMED
                     })
@@ -320,8 +323,10 @@ pub(super) fn user_panel(
             // One row (Discord's user panel): avatar + name/status pushed
             // left by the growing text column, the three icon buttons at the
             // right; the Leave button (voice only) sits just before them.
+            let menu = status_menu_view(status_menu, user_status, profile_mode, gateway.clone());
             ui! {
                 view(style = panel_style) {
+                    menu
                     view(style = row_style) {
                         avatar
                         view(style = text_stack) {
@@ -345,6 +350,152 @@ pub(super) fn user_panel(
             }
         },
     )
+}
+
+/// Show `st` as the user's status; Do Not Disturb also silences
+/// notifications.
+pub(super) fn set_status(user_status: Signal<Status>, st: Status) {
+    crate::notify::set_do_not_disturb(st == Status::Dnd);
+    user_status.set(st);
+}
+
+/// The status menu the avatar opens (Discord's status popout): the four
+/// statuses, each with its dot, then Edit Profile. It floats above the user
+/// panel at the popup level, so the click-outside layer closes it.
+fn status_menu_view(
+    open: Signal<bool>,
+    user_status: Signal<Status>,
+    profile_mode: Signal<bool>,
+    gateway: server::UseSocket<discord_server::server_settings::WsServerMsg, discord_server::server_settings::WsClientMsg>,
+) -> Element {
+    switch(
+        move || open.get(),
+        move |shown: &bool| {
+            if !*shown {
+                return ui! {
+                    view(style = StyleRules {
+                        width: Some(px(0.0)),
+                        height: Some(px(0.0)),
+                        ..Default::default()
+                    }) {}
+                };
+            }
+            let current = user_status.peek();
+            let row = |st: Status| {
+                let gateway = gateway.clone();
+                status_menu_row(st.name(), Some(st.color()), st.hint(), st == current, move || {
+                    open.set(false);
+                    set_status(user_status, st);
+                    gateway.send(discord_server::server_settings::WsClientMsg::SetStatus {
+                        status: st.wire().to_string(),
+                    });
+                })
+            };
+            ui! {
+                view(style = StyleRules {
+                    position: Some(Position::Absolute),
+                    left: Some(px(8.0)),
+                    right: Some(px(8.0)),
+                    bottom: Some(px(56.0)),
+                    z_index: Some(super::popups::POPUP_Z),
+                    flex_direction: Some(FlexDirection::Column),
+                    gap: Some(px(2.0)),
+                    padding_top: Some(px(6.0)),
+                    padding_bottom: Some(px(6.0)),
+                    padding_left: Some(px(6.0)),
+                    padding_right: Some(px(6.0)),
+                    background: Some(col(theme::BG_FLOATING)),
+                    ..rounded(8.0)
+                }, test_id = "status-menu") {
+                    { row(Status::Online) }
+                    { row(Status::Idle) }
+                    { row(Status::Dnd) }
+                    { row(Status::Invisible) }
+                    view(style = StyleRules {
+                        height: Some(px(1.0)),
+                        margin_top: Some(px(4.0)),
+                        margin_bottom: Some(px(4.0)),
+                        background: Some(col(theme::DIVIDER)),
+                        ..Default::default()
+                    }) {}
+                    {
+                        status_menu_row("Edit Profile", None, None, false, move || {
+                            open.set(false);
+                            profile_mode.set(true);
+                        })
+                    }
+                }
+            }
+        },
+    )
+}
+
+/// One row of the status menu: an optional status dot, the label, and an
+/// optional hint line beneath it. `selected` marks the current status.
+fn status_menu_row(
+    label: &'static str,
+    dot: Option<&'static str>,
+    hint: Option<&'static str>,
+    selected: bool,
+    on_pick: impl Fn() + 'static,
+) -> Element {
+    let dot_el = dot.map(|c| {
+        ui! {
+            view(style = StyleRules {
+                width: Some(px(10.0)),
+                height: Some(px(10.0)),
+                flex_shrink: Some(grow(0.0)),
+                background: Some(col(c)),
+                ..rounded(5.0)
+            }) {}
+        }
+    });
+    let hint_el = hint.map(|h| {
+        ui! {
+            text(style = StyleRules {
+                font_size: Some(px(12.0)),
+                color: Some(col(TEXT_MUTED)),
+                ..Default::default()
+            }) { h.to_string() }
+        }
+    });
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            gap: Some(px(10.0)),
+            padding_top: Some(px(6.0)),
+            padding_bottom: Some(px(6.0)),
+            padding_left: Some(px(8.0)),
+            padding_right: Some(px(8.0)),
+            background: selected.then(|| col(theme::BG_SELECTED)),
+            ..rounded(4.0)
+        }) {
+            if let Some(d) = dot_el {
+                d
+            }
+            view(style = StyleRules {
+                flex_direction: Some(FlexDirection::Column),
+                ..Default::default()
+            }) {
+                text(style = StyleRules {
+                    font_size: Some(px(14.0)),
+                    font_weight: Some(FontWeight::Medium),
+                    color: Some(col(TEXT)),
+                    ..Default::default()
+                }) { label.to_string() }
+                if let Some(h) = hint_el {
+                    h
+                }
+            }
+        }
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                on_pick();
+            }
+            TouchResponse::CONSUMED
+        })
+    }
 }
 
 /// The name of the voice channel the user is currently joined to, resolved

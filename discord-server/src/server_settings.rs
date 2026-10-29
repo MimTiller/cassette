@@ -132,6 +132,8 @@ pub enum WsClientMsg {
     EditMessage { message_id: i64, content: String },
     /// Delete one of the client's own messages.
     DeleteMessage { message_id: i64 },
+    /// Pick the user's status: "online", "idle", "dnd" or "invisible".
+    SetStatus { status: String },
 }
 
 /// Outbound frames the server sends.
@@ -203,6 +205,10 @@ pub enum WsServerMsg {
     DmChanged { dm_id: i64 },
     /// A presence status change for a user: 'online' / 'away' / 'offline'.
     Presence { user_id: i64, status: String },
+    /// The user's own picked status ("online" / "idle" / "dnd" /
+    /// "invisible"): sent on connect, and to each of their sockets when it
+    /// changes.
+    StatusChoice { status: String },
     /// A channel member started typing. The client shows this transiently
     /// (a few seconds) and does not need an explicit stop event.
     Typing { channel_id: i64, user_id: i64 },
@@ -295,7 +301,7 @@ pub async fn message_gateway(
     token: String,
     cookies: server::Cookies,
 ) -> Result<(), ServerError> {
-    use crate::realtime::{announce_presence, history_for, hub, post_channel_message, channel_audience};
+    use crate::realtime::{announce_presence, history_for, hub, post_channel_message, channel_audience, refresh_presence};
 
     let db = db_from_state()?;
     // The credential: the connect-URL wire arg (native clients, whose bearer
@@ -314,13 +320,12 @@ pub async fn message_gateway(
     let hub = hub();
     let (conn_id, mut events) = hub.register(user_id);
 
-    // Presence: 'online' the moment the socket is authenticated.
-    // `db.set_presence` returns whether the value actually changed, so we only
-    // announce a transition the audience doesn't already know about.
-    let mut presence = "online".to_string();
-    if db.set_presence(user_id, &presence).is_ok_and(|changed| changed) {
-        announce_presence(&db, user_id, &presence);
-    }
+    // Presence: what others see follows the user's picked status and whether
+    // they are active (`realtime::shown_presence`); active the moment the
+    // socket is authenticated. The client learns its picked status here.
+    let mut active = true;
+    refresh_presence(&db, user_id, active);
+    let _ = ch.send(WsServerMsg::StatusChoice { status: db.status_choice(user_id) }).await;
 
     // Only inbound client frames count as activity (events pushed to this
     // socket must not keep an idle user "online").
@@ -350,11 +355,9 @@ pub async fn message_gateway(
                 }
                 continue;
             }
-            _ = tokio::time::sleep_until(idle_at), if presence == "online" => {
-                presence = "away".to_string();
-                if db.set_presence(user_id, "away").is_ok_and(|changed| changed) {
-                    announce_presence(&db, user_id, "away");
-                }
+            _ = tokio::time::sleep_until(idle_at), if active => {
+                active = false;
+                refresh_presence(&db, user_id, active);
                 continue;
             }
         };
@@ -362,11 +365,9 @@ pub async fn message_gateway(
             break;
         };
         last_activity = tokio::time::Instant::now();
-        if presence != "online" {
-            presence = "online".to_string();
-            if db.set_presence(user_id, "online").is_ok_and(|changed| changed) {
-                announce_presence(&db, user_id, "online");
-            }
+        if !active {
+            active = true;
+            refresh_presence(&db, user_id, active);
         }
         match msg {
             WsClientMsg::Send {
@@ -483,6 +484,13 @@ pub async fn message_gateway(
                     crate::realtime::delete_channel_message(&db, user_id, message_id)
                 {
                     let _ = ch.send(WsServerMsg::Error { reason }).await;
+                }
+            }
+            WsClientMsg::SetStatus { status } => {
+                if db.set_status_choice(user_id, &status).is_ok() {
+                    // The user's other tabs show the new pick too.
+                    hub.publish(&[user_id], &WsServerMsg::StatusChoice { status });
+                    refresh_presence(&db, user_id, active);
                 }
             }
         }

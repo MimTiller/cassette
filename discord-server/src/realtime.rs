@@ -187,6 +187,27 @@ pub fn announce_presence(db: &Db, user_id: i64, status: &str) {
     );
 }
 
+/// What others see of a user: their picked status (`status_choice`) and
+/// whether they are active. Invisible reads as offline; a picked Idle or Do
+/// Not Disturb holds whatever the activity.
+pub fn shown_presence(choice: &str, active: bool) -> &'static str {
+    match choice {
+        "invisible" => "offline",
+        "dnd" => "dnd",
+        "idle" => "away",
+        _ if active => "online",
+        _ => "away",
+    }
+}
+
+/// Store `user_id`'s shown presence and tell their audience when it changed.
+pub fn refresh_presence(db: &Db, user_id: i64, active: bool) {
+    let shown = shown_presence(&db.status_choice(user_id), active);
+    if db.set_presence(user_id, shown).is_ok_and(|changed| changed) {
+        announce_presence(db, user_id, shown);
+    }
+}
+
 /// Tell the other members of `server_id` that `user_id` joined (`joined:
 /// true`) or left (`joined: false`). Called by the join (invite redemption)
 /// and leave (kick/ban) paths so the roster — and the `MEMBERS — N` count —
@@ -572,6 +593,20 @@ pub fn history_for(
 ) -> Result<Vec<Message>, String> {
     authorize_text_channel(db, user_id, channel_id, Permissions::VIEW_CHANNEL)?;
     Ok(db.older_messages(channel_id, before_id, limit))
+}
+
+#[cfg(test)]
+mod presence_tests {
+    use super::shown_presence;
+
+    #[test]
+    fn picked_status_overrides_activity() {
+        assert_eq!(shown_presence("online", true), "online");
+        assert_eq!(shown_presence("online", false), "away");
+        assert_eq!(shown_presence("idle", true), "away");
+        assert_eq!(shown_presence("dnd", false), "dnd");
+        assert_eq!(shown_presence("invisible", true), "offline");
+    }
 }
 
 #[cfg(test)]

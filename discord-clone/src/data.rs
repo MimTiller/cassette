@@ -51,17 +51,34 @@ pub struct VoiceChannel {
     pub name: &'static str,
 }
 
-/// Presence status. Only the online state is used anywhere in the app.
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// The status the user picks from the user panel's menu.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Status {
     Online,
+    Idle,
+    Dnd,
+    Invisible,
 }
 
 impl Status {
+    pub const ALL: [Status; 4] = [Status::Online, Status::Idle, Status::Dnd, Status::Invisible];
+
     /// Profile-strip name, Discord's casing: "Online", "Idle", …
     pub fn name(self) -> &'static str {
         match self {
             Status::Online => "Online",
+            Status::Idle => "Idle",
+            Status::Dnd => "Do Not Disturb",
+            Status::Invisible => "Invisible",
+        }
+    }
+
+    /// The menu's line under the name, where Discord has one.
+    pub fn hint(self) -> Option<&'static str> {
+        match self {
+            Status::Dnd => Some("You will not receive notifications"),
+            Status::Invisible => Some("You will appear offline"),
+            _ => None,
         }
     }
 
@@ -69,7 +86,25 @@ impl Status {
     pub fn color(self) -> &'static str {
         match self {
             Status::Online => theme::SUCCESS,
+            Status::Idle => theme::WARNING,
+            Status::Dnd => theme::DANGER,
+            Status::Invisible => theme::TEXT_FAINT,
         }
+    }
+
+    /// The gateway's name for it (`WsClientMsg::SetStatus`).
+    pub fn wire(self) -> &'static str {
+        match self {
+            Status::Online => "online",
+            Status::Idle => "idle",
+            Status::Dnd => "dnd",
+            Status::Invisible => "invisible",
+        }
+    }
+
+    /// From the gateway's name; anything unknown is Online.
+    pub fn from_wire(s: &str) -> Self {
+        Status::ALL.into_iter().find(|st| st.wire() == s).unwrap_or(Status::Online)
     }
 }
 

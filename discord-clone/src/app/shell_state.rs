@@ -116,6 +116,7 @@ pub(super) struct ShellState {
     pub(super) ss_owner: Signal<String>,
     pub(super) translate_key: Signal<Option<MessageKey>>,
     pub(super) user_status: Signal<Status>,
+    pub(super) status_menu: Signal<bool>,
 
     pub(super) create_open: Signal<bool>,
     pub(super) create_name: Signal<String>,

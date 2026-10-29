@@ -352,6 +352,7 @@ pub(super) fn live_member_panel(
         let presence_color = match presence.get(&member_id).map(|s| s.as_str()) {
             Some("online") => theme::SUCCESS,
             Some("away") => theme::WARNING,
+            Some("dnd") => theme::DANGER,
             Some("offline") => theme::TEXT_FAINT,
             _ => theme::TEXT_FAINT,
         };

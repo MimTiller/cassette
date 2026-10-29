@@ -437,6 +437,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // constant) because the profile strip can change it; the member panel
     // renders the user under this status, so a change regroups them there too.
     let user_status: Signal<Status> = signal(Status::Online);
+    // The status menu the user panel's avatar opens.
+    let status_menu: Signal<bool> = signal(false);
     // A send failed: `true` = the most recent live send was rejected by the
     // backend (the gateway replies with an `Error` frame, handled below in
     // `gateway_incoming_effect`). The "Failed to send - Retry" banner above the
@@ -1390,6 +1392,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         ss_owner: ss_owner.clone(),
         translate_key: translate_key.clone(),
         user_status: user_status.clone(),
+        status_menu,
     };
     // Before any section builds its rows: they read `popups::msg_menu`.
     let popups::PopupsParts { catcher_el: popup_catcher_el, exclusive_el: popup_exclusive_el } = popups::build(&s);

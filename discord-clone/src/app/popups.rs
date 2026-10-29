@@ -80,7 +80,7 @@ pub(super) fn build(s: &ShellState) -> PopupsParts {
         cc_open, create_open, dc_open, emoji_open, gif_open, invite_mode,
         join_open, live_chan_menu, live_invite_mode, live_member_menu, moderation_mode, msg_menu, notif_mode,
         picker, pinned_panel_open, profile_mode, rc_open, server_menu_open, shortcuts_mode, ss_open,
-        user_popup, ..
+        status_menu, user_popup, ..
     } = s.clone();
     MSG_MENU.with(|m| m.set(Some(msg_menu)));
 
@@ -92,6 +92,7 @@ pub(super) fn build(s: &ShellState) -> PopupsParts {
         opt(live_chan_menu),
         flag(server_menu_open),
         opt(live_member_menu),
+        flag(status_menu),
     ]);
     // Every popup (one open at a time; Escape closes it first).
     let popups: Rc<Vec<Entry>> = Rc::new(
