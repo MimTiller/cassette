@@ -51,11 +51,6 @@ pub mod theme;
 // Blocked list + block/unblock + the blocked-message placeholder.
 mod blocks;
 
-// Standalone component, not wired into any screen yet — same "declared so it
-// compiles, referenced by nothing" shape as `profile_settings`. Lives under
-// `components/`; the `#[path]` keeps this a one-file add (no `mod.rs`).
-#[path = "components/idle_timer_badge.rs"]
-mod idle_timer_badge;
 #[path = "components/message_timestamp_tooltip.rs"]
 mod message_timestamp_tooltip;
 #[path = "components/edited_label.rs"]

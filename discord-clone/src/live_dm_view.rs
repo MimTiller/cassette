@@ -581,17 +581,22 @@ fn live_dm_conversation(
     // reconstructible from `Copy` captures, so the element is cheaply rebuilt
     // in place.
     let text: Signal<String> = signal(String::new());
+    // One rounded bar (Discord's composer, and the channel composer's shape):
+    // `BG_INPUT` fill, 44px tall, 8px corners; the borderless input fills
+    // most of it and the GIF icon sits inside on the right.
     let composer_style = StyleRules {
-        padding_top: Some(px(12.0)),
-        padding_bottom: Some(px(12.0)),
-        padding_left: Some(px(16.0)),
-        padding_right: Some(px(16.0)),
-        border_top_width: Some(border_width(1.0)),
-        border_top_color: Some(col(theme::BG_TERTIARY)),
+        min_height: Some(px(44.0)),
+        padding_left: Some(px(4.0)),
+        padding_right: Some(px(4.0)),
+        background: Some(col(theme::BG_INPUT)),
+        gap: Some(px(8.0)),
         position: Some(runtime_core::Position::Relative),
         flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Center),
-        gap: Some(px(8.0)),
+        border_top_left_radius: Some(px(8.0)),
+        border_top_right_radius: Some(px(8.0)),
+        border_bottom_left_radius: Some(px(8.0)),
+        border_bottom_right_radius: Some(px(8.0)),
         ..Default::default()
     };
     let input_style = StyleRules {

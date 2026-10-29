@@ -12,45 +12,39 @@ pub(super) struct ComposerParts {
 pub(super) fn build(s: &ShellState) -> ComposerParts {
     let ShellState { active_live_channel, attach_busy, attach_error, attach_next_key, composer, emoji_open, gateway, gif_open, live_channels, live_messages, pending_attachment, reply_ctx, reply_target, send_failed, .. } = s.clone();
     // --- composer --------------------------------------------------------
+    // One rounded bar holds the whole composer row: the '+' attach icon on
+    // the left, the borderless text input filling the middle, and the GIF
+    // and emoji icon buttons inside on the right (Discord's composer).
+    // `COMPOSER` (theme's BG_INPUT, #383a40) is the bar's fill, 44px tall,
+    // 8px corners; the input itself is transparent so the bar reads as one
+    // surface.
     let composer_style = StyleRules {
-        padding_top: Some(px(12.0)),
-        padding_bottom: Some(px(12.0)),
-        padding_left: Some(px(16.0)),
-        padding_right: Some(px(16.0)),
-        border_top_width: Some(border_width(1.0)),
-        border_top_color: Some(col(BORDER)),
+        min_height: Some(px(44.0)),
+        padding_left: Some(px(4.0)),
+        padding_right: Some(px(4.0)),
+        background: Some(col(COMPOSER)),
+        gap: Some(px(8.0)),
         flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Center),
-        gap: Some(px(8.0)),
+        border_top_left_radius: Some(px(8.0)),
+        border_top_right_radius: Some(px(8.0)),
+        border_bottom_left_radius: Some(px(8.0)),
+        border_bottom_right_radius: Some(px(8.0)),
         ..Default::default()
     };
+    // The text input fills the middle of the bar: transparent so the bar's
+    // own background reads as one surface. Its icon slots (the '+' and the
+    // smiley) sit inside the bar too — transparent chips that lighten
+    // (`BG_HOVER` fill, `INTERACTIVE` glyph) while hovered, the `nav_row`
+    // hover-chip pattern from `settings_suite`.
     let input_style = StyleRules {
         flex_grow: Some(grow(1.0)),
         height: Some(px(40.0)),
         padding_left: Some(px(12.0)),
         padding_right: Some(px(12.0)),
-        background: Some(col(COMPOSER)),
+        background: Some(col("transparent")),
         color: Some(col(TEXT)),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
         ..borderless_input()
-    };
-    // Circular muted-grey icon buttons flanking the composer input — the '+'
-    // attachment affordance on the left (stages/unstages a mock attachment),
-    // the smile emoji affordance on the right (toggles the emoji popover).
-    let icon_button_style = StyleRules {
-        width: Some(px(28.0)),
-        height: Some(px(28.0)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        background: Some(col(COMPOSER)),
-        border_top_left_radius: Some(px(14.0)),
-        border_top_right_radius: Some(px(14.0)),
-        border_bottom_left_radius: Some(px(14.0)),
-        border_bottom_right_radius: Some(px(14.0)),
-        ..Default::default()
     };
 
     // One send action, fired by the Enter key on the composer (Discord has no
@@ -613,6 +607,11 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
         (send_enter)(ev)
     };
 
+    // Per-icon hover chips inside the bar (the `nav_row` pattern in
+    // `settings_suite`: a `hovered` signal fed by `on_hover`, read by the
+    // slot's style and its glyph colour).
+    let attach_hovered: Signal<bool> = signal(false);
+    let emoji_hovered: Signal<bool> = signal(false);
 
     // The composer column: built from the send handlers (enter/stop/close)
     // defined in the closures above.
@@ -646,9 +645,25 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                 SlashCommandDropdown()
             }
             view(style = composer_style) {
-                view(style = icon_button_style.clone()) {
-                    icon(PLUS).color(|| theme::live(TEXT_MUTED)).size(16.0)
+                // '+' icon slot inside the bar, on the left: transparent
+                // chip that lightens (BG_HOVER) and the glyph lightens
+                // (INTERACTIVE) while hovered.
+                view(style = move || StyleRules {
+                    width: Some(px(28.0)),
+                    height: Some(px(28.0)),
+                    align_items: Some(AlignItems::Center),
+                    justify_content: Some(JustifyContent::Center),
+                    flex_shrink: Some(grow(0.0)),
+                    background: Some(col(if attach_hovered.get() { BG_HOVER } else { "transparent" })),
+                    border_top_left_radius: Some(px(14.0)),
+                    border_top_right_radius: Some(px(14.0)),
+                    border_bottom_left_radius: Some(px(14.0)),
+                    border_bottom_right_radius: Some(px(14.0)),
+                    ..Default::default()
+                }, test_id = "composer-attach") {
+                    icon(PLUS).color(move || theme::live(if attach_hovered.get() { theme::INTERACTIVE } else { TEXT_MUTED })).size(16.0)
                 }
+                .on_hover(move |on| attach_hovered.set(on))
                 // `+` = open the file picker and stage a real image
                 // attachment (up to the shared per-message cap). The
                 // strip above the composer mirrors the staged list.
@@ -662,9 +677,22 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                 // GIF = open/close the GIF picker (closes the emoji one,
                 // like the reference app). Chip shared with the DM composer.
                 gif_button(gif_open, Some(emoji_open))
-                view(style = icon_button_style) {
-                    icon(SMILE).color(|| theme::live(TEXT_MUTED)).size(16.0)
+                view(style = move || StyleRules {
+                    width: Some(px(28.0)),
+                    height: Some(px(28.0)),
+                    align_items: Some(AlignItems::Center),
+                    justify_content: Some(JustifyContent::Center),
+                    flex_shrink: Some(grow(0.0)),
+                    background: Some(col(if emoji_hovered.get() { BG_HOVER } else { "transparent" })),
+                    border_top_left_radius: Some(px(14.0)),
+                    border_top_right_radius: Some(px(14.0)),
+                    border_bottom_left_radius: Some(px(14.0)),
+                    border_bottom_right_radius: Some(px(14.0)),
+                    ..Default::default()
+                }, test_id = "composer-emoji") {
+                    icon(SMILE).color(move || theme::live(if emoji_hovered.get() { theme::INTERACTIVE } else { TEXT_MUTED })).size(16.0)
                 }
+                .on_hover(move |on| emoji_hovered.set(on))
                 // Smile = open/close the emoji popover (a `Copy` handle
                 // on `emoji_open`, mirroring the attachment button).
                 .on_touch(move |ev| {

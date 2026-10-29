@@ -569,7 +569,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
         }) {
             view(style = card_style) {
                 view(style = logo_style) {
-                    text(style = logo_text_style) { "D".to_string() }
+                    text(style = logo_text_style) { "C".to_string() }
                 }
                 form
             }

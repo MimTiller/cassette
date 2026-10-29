@@ -9,7 +9,7 @@ pub(super) struct SidebarParts {
 }
 
 pub(super) fn build(s: &ShellState) -> SidebarParts {
-    let ShellState { active_live_channel, active_live_server, authed, cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, joined_voice, live_at_bottom, live_chan_menu, live_channels, live_collapsed, live_members, live_mention_rev, live_scroll_handle, live_servers, live_unread, live_unread_rev, member_panel_width, muted, notif_mode, profile_mode, rc_busy, rc_cid, rc_err, rc_name, rc_open, server_menu_open, shortcuts_mode, sidebar_width, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, user_status, .. } = s.clone();
+    let ShellState { active_live_channel, active_live_server, cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, joined_voice, live_at_bottom, live_chan_menu, live_channels, live_collapsed, live_members, live_mention_rev, live_scroll_handle, live_servers, live_unread, live_unread_rev, member_panel_width, muted, notif_mode, profile_mode, rc_busy, rc_cid, rc_err, rc_name, rc_open, server_menu_open, sidebar_width, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, user_status, .. } = s.clone();
     // --- channel sidebar -------------------------------------------------
     // Width is driven by the `sidebar_width` signal (a thin drag handle on the
     // sidebar's right edge resizes it). A rules *closure* so the width
@@ -60,8 +60,6 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
     let user_profile_mode = profile_mode.clone();
     // Notification panel toggle, cloned the same way.
     let user_notif_mode = notif_mode.clone();
-    // Keyboard shortcuts toggle, cloned the same way.
-    let user_shortcuts_mode = shortcuts_mode.clone();
     // The `collapsed` map is `Rc<RefCell<..>>` (not `Copy`, since `RefCell`
     // isn't `Copy`). The key and render closures are both `move`, so each
     // captures its own clone; the shared `RefCell` inside keeps them in sync.
@@ -131,10 +129,8 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                 let user = user_panel(
                     user_status,
                     joined_voice,
-                    authed,
                     user_profile_mode,
                     user_notif_mode,
-                    user_shortcuts_mode,
                     muted,
                     deafened,
                 );
@@ -698,10 +694,8 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                     let user = user_panel(
                         user_status,
                         joined_voice,
-                        authed,
                         user_profile_mode,
                         user_notif_mode,
-                        user_shortcuts_mode,
                         muted,
                         deafened,
                     );

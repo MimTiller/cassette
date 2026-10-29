@@ -5,10 +5,18 @@
 use crate::theme;
 use super::*;
 
-/// The bottom-left user profile section: avatar (with status dot), name, and
-/// status line. Identity comes from the data model's `USER` constant; the
-/// live presence status comes from the `user_status` signal, so the strip can
-/// show Idle / DND without touching the data.
+/// The bottom-left user profile section, as Discord has it: a single row —
+/// avatar (with status dot) and name/status on the left, and the mic-mute,
+/// deafen, and settings-gear icon buttons on the right. Identity comes from
+/// the data model's `USER` constant; the live presence status comes from the
+/// `user_status` signal, so the strip can show Idle / DND without touching
+/// the data.
+///
+/// Clicking the avatar opens the user's own profile: `profile_mode` flips
+/// and `app_shell` shows the full-screen User Settings at its Profile
+/// section. Log Out and the keyboard shortcuts are not repeated here — both
+/// are rows in the User Settings sidebar the gear opens ("Log Out" under the
+/// divider; "Keybinds" among the APP SETTINGS sections).
 ///
 /// While the user is in a voice channel, the name + status line becomes a
 /// voice-connection line: a green "Voice Connected" (Discord's actual text),
@@ -16,20 +24,11 @@ use super::*;
 /// The whole strip is wrapped in a `switch` keyed on `(status, voice_name?)`
 /// so any of those changes re-renders the strip (the key is value-deduped,
 /// like every other `switch` here).
-///
-/// The strip is two rows (the 240px sidebar can't fit the identity, the
-/// Profile/Log Out pills, and the voice-action icons on one line): row 1 is
-/// the avatar + name/status, row 2 is a control row — the mic-mute, deafen,
-/// settings-gear, and keyboard-shortcuts ('?') icon buttons (Discord's
-/// user-panel actions) on the left, the Leave button (voice only) and the
-/// Profile / Log Out pills on the right.
 pub(super) fn user_panel(
     user_status: Signal<Status>,
     joined_voice: Signal<Option<(u32, u32)>>,
-    authed: Signal<bool>,
     profile_mode: Signal<bool>,
     notif_mode: Signal<bool>,
-    shortcuts_mode: Signal<bool>,
     muted: Signal<bool>,
     deafened: Signal<bool>,
 ) -> Element {
@@ -55,8 +54,6 @@ pub(super) fn user_panel(
                 user.name.to_string()
             };
             let voice_name = voice_name.clone();
-            // Two rows (see the fn doc): identity on top, the icon-button
-            // control row beneath.
             let panel_style = StyleRules {
                 padding_top: Some(px(8.0)),
                 padding_bottom: Some(px(8.0)),
@@ -119,9 +116,9 @@ pub(super) fn user_panel(
             let text_stack = StyleRules {
                 flex_direction: Some(FlexDirection::Column),
                 flex_grow: Some(grow(1.0)),
-                // Only this column absorbs row shrinkage (the avatar is
-                // fixed): the name must keep ~40px so "you" renders in full
-                // instead of clipping to "yo".
+                // Only this column absorbs row shrinkage (the avatar and the
+                // icon buttons are fixed): the name must keep ~40px so "you"
+                // renders in full instead of clipping to "yo".
                 min_width: Some(px(40.0)),
                 overflow: Some(Overflow::Hidden),
                 ..Default::default()
@@ -217,11 +214,11 @@ pub(super) fn user_panel(
                 None => None,
             };
 
-            // Click the avatar to cycle the live status (Discord's
-            // avatar-click status menu, simplified to a one-click cycle:
-            // Online → Idle → DND → Online). The touch target is the avatar
-            // only, not the whole row — the Leave button lives in the same
-            // row while connected, and its own `on_touch` owns that region.
+            // Click the avatar to open the user's own profile settings —
+            // Discord's user-panel behavior of tapping the avatar/name area.
+            // The touch target is the avatar only (not the whole row) so the
+            // Leave button keeps its own region while connected.
+            let profile_open = profile_mode.clone();
             // When the signed-in account has an uploaded avatar, the image
             // sits under the status dot (same 32px circle, cover-cropped);
             // the initial-circle branch renders exactly as before.
@@ -257,8 +254,7 @@ pub(super) fn user_panel(
                     }
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
-                            let touch = user_status;
-                            touch.set(touch.get().next());
+                            profile_open.set(true);
                         }
                         TouchResponse::CONSUMED
                     })
@@ -271,120 +267,20 @@ pub(super) fn user_panel(
                     }
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
-                            let touch = user_status;
-                            touch.set(touch.get().next());
+                            profile_open.set(true);
                         }
                         TouchResponse::CONSUMED
                     })
                 }
-            };
-            // Log Out: flips the shared `authed` signal back to false, which
-            // unmounts this tree and re-mounts the login screen (the `switch`
-            // key in `app()` re-evaluates on it). Same view+on_touch pill the
-            // Leave button uses, so it fits the row's styling.
-            // Compact pill: 6px padding + 11px type. This row holds the
-            // avatar, name, 2 pills, and the mic/deafen/settings icons, so the
-            // tight 6px is part of the width budget in
-            // `controls_row_fits_224px_sidebar`.
-            let logout_style = StyleRules {
-                height: Some(px(24.0)),
-                padding_left: Some(px(6.0)),
-                padding_right: Some(px(6.0)),
-                background: Some(col(BG_SIDEBAR)),
-                color: Some(col(TEXT_MUTED)),
-                align_items: Some(AlignItems::Center),
-                justify_content: Some(JustifyContent::Center),
-                font_size: Some(px(11.0)),
-                font_weight: Some(FontWeight::SemiBold),
-                // The row must shrink the name column, never the pills:
-                // a squashed pill is what made "Log Out" wrap to two lines.
-                flex_shrink: Some(grow(0.0)),
-                border_top_left_radius: Some(px(6.0)),
-                border_top_right_radius: Some(px(6.0)),
-                border_bottom_left_radius: Some(px(6.0)),
-                border_bottom_right_radius: Some(px(6.0)),
-                ..Default::default()
-            };
-            let logout = authed.clone();
-            let logout_text_style = StyleRules {
-                color: Some(col(TEXT_MUTED)),
-                font_size: Some(px(11.0)),
-                font_weight: Some(FontWeight::SemiBold),
-                ..Default::default()
-            };
-            let logout_btn = ui! {
-                view(style = logout_style, test_id = "logout") {
-                    text(style = logout_text_style) { "Log Out".to_string() }
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        // Drop the persisted session so a refresh after logout
-                        // doesn't silently restore it, and clear the one-shot
-                        // note so this (a real logout) shows a clean form — no
-                        // spurious "session expired".
-                        crate::auth::clear_session();
-                        // Ask the backend to clear the httpOnly session cookie
-                        // too — both halves are needed: storage keys gone AND
-                        // cookie gone, or a reload would replay the dead
-                        // session.
-                        crate::auth::request_logout();
-                        *SESSION_NOTE
-                            .lock()
-                            .unwrap_or_else(|p| p.into_inner()) = None;
-                        logout.set(false);
-                    }
-                    TouchResponse::CONSUMED
-                })
-            };
-            // Profile Settings entry: a "Profile" pill (styled like Log Out)
-            // that opens the full-screen `profile_settings` screen. `app_shell`
-            // owns `profile_mode` and renders the overlay when it flips on.
-            let profile_open = profile_mode.clone();
-            // Compact like Log Out (6px padding): the three pills plus the
-            // three icon buttons must all fit the 224px control row — see
-            // `controls_row_fits_224px_sidebar`.
-            let profile_btn = ui! {
-                view(style = StyleRules {
-                    height: Some(px(24.0)),
-                    padding_left: Some(px(6.0)),
-                    padding_right: Some(px(6.0)),
-                    background: Some(col(BG_SIDEBAR)),
-                    align_items: Some(AlignItems::Center),
-                    justify_content: Some(JustifyContent::Center),
-                    font_size: Some(px(11.0)),
-                    font_weight: Some(FontWeight::SemiBold),
-                    flex_shrink: Some(grow(0.0)),
-                    border_top_left_radius: Some(px(6.0)),
-                    border_top_right_radius: Some(px(6.0)),
-                    border_bottom_left_radius: Some(px(6.0)),
-                    border_bottom_right_radius: Some(px(6.0)),
-                    ..Default::default()
-                }, test_id = "profile") {
-                    text(style = StyleRules {
-                        color: Some(col(TEXT_MUTED)),
-                        font_size: Some(px(11.0)),
-                        font_weight: Some(FontWeight::SemiBold),
-                        ..Default::default()
-                    }) { "Profile".to_string() }
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        profile_open.set(true);
-                    }
-                    TouchResponse::CONSUMED
-                })
             };
             // Mic / deafen / settings icon buttons (Discord's user-panel
             // voice actions). The signals are created in `app_shell` and
             // owned here — pure local UI state, no backend call. The mic
             // swaps to a slashed glyph when muted; Lucide has no
             // headphones-off, so deafened colors the icon red instead.
-            // 18px (not 20) + a 6px row gap: the control row must fit all
-            // three icons AND the Profile / Log Out / Leave pills in the
-            // 224px the 240px sidebar leaves after the panel's 8px side
-            // padding — see `controls_row_fits_224px_sidebar` for the
-            // arithmetic. 20px icons + 8px gaps overflowed it and clipped
-            // Log Out (sidebar `Overflow::Hidden`), which was the regression.
+            // 18px icons: the single row must fit the avatar, the name
+            // column and the three icon buttons in the 224px the 240px
+            // sidebar leaves after the panel's 8px side padding.
             let icon_btn_style = StyleRules {
                 width: Some(px(18.0)),
                 height: Some(px(18.0)),
@@ -425,8 +321,10 @@ pub(super) fn user_panel(
                     TouchResponse::CONSUMED
                 })
             };
-            // Settings gear: opens the full-screen Notification Settings
-            // overlay (the same build-once/toggle idiom as the Profile pill).
+            // Settings gear: opens the full-screen User Settings overlay
+            // (the same build-once/toggle idiom as before). Log Out and the
+            // Keybinds section live in that screen's sidebar, so the panel
+            // itself carries only the three voice affordances.
             let notif_open = notif_mode.clone();
             let settings_btn = ui! {
                 view(style = icon_btn_style.clone(), test_id = "user-settings") {
@@ -439,58 +337,9 @@ pub(super) fn user_panel(
                     TouchResponse::CONSUMED
                 })
             };
-            // Keyboard shortcuts: a '?' icon next to the gear opens the
-            // full-screen shortcuts overlay (same idiom as the gear).
-            let shortcuts_open = shortcuts_mode.clone();
-            let shortcuts_btn = ui! {
-                view(style = icon_btn_style.clone(), test_id = "user-shortcuts") {
-                    icon(CIRCLE_HELP).color(|| theme::live(TEXT_MUTED)).size(15.0)
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        shortcuts_open.set(true);
-                    }
-                    TouchResponse::CONSUMED
-                })
-            };
-            // Idle toggle: a `MOON` icon that flips the user's live presence
-            // status to `Status::Idle` (and cycles on to clear it when already
-            // idle). It is the status/voice control the profile strip's avatar
-            // click implements, exposed as a one-tap icon here with the mic and
-            // deafen. It reads/writes the SAME `user_status` signal the avatar
-            // uses, so toggling it regroups the user in the member list and
-            // updates the strip's status line. Driven through `idle_timer_badge`
-            // (the component's correct home is this control row, not the
-            // message list).
-            let idle_status = user_status.clone();
-            let idle_btn = IdleTimerBadge(idle_status);
-            // Row 2: the icon buttons left, the pills (plus Leave, voice only)
-            // pushed to the right. Its own gap (6px, not the identity row's
-            // 8px) is deliberate — the extra 2px per gap is part of what lets
-            // all three icons plus up to three pills fit the 224px; the
-            // identity row above keeps the roomier 8px.
-            let controls_row_style = StyleRules {
-                min_height: Some(px(24.0)),
-                gap: Some(px(6.0)),
-                flex_direction: Some(FlexDirection::Row),
-                align_items: Some(AlignItems::Center),
-                ..Default::default()
-            };
-            let controls_row = ui! {
-                view(style = controls_row_style) {
-                    mic_btn
-                    deafen_btn
-                    settings_btn
-                    shortcuts_btn
-                    idle_btn
-                    view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
-                    if let Some(btn) = leave_btn {
-                        btn
-                    }
-                    profile_btn
-                    logout_btn
-                }
-            };
+            // One row (Discord's user panel): avatar + name/status pushed
+            // left by the growing text column, the three icon buttons at the
+            // right; the Leave button (voice only) sits just before them.
             ui! {
                 view(style = panel_style) {
                     view(style = row_style) {
@@ -505,8 +354,13 @@ pub(super) fn user_panel(
                             }
                             second_line
                         }
+                        if let Some(btn) = leave_btn {
+                            btn
+                        }
+                        mic_btn
+                        deafen_btn
+                        settings_btn
                     }
-                    controls_row
                 }
             }
         },

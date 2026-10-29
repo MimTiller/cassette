@@ -47,11 +47,10 @@ use runtime_core::primitives::portal::{AnchorTarget, ElementAlign, ElementSide};
 // picked file through `stage_attachment` (the same encode as avatars).
 use file_picker::{FilePicker, PickRequest, PickOutcome, MediaKind};
 use icons_lucide::{
-    CHEVRON_DOWN, CHEVRON_RIGHT, CIRCLE_HELP, HASH, HEADPHONES,
+    CHEVRON_DOWN, CHEVRON_RIGHT, HASH, HEADPHONES,
     MIC, MIC_OFF, PIN, PLUS, SETTINGS, SMILE, SMILE_PLUS,
     USER_PLUS, USERS, VOLUME_2, MESSAGE_CIRCLE, MENU,
 };
-use crate::idle_timer_badge::IdleTimerBadge;
 use crate::server_settings_panel::ServerSettingsPanel;
 
 use runtime_shared::time::local_offset_minutes;
