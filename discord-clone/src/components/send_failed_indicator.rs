@@ -34,7 +34,7 @@
 //!   `when` boundary).
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, ui, AlignItems, Element, FlexDirection, Position, StyleRules, TouchPhase,
     TouchResponse,
@@ -60,15 +60,11 @@ pub fn SendFailedIndicator(failed: runtime_core::Signal<bool>) -> Element {
                 padding_top: Some(px(5.0)),
                 padding_bottom: Some(px(5.0)),
                 background: Some(col(theme::BG_SECONDARY)),
-                border_top_left_radius: Some(px(8.0)),
-                border_top_right_radius: Some(px(8.0)),
-                border_bottom_left_radius: Some(px(8.0)),
-                border_bottom_right_radius: Some(px(8.0)),
                 margin_top: Some(px(6.0)),
                 margin_bottom: Some(px(6.0)),
                 margin_left: Some(px(16.0)),
                 margin_right: Some(px(16.0)),
-                ..Default::default()
+                ..rounded(8.0)
             }) {
                 // The warning glyph — a static string literal, so it bakes to
                 // `TextSource::Static` (no reactive machinery).

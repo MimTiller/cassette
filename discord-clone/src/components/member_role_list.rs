@@ -25,7 +25,7 @@
 //!   static rule lines. A real iterator (`.iter()`) is required, hence `.iter()`.
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{component, ui, AlignItems, Element, FlexDirection, FontWeight, StyleRules};
 
 // Discord dark palette (kept local so the component is self-contained).
@@ -77,11 +77,7 @@ pub fn MemberRoleList() -> Element {
                     padding_bottom: Some(px(2.0)),
                     padding_left: Some(px(8.0)),
                     background: Some(col(color)),
-                    border_top_left_radius: Some(px(10.0)),
-                    border_top_right_radius: Some(px(10.0)),
-                    border_bottom_left_radius: Some(px(10.0)),
-                    border_bottom_right_radius: Some(px(10.0)),
-                    ..Default::default()
+                    ..rounded(10.0)
                 }) {
                     text(style = StyleRules {
                         font_size: Some(px(11.0)),

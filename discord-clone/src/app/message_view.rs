@@ -67,11 +67,7 @@ pub(super) fn attachment_row(atts: &[discord_server::server_settings::MessageAtt
                     height: Some(px(h)),
                     flex_shrink: Some(grow(0.0)),
                     object_fit: Some(ObjectFit::Contain),
-                    border_top_left_radius: Some(px(8.0)),
-                    border_top_right_radius: Some(px(8.0)),
-                    border_bottom_left_radius: Some(px(8.0)),
-                    border_bottom_right_radius: Some(px(8.0)),
-                    ..Default::default()
+                    ..rounded(8.0)
                 },
             )
         }
@@ -183,11 +179,7 @@ pub(super) fn channel_anchor(channel_name: &str) -> Element {
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
                 background: Some(col(BG_ELEVATED)),
-                border_top_left_radius: Some(px(8.0)),
-                border_top_right_radius: Some(px(8.0)),
-                border_bottom_left_radius: Some(px(8.0)),
-                border_bottom_right_radius: Some(px(8.0)),
-                ..Default::default()
+                ..rounded(8.0)
             }) {
                 text(style = StyleRules {
                     font_size: Some(px(12.0)),
@@ -326,11 +318,7 @@ pub(super) fn message_body(body: &str) -> Element {
                     flex_shrink: Some(grow(0.0)),
                     object_fit: Some(ObjectFit::Contain),
                     margin_top: Some(px(2.0)),
-                    border_top_left_radius: Some(px(8.0)),
-                    border_top_right_radius: Some(px(8.0)),
-                    border_bottom_left_radius: Some(px(8.0)),
-                    border_bottom_right_radius: Some(px(8.0)),
-                    ..Default::default()
+                    ..rounded(8.0)
                 },
             )
         };
@@ -938,10 +926,6 @@ pub(super) fn message_overflow_menu(
                     // showing a scrollbar if a row ever wraps past the box.
                     overflow: Some(Overflow::Hidden),
                     background: Some(col(theme::BG_FLOATING)),
-                    border_top_left_radius: Some(px(8.0)),
-                    border_top_right_radius: Some(px(8.0)),
-                    border_bottom_left_radius: Some(px(8.0)),
-                    border_bottom_right_radius: Some(px(8.0)),
                     border_top_width: Some(border_width(1.0)),
                     border_right_width: Some(border_width(1.0)),
                     border_bottom_width: Some(border_width(1.0)),
@@ -950,7 +934,7 @@ pub(super) fn message_overflow_menu(
                     border_right_color: Some(col(BORDER)),
                     border_bottom_color: Some(col(BORDER)),
                     border_left_color: Some(col(BORDER)),
-                    ..Default::default()
+                    ..rounded(8.0)
                 }) {
                     { menu_row("Copy text", on_copy.clone(), open) }
                     { menu_row("Pin message", pin.clone(), open) }
@@ -1354,12 +1338,8 @@ pub(super) fn live_edit_row(
             padding_bottom: Some(px(6.0)),
             padding_left: Some(px(10.0)),
             padding_right: Some(px(10.0)),
-            border_top_left_radius: Some(px(8.0)),
-            border_top_right_radius: Some(px(8.0)),
-            border_bottom_left_radius: Some(px(8.0)),
-            border_bottom_right_radius: Some(px(8.0)),
             flex_grow: Some(grow(1.0)),
-            ..borderless_input()
+            ..with_radius(borderless_input(), 8.0)
         };
         ui! {
             text_input(value = live_edit_text, autofocus = true, on_change = on_edit_type, placeholder = "Edit message", style = input_style, test_id = "edit-input")
@@ -1388,15 +1368,11 @@ pub(super) fn live_edit_row(
             padding_left: Some(px(10.0)),
             padding_right: Some(px(10.0)),
             background: Some(col(bg)),
-            border_top_left_radius: Some(px(8.0)),
-            border_top_right_radius: Some(px(8.0)),
-            border_bottom_left_radius: Some(px(8.0)),
-            border_bottom_right_radius: Some(px(8.0)),
             flex_shrink: Some(grow(0.0)),
             font_size: Some(px(12.0)),
             font_weight: Some(FontWeight::SemiBold),
             color: Some(col(TEXT)),
-            ..Default::default()
+            ..rounded(8.0)
         };
         let label_style = StyleRules {
             font_size: Some(px(12.0)),

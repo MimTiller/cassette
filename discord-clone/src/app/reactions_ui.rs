@@ -267,12 +267,8 @@ pub(super) fn reaction_picker_overlay(
                         left: Some(px(card_left)),
                         top: Some(px(card_top)),
                         background: Some(col(BG_ELEVATED)),
-                        border_top_left_radius: Some(px(10.0)),
-                        border_top_right_radius: Some(px(10.0)),
-                        border_bottom_left_radius: Some(px(10.0)),
-                        border_bottom_right_radius: Some(px(10.0)),
                         overflow: Some(Overflow::Hidden),
-                        ..Default::default()
+                        ..rounded(10.0)
                     }) {
                         EmojiPicker(on_pick = Some(pick_cb))
                     }

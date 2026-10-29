@@ -13,7 +13,7 @@
 //! paths carry valid data URLs, which paint or never mount.
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     ui, AlignItems, Element, FontWeight, JustifyContent, ObjectFit, Position,
     StyleRules, Tokenized,
@@ -134,11 +134,7 @@ pub fn avatar_chip(name: &str, tint: &str, size: f32, radius: f32) -> Element {
                         height: Some(px(size)),
                         flex_shrink: Some(grow(0.0)),
                         object_fit: Some(ObjectFit::Cover),
-                        border_top_left_radius: Some(px(radius)),
-                        border_top_right_radius: Some(px(radius)),
-                        border_bottom_left_radius: Some(px(radius)),
-                        border_bottom_right_radius: Some(px(radius)),
-                        ..Default::default()
+                        ..rounded(radius)
                     },
                 )
             }
@@ -152,11 +148,7 @@ pub fn avatar_chip(name: &str, tint: &str, size: f32, radius: f32) -> Element {
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
                 background: Some(col(tint)),
-                border_top_left_radius: Some(px(radius)),
-                border_top_right_radius: Some(px(radius)),
-                border_bottom_left_radius: Some(px(radius)),
-                border_bottom_right_radius: Some(px(radius)),
-                ..Default::default()
+                ..rounded(radius)
             }) {
                 text(style = StyleRules {
                     font_size: Some(px(size * 0.44)),

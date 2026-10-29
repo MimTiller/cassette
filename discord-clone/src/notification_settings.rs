@@ -14,7 +14,7 @@
 //! capture a copy of the same underlying signal.
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, Position, Signal, StyleRules,
     TouchPhase, TouchResponse,
@@ -35,11 +35,7 @@ fn option_row(label: &'static str, idx: u32, selected: Signal<u32>) -> Element {
             padding_left: Some(px(12.0)),
             padding_right: Some(px(12.0)),
             background: Some(col(theme::BG_PRIMARY)),
-            border_top_left_radius: Some(px(6.0)),
-            border_top_right_radius: Some(px(6.0)),
-            border_bottom_left_radius: Some(px(6.0)),
-            border_bottom_right_radius: Some(px(6.0)),
-            ..Default::default()
+            ..rounded(6.0)
         }) {
             if selected.get() == idx {
                 text(style = StyleRules {
@@ -88,11 +84,7 @@ pub fn NotificationSettings() -> Element {
             padding_left: Some(px(16.0)),
             padding_right: Some(px(16.0)),
             background: Some(col(theme::BG_SECONDARY)),
-            border_top_left_radius: Some(px(8.0)),
-            border_top_right_radius: Some(px(8.0)),
-            border_bottom_left_radius: Some(px(8.0)),
-            border_bottom_right_radius: Some(px(8.0)),
-            ..Default::default()
+            ..rounded(8.0)
         }) {
             text(style = StyleRules {
                 font_size: Some(px(14.0)),

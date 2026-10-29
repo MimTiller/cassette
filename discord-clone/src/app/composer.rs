@@ -26,11 +26,7 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
         gap: Some(px(8.0)),
         flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Center),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        ..rounded(8.0)
     };
     // The text input fills the middle of the bar: transparent so the bar's
     // own background reads as one surface. Its icon slots (the '+' and the
@@ -363,12 +359,8 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                     bottom: Some(px(60.0)),
                     max_height: Some(px(190.0)),
                     background: Some(col(BG_SIDEBAR)),
-                    border_top_left_radius: Some(px(8.0)),
-                    border_top_right_radius: Some(px(8.0)),
-                    border_bottom_left_radius: Some(px(8.0)),
-                    border_bottom_right_radius: Some(px(8.0)),
                     overflow: Some(Overflow::Hidden),
-                    ..Default::default()
+                    ..rounded(8.0)
                 }) {
                     scroll_view(style = StyleRules {
                         flex_grow: Some(grow(1.0)),
@@ -482,11 +474,7 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                             height: Some(px(16.0)),
                             align_items: Some(AlignItems::Center),
                             justify_content: Some(JustifyContent::Center),
-                            border_top_left_radius: Some(px(8.0)),
-                            border_top_right_radius: Some(px(8.0)),
-                            border_bottom_left_radius: Some(px(8.0)),
-                            border_bottom_right_radius: Some(px(8.0)),
-                            ..Default::default()
+                            ..rounded(8.0)
                         }) {
                             text(style = StyleRules {
                                 font_size: Some(px(12.0)),
@@ -655,11 +643,7 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                     justify_content: Some(JustifyContent::Center),
                     flex_shrink: Some(grow(0.0)),
                     background: Some(col(if attach_hovered.get() { BG_HOVER } else { "transparent" })),
-                    border_top_left_radius: Some(px(14.0)),
-                    border_top_right_radius: Some(px(14.0)),
-                    border_bottom_left_radius: Some(px(14.0)),
-                    border_bottom_right_radius: Some(px(14.0)),
-                    ..Default::default()
+                    ..rounded(14.0)
                 }, test_id = "composer-attach") {
                     icon(PLUS).color(move || theme::live(if attach_hovered.get() { theme::INTERACTIVE } else { TEXT_MUTED })).size(16.0)
                 }
@@ -684,11 +668,7 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                     justify_content: Some(JustifyContent::Center),
                     flex_shrink: Some(grow(0.0)),
                     background: Some(col(if emoji_hovered.get() { BG_HOVER } else { "transparent" })),
-                    border_top_left_radius: Some(px(14.0)),
-                    border_top_right_radius: Some(px(14.0)),
-                    border_bottom_left_radius: Some(px(14.0)),
-                    border_bottom_right_radius: Some(px(14.0)),
-                    ..Default::default()
+                    ..rounded(14.0)
                 }, test_id = "composer-emoji") {
                     icon(SMILE).color(move || theme::live(if emoji_hovered.get() { theme::INTERACTIVE } else { TEXT_MUTED })).size(16.0)
                 }

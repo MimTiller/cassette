@@ -12,7 +12,7 @@ use runtime_core::{
     StyleRules, TouchPhase, TouchResponse, ui,
 };
 
-use crate::style_helpers::{col, pct, px};
+use crate::style_helpers::{col, pct, px, rounded};
 
 // The same Discord dark palette as `profile_settings.rs`. Kept local so the
 // overlay stays self-contained; the values mirror it exactly so the two
@@ -60,11 +60,7 @@ fn shortcut_row(s: &Shortcut) -> Element {
         padding_top: Some(px(2.0)),
         padding_bottom: Some(px(2.0)),
         background: Some(col(theme::BG_SELECTED)),
-        border_top_left_radius: Some(px(4.0)),
-        border_top_right_radius: Some(px(4.0)),
-        border_bottom_left_radius: Some(px(4.0)),
-        border_bottom_right_radius: Some(px(4.0)),
-        ..Default::default()
+        ..rounded(4.0)
     };
     let combo_text = s.combo.to_string();
     ui! {
@@ -109,11 +105,7 @@ pub fn keyboard_shortcuts_overlay(open: Signal<bool>) -> Element {
         justify_content: Some(JustifyContent::Center),
         color: Some(col(theme::TEXT_MUTED)),
         font_size: Some(px(16.0)),
-        border_top_left_radius: Some(px(6.0)),
-        border_top_right_radius: Some(px(6.0)),
-        border_bottom_left_radius: Some(px(6.0)),
-        border_bottom_right_radius: Some(px(6.0)),
-        ..Default::default()
+        ..rounded(6.0)
     };
     let close_text_style = StyleRules {
         color: Some(col(theme::TEXT_MUTED)),
@@ -133,10 +125,6 @@ pub fn keyboard_shortcuts_overlay(open: Signal<bool>) -> Element {
     let panel_style = StyleRules {
         width: Some(px(crate::app::mobile::fit_width(380.0))),
         background: Some(col(theme::BG_SECONDARY)),
-        border_top_left_radius: Some(px(10.0)),
-        border_top_right_radius: Some(px(10.0)),
-        border_bottom_left_radius: Some(px(10.0)),
-        border_bottom_right_radius: Some(px(10.0)),
         border_top_width: Some(border_width(1.0)),
         border_right_width: Some(border_width(1.0)),
         border_bottom_width: Some(border_width(1.0)),
@@ -151,7 +139,7 @@ pub fn keyboard_shortcuts_overlay(open: Signal<bool>) -> Element {
         padding_left: Some(px(20.0)),
         padding_right: Some(px(20.0)),
         padding_bottom: Some(px(16.0)),
-        ..Default::default()
+        ..rounded(10.0)
     };
 
     // Build the whole panel inline inside the `if` so the macro constructs it

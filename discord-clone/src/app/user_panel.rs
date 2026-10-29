@@ -80,11 +80,7 @@ pub(super) fn user_panel(
                 background: Some(col(user.color)),
                 // Fixed 32px circle: never squeeze it when the row is tight.
                 flex_shrink: Some(grow(0.0)),
-                border_top_left_radius: Some(px(16.0)),
-                border_top_right_radius: Some(px(16.0)),
-                border_bottom_left_radius: Some(px(16.0)),
-                border_bottom_right_radius: Some(px(16.0)),
-                ..Default::default()
+                ..rounded(16.0)
             };
             let initial_style = StyleRules {
                 font_size: Some(px(14.0)),
@@ -107,11 +103,7 @@ pub(super) fn user_panel(
                 border_right_color: Some(col(USER_BAR)),
                 border_bottom_color: Some(col(USER_BAR)),
                 border_left_color: Some(col(USER_BAR)),
-                border_top_left_radius: Some(px(6.0)),
-                border_top_right_radius: Some(px(6.0)),
-                border_bottom_left_radius: Some(px(6.0)),
-                border_bottom_right_radius: Some(px(6.0)),
-                ..Default::default()
+                ..rounded(6.0)
             };
             let text_stack = StyleRules {
                 flex_direction: Some(FlexDirection::Column),
@@ -184,11 +176,7 @@ pub(super) fn user_panel(
                         font_size: Some(px(11.0)),
                         font_weight: Some(FontWeight::SemiBold),
                         flex_shrink: Some(grow(0.0)),
-                        border_top_left_radius: Some(px(6.0)),
-                        border_top_right_radius: Some(px(6.0)),
-                        border_bottom_left_radius: Some(px(6.0)),
-                        border_bottom_right_radius: Some(px(6.0)),
-                        ..Default::default()
+                        ..rounded(6.0)
                     };
                     // `None` clears the join; the sidebar `switch` key
                     // includes `joined_voice`, so the voice rows rebuild too.
@@ -229,11 +217,7 @@ pub(super) fn user_panel(
                         height: Some(px(32.0)),
                         position: Some(Position::Relative),
                         flex_shrink: Some(grow(0.0)),
-                        border_top_left_radius: Some(px(16.0)),
-                        border_top_right_radius: Some(px(16.0)),
-                        border_bottom_left_radius: Some(px(16.0)),
-                        border_bottom_right_radius: Some(px(16.0)),
-                        ..Default::default()
+                        ..rounded(16.0)
                     }) {
                         image(
                             src = crate::auth::media_url(url.clone()),
@@ -243,11 +227,7 @@ pub(super) fn user_panel(
                                 height: Some(px(32.0)),
                                 flex_shrink: Some(grow(0.0)),
                                 object_fit: Some(ObjectFit::Cover),
-                                border_top_left_radius: Some(px(16.0)),
-                                border_top_right_radius: Some(px(16.0)),
-                                border_bottom_left_radius: Some(px(16.0)),
-                                border_bottom_right_radius: Some(px(16.0)),
-                                ..Default::default()
+                                ..rounded(16.0)
                             },
                         )
                         view(style = dot_style) {}

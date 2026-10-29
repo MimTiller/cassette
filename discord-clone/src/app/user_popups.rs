@@ -187,12 +187,8 @@ fn profile_card(
         width: Some(px(CARD_W)),
         flex_direction: Some(FlexDirection::Column),
         background: Some(col(theme::BG_USER_PANEL)),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
         overflow: Some(Overflow::Hidden),
-        ..Default::default()
+        ..rounded(8.0)
     };
     let Some(p) = profile else {
         return ui! {
@@ -218,11 +214,7 @@ fn profile_card(
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         background: Some(col(bg)),
-        border_top_left_radius: Some(px(4.0)),
-        border_top_right_radius: Some(px(4.0)),
-        border_bottom_left_radius: Some(px(4.0)),
-        border_bottom_right_radius: Some(px(4.0)),
-        ..Default::default()
+        ..rounded(4.0)
     };
     let button_text = StyleRules { font_size: Some(px(14.0)), font_weight: Some(FontWeight::SemiBold), color: Some(col(TEXT)), ..Default::default() };
     let since = match p.joined_server_at {
@@ -310,11 +302,7 @@ fn profile_card(
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
                 background: Some(col(theme::BG_USER_PANEL)),
-                border_top_left_radius: Some(px(44.0)),
-                border_top_right_radius: Some(px(44.0)),
-                border_bottom_left_radius: Some(px(44.0)),
-                border_bottom_right_radius: Some(px(44.0)),
-                ..Default::default()
+                ..rounded(44.0)
             }) {
                 { crate::avatar_chip::avatar_chip(name.as_str(), BUTTON, 80.0, 40.0) }
             }
@@ -376,21 +364,13 @@ fn role_chips(user_id: i64, in_server: bool, label: StyleRules) -> Element {
                 padding_left: Some(px(6.0)),
                 padding_right: Some(px(8.0)),
                 background: Some(col(if add { theme::BG_USER_PANEL } else { theme::BG_TERTIARY })),
-                border_top_left_radius: Some(px(4.0)),
-                border_top_right_radius: Some(px(4.0)),
-                border_bottom_left_radius: Some(px(4.0)),
-                border_bottom_right_radius: Some(px(4.0)),
-                ..Default::default()
+                ..rounded(4.0)
             }) {
                 view(style = StyleRules {
                     width: Some(px(10.0)),
                     height: Some(px(10.0)),
                     background: Some(fill),
-                    border_top_left_radius: Some(px(5.0)),
-                    border_top_right_radius: Some(px(5.0)),
-                    border_bottom_left_radius: Some(px(5.0)),
-                    border_bottom_right_radius: Some(px(5.0)),
-                    ..Default::default()
+                    ..rounded(5.0)
                 }) {}
                 text(style = StyleRules {
                     font_size: Some(px(12.0)),
@@ -545,11 +525,7 @@ fn user_menu(
                     flex_direction: Some(FlexDirection::Row),
                     align_items: Some(AlignItems::Center),
                     background: Some(col(if hovered.get() { if red { theme::DANGER_STRONG } else { theme::ACCENT_HOVER } } else { "transparent" })),
-                    border_top_left_radius: Some(px(4.0)),
-                    border_top_right_radius: Some(px(4.0)),
-                    border_bottom_left_radius: Some(px(4.0)),
-                    border_bottom_right_radius: Some(px(4.0)),
-                    ..Default::default()
+                    ..rounded(4.0)
                 }) {
                     text(style = move || StyleRules {
                         font_size: Some(px(14.0)),
@@ -578,11 +554,7 @@ fn user_menu(
             padding_top: Some(px(6.0)),
             padding_bottom: Some(px(6.0)),
             background: Some(col(theme::BG_FLOATING)),
-            border_top_left_radius: Some(px(6.0)),
-            border_top_right_radius: Some(px(6.0)),
-            border_bottom_left_radius: Some(px(6.0)),
-            border_bottom_right_radius: Some(px(6.0)),
-            ..Default::default()
+            ..rounded(6.0)
         }) { rows }
         .on_touch(|_| TouchResponse::CONSUMED)
     }

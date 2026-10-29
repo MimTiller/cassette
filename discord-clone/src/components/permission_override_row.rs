@@ -35,7 +35,7 @@
 //!   `Copy`).
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, StyleRules,
     Tokenized,
@@ -76,11 +76,7 @@ pub fn PermissionOverrideRow() -> Element {
             padding_left: Some(px(16.0)),
             padding_right: Some(px(16.0)),
             background: Some(col(theme::BG_PRIMARY)),
-            border_top_left_radius: Some(px(10.0)),
-            border_top_right_radius: Some(px(10.0)),
-            border_bottom_left_radius: Some(px(10.0)),
-            border_bottom_right_radius: Some(px(10.0)),
-            ..Default::default()
+            ..rounded(10.0)
         }) {
             // The hardcoded permission name.
             text(style = StyleRules {
@@ -111,10 +107,6 @@ pub fn PermissionOverrideRow() -> Element {
                             } else {
                                 theme::BG_SELECTED
                             })),
-                            border_top_left_radius: Some(px(8.0)),
-                            border_top_right_radius: Some(px(8.0)),
-                            border_bottom_left_radius: Some(px(8.0)),
-                            border_bottom_right_radius: Some(px(8.0)),
                             border_top_width: Some(border_width(if active {
                                 1.5
                             } else {
@@ -155,7 +147,7 @@ pub fn PermissionOverrideRow() -> Element {
                             } else {
                                 theme::BUTTON_SECONDARY
                             })),
-                            ..Default::default()
+                            ..rounded(8.0)
                         }
                     }
                 )

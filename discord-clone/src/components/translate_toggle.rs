@@ -31,7 +31,7 @@
 //!   `when` boundary).
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, StyleRules,
 };
@@ -75,11 +75,7 @@ pub fn TranslateToggle(
             padding_left: Some(px(20.0)),
             padding_right: Some(px(20.0)),
             background: Some(col(theme::BG_SECONDARY)),
-            border_top_left_radius: Some(px(8.0)),
-            border_top_right_radius: Some(px(8.0)),
-            border_bottom_left_radius: Some(px(8.0)),
-            border_bottom_right_radius: Some(px(8.0)),
-            ..Default::default()
+            ..rounded(8.0)
         }) {
             // Reactive branch: `if showTranslated.get() {…} else {…}` lowers to
             // a `when` (mounts the chosen branch, unmounts the other on toggle).
@@ -110,14 +106,10 @@ pub fn TranslateToggle(
                     padding_left: Some(px(16.0)),
                     padding_right: Some(px(16.0)),
                     background: Some(col(theme::ACCENT)),
-                    border_top_left_radius: Some(px(6.0)),
-                    border_top_right_radius: Some(px(6.0)),
-                    border_bottom_left_radius: Some(px(6.0)),
-                    border_bottom_right_radius: Some(px(6.0)),
                     flex_direction: Some(FlexDirection::Row),
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
-                    ..Default::default()
+                    ..rounded(6.0)
                 }
             )
         }

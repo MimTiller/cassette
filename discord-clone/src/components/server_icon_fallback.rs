@@ -23,7 +23,7 @@
 //!   the same shape `welcome_banner.rs` uses for its `format!` greeting).
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent, StyleRules,
 };
@@ -56,11 +56,7 @@ pub fn ServerIconFallback() -> Element {
             align_items: Some(AlignItems::Center),
             justify_content: Some(JustifyContent::Center),
             background: Some(col(theme::ACCENT)),
-            border_top_left_radius: Some(px(24.0)),
-            border_top_right_radius: Some(px(24.0)),
-            border_bottom_left_radius: Some(px(24.0)),
-            border_bottom_right_radius: Some(px(24.0)),
-            ..Default::default()
+            ..rounded(24.0)
         }) {
             text(style = StyleRules {
                 font_size: Some(px(18.0)),

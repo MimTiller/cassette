@@ -3,7 +3,7 @@
 //! one. Admins and the owner edit; everyone else sees the list. Members are
 //! given roles from their profile card.
 
-use crate::style_helpers::{borderless_input, col, px};
+use crate::style_helpers::{borderless_input, col, px, rounded, with_radius};
 use crate::theme;
 use discord_server::server_roles::{self, CustomRole};
 use runtime_core::{
@@ -19,11 +19,7 @@ const COLORS: [&str; 11] = [
 
 fn radius(r: f32) -> StyleRules {
     StyleRules {
-        border_top_left_radius: Some(px(r)),
-        border_top_right_radius: Some(px(r)),
-        border_bottom_left_radius: Some(px(r)),
-        border_bottom_right_radius: Some(px(r)),
-        ..Default::default()
+        ..rounded(r)
     }
 }
 
@@ -202,11 +198,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                         padding_left: Some(px(10.0)),
                         padding_right: Some(px(10.0)),
                         background: Some(col(theme::BG_TERTIARY)),
-                        border_top_left_radius: Some(px(8.0)),
-                        border_top_right_radius: Some(px(8.0)),
-                        border_bottom_left_radius: Some(px(8.0)),
-                        border_bottom_right_radius: Some(px(8.0)),
-                        ..borderless_input()
+                        ..with_radius(borderless_input(), 8.0)
                     })
                     view(style = StyleRules {
                         height: Some(px(34.0)),

@@ -70,7 +70,7 @@ use crate::load_earlier_button::load_earlier_button;
 use crate::edited_label::EditedLabel;
 use crate::settings_suite::UserSettings;
 use crate::keyboard_shortcuts_overlay::keyboard_shortcuts_overlay;
-use crate::style_helpers::{borderless_input, col, pct, px, rounded, section_label};
+use crate::style_helpers::{borderless_input, col, pct, px, rounded, section_label, with_radius};
 use crate::join_modal::JoinServerModal;
 use crate::create_server_modal::create_server_modal;
 use crate::create_channel_modal::CreateChannelModal;
@@ -990,11 +990,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     flex_direction: Some(FlexDirection::Row),
                     gap: Some(px(8.0)),
                     background: Some(col(BG_SIDEBAR)),
-                    border_top_left_radius: Some(px(8.0)),
-                    border_top_right_radius: Some(px(8.0)),
-                    border_bottom_left_radius: Some(px(8.0)),
-                    border_bottom_right_radius: Some(px(8.0)),
-                    ..Default::default()
+                    ..rounded(8.0)
                 },
                 test_id = "friends-entry",
             ) {

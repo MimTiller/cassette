@@ -56,13 +56,9 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
         border_right_color: Some(col(BORDER)),
         border_bottom_color: Some(col(BORDER)),
         border_left_color: Some(col(BORDER)),
-        border_top_left_radius: Some(px(12.0)),
-        border_top_right_radius: Some(px(12.0)),
-        border_bottom_left_radius: Some(px(12.0)),
-        border_bottom_right_radius: Some(px(12.0)),
         flex_direction: Some(FlexDirection::Column),
         align_items: Some(AlignItems::Center),
-        ..Default::default()
+        ..rounded(12.0)
     };
     let logo_style = StyleRules {
         width: Some(px(56.0)),
@@ -70,11 +66,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         background: Some(col(BUTTON)),
-        border_top_left_radius: Some(px(18.0)),
-        border_top_right_radius: Some(px(18.0)),
-        border_bottom_left_radius: Some(px(18.0)),
-        border_bottom_right_radius: Some(px(18.0)),
-        ..Default::default()
+        ..rounded(18.0)
     };
     let logo_text_style = StyleRules {
         font_size: Some(px(26.0)),
@@ -122,11 +114,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
         background: Some(col(COMPOSER)),
         color: Some(col(TEXT)),
         font_size: Some(px(15.0)),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..borderless_input()
+        ..with_radius(borderless_input(), 8.0)
     };
     let submit_style = StyleRules {
         align_self: Some(AlignSelf::Stretch),
@@ -138,11 +126,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
         font_weight: Some(FontWeight::SemiBold),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        ..rounded(8.0)
     };
 
     // Server calls finish in callbacks anchored to this screen, so a reply

@@ -25,7 +25,7 @@
 //!   a small glyph tap target).
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, Position,
     StyleRules, TouchPhase, TouchResponse,
@@ -61,11 +61,7 @@ pub fn WelcomeBanner(#[prop(default = "Sam")] name: String) -> Element {
                 padding_left: Some(px(16.0)),
                 padding_right: Some(px(16.0)),
                 background: Some(col(theme::BG_PRIMARY)),
-                border_top_left_radius: Some(px(8.0)),
-                border_top_right_radius: Some(px(8.0)),
-                border_bottom_left_radius: Some(px(8.0)),
-                border_bottom_right_radius: Some(px(8.0)),
-                ..Default::default()
+                ..rounded(8.0)
             }) {
                 // The greeting: member name + wave emoji (from the `name` prop).
                 text(style = StyleRules {
@@ -86,10 +82,6 @@ pub fn WelcomeBanner(#[prop(default = "Sam")] name: String) -> Element {
                     flex_direction: Some(FlexDirection::Row),
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
-                    border_top_left_radius: Some(px(6.0)),
-                    border_top_right_radius: Some(px(6.0)),
-                    border_bottom_left_radius: Some(px(6.0)),
-                    border_bottom_right_radius: Some(px(6.0)),
                     border_top_width: Some(runtime_core::Tokenized::Literal(1.0)),
                     border_right_width: Some(runtime_core::Tokenized::Literal(1.0)),
                     border_bottom_width: Some(runtime_core::Tokenized::Literal(1.0)),
@@ -98,7 +90,7 @@ pub fn WelcomeBanner(#[prop(default = "Sam")] name: String) -> Element {
                     border_right_color: Some(col(theme::BUTTON_SECONDARY)),
                     border_bottom_color: Some(col(theme::BUTTON_SECONDARY)),
                     border_left_color: Some(col(theme::BUTTON_SECONDARY)),
-                    ..Default::default()
+                    ..rounded(6.0)
                 }) {
                     text(style = StyleRules {
                         font_size: Some(px(14.0)),

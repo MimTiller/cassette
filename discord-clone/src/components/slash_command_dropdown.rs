@@ -29,7 +29,7 @@
 //!   reactive.
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, StyleRules, TouchPhase,
     TouchResponse,
@@ -72,11 +72,7 @@ pub fn SlashCommandDropdown() -> Element {
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),
                         background: Some(col(if sel { theme::BG_SELECTED } else { "transparent" })),
-                        border_top_left_radius: Some(px(8.0)),
-                        border_top_right_radius: Some(px(8.0)),
-                        border_bottom_left_radius: Some(px(8.0)),
-                        border_bottom_right_radius: Some(px(8.0)),
-                        ..Default::default()
+                        ..rounded(8.0)
                     }
                 }) {
                     text(style = move || StyleRules {

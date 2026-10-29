@@ -34,7 +34,7 @@ use runtime_core::{
     Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
-use crate::style_helpers::{borderless_input, col, pct, px};
+use crate::style_helpers::{borderless_input, col, pct, px, rounded, with_radius};
 
 // Discord dark palette (kept local so the component is self-contained).
 
@@ -70,12 +70,8 @@ pub fn CreateChannelModal(
         padding_left: Some(px(20.0)),
         padding_right: Some(px(20.0)),
         background: Some(col(theme::BG_SECONDARY)),
-        border_top_left_radius: Some(px(12.0)),
-        border_top_right_radius: Some(px(12.0)),
-        border_bottom_left_radius: Some(px(12.0)),
-        border_bottom_right_radius: Some(px(12.0)),
         flex_direction: Some(FlexDirection::Column),
-        ..Default::default()
+        ..rounded(12.0)
     };
     let title_style = StyleRules {
         font_size: Some(px(18.0)),
@@ -97,11 +93,7 @@ pub fn CreateChannelModal(
         background: Some(col(theme::BG_TERTIARY)),
         color: Some(col(theme::TEXT_NORMAL)),
         font_size: Some(px(15.0)),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..borderless_input()
+        ..with_radius(borderless_input(), 8.0)
     };
     let seg_row_style = StyleRules {
         margin_top: Some(px(12.0)),
@@ -117,11 +109,7 @@ pub fn CreateChannelModal(
         background: Some(col(if selected { theme::ACCENT } else { theme::BUTTON_SECONDARY })),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        ..rounded(8.0)
     };
     let seg_label_style = StyleRules {
         font_size: Some(px(14.0)),
@@ -135,12 +123,8 @@ pub fn CreateChannelModal(
         background: Some(col(theme::ACCENT)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
         flex_direction: Some(FlexDirection::Row),
-        ..Default::default()
+        ..rounded(8.0)
     };
     let btn_label_style = StyleRules {
         font_size: Some(px(15.0)),

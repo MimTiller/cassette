@@ -36,11 +36,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         background: Some(col(COMPOSER)),
-        border_top_left_radius: Some(px(12.0)),
-        border_top_right_radius: Some(px(12.0)),
-        border_bottom_left_radius: Some(px(12.0)),
-        border_bottom_right_radius: Some(px(12.0)),
-        ..Default::default()
+        ..rounded(12.0)
     };
 
     // Live-mode header: a live channel's name has no mock counterpart, so it's
@@ -190,11 +186,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                                 padding_top: Some(px(3.0)),
                                 padding_bottom: Some(px(3.0)),
                                 background: Some(col(theme::BG_HOVER)),
-                                border_top_left_radius: Some(px(8.0)),
-                                border_top_right_radius: Some(px(8.0)),
-                                border_bottom_left_radius: Some(px(8.0)),
-                                border_bottom_right_radius: Some(px(8.0)),
-                                ..Default::default()
+                                ..rounded(8.0)
                             }) {
                                 text(style = StyleRules {
                                     font_size: Some(px(13.0)),

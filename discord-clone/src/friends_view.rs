@@ -50,7 +50,7 @@ use icons_lucide::{PLUS, USERS};
 
 use crate::avatar_chip::{avatar_chip, registered_avatar, mountable_avatar_url};
 use crate::friends::{FriendList};
-use crate::style_helpers::{borderless_input, col, px};
+use crate::style_helpers::{borderless_input, col, px, rounded, with_radius};
 
 // --- palette (same Discord dark palette as live_dm_view.rs) ------------------
 
@@ -87,12 +87,8 @@ fn pill_style() -> StyleRules {
         color: Some(col(theme::TEXT_STRONG)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
         flex_shrink: Some(grow(0.0)),
-        ..Default::default()
+        ..rounded(8.0)
     }
 }
 
@@ -105,12 +101,8 @@ fn action_style() -> StyleRules {
         color: Some(col(theme::TEXT_STRONG)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(6.0)),
-        border_top_right_radius: Some(px(6.0)),
-        border_bottom_left_radius: Some(px(6.0)),
-        border_bottom_right_radius: Some(px(6.0)),
         flex_shrink: Some(grow(0.0)),
-        ..Default::default()
+        ..rounded(6.0)
     }
 }
 
@@ -128,11 +120,7 @@ fn row_style() -> StyleRules {
         flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Center),
         gap: Some(px(10.0)),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        ..rounded(8.0)
     }
 }
 
@@ -164,11 +152,7 @@ fn friend_avatar_chip(name: &str, avatar: Option<String>) -> Element {
                     height: Some(px(34.0)),
                     flex_shrink: Some(grow(0.0)),
                     object_fit: Some(ObjectFit::Cover),
-                    border_top_left_radius: Some(px(10.0)),
-                    border_top_right_radius: Some(px(10.0)),
-                    border_bottom_left_radius: Some(px(10.0)),
-                    border_bottom_right_radius: Some(px(10.0)),
-                    ..Default::default()
+                    ..rounded(10.0)
                 },
             )
         }
@@ -185,11 +169,7 @@ fn friend_avatar_chip(name: &str, avatar: Option<String>) -> Element {
                         height: Some(px(34.0)),
                         flex_shrink: Some(grow(0.0)),
                         object_fit: Some(ObjectFit::Cover),
-                        border_top_left_radius: Some(px(10.0)),
-                        border_top_right_radius: Some(px(10.0)),
-                        border_bottom_left_radius: Some(px(10.0)),
-                        border_bottom_right_radius: Some(px(10.0)),
-                        ..Default::default()
+                        ..rounded(10.0)
                     },
                 )
             }
@@ -496,11 +476,7 @@ pub fn friends_screen(
                                         padding_right: Some(px(10.0)),
                                         background: Some(col(theme::BG_INPUT)),
                                         color: Some(col(theme::TEXT_STRONG)),
-                                        border_top_left_radius: Some(px(6.0)),
-                                        border_top_right_radius: Some(px(6.0)),
-                                        border_bottom_left_radius: Some(px(6.0)),
-                                        border_bottom_right_radius: Some(px(6.0)),
-                                        ..borderless_input()
+                                        ..with_radius(borderless_input(), 6.0)
                                     },
                                     test_id = "friends-add-username",
                                 ).on_key_down(on_enter)
@@ -518,11 +494,7 @@ pub fn friends_screen(
                                         color: Some(col(theme::TEXT_STRONG)),
                                         align_items: Some(AlignItems::Center),
                                         justify_content: Some(JustifyContent::Center),
-                                        border_top_left_radius: Some(px(6.0)),
-                                        border_top_right_radius: Some(px(6.0)),
-                                        border_bottom_left_radius: Some(px(6.0)),
-                                        border_bottom_right_radius: Some(px(6.0)),
-                                        ..Default::default()
+                                        ..rounded(6.0)
                                     },
                                     test_id = "friends-add-send",
                                 )

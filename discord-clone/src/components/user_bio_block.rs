@@ -34,7 +34,7 @@
 //!   constructors (one static pass, no live style engine).
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, signal, text_area, ui, AlignItems, Element, FlexDirection, StyleRules, Tokenized,
 };
@@ -73,10 +73,6 @@ pub fn UserBioBlock(#[prop(default = "Tell us about yourself...")] bio: String) 
         .with_style(StyleRules {
             width: Some(px(320.0)),
             background: Some(col(theme::BG_TERTIARY)),
-            border_top_left_radius: Some(px(6.0)),
-            border_top_right_radius: Some(px(6.0)),
-            border_bottom_left_radius: Some(px(6.0)),
-            border_bottom_right_radius: Some(px(6.0)),
             border_top_width: Some(Tokenized::Literal(1.0)),
             border_right_width: Some(Tokenized::Literal(1.0)),
             border_bottom_width: Some(Tokenized::Literal(1.0)),
@@ -85,7 +81,7 @@ pub fn UserBioBlock(#[prop(default = "Tell us about yourself...")] bio: String) 
             border_right_color: Some(col(theme::BUTTON_SECONDARY)),
             border_bottom_color: Some(col(theme::BUTTON_SECONDARY)),
             border_left_color: Some(col(theme::BUTTON_SECONDARY)),
-            ..Default::default()
+            ..rounded(6.0)
         });
 
     // The live character count as a reactive closure bound to a local — the
@@ -110,11 +106,7 @@ pub fn UserBioBlock(#[prop(default = "Tell us about yourself...")] bio: String) 
             padding_left: Some(px(20.0)),
             padding_right: Some(px(20.0)),
             background: Some(col(theme::BG_SECONDARY)),
-            border_top_left_radius: Some(px(8.0)),
-            border_top_right_radius: Some(px(8.0)),
-            border_bottom_left_radius: Some(px(8.0)),
-            border_bottom_right_radius: Some(px(8.0)),
-            ..Default::default()
+            ..rounded(8.0)
         }) {
             // Card heading.
             text(style = StyleRules {

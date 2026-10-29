@@ -12,7 +12,7 @@
 //! number, so only the newest search's answer lands; a development key's
 //! 100 calls an hour is not spent one keystroke at a time.
 use crate::theme;
-use crate::style_helpers::{borderless_input, col, px};
+use crate::style_helpers::{borderless_input, col, px, rounded, with_radius};
 use discord_server::gifs::{Gif, GifPage, GifSearchInput};
 use icons_lucide::{SEARCH, VIDEO};
 use runtime_core::{
@@ -51,11 +51,7 @@ pub(crate) fn gif_button(on: Signal<bool>, close_others: Option<Signal<bool>>) -
             justify_content: Some(JustifyContent::Center),
             flex_shrink: Some(Tokenized::Literal(0.0)),
             background: Some(col(if hovered.get() { theme::BG_HOVER } else { "transparent" })),
-            border_top_left_radius: Some(px(14.0)),
-            border_top_right_radius: Some(px(14.0)),
-            border_bottom_left_radius: Some(px(14.0)),
-            border_bottom_right_radius: Some(px(14.0)),
-            ..Default::default()
+            ..rounded(14.0)
         }, test_id = "gif-button") {
             icon(VIDEO).color(move || theme::live(if hovered.get() { theme::INTERACTIVE } else { theme::TEXT_MUTED })).size(16.0)
         }
@@ -181,12 +177,8 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
                     width: Some(px(COL_W)),
                     height: Some(px(h)),
                     background: Some(col(theme::BG_PRIMARY)),
-                    border_top_left_radius: Some(px(6.0)),
-                    border_top_right_radius: Some(px(6.0)),
-                    border_bottom_left_radius: Some(px(6.0)),
-                    border_bottom_right_radius: Some(px(6.0)),
                     overflow: Some(Overflow::Hidden),
-                    ..Default::default()
+                    ..rounded(6.0)
                 }) {
                     image(
                         src = src,
@@ -227,11 +219,7 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
                     background: Some(col(theme::BG_PRIMARY)),
-                    border_top_left_radius: Some(px(6.0)),
-                    border_top_right_radius: Some(px(6.0)),
-                    border_bottom_left_radius: Some(px(6.0)),
-                    border_bottom_right_radius: Some(px(6.0)),
-                    ..Default::default()
+                    ..rounded(6.0)
                 }) {
                     text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { "Load more".to_string() }
                 }
@@ -296,10 +284,6 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
             height: Some(px(CARD_H)),
             flex_direction: Some(FlexDirection::Column),
             background: Some(col(theme::BG_SECONDARY)),
-            border_top_left_radius: Some(px(10.0)),
-            border_top_right_radius: Some(px(10.0)),
-            border_bottom_left_radius: Some(px(10.0)),
-            border_bottom_right_radius: Some(px(10.0)),
             border_top_width: Some(Tokenized::Literal(1.0)),
             border_right_width: Some(Tokenized::Literal(1.0)),
             border_bottom_width: Some(Tokenized::Literal(1.0)),
@@ -310,7 +294,7 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
             border_left_color: Some(col(theme::BG_TERTIARY)),
             shadow: Some(Shadow { x: 0.0, y: 8.0, blur: 24.0, color: col(theme::SHADOW) }),
             overflow: Some(Overflow::Hidden),
-            ..Default::default()
+            ..rounded(10.0)
         }, test_id = "gif-picker") {
             // Search field (the emoji picker's shape).
             view(style = StyleRules {
@@ -326,11 +310,7 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
                 background: Some(col(theme::BG_PRIMARY)),
                 padding_left: Some(px(10.0)),
                 padding_right: Some(px(10.0)),
-                border_top_left_radius: Some(px(6.0)),
-                border_top_right_radius: Some(px(6.0)),
-                border_bottom_left_radius: Some(px(6.0)),
-                border_bottom_right_radius: Some(px(6.0)),
-                ..borderless_input()
+                ..with_radius(borderless_input(), 6.0)
             }) {
                 icon(SEARCH).color(|| theme::live(theme::TEXT_MUTED)).size(16.0)
                 text_input(

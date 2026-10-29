@@ -38,7 +38,7 @@
 //!   a styled square area).
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, Position,
     StyleRules, TouchPhase, TouchResponse,
@@ -120,11 +120,7 @@ pub fn ServerIconUploadPlaceholder() -> Element {
                     width: Some(px(w)),
                     height: Some(px(h)),
                     background: Some(col(theme::TEXT_FAINT)),
-                    border_top_left_radius: Some(px(1.0)),
-                    border_top_right_radius: Some(px(1.0)),
-                    border_bottom_left_radius: Some(px(1.0)),
-                    border_bottom_right_radius: Some(px(1.0)),
-                    ..Default::default()
+                    ..rounded(1.0)
                 })
             }
 
@@ -152,11 +148,7 @@ pub fn ServerIconUploadPlaceholder() -> Element {
                         width: Some(px(36.0)),
                         height: Some(px(36.0)),
                         background: Some(col(theme::ACCENT)),
-                        border_top_left_radius: Some(px(18.0)),
-                        border_top_right_radius: Some(px(18.0)),
-                        border_bottom_left_radius: Some(px(18.0)),
-                        border_bottom_right_radius: Some(px(18.0)),
-                        ..Default::default()
+                        ..rounded(18.0)
                     })
                 } else {
                     // The "Click to upload" placeholder label. 9px in a

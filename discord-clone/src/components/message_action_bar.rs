@@ -39,7 +39,7 @@
 use crate::theme;
 use std::rc::Rc;
 
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     switch, ui, AlignItems, Element, FlexDirection, JustifyContent, Position, Signal, StyleRules,
     TouchPhase, TouchResponse,
@@ -95,11 +95,7 @@ pub fn message_action_bar(
                     padding_top: Some(px(2.0)),
                     padding_bottom: Some(px(2.0)),
                     background: Some(col(theme::BG_SECONDARY)),
-                    border_top_left_radius: Some(px(8.0)),
-                    border_top_right_radius: Some(px(8.0)),
-                    border_bottom_left_radius: Some(px(8.0)),
-                    border_bottom_right_radius: Some(px(8.0)),
-                    ..Default::default()
+                    ..rounded(8.0)
                 }) {
                     // React button — opens the shared add-reaction picker (the
                     // caller points `picker` at this message). No second UI here.
@@ -110,11 +106,7 @@ pub fn message_action_bar(
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),
-                        border_top_left_radius: Some(px(4.0)),
-                        border_top_right_radius: Some(px(4.0)),
-                        border_bottom_left_radius: Some(px(4.0)),
-                        border_bottom_right_radius: Some(px(4.0)),
-                        ..Default::default()
+                        ..rounded(4.0)
                     }) {
                         text(style = StyleRules {
                             font_size: Some(px(16.0)),
@@ -138,11 +130,7 @@ pub fn message_action_bar(
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),
-                        border_top_left_radius: Some(px(4.0)),
-                        border_top_right_radius: Some(px(4.0)),
-                        border_bottom_left_radius: Some(px(4.0)),
-                        border_bottom_right_radius: Some(px(4.0)),
-                        ..Default::default()
+                        ..rounded(4.0)
                     }) {
                         text(style = StyleRules {
                             font_size: Some(px(16.0)),
@@ -165,11 +153,7 @@ pub fn message_action_bar(
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),
-                        border_top_left_radius: Some(px(4.0)),
-                        border_top_right_radius: Some(px(4.0)),
-                        border_bottom_left_radius: Some(px(4.0)),
-                        border_bottom_right_radius: Some(px(4.0)),
-                        ..Default::default()
+                        ..rounded(4.0)
                     }) {
                         text(style = StyleRules {
                             font_size: Some(px(16.0)),

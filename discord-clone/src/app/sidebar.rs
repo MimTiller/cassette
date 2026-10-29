@@ -164,16 +164,12 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                     gap: Some(px(6.0)),
                     padding_right: Some(px(8.0)),
                     background: Some(col("transparent")),
-                    border_top_left_radius: Some(px(8.0)),
-                    border_top_right_radius: Some(px(8.0)),
-                    border_bottom_left_radius: Some(px(8.0)),
-                    border_bottom_right_radius: Some(px(8.0)),
                     // Positioning ancestor for the absolutely-positioned mention
                     // badge on the row's right edge (the mock rows do the same).
                     position: Some(Position::Relative),
                     flex_direction: Some(FlexDirection::Row),
                     align_items: Some(AlignItems::Center),
-                    ..Default::default()
+                    ..rounded(8.0)
                 };
                 let live_glyph_style = move || StyleRules {
                     width: Some(px(20.0)),
@@ -233,12 +229,8 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                         height: Some(px(22.0)),
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),
-                        border_top_left_radius: Some(px(6.0)),
-                        border_top_right_radius: Some(px(6.0)),
-                        border_bottom_left_radius: Some(px(6.0)),
-                        border_bottom_right_radius: Some(px(6.0)),
                         flex_shrink: Some(runtime_core::Tokenized::Literal(0.0)),
-                        ..Default::default()
+                        ..rounded(6.0)
                     };
                     // The per-row name is shared into both `move` tap handlers via
                     // an `Rc<String>` (`Clone`), so neither handler moves a `String`
@@ -262,16 +254,12 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                     min_width: Some(px(16.0)),
                                     height: Some(px(16.0)),
                                     background: Some(col(BADGE)),
-                                    border_top_left_radius: Some(px(8.0)),
-                                    border_top_right_radius: Some(px(8.0)),
-                                    border_bottom_left_radius: Some(px(8.0)),
-                                    border_bottom_right_radius: Some(px(8.0)),
                                     align_items: Some(AlignItems::Center),
                                     justify_content: Some(JustifyContent::Center),
                                     padding_left: Some(px(4.0)),
                                     padding_right: Some(px(4.0)),
                                     flex_shrink: Some(runtime_core::Tokenized::Literal(0.0)),
-                                    ..Default::default()
+                                    ..rounded(8.0)
                                 }) {
                                     text(style = StyleRules {
                                         font_size: Some(px(11.0)),
@@ -499,11 +487,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                                     width: Some(px(4.0)),
                                                     height: Some(px(8.0)),
                                                     background: Some(col(PILL)),
-                                                    border_top_left_radius: Some(px(2.0)),
-                                                    border_top_right_radius: Some(px(2.0)),
-                                                    border_bottom_left_radius: Some(px(2.0)),
-                                                    border_bottom_right_radius: Some(px(2.0)),
-                                                    ..Default::default()
+                                                    ..rounded(2.0)
                                                 }) {}
                                             }
                                         }
@@ -758,11 +742,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                     flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
                                     overflow: Some(runtime_core::Overflow::Hidden),
                                     background: Some(col(if header_hovered.get() { BG_HOVER } else { "transparent" })),
-                                    border_top_left_radius: Some(px(6.0)),
-                                    border_top_right_radius: Some(px(6.0)),
-                                    border_bottom_left_radius: Some(px(6.0)),
-                                    border_bottom_right_radius: Some(px(6.0)),
-                                    ..Default::default()
+                                    ..rounded(6.0)
                                 }, test_id = "server-header") {
                                     text(style = header_label_style.clone()) { move || header_name() }
                                     icon(CHEVRON_DOWN).color(|| theme::live(TEXT_MUTED)).size(14.0)
@@ -926,11 +906,7 @@ fn server_dropdown(
                             flex_direction: Some(FlexDirection::Row),
                             align_items: Some(AlignItems::Center),
                             background: Some(col(if hovered.get() { if red { theme::DANGER_STRONG } else { theme::ACCENT_HOVER } } else { "transparent" })),
-                            border_top_left_radius: Some(px(4.0)),
-                            border_top_right_radius: Some(px(4.0)),
-                            border_bottom_left_radius: Some(px(4.0)),
-                            border_bottom_right_radius: Some(px(4.0)),
-                            ..Default::default()
+                            ..rounded(4.0)
                         }) {
                             text(style = move || StyleRules {
                                 font_size: Some(px(14.0)),
@@ -963,11 +939,7 @@ fn server_dropdown(
                     padding_top: Some(px(6.0)),
                     padding_bottom: Some(px(6.0)),
                     background: Some(col(theme::BG_FLOATING)),
-                    border_top_left_radius: Some(px(6.0)),
-                    border_top_right_radius: Some(px(6.0)),
-                    border_bottom_left_radius: Some(px(6.0)),
-                    border_bottom_right_radius: Some(px(6.0)),
-                    ..Default::default()
+                    ..rounded(6.0)
                 }) { rows }
                 .on_touch(|_| TouchResponse::CONSUMED)
             }

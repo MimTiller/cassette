@@ -98,11 +98,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
                 background: Some(col(BG_SIDEBAR)),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
-                border_top_left_radius: Some(px(6.0)),
-                border_top_right_radius: Some(px(6.0)),
-                border_bottom_left_radius: Some(px(6.0)),
-                border_bottom_right_radius: Some(px(6.0)),
-                ..Default::default()
+                ..rounded(6.0)
             }) {
                 text(style = StyleRules {
                     color: Some(col(TEXT)),
@@ -204,11 +200,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
                 background: Some(col(BG_SIDEBAR)),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
-                border_top_left_radius: Some(px(6.0)),
-                border_top_right_radius: Some(px(6.0)),
-                border_bottom_left_radius: Some(px(6.0)),
-                border_bottom_right_radius: Some(px(6.0)),
-                ..Default::default()
+                ..rounded(6.0)
             }) {
                 text(style = StyleRules {
                     color: Some(col(TEXT)),
@@ -276,11 +268,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
                 background: Some(col(BG_SIDEBAR)),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
-                border_top_left_radius: Some(px(6.0)),
-                border_top_right_radius: Some(px(6.0)),
-                border_bottom_left_radius: Some(px(6.0)),
-                border_bottom_right_radius: Some(px(6.0)),
-                ..Default::default()
+                ..rounded(6.0)
             }) {
                 text(style = StyleRules {
                     color: Some(col(TEXT)),
@@ -404,11 +392,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
                 background: Some(col(BG_SIDEBAR)),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
-                border_top_left_radius: Some(px(6.0)),
-                border_top_right_radius: Some(px(6.0)),
-                border_bottom_left_radius: Some(px(6.0)),
-                border_bottom_right_radius: Some(px(6.0)),
-                ..Default::default()
+                ..rounded(6.0)
             }) {
                 text(style = StyleRules {
                     color: Some(col(TEXT)),
@@ -520,13 +504,9 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
                             color: Some(col(TEXT)),
                             font_size: Some(px(15.0)),
                             font_weight: Some(FontWeight::SemiBold),
-                            border_top_left_radius: Some(px(8.0)),
-                            border_top_right_radius: Some(px(8.0)),
-                            border_bottom_left_radius: Some(px(8.0)),
-                            border_bottom_right_radius: Some(px(8.0)),
                             align_items: Some(AlignItems::Center),
                             justify_content: Some(JustifyContent::Center),
-                            ..Default::default()
+                            ..rounded(8.0)
                         },
                     )
                 }
@@ -572,11 +552,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
                 background: Some(col(BG_SIDEBAR)),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
-                border_top_left_radius: Some(px(6.0)),
-                border_top_right_radius: Some(px(6.0)),
-                border_bottom_left_radius: Some(px(6.0)),
-                border_bottom_right_radius: Some(px(6.0)),
-                ..Default::default()
+                ..rounded(6.0)
             }) {
                 text(style = StyleRules {
                     color: Some(col(TEXT)),
@@ -613,11 +589,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
                 padding_left: Some(px(12.0)),
                 padding_right: Some(px(12.0)),
                 background: Some(col(BG_SIDEBAR)),
-                border_top_left_radius: Some(px(6.0)),
-                border_top_right_radius: Some(px(6.0)),
-                border_bottom_left_radius: Some(px(6.0)),
-                border_bottom_right_radius: Some(px(6.0)),
-                ..Default::default()
+                ..rounded(6.0)
             }) {
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),

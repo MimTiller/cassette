@@ -26,7 +26,7 @@
 //!   style is written inline in `style = …` (fresh per evaluation).
 
 use crate::theme;
-use crate::style_helpers::{borderless_input, col, px};
+use crate::style_helpers::{borderless_input, col, px, rounded, with_radius};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
     StyleRules,
@@ -75,11 +75,7 @@ pub fn InviteLinkDisplay(code: String) -> Element {
             padding_left: Some(px(20.0)),
             padding_right: Some(px(20.0)),
             background: Some(col(theme::BG_SECONDARY)),
-            border_top_left_radius: Some(px(8.0)),
-            border_top_right_radius: Some(px(8.0)),
-            border_bottom_left_radius: Some(px(8.0)),
-            border_bottom_right_radius: Some(px(8.0)),
-            ..Default::default()
+            ..rounded(8.0)
         }) {
             text(style = StyleRules {
                 font_size: Some(px(13.0)),
@@ -99,11 +95,7 @@ pub fn InviteLinkDisplay(code: String) -> Element {
                     background: Some(col(theme::BG_TERTIARY)),
                     color: Some(col(theme::TEXT_STRONG)),
                     font_size: Some(px(15.0)),
-                    border_top_left_radius: Some(px(8.0)),
-                    border_top_right_radius: Some(px(8.0)),
-                    border_bottom_left_radius: Some(px(8.0)),
-                    border_bottom_right_radius: Some(px(8.0)),
-                    ..borderless_input()
+                    ..with_radius(borderless_input(), 8.0)
                 },
             )
             button(
@@ -116,14 +108,10 @@ pub fn InviteLinkDisplay(code: String) -> Element {
                     background: Some(col(theme::ACCENT)),
                     color: Some(col(theme::TEXT_STRONG)),
                     font_size: Some(px(14.0)),
-                    border_top_left_radius: Some(px(6.0)),
-                    border_top_right_radius: Some(px(6.0)),
-                    border_bottom_left_radius: Some(px(6.0)),
-                    border_bottom_right_radius: Some(px(6.0)),
                     flex_direction: Some(FlexDirection::Row),
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
-                    ..Default::default()
+                    ..rounded(6.0)
                 },
             )
             // Reactive confirmation: `if copied.get() {…}` lowers to a `when`

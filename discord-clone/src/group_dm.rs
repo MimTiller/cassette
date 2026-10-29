@@ -14,7 +14,7 @@ use runtime_core::{
 use crate::controls::{button_view, ButtonKind};
 use crate::dms::{self, Dm};
 use crate::live_dm_view::LiveDmMsg;
-use crate::style_helpers::{borderless_input, col, pct, px};
+use crate::style_helpers::{borderless_input, col, pct, px, rounded, with_radius};
 use crate::theme;
 
 /// What the picker is for: a new group, or adding people to group `dm_id`.
@@ -157,12 +157,8 @@ pub(crate) fn picker_dialog(
                             height: Some(px(40.0)),
                             padding_left: Some(px(8.0)),
                             padding_right: Some(px(8.0)),
-                            border_top_left_radius: Some(px(4.0)),
-                            border_top_right_radius: Some(px(4.0)),
-                            border_bottom_left_radius: Some(px(4.0)),
-                            border_bottom_right_radius: Some(px(4.0)),
                             background: Some(col(if on { theme::BG_SELECTED } else { "transparent" })),
-                            ..Default::default()
+                            ..rounded(4.0)
                         }) {
                             { crate::avatar_chip::avatar_chip(username.as_str(), theme::ACCENT, 28.0, 13.0) }
                             text(style = StyleRules {
@@ -185,11 +181,7 @@ pub(crate) fn picker_dialog(
                                 border_right_color: Some(col(theme::INTERACTIVE)),
                                 border_bottom_color: Some(col(theme::INTERACTIVE)),
                                 border_left_color: Some(col(theme::INTERACTIVE)),
-                                border_top_left_radius: Some(px(4.0)),
-                                border_top_right_radius: Some(px(4.0)),
-                                border_bottom_left_radius: Some(px(4.0)),
-                                border_bottom_right_radius: Some(px(4.0)),
-                                ..Default::default()
+                                ..rounded(4.0)
                             }) {
                                 text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(theme::TEXT_ON_ACCENT)), ..Default::default() }) { mark }
                             }
@@ -285,11 +277,7 @@ pub(crate) fn picker_dialog(
                             background: Some(col(theme::BG_TERTIARY)),
                             color: Some(col(theme::TEXT_STRONG)),
                             font_size: Some(px(14.0)),
-                            border_top_left_radius: Some(px(4.0)),
-                            border_top_right_radius: Some(px(4.0)),
-                            border_bottom_left_radius: Some(px(4.0)),
-                            border_bottom_right_radius: Some(px(4.0)),
-                            ..borderless_input()
+                            ..with_radius(borderless_input(), 4.0)
                         },
                     )
                 }
@@ -324,12 +312,8 @@ pub(crate) fn picker_dialog(
                         padding_left: Some(px(16.0)),
                         padding_right: Some(px(16.0)),
                         background: Some(col(theme::BG_PRIMARY)),
-                        border_top_left_radius: Some(px(8.0)),
-                        border_top_right_radius: Some(px(8.0)),
-                        border_bottom_left_radius: Some(px(8.0)),
-                        border_bottom_right_radius: Some(px(8.0)),
                         overflow: Some(Overflow::Hidden),
-                        ..Default::default()
+                        ..rounded(8.0)
                     }) {
                         text(style = StyleRules { font_size: Some(px(20.0)), font_weight: Some(FontWeight::Bold), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { title.to_string() }
                         text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { hint }

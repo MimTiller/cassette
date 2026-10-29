@@ -38,7 +38,7 @@
 //!   (a bare `if` in the content slot yields an `Element`, which it is not).
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, StyleRules, Tokenized,
     TouchPhase, TouchResponse,
@@ -111,11 +111,7 @@ pub fn ServerRegionSelector() -> Element {
                         align_items: Some(AlignItems::Center),
                         gap: Some(px(10.0)),
                         background: Some(col(if sel { theme::BG_SELECTED } else { "transparent" })),
-                        border_top_left_radius: Some(px(8.0)),
-                        border_top_right_radius: Some(px(8.0)),
-                        border_bottom_left_radius: Some(px(8.0)),
-                        border_bottom_right_radius: Some(px(8.0)),
-                        ..Default::default()
+                        ..rounded(8.0)
                     }
                 }) {
                     // Radio indicator: a bordered circle that FILLS when this
@@ -124,10 +120,6 @@ pub fn ServerRegionSelector() -> Element {
                     view(style = move || StyleRules {
                         width: Some(px(16.0)),
                         height: Some(px(16.0)),
-                        border_top_left_radius: Some(px(8.0)),
-                        border_top_right_radius: Some(px(8.0)),
-                        border_bottom_left_radius: Some(px(8.0)),
-                        border_bottom_right_radius: Some(px(8.0)),
                         border_top_width: Some(border_width(2.0)),
                         border_bottom_width: Some(border_width(2.0)),
                         border_left_width: Some(border_width(2.0)),
@@ -157,7 +149,7 @@ pub fn ServerRegionSelector() -> Element {
                         } else {
                             "transparent"
                         })),
-                        ..Default::default()
+                        ..rounded(8.0)
                     }) {}
                     // Region label. Carries `flex_grow: 1` so it absorbs the
                     // row's free width, which pushes the ping readout to the

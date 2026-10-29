@@ -32,7 +32,7 @@
 //!   is captured across the `when` boundary.
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, StyleRules,
 };
@@ -92,14 +92,10 @@ pub fn BlockedUserRow() -> Element {
                         padding_right: Some(px(14.0)),
                         background: Some(col(theme::ACCENT)),
                         color: Some(col(theme::TEXT_STRONG)),
-                        border_top_left_radius: Some(px(6.0)),
-                        border_top_right_radius: Some(px(6.0)),
-                        border_bottom_left_radius: Some(px(6.0)),
-                        border_bottom_right_radius: Some(px(6.0)),
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),
-                        ..Default::default()
+                        ..rounded(6.0)
                     }
                 )
             }

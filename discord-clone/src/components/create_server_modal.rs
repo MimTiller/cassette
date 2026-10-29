@@ -34,7 +34,7 @@ use runtime_core::{
     Overflow, Position, Signal, StyleRules, Tokenized, TouchPhase, TouchResponse,
 };
 
-use crate::style_helpers::{borderless_input, col, pct, px};
+use crate::style_helpers::{borderless_input, col, pct, px, rounded, with_radius};
 use crate::server_icon_upload_placeholder::ServerIconUploadPlaceholder;
 use crate::server_region_selector::ServerRegionSelector;
 
@@ -63,12 +63,8 @@ pub fn create_server_modal(
         padding_left: Some(px(20.0)),
         padding_right: Some(px(20.0)),
         background: Some(col(theme::BG_SECONDARY)),
-        border_top_left_radius: Some(px(12.0)),
-        border_top_right_radius: Some(px(12.0)),
-        border_bottom_left_radius: Some(px(12.0)),
-        border_bottom_right_radius: Some(px(12.0)),
         flex_direction: Some(FlexDirection::Column),
-        ..Default::default()
+        ..rounded(12.0)
     };
     let title_style = StyleRules {
         font_size: Some(px(18.0)),
@@ -90,11 +86,7 @@ pub fn create_server_modal(
         background: Some(col(theme::BG_TERTIARY)),
         color: Some(col(theme::TEXT_NORMAL)),
         font_size: Some(px(15.0)),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..borderless_input()
+        ..with_radius(borderless_input(), 8.0)
     };
     let btn_row_style = StyleRules {
         margin_top: Some(px(14.0)),
@@ -108,11 +100,7 @@ pub fn create_server_modal(
         background: Some(col(theme::ACCENT)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        ..rounded(8.0)
     };
     let cancel_btn_style = StyleRules {
         height: Some(px(40.0)),
@@ -120,11 +108,7 @@ pub fn create_server_modal(
         background: Some(col(theme::BUTTON_SECONDARY)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        ..rounded(8.0)
     };
     let btn_label_style = StyleRules {
         font_size: Some(px(15.0)),
@@ -198,11 +182,7 @@ pub fn create_server_modal(
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         background: Some(col(theme::BG_TERTIARY)),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        ..rounded(8.0)
     };
     let join_btn = ui! {
         view(style = join_btn_style.clone(), test_id = "create-server-join-link") {

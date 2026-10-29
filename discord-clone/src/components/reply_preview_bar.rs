@@ -26,7 +26,7 @@
 use crate::theme;
 use std::rc::Rc;
 
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     switch, ui, AlignItems, Element, FlexDirection, JustifyContent, Signal, StyleRules, Tokenized,
     TouchPhase, TouchResponse,
@@ -116,11 +116,7 @@ pub fn reply_preview_bar(
                             align_items: Some(AlignItems::Center),
                             justify_content: Some(JustifyContent::Center),
                             background: Some(col(theme::BG_SELECTED)),
-                            border_top_left_radius: Some(px(9.0)),
-                            border_top_right_radius: Some(px(9.0)),
-                            border_bottom_left_radius: Some(px(9.0)),
-                            border_bottom_right_radius: Some(px(9.0)),
-                            ..Default::default()
+                            ..rounded(9.0)
                         }) {
                             text(style = StyleRules {
                                 font_size: Some(px(12.0)),

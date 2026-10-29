@@ -28,7 +28,7 @@
 //!   `ServerSettingsPanel` triple, minus the paste input).
 
 use crate::theme;
-use crate::style_helpers::{borderless_input, col, px};
+use crate::style_helpers::{borderless_input, col, px, rounded, with_radius};
 use runtime_core::{
     component,
     ui,
@@ -218,13 +218,9 @@ pub fn attachment_thumbnail(src: runtime_core::Reactive<String>, filename: Strin
             align_items: Some(AlignItems::Center),
             justify_content: Some(JustifyContent::Center),
             background: Some(col(theme::BG_TERTIARY)),
-            border_top_left_radius: Some(px(6.0)),
-            border_top_right_radius: Some(px(6.0)),
-            border_bottom_left_radius: Some(px(6.0)),
-            border_bottom_right_radius: Some(px(6.0)),
             overflow: Some(Overflow::Hidden),
             flex_shrink: Some(grow(0.0)),
-            ..Default::default()
+            ..rounded(6.0)
         }) {
             image(
                 src = move || src.get().clone(),
@@ -321,11 +317,7 @@ pub fn ProfileSettings() -> Element {
         padding_right: Some(px(12.0)),
         background: Some(col(theme::BG_INPUT)),
         color: Some(col(theme::TEXT_STRONG)),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..borderless_input()
+        ..with_radius(borderless_input(), 8.0)
     };
 
     // The avatar controls share their state with the handlers: `av_busy` +
@@ -463,11 +455,7 @@ pub fn ProfileSettings() -> Element {
                         height: Some(px(72.0)),
                         flex_shrink: Some(grow(0.0)),
                         object_fit: Some(ObjectFit::Cover),
-                        border_top_left_radius: Some(px(36.0)),
-                        border_top_right_radius: Some(px(36.0)),
-                        border_bottom_left_radius: Some(px(36.0)),
-                        border_bottom_right_radius: Some(px(36.0)),
-                        ..Default::default()
+                        ..rounded(36.0)
                     },
                 )
             } else {
@@ -480,11 +468,7 @@ pub fn ProfileSettings() -> Element {
                     color: Some(col(theme::TEXT_STRONG)),
                     font_size: Some(px(30.0)),
                     font_weight: Some(FontWeight::Bold),
-                    border_top_left_radius: Some(px(36.0)),
-                    border_top_right_radius: Some(px(36.0)),
-                    border_bottom_left_radius: Some(px(36.0)),
-                    border_bottom_right_radius: Some(px(36.0)),
-                    ..Default::default()
+                    ..rounded(36.0)
                 }) { avatar_letter }
             }
             text(style = StyleRules {
@@ -510,12 +494,8 @@ pub fn ProfileSettings() -> Element {
                 background: Some(col(theme::ACCENT)),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
-                border_top_left_radius: Some(px(8.0)),
-                border_top_right_radius: Some(px(8.0)),
-                border_bottom_left_radius: Some(px(8.0)),
-                border_bottom_right_radius: Some(px(8.0)),
                 flex_shrink: Some(grow(0.0)),
-                ..Default::default()
+                ..rounded(8.0)
             }, test_id = "profile-save") {
                 text(style = StyleRules {
                     font_size: Some(px(13.0)),
@@ -548,12 +528,8 @@ pub fn ProfileSettings() -> Element {
                 background: Some(col(theme::SUCCESS)),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
-                border_top_left_radius: Some(px(8.0)),
-                border_top_right_radius: Some(px(8.0)),
-                border_bottom_left_radius: Some(px(8.0)),
-                border_bottom_right_radius: Some(px(8.0)),
                 flex_shrink: Some(grow(0.0)),
-                ..Default::default()
+                ..rounded(8.0)
             }, test_id = "profile-change-avatar") {
                 text(style = StyleRules {
                     font_size: Some(px(13.0)),
@@ -584,12 +560,8 @@ pub fn ProfileSettings() -> Element {
                 background: Some(col(theme::BUTTON_SECONDARY)),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
-                border_top_left_radius: Some(px(8.0)),
-                border_top_right_radius: Some(px(8.0)),
-                border_bottom_left_radius: Some(px(8.0)),
-                border_bottom_right_radius: Some(px(8.0)),
                 flex_shrink: Some(grow(0.0)),
-                ..Default::default()
+                ..rounded(8.0)
             }, test_id = "profile-remove-avatar") {
                 text(style = StyleRules {
                     font_size: Some(px(13.0)),

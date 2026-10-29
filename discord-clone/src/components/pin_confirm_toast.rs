@@ -23,7 +23,7 @@
 //!   is `Copy` (`Signal<bool>`), so the `move` handler captures a copy of the
 //!   same signal the branch reads and clears it — no callback prop needed.
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     ui, AlignItems, Element, FlexDirection, JustifyContent, Position, Signal, StyleRules,
     TouchPhase, TouchResponse,
@@ -60,11 +60,7 @@ pub fn pin_confirm_toast(visible: Signal<bool>) -> Element {
                 padding_left: Some(px(16.0)),
                 padding_right: Some(px(16.0)),
                 background: Some(col(theme::BG_PRIMARY)),
-                border_top_left_radius: Some(px(8.0)),
-                border_top_right_radius: Some(px(8.0)),
-                border_bottom_left_radius: Some(px(8.0)),
-                border_bottom_right_radius: Some(px(8.0)),
-                ..Default::default()
+                ..rounded(8.0)
             }) {
                 // The toast copy — a hardcoded local literal, so it bakes to
                 // a static text source (no reactive machinery).
@@ -86,10 +82,6 @@ pub fn pin_confirm_toast(visible: Signal<bool>) -> Element {
                     flex_direction: Some(FlexDirection::Row),
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
-                    border_top_left_radius: Some(px(6.0)),
-                    border_top_right_radius: Some(px(6.0)),
-                    border_bottom_left_radius: Some(px(6.0)),
-                    border_bottom_right_radius: Some(px(6.0)),
                     border_top_width: Some(runtime_core::Tokenized::Literal(1.0)),
                     border_right_width: Some(runtime_core::Tokenized::Literal(1.0)),
                     border_bottom_width: Some(runtime_core::Tokenized::Literal(1.0)),
@@ -98,7 +90,7 @@ pub fn pin_confirm_toast(visible: Signal<bool>) -> Element {
                     border_right_color: Some(col(theme::BUTTON_SECONDARY)),
                     border_bottom_color: Some(col(theme::BUTTON_SECONDARY)),
                     border_left_color: Some(col(theme::BUTTON_SECONDARY)),
-                    ..Default::default()
+                    ..rounded(6.0)
                 }) {
                     text(style = StyleRules {
                         font_size: Some(px(14.0)),

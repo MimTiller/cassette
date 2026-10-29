@@ -37,7 +37,7 @@
 //!   with no `String`-move issues.
 use crate::theme;
 use crate::emoji_data;
-use crate::style_helpers::{borderless_input, col, px};
+use crate::style_helpers::{borderless_input, col, px, rounded, with_radius};
 use icons_lucide::SEARCH;
 use runtime_core::{
     component, icon, memo, signal, switch, ui, AlignItems, Element, FlexDirection,
@@ -228,11 +228,7 @@ fn cell_style() -> StyleRules {
         flex_direction: Some(FlexDirection::Column),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        ..rounded(8.0)
     }
 }
 
@@ -413,12 +409,8 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
                             justify_content: Some(JustifyContent::Center),
                             width: Some(px(44.0)),
                             height: Some(px(44.0)),
-                            border_top_left_radius: Some(px(8.0)),
-                            border_top_right_radius: Some(px(8.0)),
-                            border_bottom_left_radius: Some(px(8.0)),
-                            border_bottom_right_radius: Some(px(8.0)),
                             background: Some(if on { col(theme::BG_TERTIARY) } else { col(theme::BG_SECONDARY) }),
-                            ..Default::default()
+                            ..rounded(8.0)
                         }
                     }) {
                         text(style = StyleRules {
@@ -521,10 +513,6 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
             height: Some(px(440.0)),
             flex_direction: Some(FlexDirection::Column),
             background: Some(col(theme::BG_SECONDARY)),
-            border_top_left_radius: Some(px(10.0)),
-            border_top_right_radius: Some(px(10.0)),
-            border_bottom_left_radius: Some(px(10.0)),
-            border_bottom_right_radius: Some(px(10.0)),
             border_top_width: Some(Tokenized::Literal(1.0)),
             border_right_width: Some(Tokenized::Literal(1.0)),
             border_bottom_width: Some(Tokenized::Literal(1.0)),
@@ -535,7 +523,7 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
             border_left_color: Some(col(theme::BG_TERTIARY)),
             shadow: Some(Shadow { x: 0.0, y: 8.0, blur: 24.0, color: col(theme::SHADOW) }),
             overflow: Some(Overflow::Hidden),
-            ..Default::default()
+            ..rounded(10.0)
         }) {
             // Search field (magnifier + input, the message_search_bar shape).
             view(style = StyleRules {
@@ -550,11 +538,7 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
                 background: Some(col(theme::BG_PRIMARY)),
                 padding_left: Some(px(10.0)),
                 padding_right: Some(px(10.0)),
-                border_top_left_radius: Some(px(6.0)),
-                border_top_right_radius: Some(px(6.0)),
-                border_bottom_left_radius: Some(px(6.0)),
-                border_bottom_right_radius: Some(px(6.0)),
-                ..borderless_input()
+                ..with_radius(borderless_input(), 6.0)
             }) {
                 icon(SEARCH).color(|| theme::live(theme::TEXT_MUTED)).size(16.0)
                 text_input(

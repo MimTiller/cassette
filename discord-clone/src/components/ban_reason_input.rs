@@ -31,7 +31,7 @@
 //!   across the `when` boundary.
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, signal, text_area, ui, AlignItems, Element, FlexDirection, JustifyContent,
     StyleRules, Tokenized,
@@ -65,11 +65,7 @@ pub fn BanReasonInput() -> Element {
             padding_left: Some(px(20.0)),
             padding_right: Some(px(20.0)),
             background: Some(col(theme::BG_SECONDARY)),
-            border_top_left_radius: Some(px(8.0)),
-            border_top_right_radius: Some(px(8.0)),
-            border_bottom_left_radius: Some(px(8.0)),
-            border_bottom_right_radius: Some(px(8.0)),
-            ..Default::default()
+            ..rounded(8.0)
         }) {
             // Reactive swap: `if banned.get() { … } else { … }` lowers to a
             // `when` (mounts the chosen branch, unmounts the other when `Ban`
@@ -107,10 +103,6 @@ pub fn BanReasonInput() -> Element {
                         .with_style(StyleRules {
                             width: Some(px(320.0)),
                             background: Some(col(theme::BG_TERTIARY)),
-                            border_top_left_radius: Some(px(6.0)),
-                            border_top_right_radius: Some(px(6.0)),
-                            border_bottom_left_radius: Some(px(6.0)),
-                            border_bottom_right_radius: Some(px(6.0)),
                             border_top_width: Some(Tokenized::Literal(1.0)),
                             border_right_width: Some(Tokenized::Literal(1.0)),
                             border_bottom_width: Some(Tokenized::Literal(1.0)),
@@ -119,7 +111,7 @@ pub fn BanReasonInput() -> Element {
                             border_right_color: Some(col(theme::BUTTON_SECONDARY)),
                             border_bottom_color: Some(col(theme::BUTTON_SECONDARY)),
                             border_left_color: Some(col(theme::BUTTON_SECONDARY)),
-                            ..Default::default()
+                            ..rounded(6.0)
                         })
 
                     button(
@@ -130,14 +122,10 @@ pub fn BanReasonInput() -> Element {
                             padding_left: Some(px(16.0)),
                             padding_right: Some(px(16.0)),
                             background: Some(col(theme::DANGER_STRONG)),
-                            border_top_left_radius: Some(px(6.0)),
-                            border_top_right_radius: Some(px(6.0)),
-                            border_bottom_left_radius: Some(px(6.0)),
-                            border_bottom_right_radius: Some(px(6.0)),
                             flex_direction: Some(FlexDirection::Row),
                             align_items: Some(AlignItems::Center),
                             justify_content: Some(JustifyContent::Center),
-                            ..Default::default()
+                            ..rounded(6.0)
                         }
                     )
                 }

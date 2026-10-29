@@ -32,11 +32,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         background: Some(col(BG_SIDEBAR)),
-        border_top_left_radius: Some(px(24.0)),
-        border_top_right_radius: Some(px(24.0)),
-        border_bottom_left_radius: Some(px(24.0)),
-        border_bottom_right_radius: Some(px(24.0)),
-        ..Default::default()
+        ..rounded(24.0)
     };
     // Discord's rail separator: a thin 32px line between sections.
     let divider_style = StyleRules {
@@ -74,11 +70,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                         width: Some(px(8.0)),
                         height: Some(px(8.0)),
                         background: Some(col(color)),
-                        border_top_left_radius: Some(px(4.0)),
-                        border_top_right_radius: Some(px(4.0)),
-                        border_bottom_left_radius: Some(px(4.0)),
-                        border_bottom_right_radius: Some(px(4.0)),
-                        ..Default::default()
+                        ..rounded(4.0)
                     }) {}
                 }
             } else {
@@ -104,13 +96,9 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
                 background: Some(col(BG_SIDEBAR)),
-                border_top_left_radius: Some(px(24.0)),
-                border_top_right_radius: Some(px(24.0)),
-                border_bottom_left_radius: Some(px(24.0)),
-                border_bottom_right_radius: Some(px(24.0)),
                 // Positioning ancestor for the selected pill below.
                 position: Some(Position::Relative),
-                ..Default::default()
+                ..rounded(24.0)
             }, test_id = "rail-direct-messages") {
                 // The DM selection pill on the far-left rail edge — the same
                 // white pill server tiles show when selected (the rail is
@@ -122,12 +110,8 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                     width: Some(px(4.0)),
                     height: Some(px(20.0)),
                     background: Some(col(PILL)),
-                    border_top_left_radius: Some(px(2.0)),
-                    border_top_right_radius: Some(px(2.0)),
-                    border_bottom_left_radius: Some(px(2.0)),
-                    border_bottom_right_radius: Some(px(2.0)),
                     opacity: Some(Tokenized::Literal(if live_dm_mode.get() { 1.0 } else { 0.0 })),
-                    ..Default::default()
+                    ..rounded(2.0)
                 }) {}
                 icon(MESSAGE_CIRCLE).color(|| theme::live(TEXT_MUTED)).size(20.0)
             }
@@ -181,11 +165,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
                 background: Some(col(BG_SIDEBAR)),
-                border_top_left_radius: Some(px(16.0)),
-                border_top_right_radius: Some(px(16.0)),
-                border_bottom_left_radius: Some(px(16.0)),
-                border_bottom_right_radius: Some(px(16.0)),
-                ..Default::default()
+                ..rounded(16.0)
             };
             let initial_style = StyleRules {
                 font_size: Some(px(18.0)),
@@ -207,11 +187,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                                 height: Some(px(48.0)),
                                 flex_shrink: Some(grow(0.0)),
                                 object_fit: Some(ObjectFit::Cover),
-                                border_top_left_radius: Some(px(16.0)),
-                                border_top_right_radius: Some(px(16.0)),
-                                border_bottom_left_radius: Some(px(16.0)),
-                                border_bottom_right_radius: Some(px(16.0)),
-                                ..Default::default()
+                                ..rounded(16.0)
                             },
                         )
                     },
@@ -241,16 +217,12 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                             width: Some(px(4.0)),
                             height: Some(px(20.0)),
                             background: Some(col(PILL)),
-                            border_top_left_radius: Some(px(2.0)),
-                            border_top_right_radius: Some(px(2.0)),
-                            border_bottom_left_radius: Some(px(2.0)),
-                            border_bottom_right_radius: Some(px(2.0)),
                             opacity: Some(Tokenized::Literal(if active_live.get() == Some(sid) {
                                 1.0
                             } else {
                                 0.0
                             })),
-                            ..Default::default()
+                            ..rounded(2.0)
                         }) {}
                         { face }
                     }

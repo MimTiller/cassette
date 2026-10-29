@@ -39,7 +39,7 @@ use runtime_core::{
 use crate::app::{format_when, message_row, same_group};
 use crate::dms::{self, Dm};
 use crate::gif_picker::{GifPicker, gif_button};
-use crate::style_helpers::{borderless_input, col, pct, px, section_label};
+use crate::style_helpers::{borderless_input, col, pct, px, section_label, rounded, with_radius};
 
 // --- palette -----------------------------------------------------------------
 // The same Discord dark palette as `app.rs` / `dm_view.rs`, kept local so the
@@ -160,11 +160,7 @@ fn live_dm_find_row(
         background: Some(col(theme::BG_TERTIARY)),
         color: Some(col(theme::TEXT_STRONG)),
         font_size: Some(px(13.0)),
-        border_top_left_radius: Some(px(4.0)),
-        border_top_right_radius: Some(px(4.0)),
-        border_bottom_left_radius: Some(px(4.0)),
-        border_bottom_right_radius: Some(px(4.0)),
-        ..borderless_input()
+        ..with_radius(borderless_input(), 4.0)
     };
     let results = switch(
         move || query.get(),
@@ -194,11 +190,7 @@ fn live_dm_find_row(
                         gap: Some(px(8.0)),
                         padding_left: Some(px(6.0)),
                         padding_right: Some(px(6.0)),
-                        border_top_left_radius: Some(px(4.0)),
-                        border_top_right_radius: Some(px(4.0)),
-                        border_bottom_left_radius: Some(px(4.0)),
-                        border_bottom_right_radius: Some(px(4.0)),
-                        ..Default::default()
+                        ..rounded(4.0)
                     }, test_id = "live-dm-find-result") {
                         { crate::avatar_chip::avatar_chip(name.as_str(), theme::ACCENT, 24.0, 12.0) }
                         text(style = StyleRules {
@@ -332,11 +324,7 @@ fn live_dm_row(
             } else {
                 "transparent"
             })),
-            border_top_left_radius: Some(px(8.0)),
-            border_top_right_radius: Some(px(8.0)),
-            border_bottom_left_radius: Some(px(8.0)),
-            border_bottom_right_radius: Some(px(8.0)),
-            ..Default::default()
+            ..rounded(8.0)
         }
     };
     let avatar_style = StyleRules {
@@ -346,11 +334,7 @@ fn live_dm_row(
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         background: Some(col(theme::ACCENT)),
-        border_top_left_radius: Some(px(10.0)),
-        border_top_right_radius: Some(px(10.0)),
-        border_bottom_left_radius: Some(px(10.0)),
-        border_bottom_right_radius: Some(px(10.0)),
-        ..Default::default()
+        ..rounded(10.0)
     };
     let initial_style = StyleRules {
         font_size: Some(px(15.0)),
@@ -382,11 +366,7 @@ fn live_dm_row(
                     height: Some(px(34.0)),
                     flex_shrink: Some(grow(0.0)),
                     object_fit: Some(ObjectFit::Cover),
-                    border_top_left_radius: Some(px(10.0)),
-                    border_top_right_radius: Some(px(10.0)),
-                    border_bottom_left_radius: Some(px(10.0)),
-                    border_bottom_right_radius: Some(px(10.0)),
-                    ..Default::default()
+                    ..rounded(10.0)
                 },
             )
         }
@@ -593,11 +573,7 @@ fn live_dm_conversation(
         position: Some(runtime_core::Position::Relative),
         flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Center),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..Default::default()
+        ..rounded(8.0)
     };
     let input_style = StyleRules {
         flex_grow: Some(grow(1.0)),
@@ -606,11 +582,7 @@ fn live_dm_conversation(
         padding_right: Some(px(12.0)),
         background: Some(col(theme::BG_INPUT)),
         color: Some(col(theme::TEXT_STRONG)),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
-        ..borderless_input()
+        ..with_radius(borderless_input(), 8.0)
     };
 
     // --- GIF picker state (outlives the pane `switch`) ---------------------

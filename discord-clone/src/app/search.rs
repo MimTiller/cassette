@@ -112,11 +112,7 @@ pub(super) fn search_box(server: Signal<Option<i64>>, server_name: String, on_ju
                             padding_bottom: Some(px(10.0)),
                             padding_left: Some(px(12.0)),
                             padding_right: Some(px(12.0)),
-                            border_top_left_radius: Some(px(6.0)),
-                            border_top_right_radius: Some(px(6.0)),
-                            border_bottom_left_radius: Some(px(6.0)),
-                            border_bottom_right_radius: Some(px(6.0)),
-                            ..Default::default()
+                            ..rounded(6.0)
                         }) {
                             text(style = muted(12.0)) { meta }
                             text(style = StyleRules {
@@ -149,11 +145,7 @@ pub(super) fn search_box(server: Signal<Option<i64>>, server_name: String, on_ju
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),
                         background: Some(col(theme::BUTTON_SECONDARY)),
-                        border_top_left_radius: Some(px(4.0)),
-                        border_top_right_radius: Some(px(4.0)),
-                        border_bottom_left_radius: Some(px(4.0)),
-                        border_bottom_right_radius: Some(px(4.0)),
-                        ..Default::default()
+                        ..rounded(4.0)
                     }) {
                         text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { label }
                     }
@@ -174,15 +166,11 @@ pub(super) fn search_box(server: Signal<Option<i64>>, server_name: String, on_ju
                     max_height: Some(px(520.0)),
                     flex_direction: Some(FlexDirection::Column),
                     background: Some(col(theme::BG_SECONDARY)),
-                    border_top_left_radius: Some(px(8.0)),
-                    border_top_right_radius: Some(px(8.0)),
-                    border_bottom_left_radius: Some(px(8.0)),
-                    border_bottom_right_radius: Some(px(8.0)),
                     shadow: Some(runtime_core::Shadow { x: 0.0, y: 8.0, blur: 24.0, color: col(theme::SHADOW) }),
                     // The shared popup level (`popups::POPUP_Z`).
                     z_index: Some(60),
                     overflow: Some(Overflow::Hidden),
-                    ..Default::default()
+                    ..rounded(8.0)
                 }) {
                     view(style = StyleRules {
                         flex_direction: Some(FlexDirection::Row),
@@ -249,11 +237,7 @@ pub(super) fn search_box(server: Signal<Option<i64>>, server_name: String, on_ju
                 padding_right: Some(px(8.0)),
                 gap: Some(px(6.0)),
                 background: Some(col(theme::BG_TERTIARY)),
-                border_top_left_radius: Some(px(4.0)),
-                border_top_right_radius: Some(px(4.0)),
-                border_bottom_left_radius: Some(px(4.0)),
-                border_bottom_right_radius: Some(px(4.0)),
-                ..Default::default()
+                ..rounded(4.0)
             }) {
                 text_input(
                     value = query,

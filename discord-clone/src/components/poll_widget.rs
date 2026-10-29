@@ -32,7 +32,7 @@
 //!   construction.
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
     StyleRules,
@@ -75,11 +75,7 @@ pub fn PollWidget() -> Element {
             padding_top: Some(px(12.0)),
             padding_bottom: Some(px(12.0)),
             background: Some(col(theme::BG_SECONDARY)),
-            border_top_left_radius: Some(px(10.0)),
-            border_top_right_radius: Some(px(10.0)),
-            border_bottom_left_radius: Some(px(10.0)),
-            border_bottom_right_radius: Some(px(10.0)),
-            ..Default::default()
+            ..rounded(10.0)
         }) {
             // The hardcoded question header — a static string body, so it bakes
             // to a static `TextSource` (no reactive machinery).
@@ -101,11 +97,7 @@ pub fn PollWidget() -> Element {
                 padding_top: Some(px(8.0)),
                 padding_bottom: Some(px(8.0)),
                 background: Some(col(theme::BG_PRIMARY)),
-                border_top_left_radius: Some(px(6.0)),
-                border_top_right_radius: Some(px(6.0)),
-                border_bottom_left_radius: Some(px(6.0)),
-                border_bottom_right_radius: Some(px(6.0)),
-                ..Default::default()
+                ..rounded(6.0)
             }) {
                 // The hardcoded option label — a static string body.
                 text(style = StyleRules {
@@ -132,14 +124,10 @@ pub fn PollWidget() -> Element {
                         padding_left: Some(px(12.0)),
                         padding_right: Some(px(12.0)),
                         background: Some(col(theme::ACCENT)),
-                        border_top_left_radius: Some(px(5.0)),
-                        border_top_right_radius: Some(px(5.0)),
-                        border_bottom_left_radius: Some(px(5.0)),
-                        border_bottom_right_radius: Some(px(5.0)),
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),
-                        ..Default::default()
+                        ..rounded(5.0)
                     }
                 )
             }
@@ -154,11 +142,7 @@ pub fn PollWidget() -> Element {
                 padding_top: Some(px(8.0)),
                 padding_bottom: Some(px(8.0)),
                 background: Some(col(theme::BG_PRIMARY)),
-                border_top_left_radius: Some(px(6.0)),
-                border_top_right_radius: Some(px(6.0)),
-                border_bottom_left_radius: Some(px(6.0)),
-                border_bottom_right_radius: Some(px(6.0)),
-                ..Default::default()
+                ..rounded(6.0)
             }) {
                 // The hardcoded option label — a static string body.
                 text(style = StyleRules {
@@ -183,14 +167,10 @@ pub fn PollWidget() -> Element {
                         padding_left: Some(px(12.0)),
                         padding_right: Some(px(12.0)),
                         background: Some(col(theme::ACCENT)),
-                        border_top_left_radius: Some(px(5.0)),
-                        border_top_right_radius: Some(px(5.0)),
-                        border_bottom_left_radius: Some(px(5.0)),
-                        border_bottom_right_radius: Some(px(5.0)),
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),
-                        ..Default::default()
+                        ..rounded(5.0)
                     }
                 )
             }

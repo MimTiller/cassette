@@ -25,7 +25,7 @@
 //!   other when a button sets the signal).
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, StyleRules,
 };
@@ -67,11 +67,7 @@ pub fn DeleteMessageConfirm() -> Element {
             padding_left: Some(px(20.0)),
             padding_right: Some(px(20.0)),
             background: Some(col(theme::BG_SECONDARY)),
-            border_top_left_radius: Some(px(8.0)),
-            border_top_right_radius: Some(px(8.0)),
-            border_bottom_left_radius: Some(px(8.0)),
-            border_bottom_right_radius: Some(px(8.0)),
-            ..Default::default()
+            ..rounded(8.0)
         }) {
             // The hardcoded local message snippet — a sender line plus a body
             // line, both local literals, no lookup, no backend call.
@@ -85,11 +81,7 @@ pub fn DeleteMessageConfirm() -> Element {
                 padding_top: Some(px(10.0)),
                 padding_bottom: Some(px(10.0)),
                 background: Some(col(theme::BG_PRIMARY)),
-                border_top_left_radius: Some(px(6.0)),
-                border_top_right_radius: Some(px(6.0)),
-                border_bottom_left_radius: Some(px(6.0)),
-                border_bottom_right_radius: Some(px(6.0)),
-                ..Default::default()
+                ..rounded(6.0)
             }) {
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
@@ -136,14 +128,10 @@ pub fn DeleteMessageConfirm() -> Element {
                             padding_left: Some(px(16.0)),
                             padding_right: Some(px(16.0)),
                             background: Some(col(theme::BUTTON_SECONDARY)),
-                            border_top_left_radius: Some(px(6.0)),
-                            border_top_right_radius: Some(px(6.0)),
-                            border_bottom_left_radius: Some(px(6.0)),
-                            border_bottom_right_radius: Some(px(6.0)),
                             flex_direction: Some(FlexDirection::Row),
                             align_items: Some(AlignItems::Center),
                             justify_content: Some(JustifyContent::Center),
-                            ..Default::default()
+                            ..rounded(6.0)
                         }
                     )
                     button(
@@ -154,14 +142,10 @@ pub fn DeleteMessageConfirm() -> Element {
                             padding_left: Some(px(16.0)),
                             padding_right: Some(px(16.0)),
                             background: Some(col(theme::DANGER_STRONG)),
-                            border_top_left_radius: Some(px(6.0)),
-                            border_top_right_radius: Some(px(6.0)),
-                            border_bottom_left_radius: Some(px(6.0)),
-                            border_bottom_right_radius: Some(px(6.0)),
                             flex_direction: Some(FlexDirection::Row),
                             align_items: Some(AlignItems::Center),
                             justify_content: Some(JustifyContent::Center),
-                            ..Default::default()
+                            ..rounded(6.0)
                         }
                     )
                 }

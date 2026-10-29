@@ -34,7 +34,7 @@
 use crate::theme;
 use std::rc::Rc;
 
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     ui, AlignItems, Element, FlexDirection, FontWeight, Position, Signal, StyleRules, TouchPhase,
     TouchResponse,
@@ -70,11 +70,7 @@ pub fn JumpToBottomButton(visible: Signal<bool>, on_jump: Rc<dyn Fn()>) -> Eleme
                 gap: Some(px(6.0)),
                 font_size: Some(px(12.0)),
                 font_weight: Some(FontWeight::SemiBold),
-                border_top_left_radius: Some(px(16.0)),
-                border_top_right_radius: Some(px(16.0)),
-                border_bottom_left_radius: Some(px(16.0)),
-                border_bottom_right_radius: Some(px(16.0)),
-                ..Default::default()
+                ..rounded(16.0)
             }) {
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),

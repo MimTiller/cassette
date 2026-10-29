@@ -43,7 +43,7 @@
 //!   back).
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, Position,
     StyleRules, TouchPhase, TouchResponse,
@@ -88,11 +88,7 @@ pub fn ChannelTopicBanner(
             padding_left: Some(px(16.0)),
             padding_right: Some(px(12.0)),
             background: Some(col(theme::BG_PRIMARY)),
-            border_top_left_radius: Some(px(6.0)),
-            border_top_right_radius: Some(px(6.0)),
-            border_bottom_left_radius: Some(px(6.0)),
-            border_bottom_right_radius: Some(px(6.0)),
-            ..Default::default()
+            ..rounded(6.0)
         }) {
             // Reactive branch: `if !collapsed.get() {…}` lowers to a `when` that
             // mounts the topic text while not collapsed and unmounts it the
@@ -125,11 +121,7 @@ pub fn ChannelTopicBanner(
                 flex_direction: Some(FlexDirection::Row),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
-                border_top_left_radius: Some(px(6.0)),
-                border_top_right_radius: Some(px(6.0)),
-                border_bottom_left_radius: Some(px(6.0)),
-                border_bottom_right_radius: Some(px(6.0)),
-                ..Default::default()
+                ..rounded(6.0)
             }) {
                 if collapsed.get() {
                     text(style = StyleRules {

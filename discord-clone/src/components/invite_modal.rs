@@ -29,7 +29,7 @@ use runtime_core::{
 
 use crate::invite_expiry_selector::InviteExpirySelector;
 use crate::invite_link_display::InviteLinkDisplay;
-use crate::style_helpers::{col, pct, px};
+use crate::style_helpers::{col, pct, px, rounded};
 
 // Discord dark palette (kept local so the component is self-contained).
 
@@ -67,11 +67,7 @@ pub fn InviteModal(
         background: Some(col(theme::BG_SECONDARY)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(6.0)),
-        border_top_right_radius: Some(px(6.0)),
-        border_bottom_left_radius: Some(px(6.0)),
-        border_bottom_right_radius: Some(px(6.0)),
-        ..Default::default()
+        ..rounded(6.0)
     };
     let close_btn = ui! {
         view(style = close_pill_style, test_id = "invite-close") {
@@ -126,12 +122,8 @@ pub fn InviteModal(
         font_weight: Some(FontWeight::SemiBold),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
         flex_direction: Some(FlexDirection::Row),
-        ..Default::default()
+        ..rounded(8.0)
     };
     let create_btn_label = StyleRules {
         font_size: Some(px(15.0)),

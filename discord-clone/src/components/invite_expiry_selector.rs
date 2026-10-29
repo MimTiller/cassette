@@ -32,7 +32,7 @@
 //!   (a bare `if` in the content slot yields an `Element`, which it is not).
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, ui, AlignItems, Element, FlexDirection, FontWeight, Signal, StyleRules, Tokenized,
     TouchPhase, TouchResponse,
@@ -90,11 +90,7 @@ pub fn InviteExpirySelector(value: Signal<usize>) -> Element {
                         align_items: Some(AlignItems::Center),
                         gap: Some(px(10.0)),
                         background: Some(col(if sel { theme::BG_SELECTED } else { "transparent" })),
-                        border_top_left_radius: Some(px(8.0)),
-                        border_top_right_radius: Some(px(8.0)),
-                        border_bottom_left_radius: Some(px(8.0)),
-                        border_bottom_right_radius: Some(px(8.0)),
-                        ..Default::default()
+                        ..rounded(8.0)
                     }
                 }) {
                     // Radio indicator: a bordered circle that FILLS when this
@@ -103,10 +99,6 @@ pub fn InviteExpirySelector(value: Signal<usize>) -> Element {
                     view(style = move || StyleRules {
                         width: Some(px(16.0)),
                         height: Some(px(16.0)),
-                        border_top_left_radius: Some(px(8.0)),
-                        border_top_right_radius: Some(px(8.0)),
-                        border_bottom_left_radius: Some(px(8.0)),
-                        border_bottom_right_radius: Some(px(8.0)),
                         border_top_width: Some(border_width(2.0)),
                         border_bottom_width: Some(border_width(2.0)),
                         border_left_width: Some(border_width(2.0)),
@@ -136,7 +128,7 @@ pub fn InviteExpirySelector(value: Signal<usize>) -> Element {
                         } else {
                             "transparent"
                         })),
-                        ..Default::default()
+                        ..rounded(8.0)
                     }) {}
                     text(style = move || StyleRules {
                         font_size: Some(px(15.0)),

@@ -24,7 +24,7 @@
 //! - the swap is a reactive `if hovered.get() { … } else { … }` inside `ui!`,
 //!   each branch reading the signal so `ui!` lowers it to a `when`.
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{signal, ui, AlignItems, Element, FlexDirection, StyleRules};
 
 // Discord dark palette (kept local so the component is self-contained).
@@ -49,11 +49,7 @@ pub fn message_timestamp_tooltip(when: String, full: String) -> Element {
             padding_right: Some(px(6.0)),
             padding_top: Some(px(2.0)),
             padding_bottom: Some(px(2.0)),
-            border_top_left_radius: Some(px(4.0)),
-            border_top_right_radius: Some(px(4.0)),
-            border_bottom_left_radius: Some(px(4.0)),
-            border_bottom_right_radius: Some(px(4.0)),
-            ..Default::default()
+            ..rounded(4.0)
         }, on_hover = move |is_hovered: bool| hovered.set(is_hovered)) {
             // Reactive branch: hover swaps the short relative string for the
             // full local timestamp. `StyleRules` is not `Copy`, so both

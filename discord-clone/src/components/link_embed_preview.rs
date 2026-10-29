@@ -25,7 +25,7 @@
 //!   meta lines.
 
 use crate::theme;
-use crate::style_helpers::{col, px};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, ui, AlignItems, Element, FlexDirection, FontWeight, StyleRules, Tokenized,
 };
@@ -69,11 +69,7 @@ pub fn LinkEmbedPreview(
         padding_bottom: Some(px(12.0)),
         padding_left: Some(px(12.0)),
         background: Some(col(theme::BG_SECONDARY)),
-        border_top_left_radius: Some(px(10.0)),
-        border_top_right_radius: Some(px(10.0)),
-        border_bottom_left_radius: Some(px(10.0)),
-        border_bottom_right_radius: Some(px(10.0)),
-        ..Default::default()
+        ..rounded(10.0)
     };
 
     let stack_style = StyleRules {

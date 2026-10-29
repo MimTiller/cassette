@@ -126,10 +126,6 @@ pub(super) fn action_menu(
                         width: Some(px(150.0)),
                         gap: Some(px(2.0)),
                         background: Some(col(theme::BG_FLOATING)),
-                        border_top_left_radius: Some(px(8.0)),
-                        border_top_right_radius: Some(px(8.0)),
-                        border_bottom_left_radius: Some(px(8.0)),
-                        border_bottom_right_radius: Some(px(8.0)),
                         border_top_width: Some(border_width(1.0)),
                         border_right_width: Some(border_width(1.0)),
                         border_bottom_width: Some(border_width(1.0)),
@@ -139,7 +135,7 @@ pub(super) fn action_menu(
                         border_bottom_color: Some(col(BORDER)),
                         border_left_color: Some(col(BORDER)),
                         overflow: Some(Overflow::Hidden),
-                        ..Default::default()
+                        ..rounded(8.0)
                     }) {
                         for (label, red, on) in rows.into_iter() {
                             view(style = StyleRules {
@@ -232,12 +228,8 @@ pub(super) fn live_member_panel(
         padding_left: Some(px(8.0)),
         padding_right: Some(px(8.0)),
         background: Some(col(COMPOSER)),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
         flex_shrink: Some(grow(0.0)),
-        ..Default::default()
+        ..rounded(8.0)
     };
     let role_label_style = StyleRules {
         font_size: Some(px(11.0)),
@@ -249,10 +241,6 @@ pub(super) fn live_member_panel(
     // (red TEXT labels only); this panel renders no moderation pills.
     let confirm_bg_style = StyleRules {
         background: Some(col(BG_ACTIVE)),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
         padding_top: Some(px(4.0)),
         padding_bottom: Some(px(4.0)),
         padding_left: Some(px(8.0)),
@@ -260,7 +248,7 @@ pub(super) fn live_member_panel(
         gap: Some(px(8.0)),
         flex_direction: Some(FlexDirection::Row),
         align_items: Some(AlignItems::Center),
-        ..Default::default()
+        ..rounded(8.0)
     };
     let confirm_yes_style = StyleRules {
         background: Some(col(BADGE)),
@@ -268,12 +256,8 @@ pub(super) fn live_member_panel(
         padding_bottom: Some(px(4.0)),
         padding_left: Some(px(10.0)),
         padding_right: Some(px(10.0)),
-        border_top_left_radius: Some(px(6.0)),
-        border_top_right_radius: Some(px(6.0)),
-        border_bottom_left_radius: Some(px(6.0)),
-        border_bottom_right_radius: Some(px(6.0)),
         flex_shrink: Some(grow(0.0)),
-        ..Default::default()
+        ..rounded(6.0)
     };
     let confirm_no_style = StyleRules {
         background: Some(col(BG_HOVER)),
@@ -281,12 +265,8 @@ pub(super) fn live_member_panel(
         padding_bottom: Some(px(4.0)),
         padding_left: Some(px(10.0)),
         padding_right: Some(px(10.0)),
-        border_top_left_radius: Some(px(6.0)),
-        border_top_right_radius: Some(px(6.0)),
-        border_bottom_left_radius: Some(px(6.0)),
-        border_bottom_right_radius: Some(px(6.0)),
         flex_shrink: Some(grow(0.0)),
-        ..Default::default()
+        ..rounded(6.0)
     };
     let small_label_style = StyleRules {
         font_size: Some(px(12.0)),
@@ -411,11 +391,7 @@ pub(super) fn live_member_panel(
             border_right_color: Some(col(ring_bg)),
             border_bottom_color: Some(col(ring_bg)),
             border_left_color: Some(col(ring_bg)),
-            border_top_left_radius: Some(px(6.0)),
-            border_top_right_radius: Some(px(6.0)),
-            border_bottom_left_radius: Some(px(6.0)),
-            border_bottom_right_radius: Some(px(6.0)),
-            ..Default::default()
+            ..rounded(6.0)
         };
 
         let row = ui! {
@@ -615,10 +591,6 @@ pub(super) fn live_member_panel(
                     // A flex Column keeps every control inside the panel width.
                     view(style = StyleRules {
                         background: Some(col(BG_ACTIVE)),
-                        border_top_left_radius: Some(px(8.0)),
-                        border_top_right_radius: Some(px(8.0)),
-                        border_bottom_left_radius: Some(px(8.0)),
-                        border_bottom_right_radius: Some(px(8.0)),
                         padding_top: Some(px(4.0)),
                         padding_bottom: Some(px(4.0)),
                         padding_left: Some(px(8.0)),
@@ -626,7 +598,7 @@ pub(super) fn live_member_panel(
                         gap: Some(px(8.0)),
                         flex_direction: Some(FlexDirection::Column),
                         align_items: Some(AlignItems::Center),
-                        ..Default::default()
+                        ..rounded(8.0)
                     }) {
                         text(style = StyleRules {
                             font_size: Some(px(12.0)),

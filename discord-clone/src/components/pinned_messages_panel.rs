@@ -37,7 +37,7 @@ use crate::theme;
 use icons_lucide::{PIN, PIN_OFF};
 use runtime_core::icon;
 use crate::pins::{PinnedMessage, unpin_message};
-use crate::style_helpers::{col, px, pct};
+use crate::style_helpers::{col, px, pct, rounded};
 use runtime_core::{
     switch, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent, Overflow,
     Position, Signal, StyleRules, TouchPhase, TouchResponse,
@@ -117,10 +117,6 @@ pub fn pinned_messages_panel(
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),
-                        border_top_left_radius: Some(px(6.0)),
-                        border_top_right_radius: Some(px(6.0)),
-                        border_bottom_left_radius: Some(px(6.0)),
-                        border_bottom_right_radius: Some(px(6.0)),
                         border_top_width: Some(runtime_core::Tokenized::Literal(1.0)),
                         border_right_width: Some(runtime_core::Tokenized::Literal(1.0)),
                         border_bottom_width: Some(runtime_core::Tokenized::Literal(1.0)),
@@ -129,7 +125,7 @@ pub fn pinned_messages_panel(
                         border_right_color: Some(col(theme::TEXT_MUTED)),
                         border_bottom_color: Some(col(theme::TEXT_MUTED)),
                         border_left_color: Some(col(theme::TEXT_MUTED)),
-                        ..Default::default()
+                        ..rounded(6.0)
                     }) {
                         text(style = StyleRules {
                             font_size: Some(px(14.0)),
@@ -292,11 +288,7 @@ fn pin_row(
             padding_left: Some(px(14.0)),
             padding_right: Some(px(14.0)),
             background: Some(col(theme::BG_SECONDARY)),
-            border_top_left_radius: Some(px(8.0)),
-            border_top_right_radius: Some(px(8.0)),
-            border_bottom_left_radius: Some(px(8.0)),
-            border_bottom_right_radius: Some(px(8.0)),
-            ..Default::default()
+            ..rounded(8.0)
         }) {
             view(style = StyleRules {
                 flex_direction: Some(FlexDirection::Column),
@@ -325,10 +317,6 @@ fn pin_row(
                 padding_bottom: Some(px(6.0)),
                 padding_left: Some(px(10.0)),
                 padding_right: Some(px(10.0)),
-                border_top_left_radius: Some(px(8.0)),
-                border_top_right_radius: Some(px(8.0)),
-                border_bottom_left_radius: Some(px(8.0)),
-                border_bottom_right_radius: Some(px(8.0)),
                 background: Some(col(theme::BG_SECONDARY)),
                 border_top_width: Some(runtime_core::Tokenized::Literal(1.0)),
                 border_right_width: Some(runtime_core::Tokenized::Literal(1.0)),
@@ -338,7 +326,7 @@ fn pin_row(
                 border_right_color: Some(col(theme::DANGER)),
                 border_bottom_color: Some(col(theme::DANGER)),
                 border_left_color: Some(col(theme::DANGER)),
-                ..Default::default()
+                ..rounded(8.0)
             }) {
                 icon(PIN_OFF).color(|| theme::live(theme::DANGER)).size(14.0)
                 text(style = StyleRules {

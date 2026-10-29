@@ -44,7 +44,7 @@
 //!   toggles the local state — no backend call.
 
 use crate::theme;
-use crate::style_helpers::{col, pct, px};
+use crate::style_helpers::{col, pct, px, rounded};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, Overflow,
     PointerEvents, Position, StyleRules, Tokenized, TouchPhase, TouchResponse,
@@ -98,11 +98,7 @@ pub fn SpoilerTag(
                 padding_right: Some(px(8.0)),
                 padding_top: Some(px(4.0)),
                 padding_bottom: Some(px(4.0)),
-                border_top_left_radius: Some(px(RADIUS)),
-                border_top_right_radius: Some(px(RADIUS)),
-                border_bottom_left_radius: Some(px(RADIUS)),
-                border_bottom_right_radius: Some(px(RADIUS)),
-                ..Default::default()
+                ..rounded(RADIUS)
             }) { body.clone() }
 
             // Reactive branch: `if revealed.get() {…}` lowers to a `when` whose
@@ -122,11 +118,7 @@ pub fn SpoilerTag(
                     background: Some(col(theme::BG_TERTIARY)),
                     opacity: Some(Tokenized::Literal(0.92)),
                     pointer_events: Some(PointerEvents::None),
-                    border_top_left_radius: Some(px(RADIUS)),
-                    border_top_right_radius: Some(px(RADIUS)),
-                    border_bottom_left_radius: Some(px(RADIUS)),
-                    border_bottom_right_radius: Some(px(RADIUS)),
-                    ..Default::default()
+                    ..rounded(RADIUS)
                 })
             }
         }

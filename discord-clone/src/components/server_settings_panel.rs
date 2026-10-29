@@ -40,7 +40,7 @@ use runtime_core::{
 };
 use file_picker::{FilePicker, MediaKind, PickOutcome, PickRequest};
 
-use crate::style_helpers::{borderless_input, col, pct, px, section_label};
+use crate::style_helpers::{borderless_input, col, pct, px, section_label, rounded, with_radius};
 use std::rc::Rc;
 
 // Discord dark palette (kept local so the component is self-contained).
@@ -110,38 +110,26 @@ pub fn ServerSettingsPanel(
     let input_style = StyleRules {
         height: Some(px(36.0)),
         background: Some(col(theme::BG_TERTIARY)),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
         padding_left: Some(px(10.0)),
         padding_right: Some(px(10.0)),
         align_items: Some(AlignItems::Center),
-        ..borderless_input()
+        ..with_radius(borderless_input(), 8.0)
     };
     let save_btn_style = StyleRules {
         height: Some(px(34.0)),
         background: Some(col(theme::BUTTON_SECONDARY)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
         flex_direction: Some(FlexDirection::Row),
-        ..Default::default()
+        ..rounded(8.0)
     };
     let transfer_btn_style = StyleRules {
         height: Some(px(34.0)),
         background: Some(col(theme::SUCCESS_STRONG)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
         flex_direction: Some(FlexDirection::Row),
-        ..Default::default()
+        ..rounded(8.0)
     };
     // The add-member section's "Add member" button (green, like transfer) and
     // the role cycle-chip (a compact tappable pill the live member panel's
@@ -152,12 +140,8 @@ pub fn ServerSettingsPanel(
         background: Some(col(theme::SUCCESS_STRONG)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
         flex_direction: Some(FlexDirection::Row),
-        ..Default::default()
+        ..rounded(8.0)
     };
     let role_chip_style = StyleRules {
         height: Some(px(34.0)),
@@ -166,13 +150,9 @@ pub fn ServerSettingsPanel(
         padding_right: Some(px(10.0)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
-        border_top_left_radius: Some(px(8.0)),
-        border_top_right_radius: Some(px(8.0)),
-        border_bottom_left_radius: Some(px(8.0)),
-        border_bottom_right_radius: Some(px(8.0)),
         flex_shrink: Some(runtime_core::Tokenized::Literal(0.0)),
         flex_direction: Some(FlexDirection::Row),
-        ..Default::default()
+        ..rounded(8.0)
     };
     let role_chip_label_style = StyleRules {
         font_size: Some(px(13.0)),
@@ -452,11 +432,7 @@ pub fn ServerSettingsPanel(
                         justify_content: Some(JustifyContent::Center),
                         background: Some(col(theme::BG_TERTIARY)),
                         object_fit: Some(ObjectFit::Cover),
-                        border_top_left_radius: Some(px(20.0)),
-                        border_top_right_radius: Some(px(20.0)),
-                        border_bottom_left_radius: Some(px(20.0)),
-                        border_bottom_right_radius: Some(px(20.0)),
-                        ..Default::default()
+                        ..rounded(20.0)
                     };
                     if url.is_empty() {
                         let initial = nm.get().chars().next().unwrap_or('?').to_string();
@@ -542,16 +518,12 @@ pub fn ServerSettingsPanel(
                 text_input(value = add_uid, on_change = move |v: String| add_uid.set(v), placeholder = "New member user id", style = StyleRules {
                     height: Some(px(34.0)),
                     background: Some(col(theme::BG_TERTIARY)),
-                    border_top_left_radius: Some(px(8.0)),
-                    border_top_right_radius: Some(px(8.0)),
-                    border_bottom_left_radius: Some(px(8.0)),
-                    border_bottom_right_radius: Some(px(8.0)),
                     padding_left: Some(px(10.0)),
                     padding_right: Some(px(10.0)),
                     align_items: Some(AlignItems::Center),
                     flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
                     flex_shrink: Some(runtime_core::Tokenized::Literal(1.0)),
-                    ..borderless_input()
+                    ..with_radius(borderless_input(), 8.0)
                 })
             };
             let add_role_chip = ui! {

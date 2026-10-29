@@ -30,7 +30,7 @@
 //! capture copies of the same signals and stay `Fn`.
 
 use crate::theme;
-use crate::style_helpers::{borderless_input, col, pct, px};
+use crate::style_helpers::{borderless_input, col, pct, px, rounded, with_radius};
 use std::rc::Rc;
 use runtime_core::{
     component, signal, switch, ui, AlignItems, Element, FlexDirection, JustifyContent, Position,
@@ -70,11 +70,7 @@ fn option_row(label: &str, idx: u32, selected: Signal<u32>, on_pick: Rc<dyn Fn(u
             padding_left: Some(px(12.0)),
             padding_right: Some(px(12.0)),
             background: Some(col(theme::BG_PRIMARY)),
-            border_top_left_radius: Some(px(6.0)),
-            border_top_right_radius: Some(px(6.0)),
-            border_bottom_left_radius: Some(px(6.0)),
-            border_bottom_right_radius: Some(px(6.0)),
-            ..Default::default()
+            ..rounded(6.0)
         }) {
             if selected.get() == idx {
                 text(style = StyleRules {
@@ -250,15 +246,11 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
     let input_style = StyleRules {
         height: Some(px(32.0)),
         background: Some(col(theme::BG_TERTIARY)),
-        border_top_left_radius: Some(px(6.0)),
-        border_top_right_radius: Some(px(6.0)),
-        border_bottom_left_radius: Some(px(6.0)),
-        border_bottom_right_radius: Some(px(6.0)),
         font_size: Some(px(14.0)),
         padding_left: Some(px(10.0)),
         padding_right: Some(px(10.0)),
         color: Some(col(theme::TEXT_STRONG)),
-        ..borderless_input()
+        ..with_radius(borderless_input(), 6.0)
     };
 
     let blocked_list = switch(
@@ -291,11 +283,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                             align_items: Some(AlignItems::Center),
                             justify_content: Some(JustifyContent::Center),
                             background: Some(col(theme::BUTTON_SECONDARY)),
-                            border_top_left_radius: Some(px(4.0)),
-                            border_top_right_radius: Some(px(4.0)),
-                            border_bottom_left_radius: Some(px(4.0)),
-                            border_bottom_right_radius: Some(px(4.0)),
-                            ..Default::default()
+                            ..rounded(4.0)
                         }) {
                             text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { "Unblock".to_string() }
                         }
@@ -344,14 +332,10 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                     padding_left: Some(px(14.0)),
                     padding_right: Some(px(14.0)),
                     background: Some(col(theme::ACCENT)),
-                    border_top_left_radius: Some(px(6.0)),
-                    border_top_right_radius: Some(px(6.0)),
-                    border_bottom_left_radius: Some(px(6.0)),
-                    border_bottom_right_radius: Some(px(6.0)),
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
                     flex_direction: Some(FlexDirection::Row),
-                    ..Default::default()
+                    ..rounded(6.0)
                 }
             )
 
@@ -383,14 +367,10 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                     padding_left: Some(px(14.0)),
                     padding_right: Some(px(14.0)),
                     background: Some(col(theme::ACCENT)),
-                    border_top_left_radius: Some(px(6.0)),
-                    border_top_right_radius: Some(px(6.0)),
-                    border_bottom_left_radius: Some(px(6.0)),
-                    border_bottom_right_radius: Some(px(6.0)),
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
                     flex_direction: Some(FlexDirection::Row),
-                    ..Default::default()
+                    ..rounded(6.0)
                 }
             )
 
@@ -446,11 +426,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
                 background: Some(col(theme::DANGER_STRONG)),
-                border_top_left_radius: Some(px(4.0)),
-                border_top_right_radius: Some(px(4.0)),
-                border_bottom_left_radius: Some(px(4.0)),
-                border_bottom_right_radius: Some(px(4.0)),
-                ..Default::default()
+                ..rounded(4.0)
             }, test_id = "logout-everywhere") {
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
@@ -485,10 +461,6 @@ fn accent_swatch(
                 width: Some(px(34.0)),
                 height: Some(px(34.0)),
                 background: Some(theme::fixed(hex)),
-                border_top_left_radius: Some(px(8.0)),
-                border_top_right_radius: Some(px(8.0)),
-                border_bottom_left_radius: Some(px(8.0)),
-                border_bottom_right_radius: Some(px(8.0)),
                 border_top_width: Some(runtime_core::Tokenized::Literal(if on { 3.0 } else { 1.0 })),
                 border_right_width: Some(runtime_core::Tokenized::Literal(if on { 3.0 } else { 1.0 })),
                 border_bottom_width: Some(runtime_core::Tokenized::Literal(if on { 3.0 } else { 1.0 })),
@@ -497,7 +469,7 @@ fn accent_swatch(
                 border_right_color: Some(col(if on { theme::TEXT_STRONG } else { theme::TEXT_FAINT })),
                 border_bottom_color: Some(col(if on { theme::TEXT_STRONG } else { theme::TEXT_FAINT })),
                 border_left_color: Some(col(if on { theme::TEXT_STRONG } else { theme::TEXT_FAINT })),
-                ..Default::default()
+                ..rounded(8.0)
             }
         })
         .on_touch(move |ev| {
@@ -521,11 +493,7 @@ fn theme_card(name: theme::ThemeName, active: Signal<theme::ThemeName>, on_pick:
             width: Some(px(w)),
             height: Some(px(6.0)),
             background: Some(theme::fixed(c)),
-            border_top_left_radius: Some(px(3.0)),
-            border_top_right_radius: Some(px(3.0)),
-            border_bottom_left_radius: Some(px(3.0)),
-            border_bottom_right_radius: Some(px(3.0)),
-            ..Default::default()
+            ..rounded(3.0)
         }) {}
     };
     let preview = ui! {
@@ -534,12 +502,8 @@ fn theme_card(name: theme::ThemeName, active: Signal<theme::ThemeName>, on_pick:
             height: Some(px(84.0)),
             flex_direction: Some(FlexDirection::Row),
             background: Some(theme::fixed(name.value(theme::BG_PRIMARY))),
-            border_top_left_radius: Some(px(6.0)),
-            border_top_right_radius: Some(px(6.0)),
-            border_bottom_left_radius: Some(px(6.0)),
-            border_bottom_right_radius: Some(px(6.0)),
             overflow: Some(runtime_core::Overflow::Hidden),
-            ..Default::default()
+            ..rounded(6.0)
         }) {
             view(style = StyleRules { width: Some(px(14.0)), background: Some(theme::fixed(name.value(theme::BG_TERTIARY))), ..Default::default() }) {}
             view(style = StyleRules { width: Some(px(30.0)), background: Some(theme::fixed(name.value(theme::BG_SECONDARY))), ..Default::default() }) {}
@@ -581,11 +545,7 @@ fn theme_card(name: theme::ThemeName, active: Signal<theme::ThemeName>, on_pick:
                     border_right_color: Some(c.clone()),
                     border_bottom_color: Some(c.clone()),
                     border_left_color: Some(c),
-                    border_top_left_radius: Some(px(9.0)),
-                    border_top_right_radius: Some(px(9.0)),
-                    border_bottom_left_radius: Some(px(9.0)),
-                    border_bottom_right_radius: Some(px(9.0)),
-                    ..Default::default()
+                    ..rounded(9.0)
                 }
             }) { preview }
             text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_NORMAL)), ..Default::default() }) {
@@ -859,11 +819,7 @@ pub(crate) fn settings_layout(nav: Vec<Element>, panel: Element, close: Option<R
                         border_right_color: Some(col(theme::TEXT_MUTED)),
                         border_bottom_color: Some(col(theme::TEXT_MUTED)),
                         border_left_color: Some(col(theme::TEXT_MUTED)),
-                        border_top_left_radius: Some(px(18.0)),
-                        border_top_right_radius: Some(px(18.0)),
-                        border_bottom_left_radius: Some(px(18.0)),
-                        border_bottom_right_radius: Some(px(18.0)),
-                        ..Default::default()
+                        ..rounded(18.0)
                     }, test_id = "settings-close") {
                         text(style = StyleRules { font_size: Some(px(16.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { "✕".to_string() }
                     }
@@ -905,11 +861,7 @@ pub(crate) fn nav_row(label: &str, danger: bool, active: Signal<usize>, index: u
                 flex_direction: Some(FlexDirection::Row),
                 align_items: Some(AlignItems::Center),
                 background: Some(col(if on { theme::BG_SELECTED } else if hovered.get() { theme::BG_HOVER } else { "transparent" })),
-                border_top_left_radius: Some(px(4.0)),
-                border_top_right_radius: Some(px(4.0)),
-                border_bottom_left_radius: Some(px(4.0)),
-                border_bottom_right_radius: Some(px(4.0)),
-                ..Default::default()
+                ..rounded(4.0)
             }
         }) {
             text(style = move || {
