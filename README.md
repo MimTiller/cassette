@@ -1,69 +1,79 @@
+<p align="center">
+  <img src="docs/cassette.svg" width="112" alt="Cassette logo: a black cassette tape with an orange label">
+</p>
+
 # Cassette
 
-A self-hosted, Discord-style chat app written entirely in Rust. Servers,
-channels, real-time messaging, DMs, friends, roles and moderation, all in one
-codebase that compiles to a WebAssembly client and a native API server.
+Discord, but it lives on your own box.
 
-Cassette is built on the [idealyst](https://github.com/IdealystIO/idealyst-native)
-UI framework: there is no JavaScript framework and no hand-written HTTP layer.
-The client calls the server through typed `#[server]` functions, and live
-updates arrive over a WebSocket gateway.
+Cassette is a group chat you host yourself. If you've used Discord you
+already know your way around: servers down the left, channels next to them,
+the conversation in the middle, and everyone who's online on the right. The
+difference is where it runs. The whole thing is one server process and one
+SQLite file, on a machine you own, and the only admin is you.
 
-## Features
+It's Rust from end to end. The browser client is compiled to WebAssembly with
+the [idealyst](https://github.com/IdealystIO/idealyst-native) UI framework,
+so there's no JavaScript framework underneath. Client and server share their
+types and talk through plain Rust function calls, which means there's no
+REST API for the two sides to drift apart on. Anything live, like new
+messages, typing and who's online, comes in over a WebSocket.
 
-**Accounts**
-- Sign up and log in with a username and password
-- Change your username or password, log out of every device at once
-- Avatars, profile cards and online / idle / do-not-disturb status
+## What's on the tape
 
-**Servers and channels**
-- Create a server, or join one with an invite link
-- Text and voice channels, grouped into collapsible categories
-- Server name and icon, ownership transfer
-- Unread counts and mention badges per channel and server
+**Talking**
+- Messages land the moment they're sent, and you can see when someone's
+  typing. Edit them, delete them, reply to them, react to them, pin the
+  good ones
+- Markdown, image uploads, an emoji picker, and a GIF picker (bring your own
+  Giphy key)
+- Your server's own custom emoji, used as `:name:` in messages and
+  reactions. Rename one and every old message picks up the new name
+- Paste a link and a preview card shows up with the page's title, blurb and
+  image
+- `@someone`, `@role`, `@everyone` and `@here`, with autocomplete. Messages
+  that mention you light up
+- Search a server's whole history and jump straight to the hit
+- Come back to a busy channel and a "new messages since…" bar takes you to
+  where you left off
 
-**Messaging**
-- Real-time messages with history, edit and delete
-- Replies, emoji reactions, pinned messages
-- Markdown, image attachments, a GIF picker (Giphy) and an emoji picker
-- Typing indicators and date dividers
-- `@user`, `@role`, `@everyone` and `@here` mentions with autocomplete;
-  messages that mention you are highlighted
+**Running a server**
+- Start one, share an invite link, and people are in
+- Text and voice channels, sorted into categories you can fold away
+- Roles with colours and 16 separate permissions, plus per-channel overrides
+- Private channels, hidden from everyone you haven't let in
+- Kick, ban and time out. You can only do that to people ranked below you,
+  so moderators can't gang up on the owner
 
-**People**
-- Direct messages (with GIFs)
-- Friends and friend requests
-- Blocking, which hides a user's messages
+**You**
+- A display name, avatar and "about me"
+- Online, Idle, Do Not Disturb or Invisible
+- Friends, DMs and group DMs, plus a block button for when you need it
+- Browser notifications that you control per server and per channel: ping
+  for everything, only @mentions, or nothing, or mute it for 15 minutes, a
+  day, or until you say so
+- Dark, light and purple themes, and a choice of accent colours
+- Keyboard shortcuts. Press `?` to see them
 
-**Roles and moderation**
-- Permission levels: owner, admin, moderator, member
-- Named roles with colours that tint member names and can be @mentioned
-- Kick, ban and timeout
+Voice channels show who's hanging out in them, but there's no sound yet.
+That's the last track on the tape.
 
-**Settings**
-- Full-screen User Settings and Server Settings
-- Dark, light and purple themes, plus an accent colour
-- Browser notifications (all messages, mentions only, or nothing)
-- Keyboard shortcuts (`?` lists them)
-
-Voice channels show who has joined, but there is no audio yet.
-
-## Repository layout
+## What's inside
 
 | Path | What it is |
 |---|---|
-| [`discord-clone/`](discord-clone) | The client: UI, styles and client state. Compiles to WASM. |
-| [`discord-server/`](discord-server) | The backend: SQLite data layer, `#[server]` API functions, the WebSocket gateway and media storage. |
-| [`discord-server/migrations/`](discord-server/migrations) | The database schema, applied in filename order on startup. |
+| [`discord-clone/`](discord-clone) | The client: every screen, style and bit of client state. Compiles to WASM. |
+| [`discord-server/`](discord-server) | The backend: the SQLite data layer, the API functions, the WebSocket gateway and image storage. |
+| [`discord-server/migrations/`](discord-server/migrations) | The database schema. Each file runs once, in order, when the server starts. |
 
-The client depends on `discord-server` for the shared wire types. Built
-without the `server` feature, its `#[server]` functions compile to typed RPC
-calls; built with it, they are the real handlers. In production a single
-server binary hosts both the API and the client bundle on one port.
+The client pulls in `discord-server` for the types they share. Each
+`#[server]` function is written once: in the client build it turns into a
+typed network call, and in the server build it's the real handler. In
+production a single binary serves the API and the client on one port.
 
-For how the pieces fit together, see [ARCHITECTURE.md](ARCHITECTURE.md).
-Before making changes, read [AGENTS.md](AGENTS.md), the house rules for
-contributors (human or AI).
+[ARCHITECTURE.md](ARCHITECTURE.md) has the full tour. If you're about to
+change something, read [AGENTS.md](AGENTS.md) first. It's the house rules,
+for people and AI agents alike.
 
 ## Getting started
 
@@ -134,15 +144,21 @@ any failed-login lockout. Creating a new link cancels the previous one.
 
 ## Security
 
-- Passwords are hashed with PBKDF2-HMAC-SHA256 (600,000 iterations).
-- Sessions use HMAC-signed tokens in an httpOnly cookie, valid for 12 hours.
-  Changing your password or logging out everywhere revokes every session.
-- Logins, sign-ups and invite redemptions are rate-limited, and accounts
-  lock briefly after repeated failed logins.
-- Every permission check happens on the server.
+It's your server, so it should be hard to break into.
 
-[`discord-clone/README.md`](discord-clone/README.md) covers the token format,
-revocation and throttling limits in detail.
+- Passwords are hashed with PBKDF2-HMAC-SHA256 at 600,000 iterations.
+- You stay logged in with a signed token kept in an httpOnly cookie, good
+  for 12 hours. Changing your password or hitting "Log out of all devices"
+  kills every session at once.
+- Logins, sign-ups and invite links are rate-limited, and an account locks
+  for a bit after too many wrong passwords.
+- The server checks every permission itself and never takes the client's
+  word for it.
+- Link previews won't fetch anything on your own network, so nobody can
+  post a link that gets the server to go poking at your router.
+
+The token format, revocation and the exact throttling limits are in
+[`discord-clone/README.md`](discord-clone/README.md).
 
 ## Tests
 
@@ -153,4 +169,5 @@ cd discord-clone && cargo test                      # client logic
 
 ## License
 
-The crates are declared `MIT OR Apache-2.0` in their `Cargo.toml` files.
+MIT or Apache-2.0, whichever you prefer. Both are declared in each crate's
+`Cargo.toml`.
