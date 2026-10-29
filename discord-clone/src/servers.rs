@@ -19,7 +19,6 @@ pub async fn create_server(name: &str) -> Result<ServerSummary, String> {
 }
 
 /// List the servers the caller is a member of.
-#[allow(dead_code)] // consumed by the UI in a follow-up task.
 pub async fn list_servers() -> Result<Vec<ServerSummary>, String> {
     discord_server::servers::list_servers(())
         .await

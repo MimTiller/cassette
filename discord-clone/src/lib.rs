@@ -10,7 +10,6 @@ mod app;
 mod auth;
 mod servers;
 mod moderation;
-#[allow(dead_code)]
 mod invite;
 mod pins;
 // Client-side wrapper for the backend's message-reaction `#[server]` RPCs

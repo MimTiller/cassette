@@ -26,18 +26,6 @@ pub fn invite_link(code: &str) -> String {
     format!("https://discord.gg/{code}")
 }
 
-/// Accepts a bare code or a full invite link; returns the normalized
-/// (upper-case) code, or `None` if it is not a well-formed invite code.
-pub fn parse_invite_code(input: &str) -> Option<String> {
-    let t = input.trim();
-    let code = t.rsplit('/').next().unwrap_or(t).to_ascii_uppercase();
-    if code.len() == INVITE_CODE_LEN && code.bytes().all(|b| ALPHABET.contains(&b)) {
-        Some(code)
-    } else {
-        None
-    }
-}
-
 /// Create a real invite for `server_id` with the given `expires_at` (UTC epoch
 /// seconds, `None` = never expires) and `max_uses` (redemption cap, `None` =
 /// unlimited). Thin front-end for the backend's permission-checked
@@ -87,22 +75,5 @@ mod tests {
         assert_eq!(a.len(), INVITE_CODE_LEN);
         assert_eq!(a, generate_invite_code(1));
         assert_ne!(a, generate_invite_code(2));
-        assert_eq!(parse_invite_code(&a), Some(a));
-    }
-
-    #[test]
-    fn parses_links_and_normalizes_case() {
-        let code = generate_invite_code(7);
-        let link = invite_link(&code);
-        assert_eq!(parse_invite_code(&link), Some(code.clone()));
-        assert_eq!(parse_invite_code(&format!("  {}  ", code.to_lowercase())), Some(code));
-    }
-
-    #[test]
-    fn rejects_malformed_codes() {
-        assert_eq!(parse_invite_code(""), None);
-        assert_eq!(parse_invite_code("short"), None);
-        assert_eq!(parse_invite_code("ABCDEFG0"), None); // '0' is not in the alphabet
-        assert_eq!(parse_invite_code("https://discord.gg/"), None);
     }
 }
