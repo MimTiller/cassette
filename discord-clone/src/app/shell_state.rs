@@ -5,25 +5,21 @@ use super::*;
 
 #[derive(Clone)]
 pub(super) struct ShellState {
+    pub(super) composer_state: Composer,
     pub(super) layout: Layout,
     pub(super) nav: Nav,
-    pub(super) attach_busy: Signal<bool>,
-    pub(super) attach_error: Signal<String>,
-    pub(super) attach_next_key: Signal<i64>,
     pub(super) authed: Signal<bool>,
     pub(super) cc_busy: Signal<bool>,
     pub(super) cc_err: Signal<String>,
     pub(super) cc_kind: Signal<String>,
     pub(super) cc_name: Signal<String>,
     pub(super) cc_open: Signal<bool>,
-    pub(super) composer: Signal<String>,
     pub(super) dc_busy: Signal<bool>,
     pub(super) dc_cid: Signal<Option<i64>>,
     pub(super) dc_err: Signal<String>,
     pub(super) dc_name: Signal<String>,
     pub(super) dc_open: Signal<bool>,
     pub(super) deafened: Signal<bool>,
-    pub(super) emoji_open: Signal<bool>,
     pub(super) friends_add_error: Signal<String>,
     pub(super) friends_add_username: Signal<String>,
     pub(super) friends_entry: Rc<dyn Fn() -> Element>,
@@ -77,7 +73,6 @@ pub(super) struct ShellState {
     pub(super) notif_toast_title: Signal<String>,
     pub(super) notif_toast_visible: Signal<bool>,
     pub(super) on_dm_message: Rc<dyn Fn(i64)>,
-    pub(super) pending_attachment: Signal<Vec<PendingImage>>,
     pub(super) picker: Signal<Option<MessageKey>>,
     pub(super) pin_visible: Signal<bool>,
     pub(super) pinned_count: Signal<i64>,
@@ -123,7 +118,6 @@ pub(super) struct ShellState {
     pub(super) user_profile: Signal<Option<discord_server::profiles::UserProfile>>,
     pub(super) blocked_users: Signal<Vec<crate::blocks::BlockedUser>>,
     pub(super) revealed_blocked: Signal<Vec<i64>>,
-    pub(super) gif_open: Signal<bool>,
     pub(super) msg_menu: Signal<Option<MessageKey>>,
     pub(super) members_pref: Signal<Option<bool>>,
 }
@@ -235,6 +229,56 @@ impl Layout {
             member_panel_width: member_panel_width,
             collapsed: collapsed,
             live_collapsed: live_collapsed,
+        }
+    }
+}
+
+
+#[derive(Clone)]
+pub(super) struct Composer {
+    pub(super) composer: Signal<String>,
+    pub(super) emoji_open: Signal<bool>,
+    pub(super) pending_attachment: Signal<Vec<PendingImage>>,
+    pub(super) attach_next_key: Signal<i64>,
+    pub(super) attach_busy: Signal<bool>,
+    pub(super) attach_error: Signal<String>,
+    pub(super) gif_open: Signal<bool>,
+}
+
+impl Composer {
+    /// Fresh signals for this group; wiring around them stays in `app_shell`.
+    pub(super) fn new() -> Composer {
+        let composer: Signal<String> = signal(String::new());
+        // Emoji-picker popover: `true` = the floating emoji grid is open above the
+        // smile button. Pure local UI state (no backend), toggled by the smile
+        // icon and closed by picking an emoji or tapping elsewhere.
+        let emoji_open: Signal<bool> = signal(false);
+        // Pending message-image attachments staged by the composer's attach
+        // button: each entry is `(staging_key, filename, mime, data_url)` where
+        // `data_url` is the encoded `data:image/…;base64,` URL, already filled by
+        // the file-picker callback BEFORE the entry is staged (staging happens
+        // when the async pick completes), so the string never mutates in place.
+        // The thumbnail strip above the composer reads this signal (keyed
+        // `for …, key =` loop); an 'x' on a thumbnail removes that entry; Send
+        // consumes the list alongside the composer text. Keys are unique via
+        // `attach_next_key`.
+        let pending_attachment: Signal<Vec<PendingImage>> = signal(Vec::new());
+        let attach_next_key: Signal<i64> = signal(0);
+        // The attach flow's in-flight flag and visible rejection line (same
+        // triple idiom as the profile screen's avatar upload).
+        let attach_busy: Signal<bool> = signal(false);
+        let attach_error: Signal<String> = signal(String::new());
+        // The composer's GIF picker, and which message's "⋯" menu is open (see
+        // `popups`).
+        let gif_open: Signal<bool> = signal(false);
+        Composer {
+            composer: composer,
+            emoji_open: emoji_open,
+            pending_attachment: pending_attachment,
+            attach_next_key: attach_next_key,
+            attach_busy: attach_busy,
+            attach_error: attach_error,
+            gif_open: gif_open,
         }
     }
 }

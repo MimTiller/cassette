@@ -102,7 +102,7 @@ use login_screen::*;
 mod layout;
 use layout::*;
 mod shell_state;
-use shell_state::{ShellState, Nav, Layout};
+use shell_state::{ShellState, Nav, Layout, Composer};
 mod gateway_effects;
 mod rail;
 mod modals;
@@ -394,26 +394,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // --- layout: shared app-shell state (signals built in shell_state.rs) ---
     let layout = Layout::new();
     let Layout { sidebar_width, member_panel_width, collapsed, .. } = layout.clone();
-    let composer: Signal<String> = signal(String::new());
-    // Emoji-picker popover: `true` = the floating emoji grid is open above the
-    // smile button. Pure local UI state (no backend), toggled by the smile
-    // icon and closed by picking an emoji or tapping elsewhere.
-    let emoji_open: Signal<bool> = signal(false);
-    // Pending message-image attachments staged by the composer's attach
-    // button: each entry is `(staging_key, filename, mime, data_url)` where
-    // `data_url` is the encoded `data:image/…;base64,` URL, already filled by
-    // the file-picker callback BEFORE the entry is staged (staging happens
-    // when the async pick completes), so the string never mutates in place.
-    // The thumbnail strip above the composer reads this signal (keyed
-    // `for …, key =` loop); an 'x' on a thumbnail removes that entry; Send
-    // consumes the list alongside the composer text. Keys are unique via
-    // `attach_next_key`.
-    let pending_attachment: Signal<Vec<PendingImage>> = signal(Vec::new());
-    let attach_next_key: Signal<i64> = signal(0);
-    // The attach flow's in-flight flag and visible rejection line (same
-    // triple idiom as the profile screen's avatar upload).
-    let attach_busy: Signal<bool> = signal(false);
-    let attach_error: Signal<String> = signal(String::new());
+    // --- composer: shared app-shell state (signals built in shell_state.rs) ---
+    let composer_state = Composer::new();
     // Persisted/live attachments per wire message id (`message_id` ->
     // attachments carried on the `WsServerMsg::Message` frames — history
     // pages and live fan-out alike). Plain buffer (not a signal): the
@@ -518,9 +500,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // to reveal this session (see `crate::blocks`).
     let blocked_users: Signal<Vec<crate::blocks::BlockedUser>> = signal(Vec::new());
     let revealed_blocked: Signal<Vec<i64>> = signal(Vec::new());
-    // The composer's GIF picker, and which message's "⋯" menu is open (see
-    // `popups`).
-    let gif_open: Signal<bool> = signal(false);
     // The member list: `None` = automatic (shown when the window is wide
     // enough, see `members_visible`), `Some` = the header toggle's choice.
     let members_pref: Signal<Option<bool>> = signal(None);
@@ -1208,11 +1187,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
 
     // Everything the section builders below read, gathered once.
     let s = ShellState {
+        composer_state: composer_state.clone(),
         layout: layout.clone(),
         nav: nav.clone(),
         user_popup: user_popup.clone(),
         blocked_users: blocked_users.clone(),
-        gif_open: gif_open.clone(),
         members_pref: members_pref.clone(),
         msg_menu: msg_menu.clone(),
         revealed_blocked: revealed_blocked.clone(),
@@ -1226,23 +1205,18 @@ fn app_shell(authed: Signal<bool>) -> Element {
         join_result: join_result.clone(),
         join_error: join_error.clone(),
         join_busy: join_busy.clone(),
-        attach_busy: attach_busy.clone(),
-        attach_error: attach_error.clone(),
-        attach_next_key: attach_next_key.clone(),
         authed: authed.clone(),
         cc_busy: cc_busy.clone(),
         cc_err: cc_err.clone(),
         cc_kind: cc_kind.clone(),
         cc_name: cc_name.clone(),
         cc_open: cc_open.clone(),
-        composer: composer.clone(),
         dc_busy: dc_busy.clone(),
         dc_cid: dc_cid.clone(),
         dc_err: dc_err.clone(),
         dc_name: dc_name.clone(),
         dc_open: dc_open.clone(),
         deafened: deafened.clone(),
-        emoji_open: emoji_open.clone(),
         friends_add_error: friends_add_error.clone(),
         friends_add_username: friends_add_username.clone(),
         friends_entry: friends_entry.clone(),
@@ -1296,7 +1270,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         notif_toast_title: notif_toast_title.clone(),
         notif_toast_visible: notif_toast_visible.clone(),
         on_dm_message: on_dm_message.clone(),
-        pending_attachment: pending_attachment.clone(),
         picker: picker.clone(),
         pin_visible: pin_visible.clone(),
         pinned_count: pinned_count.clone(),
