@@ -271,6 +271,7 @@ static SESSION_NOTE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(No
 pub fn app() -> Element {
     // The colour theme (tokens for every role), with the saved accent.
     crate::theme::install(crate::notify::load_theme(), crate::notify::load_accent());
+    crate::app_icon::show(crate::app_icon::current());
     // Point the backend `#[server]` RPC stubs at a base URL and attach the
     // signed-in user id as the `x-user-id` header on every outgoing call.
     // Runs once per process (the `app()` entry), so no "only once" guard is

@@ -27,6 +27,7 @@ mod keyboard_shortcuts_overlay;
 // the gateway effect in `app.rs` and the `UserSettings` screen
 // (`settings_suite`).
 mod notify;
+mod app_icon;
 mod mentions;
 mod roles_settings;
 // The full-screen, three-tab user-settings screen (Notifications / Account /

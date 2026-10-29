@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/cassette.svg" width="112" alt="Cassette logo: a black cassette tape with an orange label">
+  <img src="discord-clone/icons/sunset.svg" width="112" alt="Cassette logo: a black cassette tape with an orange label">
 </p>
 
 # Cassette

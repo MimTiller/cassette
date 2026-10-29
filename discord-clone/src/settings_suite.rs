@@ -17,7 +17,8 @@
 //! - **Appearance** — an accent-color picker (preset swatches). A true
 //!   dark/light theme toggle is not available to the component library in this
 //!   pass (`StyleRules` has no theme/filter field), so the accent option is the
-//!   shipped fallback per the feature spec.
+//!   shipped fallback per the feature spec. Also the app icon
+//!   (`crate::app_icon`).
 //!
 //! Privacy & Safety, Voice & Video, and Accessibility are deliberate follow-ups
 //! (out of scope here).
@@ -561,6 +562,61 @@ fn theme_card(name: theme::ThemeName, active: Signal<theme::ThemeName>, on_pick:
     }
 }
 
+/// One app icon choice: the cassette and its name; the active one has an
+/// accent outline.
+fn icon_card(icon: crate::app_icon::AppIcon, active: Signal<crate::app_icon::AppIcon>) -> Element {
+    let img = ui! {
+        image(
+            src = icon.data_url(),
+            alt = format!("{} cassette", icon.label()),
+            style = StyleRules {
+                width: Some(px(56.0)),
+                height: Some(px(56.0)),
+                ..Default::default()
+            },
+        )
+    };
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Column),
+            align_items: Some(AlignItems::Center),
+            gap: Some(px(6.0)),
+            ..Default::default()
+        }) {
+            view(style = move || {
+                let on = active.get() == icon;
+                let w = runtime_core::Tokenized::Literal(2.0);
+                let c = col(if on { theme::ACCENT } else { theme::DIVIDER });
+                StyleRules {
+                    padding_top: Some(px(6.0)),
+                    padding_bottom: Some(px(6.0)),
+                    padding_left: Some(px(6.0)),
+                    padding_right: Some(px(6.0)),
+                    border_top_width: Some(w.clone()),
+                    border_right_width: Some(w.clone()),
+                    border_bottom_width: Some(w.clone()),
+                    border_left_width: Some(w),
+                    border_top_color: Some(c.clone()),
+                    border_right_color: Some(c.clone()),
+                    border_bottom_color: Some(c.clone()),
+                    border_left_color: Some(c),
+                    ..rounded(10.0)
+                }
+            }) { img }
+            text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(theme::TEXT_NORMAL)), ..Default::default() }) {
+                icon.label().to_string()
+            }
+        }
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                active.set(icon);
+                crate::app_icon::choose(icon);
+            }
+            TouchResponse::CONSUMED
+        })
+    }
+}
+
 fn appearance_tab(accent: Signal<String>) -> Element {
     // The theme: picking one saves it, recolours the app and brings the
     // theme's own accent back.
@@ -578,6 +634,8 @@ fn appearance_tab(accent: Signal<String>) -> Element {
         crate::notify::save_accent(&hex);
         crate::theme::set_accent(&hex);
     });
+    let icon = signal(crate::app_icon::current());
+    let icon_cards: Vec<Element> = crate::app_icon::AppIcon::ALL.iter().map(|i| icon_card(*i, icon)).collect();
 
     ui! {
         view(style = StyleRules {
@@ -621,6 +679,23 @@ fn appearance_tab(accent: Signal<String>) -> Element {
                     accent_swatch(*hex, accent.clone(), on_pick.clone())
                 }
             }
+            text(style = StyleRules {
+                font_size: Some(px(14.0)),
+                color: Some(col(theme::TEXT_STRONG)),
+                margin_top: Some(px(12.0)),
+                ..Default::default()
+            }) { "App icon".to_string() }
+            text(style = StyleRules {
+                font_size: Some(px(12.0)),
+                color: Some(col(theme::TEXT_MUTED)),
+                ..Default::default()
+            }) { "The cassette in your browser tab.".to_string() }
+            view(style = StyleRules {
+                flex_direction: Some(FlexDirection::Row),
+                flex_wrap: Some(runtime_core::FlexWrap::Wrap),
+                gap: Some(px(16.0)),
+                ..Default::default()
+            }) { icon_cards }
         }
     }
 }
