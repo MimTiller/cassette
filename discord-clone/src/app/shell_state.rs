@@ -5,6 +5,7 @@ use super::*;
 
 #[derive(Clone)]
 pub(super) struct ShellState {
+    pub(super) overlays: Overlays,
     pub(super) members: Members,
     pub(super) messages: Messages,
     pub(super) composer_state: Composer,
@@ -21,7 +22,6 @@ pub(super) struct ShellState {
     pub(super) dc_err: Signal<String>,
     pub(super) dc_name: Signal<String>,
     pub(super) dc_open: Signal<bool>,
-    pub(super) deafened: Signal<bool>,
     pub(super) friends_add_error: Signal<String>,
     pub(super) friends_add_username: Signal<String>,
     pub(super) friends_entry: Rc<dyn Fn() -> Element>,
@@ -38,23 +38,12 @@ pub(super) struct ShellState {
     pub(super) live_dm_new_id: Signal<String>,
     pub(super) live_dm_revision: Signal<u32>,
     pub(super) live_dms: Signal<Vec<crate::dms::Dm>>,
-    pub(super) live_invite_code: Signal<Option<String>>,
-    pub(super) live_invite_error: Signal<String>,
-    pub(super) live_invite_mode: Signal<bool>,
-    pub(super) muted: Signal<bool>,
-    pub(super) notif_level: Signal<u32>,
-    pub(super) notif_mode: Signal<bool>,
-    pub(super) notif_toast_body: Signal<String>,
-    pub(super) notif_toast_title: Signal<String>,
-    pub(super) notif_toast_visible: Signal<bool>,
     pub(super) on_dm_message: Rc<dyn Fn(i64)>,
-    pub(super) profile_mode: Signal<bool>,
     pub(super) rc_busy: Signal<bool>,
     pub(super) rc_cid: Signal<Option<i64>>,
     pub(super) rc_err: Signal<String>,
     pub(super) rc_name: Signal<String>,
     pub(super) rc_open: Signal<bool>,
-    pub(super) shortcuts_mode: Signal<bool>,
     pub(super) ss_add_role: Signal<String>,
     pub(super) ss_add_user_id: Signal<String>,
     pub(super) ss_busy: Signal<bool>,
@@ -63,8 +52,6 @@ pub(super) struct ShellState {
     pub(super) ss_name: Signal<String>,
     pub(super) ss_open: Signal<bool>,
     pub(super) ss_owner: Signal<String>,
-    pub(super) user_status: Signal<Status>,
-    pub(super) status_menu: Signal<bool>,
 
     pub(super) create_open: Signal<bool>,
     pub(super) create_name: Signal<String>,
@@ -562,6 +549,93 @@ impl Members {
             live_presence_rev: live_presence_rev,
             moderation_mode: moderation_mode,
             members_pref: members_pref,
+        }
+    }
+}
+
+
+#[derive(Clone)]
+pub(super) struct Overlays {
+    pub(super) profile_mode: Signal<bool>,
+    pub(super) notif_mode: Signal<bool>,
+    pub(super) notif_level: Signal<u32>,
+    pub(super) notif_toast_body: Signal<String>,
+    pub(super) notif_toast_title: Signal<String>,
+    pub(super) notif_toast_visible: Signal<bool>,
+    pub(super) shortcuts_mode: Signal<bool>,
+    pub(super) user_status: Signal<Status>,
+    pub(super) status_menu: Signal<bool>,
+    pub(super) muted: Signal<bool>,
+    pub(super) deafened: Signal<bool>,
+    pub(super) live_invite_mode: Signal<bool>,
+    pub(super) live_invite_code: Signal<Option<String>>,
+    pub(super) live_invite_error: Signal<String>,
+}
+
+impl Overlays {
+    /// Fresh signals for this group; wiring around them stays in `app_shell`.
+    pub(super) fn new() -> Overlays {
+        // Profile Settings screen: a "Profile" entry in the user panel opens it as
+        // a full-screen overlay (built once, shown/hidden by this signal — the same
+        // toggle idiom as the DM rail). No re-mount, no rebuild of the underlying tree.
+        let profile_mode: Signal<bool> = signal(false);
+        // Notification Settings screen: the user panel's settings gear opens it as
+        // a full-screen overlay, the same build-once/toggle idiom as `profile_mode`.
+        let notif_mode: Signal<bool> = signal(false);
+        // [Feature 10] Notification wiring. `notif_level` (all/mentions/nothing) is
+        // the single source of truth shared with the `UserSettings` Notifications
+        // tab — seeded from localStorage (falling back to 0 = all) so a user who
+        // last picked "Nothing" isn't flooded before re-confirming their choice.
+        // The three transient signals drive the top-right in-app toast, read
+        // reactively by `notification_toast::notification_toast` (built once at the
+        // root). Declared HERE — before the gateway effect below captures them —
+        // because Rust requires a value in scope at the point a closure captures
+        // it (the effect reads them inside its `move |frame|` arm).
+        let notif_level: Signal<u32> = signal(crate::notify::load_mode().unwrap_or(crate::notify::ALL_MESSAGES));
+        let notif_toast_body: Signal<String> = signal(String::new());
+        let notif_toast_title: Signal<String> = signal(String::new());
+        let notif_toast_visible: Signal<bool> = signal(false);
+        // Keyboard Shortcuts overlay: the user panel's '?' icon opens it as a
+        // full-screen overlay, the same build-once/toggle idiom as `profile_mode`.
+        let shortcuts_mode: Signal<bool> = signal(false);
+        // The signed-in user's live presence status. A signal (not the `USER`
+        // constant) because the profile strip can change it; the member panel
+        // renders the user under this status, so a change regroups them there too.
+        let user_status: Signal<Status> = signal(Status::Online);
+        // The status menu the user panel's avatar opens.
+        let status_menu: Signal<bool> = signal(false);
+        // Mic-mute / deafen toggles for the user panel's voice-action icon row.
+        // Pure local UI state, owned here and passed into `user_panel`; the mic
+        // swaps to a slashed glyph when muted, deafen colors the icon red.
+        let muted: Signal<bool> = signal(false);
+        let deafened: Signal<bool> = signal(false);
+        // Live "Invite People" flow (real backend, live mode only): the `USER_PLUS`
+        // action in the live channel header opens this overlay, which mints a real
+        // invite via `invite::create_invite` against `active_live_server` and shows
+        // the resulting code in `InviteLinkDisplay` (whose Copy button now writes
+        // the link to the system clipboard). `live_invite_code` holds the freshly
+        // minted code (None until created); `live_invite_error` carries a backend
+        // rejection message. Built once here, painted last (same idiom as
+        // `moderation_region`), inert outside live mode (no header action to open
+        // it, and `active_live_server` is None when a mock server is active).
+        let live_invite_mode: Signal<bool> = signal(false);
+        let live_invite_code: Signal<Option<String>> = signal(None);
+        let live_invite_error: Signal<String> = signal(String::new());
+        Overlays {
+            profile_mode: profile_mode,
+            notif_mode: notif_mode,
+            notif_level: notif_level,
+            notif_toast_body: notif_toast_body,
+            notif_toast_title: notif_toast_title,
+            notif_toast_visible: notif_toast_visible,
+            shortcuts_mode: shortcuts_mode,
+            user_status: user_status,
+            status_menu: status_menu,
+            muted: muted,
+            deafened: deafened,
+            live_invite_mode: live_invite_mode,
+            live_invite_code: live_invite_code,
+            live_invite_error: live_invite_error,
         }
     }
 }

@@ -10,7 +10,8 @@ pub(super) struct GatewayEffectsParts {
 }
 
 pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
-    let ShellState { friends_snap, gateway, notif_level, notif_toast_body, notif_toast_title, notif_toast_visible, user_status, nav, messages, members, .. } = s.clone();
+    let ShellState { friends_snap, gateway, nav, messages, members, overlays, .. } = s.clone();
+    let Overlays { notif_level, notif_toast_body, notif_toast_title, notif_toast_visible, user_status, .. } = overlays.clone();
     let Members { live_members, live_presence, live_presence_rev, .. } = members.clone();
     let Messages { has_more_earlier, live_attachments, live_delete_confirm, live_edit_text, live_editing, live_mention_rev, live_mentioned, live_messages, live_revision, live_typing, live_typing_rev, live_unread, live_unread_rev, load_busy, reaction_rev, reactions, send_failed, .. } = messages.clone();
 let Nav { active_live_channel, active_live_server, live_channels, .. } = nav.clone();

@@ -102,7 +102,7 @@ use login_screen::*;
 mod layout;
 use layout::*;
 mod shell_state;
-use shell_state::{ShellState, Nav, Layout, Composer, Messages, Members};
+use shell_state::{ShellState, Nav, Layout, Composer, Messages, Members, Overlays};
 mod gateway_effects;
 mod rail;
 mod modals;
@@ -399,17 +399,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // --- messages: shared app-shell state (signals built in shell_state.rs) ---
     let messages = Messages::new();
     let Messages { live_revision, reactions, reaction_rev, picker, live_at_bottom, live_scroll_handle, live_unread_rev, rail_unread, pinned_panel_open, pinned_messages, pinned_count, pinned_revision, pinned_error, pin_visible, .. } = messages.clone();
-    // The signed-in user's live presence status. A signal (not the `USER`
-    // constant) because the profile strip can change it; the member panel
-    // renders the user under this status, so a change regroups them there too.
-    let user_status: Signal<Status> = signal(Status::Online);
-    // The status menu the user panel's avatar opens.
-    let status_menu: Signal<bool> = signal(false);
-    // Mic-mute / deafen toggles for the user panel's voice-action icon row.
-    // Pure local UI state, owned here and passed into `user_panel`; the mic
-    // swaps to a slashed glyph when muted, deafen colors the icon red.
-    let muted: Signal<bool> = signal(false);
-    let deafened: Signal<bool> = signal(false);
+    // --- overlays: shared app-shell state (signals built in shell_state.rs) ---
+    let overlays = Overlays::new();
+    let Overlays { notif_toast_body, notif_toast_title, notif_toast_visible, .. } = overlays.clone();
     // Bumped on every send. `switch` dedups on its scrutinee VALUE (equal
     // re-fire keeps the mounted arm), so re-setting `active_channel` to its
     // current value does NOT rebuild the message list — this counter does.
@@ -652,18 +644,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
         });
     }
 
-    // Profile Settings screen: a "Profile" entry in the user panel opens it as
-    // a full-screen overlay (built once, shown/hidden by this signal — the same
-    // toggle idiom as the DM rail). No re-mount, no rebuild of the underlying tree.
-    let profile_mode: Signal<bool> = signal(false);
 
-    // Notification Settings screen: the user panel's settings gear opens it as
-    // a full-screen overlay, the same build-once/toggle idiom as `profile_mode`.
-    let notif_mode: Signal<bool> = signal(false);
 
-    // Keyboard Shortcuts overlay: the user panel's '?' icon opens it as a
-    // full-screen overlay, the same build-once/toggle idiom as `profile_mode`.
-    let shortcuts_mode: Signal<bool> = signal(false);
 
     // Direct Messages are LIVE only (see the `live_dm_*` state below); the mock
     // DM screen and its state were removed with it.
@@ -858,33 +840,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     }
 
 
-    // Live "Invite People" flow (real backend, live mode only): the `USER_PLUS`
-    // action in the live channel header opens this overlay, which mints a real
-    // invite via `invite::create_invite` against `active_live_server` and shows
-    // the resulting code in `InviteLinkDisplay` (whose Copy button now writes
-    // the link to the system clipboard). `live_invite_code` holds the freshly
-    // minted code (None until created); `live_invite_error` carries a backend
-    // rejection message. Built once here, painted last (same idiom as
-    // `moderation_region`), inert outside live mode (no header action to open
-    // it, and `active_live_server` is None when a mock server is active).
-    let live_invite_mode: Signal<bool> = signal(false);
-    let live_invite_code: Signal<Option<String>> = signal(None);
-    let live_invite_error: Signal<String> = signal(String::new());
 
-    // [Feature 10] Notification wiring. `notif_level` (all/mentions/nothing) is
-    // the single source of truth shared with the `UserSettings` Notifications
-    // tab — seeded from localStorage (falling back to 0 = all) so a user who
-    // last picked "Nothing" isn't flooded before re-confirming their choice.
-    // The three transient signals drive the top-right in-app toast, read
-    // reactively by `notification_toast::notification_toast` (built once at the
-    // root). Declared HERE — before the gateway effect below captures them —
-    // because Rust requires a value in scope at the point a closure captures
-    // it (the effect reads them inside its `move |frame|` arm).
-    let notif_level: Signal<u32> =
-        signal(crate::notify::load_mode().unwrap_or(crate::notify::ALL_MESSAGES));
-    let notif_toast_visible: Signal<bool> = signal(false);
-    let notif_toast_title: Signal<String> = signal(String::new());
-    let notif_toast_body: Signal<String> = signal(String::new());
     // --- Live channel management (create / rename / delete) -----------------
     // Only active in live mode: the `server_id` for every call is read from
     // `active_live_server` at submit time (the modals are built once and live
@@ -976,6 +932,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
 
     // Everything the section builders below read, gathered once.
     let s = ShellState {
+        overlays: overlays.clone(),
         members: members.clone(),
         messages: messages.clone(),
         composer_state: composer_state.clone(),
@@ -1005,7 +962,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         dc_err: dc_err.clone(),
         dc_name: dc_name.clone(),
         dc_open: dc_open.clone(),
-        deafened: deafened.clone(),
         friends_add_error: friends_add_error.clone(),
         friends_add_username: friends_add_username.clone(),
         friends_entry: friends_entry.clone(),
@@ -1022,23 +978,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
         live_dm_new_id: live_dm_new_id.clone(),
         live_dm_revision: live_dm_revision.clone(),
         live_dms: live_dms.clone(),
-        live_invite_code: live_invite_code.clone(),
-        live_invite_error: live_invite_error.clone(),
-        live_invite_mode: live_invite_mode.clone(),
-        muted: muted.clone(),
-        notif_level: notif_level.clone(),
-        notif_mode: notif_mode.clone(),
-        notif_toast_body: notif_toast_body.clone(),
-        notif_toast_title: notif_toast_title.clone(),
-        notif_toast_visible: notif_toast_visible.clone(),
         on_dm_message: on_dm_message.clone(),
-        profile_mode: profile_mode.clone(),
         rc_busy: rc_busy.clone(),
         rc_cid: rc_cid.clone(),
         rc_err: rc_err.clone(),
         rc_name: rc_name.clone(),
         rc_open: rc_open.clone(),
-        shortcuts_mode: shortcuts_mode.clone(),
         ss_add_role: ss_add_role.clone(),
         ss_add_user_id: ss_add_user_id.clone(),
         ss_busy: ss_busy.clone(),
@@ -1047,8 +992,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         ss_name: ss_name.clone(),
         ss_open: ss_open.clone(),
         ss_owner: ss_owner.clone(),
-        user_status: user_status.clone(),
-        status_menu,
     };
     // Before any section builds its rows: they read `popups::msg_menu`.
     let popups::PopupsParts { catcher_el: popup_catcher_el, exclusive_el: popup_exclusive_el } = popups::build(&s);
