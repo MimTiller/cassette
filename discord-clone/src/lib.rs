@@ -63,12 +63,8 @@ mod jump_to_bottom_button;
 mod load_earlier_button;
 #[path = "components/translate_toggle.rs"]
 mod translate_toggle;
-#[path = "components/permission_override_row.rs"]
-mod permission_override_row;
 #[path = "components/message_action_bar.rs"]
 mod message_action_bar;
-#[path = "components/read_receipt_indicator.rs"]
-mod read_receipt_indicator;
 #[path = "components/transfer_ownership_confirm.rs"]
 mod transfer_ownership_confirm;
 #[path = "components/avatar_chip.rs"]
@@ -81,8 +77,6 @@ mod member_role_list;
 mod timeout_duration_picker;
 #[path = "components/send_failed_indicator.rs"]
 mod send_failed_indicator;
-#[path = "components/user_bio_block.rs"]
-mod user_bio_block;
 #[path = "components/pin_confirm_toast.rs"]
 mod pin_confirm_toast;
 #[path = "components/pinned_messages_panel.rs"]
@@ -93,10 +87,6 @@ mod notification_toast;
 mod ban_reason_input;
 #[path = "components/invite_expiry_selector.rs"]
 mod invite_expiry_selector;
-#[path = "components/poll_widget.rs"]
-mod poll_widget;
-#[path = "components/attachment_preview_card.rs"]
-mod attachment_preview_card;
 #[path = "components/reply_preview_bar.rs"]
 mod reply_preview_bar;
 #[path = "components/reply_reference_strip.rs"]
@@ -111,8 +101,6 @@ mod ban_list_row;
 mod blocked_user_row;
 #[path = "components/delete_message_confirm.rs"]
 mod delete_message_confirm;
-#[path = "components/channel_topic_banner.rs"]
-mod channel_topic_banner;
 #[path = "components/spoiler_tag.rs"]
 mod spoiler_tag;
 #[path = "components/invite_link_display.rs"]
