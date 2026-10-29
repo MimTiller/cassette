@@ -102,7 +102,7 @@ use login_screen::*;
 mod layout;
 use layout::*;
 mod shell_state;
-use shell_state::{ShellState, Nav, Layout, Composer, Messages};
+use shell_state::{ShellState, Nav, Layout, Composer, Messages, Members};
 mod gateway_effects;
 mod rail;
 mod modals;
@@ -433,9 +433,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // to reveal this session (see `crate::blocks`).
     let blocked_users: Signal<Vec<crate::blocks::BlockedUser>> = signal(Vec::new());
     let revealed_blocked: Signal<Vec<i64>> = signal(Vec::new());
-    // The member list: `None` = automatic (shown when the window is wide
-    // enough, see `members_visible`), `Some` = the header toggle's choice.
-    let members_pref: Signal<Option<bool>> = signal(None);
+    // --- members: shared app-shell state (signals built in shell_state.rs) ---
+    let members = Members::new();
+    let Members { live_members, live_member_error, live_kick_confirm, live_ban_confirm, live_timeout_confirm, members_pref, .. } = members.clone();
     crate::blocks::load(blocked_users, live_revision);
     {
         let s = active_server.get();
@@ -478,55 +478,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
     });
 
 
-    // Live member-roster state for the moderation panel (LIVE mode only). The
-    // roster is fetched via the new backend `list_members` endpoint when a live
-    // server is selected (see the rail on_touch below) and re-fetched after a
-    // successful kick/role-change. `live_kick_confirm` is the two-step inline
-    // confirm for a kick: None = no pending kick, Some(user_id) = "are you
-    // sure?" is shown for that member's row. `live_member_error` surfaces a
-    // backend authorization error (e.g. "you need moderator privileges") as
-    // inline text rather than a modal.
-    let live_members: Signal<Vec<crate::moderation::MemberInfo>> = signal(Vec::new());
-    let live_kick_confirm: Signal<Option<i64>> = signal(None);
-    // The two-step inline confirm for a ban (the ban is the more severe
-    // action, so it gets its own confirm rather than sharing the kick one —
-    // a mis-tap that confirms a ban is harder to undo than a mis-tap kick).
-    let live_ban_confirm: Signal<Option<i64>> = signal(None);
-    // The two-step inline confirm for a timeout: None = no pending timeout,
-    // Some(user_id) = "Timeout? [Yes/No]" is shown for that member's row. A
-    // timeout silences a member from posting for `live_timeout_duration`
-    // without removing their membership (the milder of the three severities).
-    let live_timeout_confirm: Signal<Option<i64>> = signal(None);
-    // The chosen timeout duration in seconds, shared with the duration picker
-    // the confirm branch renders. Defaults to 60s (the picker's first option)
-    // so a bare Timeout tap still has a sensible duration. The picker writes
-    // to this signal as the user taps an option; the confirm's "Yes" reads it.
-    let live_timeout_duration: Signal<i64> = signal(60);
-    let live_member_error: Signal<String> = signal(String::new());
-    // Which member row's Kick/Ban/Timeout popup menu is currently open
-    // (`Some(user_id)` = that member's menu; `None` = closed). A member-row
-    // tap sets it; a menu entry arms the per-action confirm signal above and
-    // clears this. Part of the member panel's `switch` key so the portal
-    // mounts/unmounts on tap.
-    let live_member_menu: Signal<Option<i64>> = signal(None);
-    // Which channel row's management menu (Rename / Delete) is currently open
-    // (`Some(channel_id)`; `None` = closed). A gear tap on a hovered channel
-    // row sets it; the gear itself renders ONLY while the row is hovered and
-    // the acting user is moderator+ (the per-row idiom `message_action_bar`
-    // uses for message rows — a per-row `hovered` signal fed by `on_hover`).
-    let live_chan_menu: Signal<Option<i64>> = signal(None);
-    // Live presence: `user_id -> status string`. The backend broadcasts
-    // `WsServerMsg::Presence` ('online' on socket auth + activity, 'away' after
-    // `PRESENCE_IDLE_SECS` of no inbound frames, 'offline' on the user's last
-    // socket disconnect) over the gateway, so the member panel can show a
-    // per-row status dot. Mutating the `Rc` does not trigger reactivity, so
-    // `live_presence_rev` is bumped on every frame and folded into the member
-    // panel's `switch` key (the `live_revision` / `live_typing_rev` idiom). A
-    // member with no frame yet (just after the roster loads) reads as absent
-    // and is rendered as a grey "offline" dot.
-    let live_presence: Rc<RefCell<HashMap<i64, String>>> =
-        Rc::new(RefCell::new(HashMap::new()));
-    let live_presence_rev: Signal<u32> = signal(0);
 
     // Friends panel (live): the panel snapshot of `list_friends`, flat + tagged
     // (`0 = incoming / 1 = outgoing / 2 = accepted`) so the panel's `switch`
@@ -906,12 +857,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         });
     }
 
-    // Server Moderation panel: a gavel icon in the channel header opens it as
-    // a full-screen overlay (the same toggle idiom as `profile_mode` — built
-    // once, shown/hidden by this signal, a "Done" pill flips it back off).
-    // Mock-only: renders the eight unwired moderation components with hardcoded
-    // rows; no backend call.
-    let moderation_mode: Signal<bool> = signal(false);
 
     // Live "Invite People" flow (real backend, live mode only): the `USER_PLUS`
     // action in the live channel header opens this overlay, which mints a real
@@ -1031,13 +976,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
 
     // Everything the section builders below read, gathered once.
     let s = ShellState {
+        members: members.clone(),
         messages: messages.clone(),
         composer_state: composer_state.clone(),
         layout: layout.clone(),
         nav: nav.clone(),
         user_popup: user_popup.clone(),
         blocked_users: blocked_users.clone(),
-        members_pref: members_pref.clone(),
         revealed_blocked: revealed_blocked.clone(),
         user_profile: user_profile.clone(),
         create_open: create_open.clone(),
@@ -1072,8 +1017,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         invite_err: invite_err.clone(),
         invite_expiry: invite_expiry.clone(),
         invite_mode: invite_mode.clone(),
-        live_ban_confirm: live_ban_confirm.clone(),
-        live_chan_menu: live_chan_menu.clone(),
         live_dm_active: live_dm_active.clone(),
         live_dm_messages: live_dm_messages.clone(),
         live_dm_new_id: live_dm_new_id.clone(),
@@ -1082,15 +1025,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         live_invite_code: live_invite_code.clone(),
         live_invite_error: live_invite_error.clone(),
         live_invite_mode: live_invite_mode.clone(),
-        live_kick_confirm: live_kick_confirm.clone(),
-        live_member_error: live_member_error.clone(),
-        live_member_menu: live_member_menu.clone(),
-        live_members: live_members.clone(),
-        live_presence: live_presence.clone(),
-        live_presence_rev: live_presence_rev.clone(),
-        live_timeout_confirm: live_timeout_confirm.clone(),
-        live_timeout_duration: live_timeout_duration.clone(),
-        moderation_mode: moderation_mode.clone(),
         muted: muted.clone(),
         notif_level: notif_level.clone(),
         notif_mode: notif_mode.clone(),

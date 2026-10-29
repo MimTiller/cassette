@@ -11,7 +11,8 @@ pub(super) struct MessagesParts {
 }
 
 pub(super) fn build(s: &ShellState) -> MessagesParts {
-    let ShellState { blocked_users, gateway, live_invite_mode, members_pref, revealed_blocked, user_popup, user_profile, nav, messages, .. } = s.clone();
+    let ShellState { blocked_users, gateway, live_invite_mode, revealed_blocked, user_popup, user_profile, nav, messages, members, .. } = s.clone();
+    let Members { members_pref, .. } = members.clone();
     let Messages { has_more_earlier, live_at_bottom, live_attachments, live_delete_confirm, live_edit_text, live_editing, live_messages, live_revision, live_scroll_handle, live_typing, live_typing_rev, load_busy, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, translate_key, .. } = messages.clone();
 let Nav { active_live_channel, active_live_server, live_channels, live_servers, .. } = nav.clone();
     // --- main view -------------------------------------------------------
