@@ -10,7 +10,8 @@ pub(super) struct ComposerParts {
 }
 
 pub(super) fn build(s: &ShellState) -> ComposerParts {
-    let ShellState { active_live_channel, attach_busy, attach_error, attach_next_key, composer, emoji_open, gateway, gif_open, live_channels, live_messages, pending_attachment, reply_ctx, reply_target, send_failed, .. } = s.clone();
+    let ShellState { attach_busy, attach_error, attach_next_key, composer, emoji_open, gateway, gif_open, live_messages, pending_attachment, reply_ctx, reply_target, send_failed, nav, .. } = s.clone();
+let Nav { active_live_channel, live_channels, .. } = nav.clone();
     // --- composer --------------------------------------------------------
     // One rounded bar holds the whole composer row: the '+' attach icon on
     // the left, the borderless text input filling the middle, and the GIF

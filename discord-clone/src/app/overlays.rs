@@ -14,8 +14,8 @@ pub(super) struct OverlaysParts {
 }
 
 pub(super) fn build(s: &ShellState) -> OverlaysParts {
-    let ShellState { active_live_server, active_server, authed, blocked_users,
-        friends_add_error, friends_add_username, friends_entry, friends_open, friends_snap, friends_tab, gateway, live_dm_active, live_dm_messages, live_dm_mode, live_dm_new_id, live_dm_revision, live_dms, live_invite_code, live_invite_error, live_invite_mode, live_members, live_presence, live_presence_rev, live_revision, moderation_mode, notif_level, notif_mode, on_dm_message, profile_mode, shortcuts_mode, .. } = s.clone();
+    let ShellState { authed, blocked_users, friends_add_error, friends_add_username, friends_entry, friends_open, friends_snap, friends_tab, gateway, live_dm_active, live_dm_messages, live_dm_new_id, live_dm_revision, live_dms, live_invite_code, live_invite_error, live_invite_mode, live_members, live_presence, live_presence_rev, live_revision, moderation_mode, notif_level, notif_mode, on_dm_message, profile_mode, shortcuts_mode, nav, .. } = s.clone();
+let Nav { active_live_server, active_server, live_dm_mode, .. } = nav.clone();
 
     // User Settings: one full-window screen (see `settings_suite`), shown
     // while `notif_mode` is on. "Profile" (`profile_mode`) opens it at the

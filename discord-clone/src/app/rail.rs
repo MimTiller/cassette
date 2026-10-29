@@ -12,7 +12,8 @@ pub(super) struct RailParts {
 }
 
 pub(super) fn build(s: &ShellState) -> RailParts {
-    let ShellState { active_live_channel, active_live_server, create_busy, create_error, create_name, create_open, friends_snap, gateway, live_ban_confirm, live_channels, live_dm_active, live_dm_mode, live_dms, live_kick_confirm, live_member_error, live_members, live_servers, live_timeout_confirm, live_unread_rev, rail_unread, .. } = s.clone();
+    let ShellState { create_busy, create_error, create_name, create_open, friends_snap, gateway, live_ban_confirm, live_dm_active, live_dms, live_kick_confirm, live_member_error, live_members, live_timeout_confirm, live_unread_rev, rail_unread, nav, .. } = s.clone();
+let Nav { active_live_channel, active_live_server, live_channels, live_dm_mode, live_servers, .. } = nav.clone();
     // --- server rail -----------------------------------------------------
     let rail_style = StyleRules {
         width: Some(px(72.0)),

@@ -102,7 +102,7 @@ use login_screen::*;
 mod layout;
 use layout::*;
 mod shell_state;
-use shell_state::ShellState;
+use shell_state::{ShellState, Nav};
 mod gateway_effects;
 mod rail;
 mod modals;
@@ -387,11 +387,9 @@ pub(crate) fn shell_alive() -> runtime_core::ScopeAlive {
 fn app_shell(authed: Signal<bool>) -> Element {
     SHELL_ALIVE.with(|s| *s.borrow_mut() = Some(runtime_core::ScopeAlive::current()));
     mobile::install(signal(mobile::Pane::default()), signal(true));
-    // [Feature 16] `active_server`/`active_channel` are the *mock* selection
-    // signals: every pane renders live (backend) content now, so these keep a
-    // `SERVERS[0]` default that no real user path ever displays (see each
-    // pane's live/empty-state gate below).
-    let active_server: Signal<u32> = signal(SERVERS[0].id);
+    // --- nav: shared app-shell state (signals built in shell_state.rs) ---
+    let nav = Nav::new();
+    let Nav { active_server, active_live_server, active_live_channel, live_servers, live_channels, live_dm_mode, .. } = nav.clone();
     let active_channel: Signal<u32> = signal(SERVERS[0].first_text_channel().id);
     // Resizable column widths (CSS pixels), driven by the thin drag handles
     // between the channel sidebar / main view and the main view / member list.
@@ -427,12 +425,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // gateway effect bumps whenever a message (and its attachments) land.
     let live_attachments: Rc<RefCell<HashMap<i64, Vec<discord_server::server_settings::MessageAttachment>>>> =
         Rc::new(RefCell::new(HashMap::new()));
-    // The voice channel the user is currently joined to, keyed by (server_id,
-    // voice_channel_id). Joining a voice row in the sidebar sets it; leaving
-    // (from the profile strip) or switching servers clears it. `None` = not
-    // in a voice channel. Drives the voice-row membership lists AND the
-    // profile strip's voice-connection bar.
-    let joined_voice: Signal<Option<(u32, u32)>> = signal(None);
     // The signed-in user's live presence status. A signal (not the `USER`
     // constant) because the profile strip can change it; the member panel
     // renders the user under this status, so a change regroups them there too.
@@ -550,8 +542,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // enough, see `members_visible`), `Some` = the header toggle's choice.
     let members_pref: Signal<Option<bool>> = signal(None);
     let msg_menu: Signal<Option<MessageKey>> = signal(None);
-    // The live sidebar header's server dropdown.
-    let server_menu_open: Signal<bool> = signal(false);
     crate::blocks::load(blocked_users, live_revision);
     {
         let s = active_server.get();
@@ -561,11 +551,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
             }
         }
     }
-    // Live (backend) servers the signed-in user belongs to, fetched once from
-    // the `#[server]` RPC after `configure_server()` has pointed the stubs at
-    // a base URL. Rendered as its own section below the mock rows; see the
-    // rail for why these rows are not yet interactive.
-    let live_servers: Signal<Vec<crate::servers::ServerSummary>> = signal(Vec::new());
     runtime_core::spawn_then(async move { crate::servers::list_servers().await }, move |result| {
         match result {
             Ok(servers) => {
@@ -597,18 +582,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
             }
         }
     });
-    // Live-mode selection, parallel to (and independent of) the mock
-    // `active_server`/`active_channel` signals. `active_live_server` is the id
-    // of a *real* backend server the user tapped (None = mock path is active);
-    // `live_channels` holds that server's channels, fetched on demand. Tapping
-    // a mock rail row sets `active_live_server` back to None, so the two modes
-    // never overlap and the mock path keeps its exact existing behaviour.
-    let active_live_server: Signal<Option<i64>> = signal(None);
-    let live_channels: Signal<Vec<crate::servers::ChannelSummary>> = signal(Vec::new());
-    // The live channel the user tapped inside the active live server. Reset to
-    // None whenever `active_live_server` changes (new live server selected, or
-    // mock mode re-entered) — a channel id from a different server is stale.
-    let active_live_channel: Signal<Option<i64>> = signal(None);
     // Scrollback paging for the live message list. `load_busy` is `true` while a
     // `History { before_id }` request is in flight (gates the "Load earlier"
     // pill's tap so a double-tap can't fire a second page; the pill's label
@@ -942,17 +915,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // per-app signals; threaded into the mock message list only.
     let translate_key: Signal<Option<MessageKey>> = signal(None);
 
-    // --- live (backend) DM state -------------------------------------------
-    // Parallel to (and independent of) the mock `dm_*` state above, and to the
-    // `live_servers`/`live_channels` live-mode idiom. A separate, new entry
-    // point: `live_dm_mode` toggles its own full-screen overlay region, and
-    // the mock DM screen is left untouched.
-    // `live_dms` holds the fetched conversation list (populated on first open
-    // via `spawn_async` calling `list_dms`); `live_dm_active` the selected DM
-    // channel id (None = none); `live_dm_messages`/`live_dm_revision` the
-    // fetched history buffer + its rebuild counter (the `revision` bump is the
-    // rebuild trigger, the same idiom as `live_messages`/`live_revision`).
-    let live_dm_mode: Signal<bool> = signal(false);
     let live_dms: Signal<Vec<crate::dms::Dm>> = signal(Vec::new());
     let live_dm_active: Signal<Option<i64>> = signal(None);
     let live_dm_messages: Rc<RefCell<Vec<(String, String, i64, Option<i64>)>>> =
@@ -1263,9 +1225,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
 
     // Everything the section builders below read, gathered once.
     let s = ShellState {
+        nav: nav.clone(),
         user_popup: user_popup.clone(),
         blocked_users: blocked_users.clone(),
-        server_menu_open: server_menu_open.clone(),
         gif_open: gif_open.clone(),
         members_pref: members_pref.clone(),
         msg_menu: msg_menu.clone(),
@@ -1281,9 +1243,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         join_result: join_result.clone(),
         join_error: join_error.clone(),
         join_busy: join_busy.clone(),
-        active_live_channel: active_live_channel.clone(),
-        active_live_server: active_live_server.clone(),
-        active_server: active_server.clone(),
         attach_busy: attach_busy.clone(),
         attach_error: attach_error.clone(),
         attach_next_key: attach_next_key.clone(),
@@ -1314,16 +1273,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
         invite_err: invite_err.clone(),
         invite_expiry: invite_expiry.clone(),
         invite_mode: invite_mode.clone(),
-        joined_voice: joined_voice.clone(),
         live_at_bottom: live_at_bottom.clone(),
         live_attachments: live_attachments.clone(),
         live_ban_confirm: live_ban_confirm.clone(),
         live_chan_menu: live_chan_menu.clone(),
-        live_channels: live_channels.clone(),
         live_delete_confirm: live_delete_confirm.clone(),
         live_dm_active: live_dm_active.clone(),
         live_dm_messages: live_dm_messages.clone(),
-        live_dm_mode: live_dm_mode.clone(),
         live_dm_new_id: live_dm_new_id.clone(),
         live_dm_revision: live_dm_revision.clone(),
         live_dms: live_dms.clone(),
@@ -1343,7 +1299,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         live_presence_rev: live_presence_rev.clone(),
         live_revision: live_revision.clone(),
         live_scroll_handle: live_scroll_handle.clone(),
-        live_servers: live_servers.clone(),
         live_timeout_confirm: live_timeout_confirm.clone(),
         live_timeout_duration: live_timeout_duration.clone(),
         live_typing: live_typing.clone(),
