@@ -10,7 +10,8 @@ pub(super) struct GatewayEffectsParts {
 }
 
 pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
-    let ShellState { friends_snap, gateway, has_more_earlier, live_attachments, live_delete_confirm, live_edit_text, live_editing, live_members, live_mention_rev, live_mentioned, live_messages, live_presence, live_presence_rev, live_revision, live_typing, live_typing_rev, live_unread, live_unread_rev, load_busy, notif_level, notif_toast_body, notif_toast_title, notif_toast_visible, reaction_rev, reactions, send_failed, user_status, nav, .. } = s.clone();
+    let ShellState { friends_snap, gateway, live_members, live_presence, live_presence_rev, notif_level, notif_toast_body, notif_toast_title, notif_toast_visible, user_status, nav, messages, .. } = s.clone();
+    let Messages { has_more_earlier, live_attachments, live_delete_confirm, live_edit_text, live_editing, live_mention_rev, live_mentioned, live_messages, live_revision, live_typing, live_typing_rev, live_unread, live_unread_rev, load_busy, reaction_rev, reactions, send_failed, .. } = messages.clone();
 let Nav { active_live_channel, active_live_server, live_channels, .. } = nav.clone();
     // Realtime gateway: the signed session token authenticates the connect
     // (the backend verifies it). Declared above (before the auto-enter

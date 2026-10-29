@@ -10,7 +10,8 @@ pub(super) struct ComposerParts {
 }
 
 pub(super) fn build(s: &ShellState) -> ComposerParts {
-    let ShellState { gateway, live_messages, reply_ctx, reply_target, send_failed, nav, composer_state, .. } = s.clone();
+    let ShellState { gateway, nav, composer_state, messages, .. } = s.clone();
+    let Messages { live_messages, reply_ctx, reply_target, send_failed, .. } = messages.clone();
 let Composer { attach_busy, attach_error, attach_next_key, composer, emoji_open, gif_open, pending_attachment, .. } = composer_state.clone();
 let Nav { active_live_channel, live_channels, .. } = nav.clone();
     // --- composer --------------------------------------------------------

@@ -5,6 +5,7 @@ use super::*;
 
 #[derive(Clone)]
 pub(super) struct ShellState {
+    pub(super) messages: Messages,
     pub(super) composer_state: Composer,
     pub(super) layout: Layout,
     pub(super) nav: Nav,
@@ -27,23 +28,17 @@ pub(super) struct ShellState {
     pub(super) friends_snap: Signal<Vec<crate::friends_view::FriendRow>>,
     pub(super) friends_tab: Signal<u8>,
     pub(super) gateway: server::UseSocket<discord_server::server_settings::WsServerMsg, discord_server::server_settings::WsClientMsg>,
-    pub(super) has_more_earlier: Signal<bool>,
     pub(super) invite_created: Signal<Option<discord_server::invites::Invite>>,
     pub(super) invite_err: Signal<String>,
     pub(super) invite_expiry: Signal<usize>,
     pub(super) invite_mode: Signal<bool>,
-    pub(super) live_at_bottom: Signal<bool>,
-    pub(super) live_attachments: Rc<RefCell<HashMap<i64, Vec<discord_server::server_settings::MessageAttachment>>>>,
     pub(super) live_ban_confirm: Signal<Option<i64>>,
     pub(super) live_chan_menu: Signal<Option<i64>>,
-    pub(super) live_delete_confirm: Signal<Option<i64>>,
     pub(super) live_dm_active: Signal<Option<i64>>,
     pub(super) live_dm_messages: Rc<RefCell<Vec<(String, String, i64, Option<i64>)>>>,
     pub(super) live_dm_new_id: Signal<String>,
     pub(super) live_dm_revision: Signal<u32>,
     pub(super) live_dms: Signal<Vec<crate::dms::Dm>>,
-    pub(super) live_edit_text: Signal<String>,
-    pub(super) live_editing: Signal<Option<i64>>,
     pub(super) live_invite_code: Signal<Option<String>>,
     pub(super) live_invite_error: Signal<String>,
     pub(super) live_invite_mode: Signal<bool>,
@@ -51,20 +46,10 @@ pub(super) struct ShellState {
     pub(super) live_member_error: Signal<String>,
     pub(super) live_member_menu: Signal<Option<i64>>,
     pub(super) live_members: Signal<Vec<crate::moderation::MemberInfo>>,
-    pub(super) live_mention_rev: Signal<u32>,
-    pub(super) live_mentioned: Rc<RefCell<HashMap<i64, i64>>>,
-    pub(super) live_messages: Rc<RefCell<HashMap<i64, Vec<LiveMsg>>>>,
     pub(super) live_presence: Rc<RefCell<HashMap<i64, String>>>,
     pub(super) live_presence_rev: Signal<u32>,
-    pub(super) live_revision: Signal<u32>,
-    pub(super) live_scroll_handle: Rc<RefCell<Option<ScrollViewHandle>>>,
     pub(super) live_timeout_confirm: Signal<Option<i64>>,
     pub(super) live_timeout_duration: Signal<i64>,
-    pub(super) live_typing: Rc<RefCell<HashMap<i64, (i64, String, i64)>>>,
-    pub(super) live_typing_rev: Signal<u32>,
-    pub(super) live_unread: Rc<RefCell<HashMap<i64, (i64, i64)>>>,
-    pub(super) live_unread_rev: Signal<u32>,
-    pub(super) load_busy: Signal<bool>,
     pub(super) moderation_mode: Signal<bool>,
     pub(super) muted: Signal<bool>,
     pub(super) notif_level: Signal<u32>,
@@ -73,25 +58,12 @@ pub(super) struct ShellState {
     pub(super) notif_toast_title: Signal<String>,
     pub(super) notif_toast_visible: Signal<bool>,
     pub(super) on_dm_message: Rc<dyn Fn(i64)>,
-    pub(super) picker: Signal<Option<MessageKey>>,
-    pub(super) pin_visible: Signal<bool>,
-    pub(super) pinned_count: Signal<i64>,
-    pub(super) pinned_error: Signal<String>,
-    pub(super) pinned_messages: Signal<Vec<crate::pins::PinnedMessage>>,
-    pub(super) pinned_panel_open: Signal<bool>,
-    pub(super) pinned_revision: Signal<u32>,
     pub(super) profile_mode: Signal<bool>,
-    pub(super) rail_unread: Rc<RefCell<HashMap<i64, (i64, i64)>>>,
     pub(super) rc_busy: Signal<bool>,
     pub(super) rc_cid: Signal<Option<i64>>,
     pub(super) rc_err: Signal<String>,
     pub(super) rc_name: Signal<String>,
     pub(super) rc_open: Signal<bool>,
-    pub(super) reaction_rev: Signal<u32>,
-    pub(super) reactions: Rc<RefCell<ReactionMap>>,
-    pub(super) reply_ctx: Signal<Option<(String, String)>>,
-    pub(super) reply_target: Signal<Option<i64>>,
-    pub(super) send_failed: Signal<bool>,
     pub(super) shortcuts_mode: Signal<bool>,
     pub(super) ss_add_role: Signal<String>,
     pub(super) ss_add_user_id: Signal<String>,
@@ -101,7 +73,6 @@ pub(super) struct ShellState {
     pub(super) ss_name: Signal<String>,
     pub(super) ss_open: Signal<bool>,
     pub(super) ss_owner: Signal<String>,
-    pub(super) translate_key: Signal<Option<MessageKey>>,
     pub(super) user_status: Signal<Status>,
     pub(super) status_menu: Signal<bool>,
 
@@ -118,7 +89,6 @@ pub(super) struct ShellState {
     pub(super) user_profile: Signal<Option<discord_server::profiles::UserProfile>>,
     pub(super) blocked_users: Signal<Vec<crate::blocks::BlockedUser>>,
     pub(super) revealed_blocked: Signal<Vec<i64>>,
-    pub(super) msg_menu: Signal<Option<MessageKey>>,
     pub(super) members_pref: Signal<Option<bool>>,
 }
 
@@ -279,6 +249,236 @@ impl Composer {
             attach_busy: attach_busy,
             attach_error: attach_error,
             gif_open: gif_open,
+        }
+    }
+}
+
+
+#[derive(Clone)]
+pub(super) struct Messages {
+    pub(super) live_attachments: Rc<RefCell<HashMap<i64, Vec<discord_server::server_settings::MessageAttachment>>>>,
+    pub(super) live_messages: Rc<RefCell<HashMap<i64, Vec<LiveMsg>>>>,
+    pub(super) live_revision: Signal<u32>,
+    pub(super) live_editing: Signal<Option<i64>>,
+    pub(super) live_edit_text: Signal<String>,
+    pub(super) live_delete_confirm: Signal<Option<i64>>,
+    pub(super) reactions: Rc<RefCell<ReactionMap>>,
+    pub(super) reaction_rev: Signal<u32>,
+    pub(super) picker: Signal<Option<MessageKey>>,
+    pub(super) has_more_earlier: Signal<bool>,
+    pub(super) live_at_bottom: Signal<bool>,
+    pub(super) live_scroll_handle: Rc<RefCell<Option<ScrollViewHandle>>>,
+    pub(super) live_mentioned: Rc<RefCell<HashMap<i64, i64>>>,
+    pub(super) live_mention_rev: Signal<u32>,
+    pub(super) live_unread: Rc<RefCell<HashMap<i64, (i64, i64)>>>,
+    pub(super) live_unread_rev: Signal<u32>,
+    pub(super) rail_unread: Rc<RefCell<HashMap<i64, (i64, i64)>>>,
+    pub(super) live_typing: Rc<RefCell<HashMap<i64, (i64, String, i64)>>>,
+    pub(super) live_typing_rev: Signal<u32>,
+    pub(super) load_busy: Signal<bool>,
+    pub(super) pinned_panel_open: Signal<bool>,
+    pub(super) pinned_messages: Signal<Vec<crate::pins::PinnedMessage>>,
+    pub(super) pinned_count: Signal<i64>,
+    pub(super) pinned_revision: Signal<u32>,
+    pub(super) pinned_error: Signal<String>,
+    pub(super) pin_visible: Signal<bool>,
+    pub(super) reply_ctx: Signal<Option<(String, String)>>,
+    pub(super) reply_target: Signal<Option<i64>>,
+    pub(super) translate_key: Signal<Option<MessageKey>>,
+    pub(super) msg_menu: Signal<Option<MessageKey>>,
+    pub(super) send_failed: Signal<bool>,
+}
+
+impl Messages {
+    /// Fresh signals for this group; wiring around them stays in `app_shell`.
+    pub(super) fn new() -> Messages {
+        // Persisted/live attachments per wire message id (`message_id` ->
+        // attachments carried on the `WsServerMsg::Message` frames — history
+        // pages and live fan-out alike). Plain buffer (not a signal): the
+        // message-list `switch` already rebuilds on `live_revision`, which the
+        // gateway effect bumps whenever a message (and its attachments) land.
+        let live_attachments: Rc<RefCell<HashMap<i64, Vec<discord_server::server_settings::MessageAttachment>>>> = Rc::new(RefCell::new(HashMap::new()));
+        // --- live/real message state (composer image attachments ride this) ----
+        // Separate from the mock `sent`/`revision` above: when `active_live_channel`
+        // is `Some(id)` the message list reads from here instead of the mock path.
+        // channel_id -> Vec<LiveMsg>, oldest-first (the gateway's History replies
+        // arrive oldest-first, and new frames append in order). Mutating the Vec
+        // does NOT trigger reactivity, so `live_revision` is bumped on every frame
+        // the buffer absorbs and folded into the list `switch`'s key — exactly the
+        // mock `revision` idiom.
+        let live_messages: Rc<RefCell<HashMap<i64, Vec<LiveMsg>>>> = Rc::new(RefCell::new(HashMap::new()));
+        let live_revision: Signal<u32> = signal(0);
+        // Per-message edit mode: the wire `message_id` whose row currently shows
+        // the inline edit input (None = none). One at a time — switching rows
+        // just overwrites it, and the list rebuild (keyed on `live_revision` and
+        // this signal's value) tears down the old input and mounts the new one.
+        // It must be a top-level `Signal` (not a `Rc<RefCell>`) because the
+        // `text_input value = …` prop needs a reactive `Signal<String>`.
+        let live_editing: Signal<Option<i64>> = signal(None);
+        // The draft text for the row being edited. A top-level `Signal` because the
+        // inline `text_input value = …` prop needs a reactive handle; it is seeded
+        // with the row's content the moment a row enters edit mode (below) and read
+        // back on confirm. Reset to `""` after a confirmed edit so the next edit
+        // starts from the row's (now-updated) content, not a stale draft.
+        let live_edit_text: Signal<String> = signal(String::new());
+        // Per-message delete confirm: the wire `message_id` whose row is showing
+        // "are you sure?" (None = none). One step, mirroring the composer's
+        // "simple confirm" ask — no two-step kick-style confirm.
+        let live_delete_confirm: Signal<Option<i64>> = signal(None);
+        // --- message reactions (shared by the MOCK and the LIVE message lists) --
+        // Per-message reaction state: `reactions` is the pill map (see the `ReactionMap`
+        // doc for the keying), `picker` names the message whose add-reaction overlay
+        // is open (`None` while closed), and `reaction_rev` is the rebuild counter the
+        // message-list `switch` folds into its key so a pill change re-renders the
+        // list. MOCK pills are session-local (seed demo); LIVE pills are persisted
+        // server-side via the `add_reaction` / `remove_reaction` RPCs and restored
+        // on cold loads from `WsServerMsg::Message.reactions` (history frames) plus
+        // updated live by the `ReactionAdd` / `ReactionRemove` broadcast frames.
+        // Declared HERE (before `gateway_incoming_effect`, whose `move` closure
+        // captures these handles — a `switch` effect cannot see a binding defined
+        // after its own call) and read by both paths.
+        let reactions: Rc<RefCell<ReactionMap>> = Rc::new(RefCell::new(HashMap::new()));
+        let reaction_rev: Signal<u32> = signal(0);
+        let picker: Signal<Option<MessageKey>> = signal(None);
+        let has_more_earlier: Signal<bool> = signal(true);
+        // Scroll-back state for the live message list:
+        // - `live_at_bottom` is `true` while the scroll view is at (or near) the
+        //   content bottom — the "follow the live tail" mode the list starts in.
+        //   Flipped to `false` the moment the user scrolls up away from the bottom
+        //   (the `on_scroll` max-offset heuristic) and back to `true` on
+        //   `on_end_reached`. Drives the floating "jump to bottom" button.
+        // - `live_scroll_handle` holds the `ScrollViewHandle` the scroll view hands
+        //   us in its `on_handle` callback, so the "load earlier" and "jump to
+        //   bottom" buttons can scroll the pane programmatically (and, when
+        //   prepending, restore the user's reading position).
+        let live_at_bottom: Signal<bool> = signal(true);
+        let live_scroll_handle: Rc<RefCell<Option<ScrollViewHandle>>> = Rc::new(RefCell::new(None));
+        // Live @mention indicator state, driven by the real backend data (the
+        // mock path's `c.mentions`/`total_mentions` is its own, untouched copy).
+        // `live_mentioned` maps a live channel id -> count of UNREAD messages that
+        // mention the signed-in user. It is bumped by the gateway's inbound
+        // `Message { mentioned_user_ids, new: true }` frames and zeroed when the
+        // user opens the channel (the local "read" reset — the backend's own
+        // per-channel unread-mentions is exposed via `unread_counts(server_id)`,
+        // but a live client that is actively watching only needs the local count).
+        // Mutating the HashMap does not trigger reactivity, so `live_mention_rev`
+        // is bumped on every change and folded into the sidebar `switch` key —
+        // exactly the `live_revision` idiom used for the message buffer.
+        let live_mentioned: Rc<RefCell<HashMap<i64, i64>>> = Rc::new(RefCell::new(HashMap::new()));
+        let live_mention_rev: Signal<u32> = signal(0);
+        // Live per-channel UNREAD COUNTS from the backend, fetched alongside the
+        // channel list whenever a live server is selected (`unread_counts` RPC).
+        // `count` = messages not yet read; `unread_mentions` = the subset that
+        // @mention the signed-in user (0..=count). This is the REAL data source
+        // for the live sidebar's badges — independent of `live_mentioned` above,
+        // which stays the gateway-incrementing local indicator for the currently
+        // open session. Mutating the HashMap does not trigger reactivity, so
+        // `live_unread_rev` is bumped on every change and folded into the
+        // sidebar `switch` key — exactly the `live_mention_rev` idiom.
+        let live_unread: Rc<RefCell<HashMap<i64, (i64, i64)>>> = Rc::new(RefCell::new(HashMap::new()));
+        let live_unread_rev: Signal<u32> = signal(0);
+        // A second `Rc` handle for the rail's live-section fetch closure: both
+        // that `move` closure and the sidebar `switch`'s `move` render closure
+        // need the map, and `Rc` is not `Copy`, so each captures its own clone
+        // (the clones share the same `RefCell` — that's the point).
+        // A second handle to `live_unread` for the rail's live-section fetch.
+        // Live typing-indicator state, keyed per live channel: the user most
+        // recently seen typing in that channel, as `(user_id, display_label, gen)`.
+        // `gen` is bumped on every inbound `Typing` frame for the channel; it is the
+        // guard that lets a 5-second auto-clear `after_ms_detached` task
+        // self-cancel — it fires only if the captured `gen` still matches the map's
+        // current entry for that channel, so a newer frame (which bumps `gen`)
+        // turns the older, still-pending clear into a no-op instead of wiping a
+        // fresh indicator. Only one user per channel is tracked — the latest typer
+        // — which matches a single "… is typing…" line (the server fans out every
+        // member's typing to the whole channel audience). Mutating the `Rc` does
+        // not trigger reactivity, so `live_typing_rev` is bumped on every change
+        // and folded into the typing row's `switch` key (the `live_revision` idiom).
+        let live_typing: Rc<RefCell<HashMap<i64, (i64, String, i64)>>> = Rc::new(RefCell::new(HashMap::new()));
+        let live_typing_rev: Signal<u32> = signal(0);
+        // Scrollback paging for the live message list. `load_busy` is `true` while a
+        // `History { before_id }` request is in flight (gates the "Load earlier"
+        // pill's tap so a double-tap can't fire a second page; the pill's label
+        // goes muted while `true`). The gateway effect clears it on the
+        // `WsServerMsg::History` marker frame (which arrives before the page's
+        // `Message { new: false }` frames). `has_more_earlier` is set by the same
+        // marker frame from the server's `has_more` field (a full page = more
+        // older messages exist). Both signals are declared HERE — before the
+        // gateway effect below captures them — because Rust requires a value in
+        // scope at the point a closure captures it (same pattern as `notif_level`
+        // etc. above).
+        let load_busy: Signal<bool> = signal(false);
+        // Pinned-messages panel state (LIVE / backend). `pinned_panel_open` is the
+        // full-screen overlay's show flag; `pinned_messages` the fetched list;
+        // `pinned_count` the header badge value; `pinned_revision` the rebuild
+        // trigger (bumped after every list/count mutation); `pinned_error` a
+        // rejection surfaced in the panel body. The header pin icon opens the
+        // panel and fetches the list; each row's Unpin button updates the count
+        // and list (and bumps `pinned_revision`) after a backend round trip.
+        let pinned_panel_open: Signal<bool> = signal(false);
+        let pinned_messages: Signal<Vec<crate::pins::PinnedMessage>> = signal(Vec::new());
+        let pinned_count: Signal<i64> = signal(0);
+        let pinned_revision: Signal<u32> = signal(0);
+        let pinned_error: Signal<String> = signal(String::new());
+        let pin_visible: Signal<bool> = signal(false);
+        // Reply context for the channel composer: `Some((author, snippet))` while a
+        // message row's hover "Reply" button is composing a reply (the
+        // `ReplyPreviewBar` strip reads it); `None` while not. `PinConfirmToast`'s
+        // `visible` flag, flashed by the "Pin message" overflow-menu entry.
+        let reply_ctx: Signal<Option<(String, String)>> = signal(None);
+        // The wire id of the message the composer is replying to. Set by a row's
+        // Reply action (from its `MessageKey`) and read by `do_send` (below) to
+        // attach it to the outbound `Send` frame; cleared after a successful send
+        // and by the preview bar's "×". Kept separate from `reply_ctx` (the display
+        // author + snippet) so the server needs only the id, not the display text.
+        let reply_target: Signal<Option<i64>> = signal(None);
+        // The per-message "Translate message" overflow-menu entry reveals a
+        // `TranslateToggle` on ONE row at a time (a deliberate single instance, not
+        // a per-row widget). This shared signal names the active row's
+        // `(channel, list_index)` key — the picker idiom — so opening another
+        // row's menu or re-tapping dismisses it. Owned here next to the other mock
+        // per-app signals; threaded into the mock message list only.
+        let translate_key: Signal<Option<MessageKey>> = signal(None);
+        let msg_menu: Signal<Option<MessageKey>> = signal(None);
+        // A send failed: `true` = the most recent live send was rejected by the
+        // backend (the gateway replies with an `Error` frame, handled below in
+        // `gateway_incoming_effect`). The "Failed to send - Retry" banner above the
+        // composer reads this; clicking it clears the signal to dismiss the banner
+        // (the user resends to retry). Pure UI state — the gateway `send` itself is
+        // fire-and-forget, so this is the app's signal for a failed send.
+        let send_failed: Signal<bool> = signal(false);
+        Messages {
+            live_attachments: live_attachments,
+            live_messages: live_messages,
+            live_revision: live_revision,
+            live_editing: live_editing,
+            live_edit_text: live_edit_text,
+            live_delete_confirm: live_delete_confirm,
+            reactions: reactions,
+            reaction_rev: reaction_rev,
+            picker: picker,
+            has_more_earlier: has_more_earlier,
+            live_at_bottom: live_at_bottom,
+            live_scroll_handle: live_scroll_handle,
+            live_mentioned: live_mentioned,
+            live_mention_rev: live_mention_rev,
+            live_unread: live_unread.clone(),
+            live_unread_rev: live_unread_rev,
+            rail_unread: live_unread.clone(),
+            live_typing: live_typing,
+            live_typing_rev: live_typing_rev,
+            load_busy: load_busy,
+            pinned_panel_open: pinned_panel_open,
+            pinned_messages: pinned_messages,
+            pinned_count: pinned_count,
+            pinned_revision: pinned_revision,
+            pinned_error: pinned_error,
+            pin_visible: pin_visible,
+            reply_ctx: reply_ctx,
+            reply_target: reply_target,
+            translate_key: translate_key,
+            msg_menu: msg_menu,
+            send_failed: send_failed,
         }
     }
 }

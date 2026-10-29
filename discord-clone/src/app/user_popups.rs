@@ -106,7 +106,8 @@ pub(super) struct UserPopupsParts {
 }
 
 pub(super) fn build(s: &ShellState) -> UserPopupsParts {
-    let ShellState { live_ban_confirm, live_dm_active, live_dm_messages, live_dm_revision, live_dms, live_kick_confirm, live_members, live_timeout_confirm, profile_mode, user_popup, user_profile, blocked_users, live_revision, nav, composer_state, .. } = s.clone();
+    let ShellState { live_ban_confirm, live_dm_active, live_dm_messages, live_dm_revision, live_dms, live_kick_confirm, live_members, live_timeout_confirm, profile_mode, user_popup, user_profile, blocked_users, nav, composer_state, messages, .. } = s.clone();
+    let Messages { live_revision, .. } = messages.clone();
 let Composer { composer, .. } = composer_state.clone();
 let Nav { active_live_server, live_dm_mode, .. } = nav.clone();
     let ctx = UserPopupCtx {
