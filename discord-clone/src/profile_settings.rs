@@ -492,12 +492,7 @@ pub fn ProfileSettings() -> Element {
                 color: Some(col(theme::TEXT_MUTED)),
                 ..Default::default()
             }) { "DISPLAY NAME — SHOWN INSTEAD OF YOUR USERNAME".to_string() }
-            text_input(
-                value = display_name,
-                on_change = move |v: String| display_name.set(v),
-                placeholder = username.clone(),
-                style = input_style.clone(),
-            )
+            { crate::controls::text_field(display_name, &username, input_style.clone()) }
             text(style = StyleRules {
                 align_self: Some(runtime_core::AlignSelf::Stretch),
                 font_size: Some(px(11.0)),
@@ -505,12 +500,7 @@ pub fn ProfileSettings() -> Element {
                 color: Some(col(theme::TEXT_MUTED)),
                 ..Default::default()
             }) { "ABOUT ME".to_string() }
-            text_input(
-                value = about,
-                on_change = move |v: String| about.set(v),
-                placeholder = "A line about yourself",
-                style = input_style.clone(),
-            )
+            { crate::controls::text_field(about, "A line about yourself", input_style.clone()) }
             view(style = StyleRules {
                 height: Some(px(34.0)),
                 padding_left: Some(px(16.0)),

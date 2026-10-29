@@ -1,8 +1,8 @@
 //! Stylesheets for the elements the app draws most (message rows, …).
-//! Declared once with \x60stylesheet!\x60 instead of building \x60StyleRules\x60 per
+//! Declared once with `stylesheet!` instead of building `StyleRules` per
 //! render: the sheet is resolved and cached once, hover is a CSS state
 //! rather than a signal, and a release build can premint it to CSS.
-//! Colours are theme roles (\x60col(theme::ROLE)\x60), so theme swaps still apply.
+//! Colours are theme roles (`col(theme::ROLE)`), so theme swaps still apply.
 
 use runtime_core::stylesheet;
 use runtime_core::{AlignItems, Color, FlexDirection, FlexWrap, FontWeight, JustifyContent, Length, ObjectFit, Position, Tokenized};
@@ -102,7 +102,7 @@ stylesheet! {
 }
 
 stylesheet! {
-    /// The body\x27s inline flow: text runs, emoji, mention pills, spoilers.
+    /// The body's inline flow: text runs, emoji, mention pills, spoilers.
     pub MessageBodyFlow<()> {
         base(_t) {
             flex_direction: FlexDirection::Row,
@@ -131,7 +131,7 @@ stylesheet! {
 }
 
 stylesheet! {
-    /// A mention pill; the caller sets the tint (a role\x27s own colour).
+    /// A mention pill; the caller sets the tint (a role's own colour).
     pub MentionPill<()> {
         base(_t) {
             padding_horizontal: 2.0,
@@ -188,7 +188,7 @@ stylesheet! {
 }
 
 stylesheet! {
-    /// The divider\x27s 1px rule across the message column.
+    /// The divider's 1px rule across the message column.
     pub DateDividerRule<()> {
         base(_t) {
             height: 0.0,
@@ -283,6 +283,44 @@ stylesheet! {
     pub Spacer<()> {
         base(_t) {
             flex_grow: 1.0,
+        }
+    }
+}
+
+stylesheet! {
+    /// A text button; `kind` picks its colour.
+    pub ButtonBox<()> {
+        base(_t) {
+            height: 36.0,
+            padding_horizontal: 16.0,
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            border_radius: 4.0,
+            background: col(theme::ACCENT),
+        }
+        variant kind {
+            #[default]
+            primary(_t) {}
+            secondary(_t) { background: col(theme::BUTTON_SECONDARY) }
+            success(_t) { background: col(theme::SUCCESS_STRONG) }
+            danger(_t) { background: col(theme::DANGER) }
+        }
+        state hovered(_t) {
+            opacity: 0.88,
+        }
+        state pressed(_t) {
+            opacity: 0.75,
+        }
+    }
+}
+
+stylesheet! {
+    pub ButtonLabel<()> {
+        base(_t) {
+            font_size: 14.0,
+            font_weight: FontWeight::SemiBold,
+            color: col(theme::TEXT_ON_ACCENT),
         }
     }
 }

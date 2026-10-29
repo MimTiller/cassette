@@ -37,6 +37,7 @@ mod settings_suite;
 mod profile_settings;
 mod dms;
 mod styles;
+mod controls;
 mod live_dm_view;
 mod group_dm;
 // Client friends-list wrapper (RPC front-end for discord-server/src/friends.rs)

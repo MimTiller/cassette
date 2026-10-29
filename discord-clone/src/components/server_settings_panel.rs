@@ -504,7 +504,7 @@ pub fn ServerSettingsPanel(
             let name_row = ui! {
                 view(style = row_col()) {
                     text(style = label_style.clone()) { "Server name".to_string() }
-                    text_input(value = nm, on_change = move |v: String| nm.set(v), placeholder = "New server name", style = input_style.clone())
+                    { crate::controls::text_field(nm, "New server name", input_style.clone()) }
                     rename_btn
                 }
             };
@@ -526,7 +526,7 @@ pub fn ServerSettingsPanel(
                         color: Some(col(theme::TEXT_MUTED)),
                         ..Default::default()
                     }) { "Pass ownership to another member's numeric user id.".to_string() }
-                    text_input(value = owner, on_change = move |v: String| owner.set(v), placeholder = "New owner user id", style = input_style.clone())
+                    { crate::controls::text_field(owner, "New owner user id", input_style.clone()) }
                     transfer_btn
                 }
             };

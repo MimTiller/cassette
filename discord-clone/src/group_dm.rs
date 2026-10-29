@@ -11,6 +11,7 @@ use runtime_core::{
     Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
+use crate::controls::{button_view, ButtonKind};
 use crate::dms::{self, Dm};
 use crate::live_dm_view::LiveDmMsg;
 use crate::style_helpers::{borderless_input, col, pct, px};
@@ -95,39 +96,6 @@ pub(crate) fn refresh(live_dms: Signal<Vec<Dm>>, active: Signal<Option<i64>>, ms
             live_dms.set(list);
         }
     });
-}
-
-fn button(label: &str, background: &str, on_press: impl Fn() + 'static) -> Element {
-    let label = label.to_string();
-    let bg = background.to_string();
-    ui! {
-        view(style = StyleRules {
-            height: Some(px(36.0)),
-            padding_left: Some(px(16.0)),
-            padding_right: Some(px(16.0)),
-            align_items: Some(AlignItems::Center),
-            justify_content: Some(JustifyContent::Center),
-            background: Some(col(&bg)),
-            border_top_left_radius: Some(px(4.0)),
-            border_top_right_radius: Some(px(4.0)),
-            border_bottom_left_radius: Some(px(4.0)),
-            border_bottom_right_radius: Some(px(4.0)),
-            ..Default::default()
-        }) {
-            text(style = StyleRules {
-                font_size: Some(px(14.0)),
-                font_weight: Some(FontWeight::SemiBold),
-                color: Some(col(theme::TEXT_ON_ACCENT)),
-                ..Default::default()
-            }) { label }
-        }
-        .on_touch(move |ev| {
-            if ev.phase == TouchPhase::Ended {
-                on_press();
-            }
-            TouchResponse::CONSUMED
-        })
-    }
 }
 
 /// The friend picker dialog. Shown while `picker` is `Some`. Picking one
@@ -330,7 +298,7 @@ pub(crate) fn picker_dialog(
                 ui! { text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(theme::DANGER)), ..Default::default() }) { err } }
             });
             let action_label = if *working { "Working…".to_string() } else { action.to_string() };
-            let confirm_bg = if chosen.is_empty() { theme::BUTTON_SECONDARY } else { theme::ACCENT };
+            let confirm_kind = if chosen.is_empty() { ButtonKind::Secondary } else { ButtonKind::Primary };
             ui! {
                 view(style = StyleRules {
                     position: Some(Position::Absolute),
@@ -381,8 +349,8 @@ pub(crate) fn picker_dialog(
                             gap: Some(px(8.0)),
                             ..Default::default()
                         }) {
-                            { button("Cancel", theme::BUTTON_SECONDARY, close) }
-                            { button(&action_label, confirm_bg, confirm) }
+                            { button_view("Cancel", ButtonKind::Secondary, close) }
+                            { button_view(&action_label, confirm_kind, confirm) }
                         }
                     }
                 }

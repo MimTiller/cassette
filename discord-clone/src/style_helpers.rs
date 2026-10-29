@@ -2,24 +2,25 @@
 //! not walls of `Some(Tokenized::Literal(...))`.
 
 use crate::theme;
-use std::rc::Rc;
 
-use runtime_core::{Color, FontWeight, Length, StyleRules, StyleSheet, TextTransform, Tokenized};
+use runtime_core::{Color, FontWeight, Length, StyleRules, TextTransform, Tokenized};
 
-/// A named static sheet. The identity feeds `premint_as`, so every
-/// welcome style ships as build-time CSS under `--premint` instead of
-/// dragging the live style engine in (an ANONYMOUS static sheet has no
-/// premint class by construction — measured as 16 fall-throughs on the
-/// website's premint report, all from this helper).
-///
-/// Contract: the id must be unique per rule CONTENT (parameterized
-/// sheets bake the parameter into the id, e.g. `planet.2`), and every
-/// sheet must be constructed at MOUNT time — both hold here because the
-/// welcome scene builds its entire tree at load, which is also when the
-/// premint dump's crawl captures it.
-#[allow(dead_code)]
-pub fn static_sheet(id: &str, rules: StyleRules) -> Rc<StyleSheet> {
-    StyleSheet::r#static(rules).premint_as(&format!("welcome.v1.{id}"))
+/// Rounded corners: all four radii `r` and nothing else, for use as a
+/// struct-update base (`StyleRules { …, ..rounded(8.0) }`).
+pub fn rounded(r: f32) -> StyleRules {
+    with_radius(StyleRules::default(), r)
+}
+
+/// `rules` with all four corner radii set to `r`, for a literal whose base
+/// is something else (`with_radius(StyleRules { …, ..borderless_input() }, 8.0)`).
+pub fn with_radius(rules: StyleRules, r: f32) -> StyleRules {
+    StyleRules {
+        border_top_left_radius: Some(px(r)),
+        border_top_right_radius: Some(px(r)),
+        border_bottom_left_radius: Some(px(r)),
+        border_bottom_right_radius: Some(px(r)),
+        ..rules
+    }
 }
 
 pub fn px(v: f32) -> Tokenized<Length> {
