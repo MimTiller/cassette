@@ -937,7 +937,19 @@ pub(super) fn message_overflow_menu(
                     ..rounded(8.0)
                 }) {
                     { menu_row("Copy text", on_copy.clone(), open) }
-                    { menu_row("Pin message", pin.clone(), open) }
+                    {
+                        if crate::mentions::can_here(discord_server::permissions::Permissions::MANAGE_MESSAGES) {
+                            menu_row("Pin message", pin.clone(), open)
+                        } else {
+                            ui! {
+                                view(style = StyleRules {
+                                    width: Some(px(0.0)),
+                                    height: Some(px(0.0)),
+                                    ..Default::default()
+                                }) {}
+                            }
+                        }
+                    }
                     { menu_row("Translate message", translate, open) }
                     // Owner-only entries: present only when the caller supplied
                     // handlers (live rows the current user owns). Each renders a

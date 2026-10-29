@@ -9,7 +9,7 @@ pub(super) struct SidebarParts {
 }
 
 pub(super) fn build(s: &ShellState) -> SidebarParts {
-    let ShellState { active_live_channel, active_live_server, cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, joined_voice, live_at_bottom, live_chan_menu, live_channels, live_collapsed, live_members, live_mention_rev, live_scroll_handle, live_servers, live_unread, live_unread_rev, member_panel_width, muted, notif_mode, profile_mode, rc_busy, rc_cid, rc_err, rc_name, rc_open, server_menu_open, sidebar_width, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, status_menu, user_status, .. } = s.clone();
+    let ShellState { active_live_channel, active_live_server, cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, joined_voice, live_at_bottom, live_chan_menu, live_channels, live_collapsed, live_mention_rev, live_scroll_handle, live_servers, live_unread, live_unread_rev, member_panel_width, muted, notif_mode, profile_mode, rc_busy, rc_cid, rc_err, rc_name, rc_open, server_menu_open, sidebar_width, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, status_menu, user_status, .. } = s.clone();
     // --- channel sidebar -------------------------------------------------
     // Width is driven by the `sidebar_width` signal (a thin drag handle on the
     // sidebar's right edge resizes it). A rules *closure* so the width
@@ -216,14 +216,6 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                     // Rename/Delete popup is open), captured for `chan_actions`
                     // and the per-row hover handlers.
                     let chan_menu = live_chan_menu.clone();
-                    // The roster (already fetched when a live server entered) —
-                    // read here ONLY to pick which menu rows RENDER (the
-                    // backend re-checks on commit). Plain read of the acting
-                    // id is fine at this build site: the sidebar rebuilds on
-                    // live-server/channel changes and on login (`authed`).
-                    let live_mbrs = live_members.clone();
-                    let chan_self_id =
-                        crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
                     // Shared style for the live channel row action icon buttons
                     // (hover gear) and the new-channel "+" header action. A
                     // rules *closure* (like `live_row_style` below) so the
@@ -283,15 +275,10 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                         // single settings GEAR renders only while the row is
                         // hovered (per-row `hovered`, the `message_action_bar`
                         // idiom), and only for users whose own roster role
-                        // clears the backend bars — the menu below still arms
+                        // may manage the channel — the menu below still arms
                         // the existing rename/delete modals (permission checks
                         // and their confirm/commit steps stay the backend's).
-                        let my_role = live_mbrs
-                            .get()
-                            .iter()
-                            .find(|m| m.user_id == chan_self_id)
-                            .map(|m| role_rank(m.role.clone()))
-                            .unwrap_or(-1);
+                        let manage = crate::mentions::can_in(cid, discord_server::permissions::Permissions::MANAGE_CHANNELS);
                         let menu_items: Vec<(String, bool, Rc<dyn Fn()>)> = {
                             let mut items: Vec<(String, bool, Rc<dyn Fn()>)> =
                                 Vec::<(String, bool, Rc<dyn Fn()>)>::new();
@@ -320,7 +307,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                     });
                                 }),
                             ));
-                            if my_role >= 1 {
+                            if manage {
                                 items.push((
                                     "Rename".to_string(),
                                     false,
@@ -333,7 +320,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                     }),
                                 ));
                             }
-                            if my_role >= 2 {
+                            if manage {
                                 items.push((
                                     "Delete".to_string(),
                                     true,
@@ -707,7 +694,6 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                         server_menu_open,
                         active_live_server,
                         live_servers,
-                        live_members,
                         live_channels,
                         active_live_channel,
                         Rc::new(move || {
@@ -725,7 +711,6 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                             }
                             ss_owner.set(String::new());
                             ss_add_user_id.set(String::new());
-                            ss_add_role.set("member".to_string());
                             ss_busy.set(false);
                             ss_err.set(String::new());
                             ss_open.set(true);
@@ -843,7 +828,6 @@ fn server_dropdown(
     open: Signal<bool>,
     server: Signal<Option<i64>>,
     servers: Signal<Vec<crate::servers::ServerSummary>>,
-    members: Signal<Vec<crate::moderation::MemberInfo>>,
     channels: Signal<Vec<crate::servers::ChannelSummary>>,
     channel: Signal<Option<i64>>,
     invite: Rc<dyn Fn()>,
@@ -857,16 +841,17 @@ fn server_dropdown(
             if !*is_open {
                 return ui! { view(style = StyleRules { width: Some(px(0.0)), height: Some(px(0.0)), ..Default::default() }) {} };
             }
-            let self_id = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
-            let my_rank = role_rank(acting_role(&members.get(), self_id));
-            let is_owner = my_rank >= 3;
+            use discord_server::permissions::Permissions as P;
+            let is_owner = crate::mentions::my_rank() == discord_server::permissions::Rank::Owner;
             // (label, red, close after, action); `None` is a divider.
             let mut items: Vec<Option<(String, bool, bool, Rc<dyn Fn()>)>> = Vec::new();
-            items.push(Some(("Invite People".to_string(), false, true, invite.clone())));
-            if my_rank >= 2 {
+            if crate::mentions::can(P::CREATE_INVITE) {
+                items.push(Some(("Invite People".to_string(), false, true, invite.clone())));
+            }
+            if crate::server_settings_panel::any_section() {
                 items.push(Some(("Server Settings".to_string(), false, true, settings.clone())));
             }
-            if my_rank >= 1 {
+            if crate::mentions::can(P::MANAGE_CHANNELS) {
                 let (c1, c2) = (create.clone(), create.clone());
                 items.push(Some(("Create Channel".to_string(), false, true, Rc::new(move || (c1)("text")))));
                 items.push(Some(("Create Category".to_string(), false, true, Rc::new(move || (c2)("category")))));

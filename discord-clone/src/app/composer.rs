@@ -19,6 +19,8 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
     // 8px corners; the input itself is transparent so the bar reads as one
     // surface.
     let composer_style = StyleRules {
+        // Holds the "no permission" cover (below).
+        position: Some(Position::Relative),
         min_height: Some(px(44.0)),
         padding_left: Some(px(4.0)),
         padding_right: Some(px(4.0)),
@@ -636,9 +638,11 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                 // '+' icon slot inside the bar, on the left: transparent
                 // chip that lightens (BG_HOVER) and the glyph lightens
                 // (INTERACTIVE) while hovered.
+                // Hidden without Attach Files (once permissions have loaded).
                 view(style = move || StyleRules {
-                    width: Some(px(28.0)),
+                    width: Some(px(if !crate::mentions::perms_known() || crate::mentions::can_here(discord_server::permissions::Permissions::ATTACH_FILES) { 28.0 } else { 0.0 })),
                     height: Some(px(28.0)),
+                    overflow: Some(Overflow::Hidden),
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
                     flex_shrink: Some(grow(0.0)),
@@ -682,6 +686,29 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                     }
                     TouchResponse::CONSUMED
                 })
+                // Without Send Messages in the open channel, a muted line
+                // covers the bar (once permissions have loaded).
+                if crate::mentions::perms_known() && !crate::mentions::can_here(discord_server::permissions::Permissions::SEND_MESSAGES) {
+                    view(style = StyleRules {
+                        position: Some(Position::Absolute),
+                        left: Some(px(0.0)),
+                        right: Some(px(0.0)),
+                        top: Some(px(0.0)),
+                        bottom: Some(px(0.0)),
+                        padding_left: Some(px(16.0)),
+                        flex_direction: Some(FlexDirection::Row),
+                        align_items: Some(AlignItems::Center),
+                        background: Some(col(COMPOSER)),
+                        ..rounded(8.0)
+                    }) {
+                        text(style = StyleRules {
+                            font_size: Some(px(14.0)),
+                            color: Some(col(TEXT_MUTED)),
+                            ..Default::default()
+                        }) { "You don't have permission to send messages in this channel.".to_string() }
+                    }
+                    .on_touch(|_| TouchResponse::CONSUMED)
+                }
             }
             // Visible rejection line for the attach flow: a bad type
             // / oversize / over-count pick (or a picker error) shows

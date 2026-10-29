@@ -50,7 +50,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
     let Some(sid) = server_id else {
         return ui! { view {} };
     };
-    let manage = crate::mentions::can_manage_roles();
+    let manage = crate::mentions::can(discord_server::permissions::Permissions::MANAGE_ROLES);
     let roles: Signal<Vec<CustomRole>> = signal(crate::mentions::roles().roles);
     let name = signal(String::new());
     let color = signal(String::new());

@@ -73,31 +73,10 @@ pub async fn timeout_member(server_id: i64, user_id: i64, duration_secs: i64) ->
     Ok(())
 }
 
-/// Change a member's role. `role` is one of `'member'` / `'moderator'` /
-/// `'admin'` (the backend rejects assigning `'owner'` or changing the owner's
-/// role). The backend's rejection message comes back as the `Err` string.
-pub async fn set_member_role(server_id: i64, user_id: i64, role: &str) -> Result<(), String> {
-    let input = discord_server::server_settings::SetMemberRoleInput {
-        server_id,
-        user_id,
-        role: role.to_string(),
-    };
-    discord_server::server_settings::set_member_role(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))?;
-    Ok(())
-}
-
-/// Add a member (or re-role one) in a server. `role` is one of `'member'` /
-/// `'moderator'` / `'admin'` (the backend rejects assigning `'owner'`, and
-/// requires admin+ to grant `admin`). The backend's rejection message comes
-/// back as the `Err` string, exactly like [`set_member_role`].
-pub async fn add_member(server_id: i64, user_id: i64, role: &str) -> Result<(), String> {
-    let input = discord_server::server_settings::AddMemberInput {
-        server_id,
-        user_id,
-        role: role.to_string(),
-    };
+/// Add a user to a server as a plain member. The backend's rejection
+/// message comes back as the `Err` string.
+pub async fn add_member(server_id: i64, user_id: i64) -> Result<(), String> {
+    let input = discord_server::server_settings::AddMemberInput { server_id, user_id };
     discord_server::server_settings::add_member(input)
         .await
         .map_err(|e| crate::errors::friendly(&e))?;

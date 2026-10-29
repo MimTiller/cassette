@@ -342,9 +342,16 @@ fn profile_card(
 fn role_chips(user_id: i64, in_server: bool, label: StyleRules) -> Element {
     use discord_server::server_roles::CustomRole;
     let held = crate::mentions::roles_of(user_id);
-    let manage = in_server && crate::mentions::can_manage_roles();
+    let manage = in_server && crate::mentions::can(discord_server::permissions::Permissions::MANAGE_ROLES);
+    let mine = crate::mentions::my_rank();
     let missing: Vec<CustomRole> = if manage {
-        crate::mentions::roles().roles.into_iter().filter(|r| !held.iter().any(|h| h.id == r.id)).collect()
+        // Only roles below the user's own can be handed out.
+        crate::mentions::roles()
+            .roles
+            .into_iter()
+            .filter(|r| !held.iter().any(|h| h.id == r.id))
+            .filter(|r| mine.outranks(discord_server::permissions::Rank::Role(r.position)))
+            .collect()
     } else {
         Vec::new()
     };
@@ -484,18 +491,24 @@ fn user_menu(
             block_action(!blocked, user_id, ctx);
             close();
         }))));
-        // Moderation, for a moderator or above acting on someone ranked lower
-        // (the backend enforces the real rules; this only picks what to show).
-        let roster = members.get();
-        let self_id = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
-        let mine = role_rank(acting_role(&roster, self_id));
-        let theirs = roster.iter().find(|m| m.user_id == user_id).map(|m| role_rank(m.role.clone()));
-        if let Some(theirs) = theirs.filter(|t| mine >= 1 && mine > *t) {
+        // Moderation, for someone holding the permission and acting on a
+        // member ranked below them (the backend enforces the same rules).
+        use discord_server::permissions::Permissions as P;
+        let in_roster = members.get().iter().any(|m| m.user_id == user_id);
+        if in_roster && crate::mentions::my_rank().outranks(crate::mentions::rank_of(user_id)) {
             items.push(None);
-            items.push(Some((format!("Kick {}", p.username), true, Rc::new(move || { kick.set(Some(user_id)); close(); }))));
-            if mine >= 2 && theirs < 2 {
+            let before = items.len();
+            if crate::mentions::can(P::KICK_MEMBERS) {
+                items.push(Some((format!("Kick {}", p.username), true, Rc::new(move || { kick.set(Some(user_id)); close(); }))));
+            }
+            if crate::mentions::can(P::MODERATE_MEMBERS) {
                 items.push(Some((format!("Timeout {}", p.username), false, Rc::new(move || { timeout.set(Some(user_id)); close(); }))));
+            }
+            if crate::mentions::can(P::BAN_MEMBERS) {
                 items.push(Some((format!("Ban {}", p.username), true, Rc::new(move || { ban.set(Some(user_id)); close(); }))));
+            }
+            if items.len() == before {
+                items.pop();
             }
         }
     }

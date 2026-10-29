@@ -16,7 +16,7 @@ pub(super) struct ModalsParts {
 }
 
 pub(super) fn build(s: &ShellState) -> ModalsParts {
-    let ShellState { active_live_channel, active_live_server, cc_busy, cc_err, cc_kind, cc_name, cc_open, create_busy, create_error, create_name, create_open, dc_busy, dc_cid, dc_err, dc_name, dc_open, gateway, invite_created, invite_err, invite_expiry, invite_mode, join_busy, join_code, join_error, join_open, join_result, live_channels, live_kick_confirm, live_member_error, live_members, live_servers, live_unread, live_unread_rev, rc_busy, rc_cid, rc_err, rc_name, rc_open, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, .. } = s.clone();
+    let ShellState { active_live_channel, active_live_server, cc_busy, cc_err, cc_kind, cc_name, cc_open, create_busy, create_error, create_name, create_open, dc_busy, dc_cid, dc_err, dc_name, dc_open, gateway, invite_created, invite_err, invite_expiry, invite_mode, join_busy, join_code, join_error, join_open, join_result, live_channels, live_kick_confirm, live_member_error, live_members, live_servers, live_unread, live_unread_rev, rc_busy, rc_cid, rc_err, rc_name, rc_open, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, .. } = s.clone();
     // The `#[component]` `name = expr` call form is only parsed inside `ui!`,
     // so the modal is wrapped in a `view` (the wrapper is a positioned
     // ancestor for the full-screen overlay, like the Profile/notif regions).
@@ -240,7 +240,6 @@ pub(super) fn build(s: &ShellState) -> ModalsParts {
                 servers = live_servers,
                 members = live_members,
                 add_member_user_id = ss_add_user_id,
-                add_member_role = ss_add_role,
             )
         }
     };

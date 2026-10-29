@@ -106,7 +106,6 @@ pub(super) struct ShellState {
     pub(super) send_failed: Signal<bool>,
     pub(super) shortcuts_mode: Signal<bool>,
     pub(super) sidebar_width: Signal<f32>,
-    pub(super) ss_add_role: Signal<String>,
     pub(super) ss_add_user_id: Signal<String>,
     pub(super) ss_busy: Signal<bool>,
     pub(super) ss_err: Signal<String>,

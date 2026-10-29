@@ -77,6 +77,7 @@ pub fn message_action_bar(
             let react = on_react.clone();
             let reply = on_reply.clone();
             let more = on_more.clone();
+            let can_react = crate::mentions::can_here(discord_server::permissions::Permissions::ADD_REACTIONS);
 
             // The action bar: a horizontal row of the three icon buttons,
             // centered, on the elevated bar surface with rounded corners — the
@@ -99,9 +100,11 @@ pub fn message_action_bar(
                 }) {
                     // React button — opens the shared add-reaction picker (the
                     // caller points `picker` at this message). No second UI here.
+                    // Hidden without Add Reactions.
                     view(style = StyleRules {
                         position: Some(Position::Relative),
-                        width: Some(px(32.0)),
+                        width: Some(px(if can_react { 32.0 } else { 0.0 })),
+                        overflow: Some(runtime_core::Overflow::Hidden),
                         height: Some(px(32.0)),
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),

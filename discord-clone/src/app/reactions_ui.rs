@@ -159,9 +159,11 @@ pub(super) fn reaction_area(
     // The always-visible "add reaction" button: a small circular glyph target
     // (a `view` + icon, the composer icon-button shape) whose `.on_touch` opens
     // the picker for this message, keyed by the row's `MessageKey`.
+    // Only for someone who may add reactions here; existing pills still
+    // toggle (taking a reaction back needs no permission).
     let add = picker;
     let add_key = key;
-    let add_button = ui! {
+    let add_button = crate::mentions::can_here(discord_server::permissions::Permissions::ADD_REACTIONS).then(|| ui! {
         view(style = crate::styles::AddReactionButton()) {
             icon(SMILE_PLUS).color(|| theme::live(TEXT_MUTED)).size(15.0)
         }
@@ -172,7 +174,7 @@ pub(super) fn reaction_area(
             }
             TouchResponse::CONSUMED
         })
-    };
+    });
 
     // Discord shows the add-reaction button only next to existing pills: with
     // no reactions the strip is an empty zero-size view (takes no height), so
@@ -188,7 +190,9 @@ pub(super) fn reaction_area(
         view(style = crate::styles::ReactionStrip()) {
             pills
             view(style = crate::styles::Spacer()) {}
-            add_button
+            if let Some(button) = add_button {
+                button
+            }
         }
     }
 }

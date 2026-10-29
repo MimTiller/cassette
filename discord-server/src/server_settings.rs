@@ -520,7 +520,6 @@ pub struct ServerSettingsResult {
 /// The refusal for the old owner/admin/moderator/member levels, which roles
 /// replaced.
 #[cfg(feature = "server")]
-const LEVELS_REPLACED: &str = "permission levels were replaced by roles; give them a role in Server Settings instead";
 
 /// The server-settings service. Wraps a `Db` handle.
 ///
@@ -789,34 +788,25 @@ impl ServerSettings {
 
     // ── member management ──────────────────────────────────────────────────
 
-    /// Add a member to `server_id`. Needs Create Invite. `role` must be
-    /// `member`: the old levels were replaced by roles, which are handed out
-    /// with `server_roles::assign_role`.
-    pub fn add_member(
-        &self,
-        caller_id: i64,
-        server_id: i64,
-        user_id: i64,
-        role: Role,
-    ) -> Result<String, String> {
-        if role != Role::Member {
-            return Err(LEVELS_REPLACED.into());
-        }
+    /// Add a user to `server_id` as a plain member (roles are handed out
+    /// with `server_roles`). Needs Create Invite.
+    pub fn add_member(&self, caller_id: i64, server_id: i64, user_id: i64) -> Result<String, String> {
+        let role = Role::Member;
         self.require(caller_id, server_id, Permissions::CREATE_INVITE)?;
         // A banned user can't be re-added even by an admin — the ban table is
         // authoritative over a direct add (an unban must come first).
         if self.db.is_banned(server_id, user_id) {
             return Err("member is banned and cannot be re-added (unban first)".into());
         }
-        // The upsert can re-role an existing member; only announce a *join*
-        // when this is a brand-new membership (a re-role is a count no-op).
-        let was_member = self.db.membership_role(server_id, user_id).is_some();
+        // The upsert would overwrite an existing member's row (the owner's
+        // included), so an existing member is refused.
+        if self.db.membership_role(server_id, user_id).is_some() {
+            return Err("already a member".into());
+        }
         self.db
             .upsert_membership(server_id, user_id, role, Self::now_secs())
             .map_err(|e| format!("failed to add member: {e}"))?;
-        if !was_member {
-            crate::realtime::announce_membership(&self.db, server_id, user_id, true);
-        }
+        crate::realtime::announce_membership(&self.db, server_id, user_id, true);
         Ok(role.db_str().to_string())
     }
 
@@ -943,13 +933,6 @@ impl ServerSettings {
             return Err("member not found".into());
         }
         Ok(())
-    }
-
-    /// Change a member's permission level. Levels were replaced by roles
-    /// (see `permissions`), so this always refuses; roles are handed out with
-    /// `server_roles::set_member_roles`.
-    pub fn set_member_role(&self, _caller_id: i64, _server_id: i64, _user_id: i64, _new_role: Role) -> Result<String, String> {
-        Err(LEVELS_REPLACED.into())
     }
 
     // ── channel reads / unread counts ──────────────────────────────────────
@@ -1235,16 +1218,13 @@ pub async fn delete_channel(input: DeleteChannelInput) -> Result<ChannelResult, 
 
 // ── member management endpoints ─────────────────────────────────────────────
 
-/// Add a member to a server. Needs Create Invite; only the `member` level
-/// is accepted (roles replaced the others).
+/// Add a user to a server as a plain member. Needs Create Invite.
 #[server]
 pub async fn add_member(input: AddMemberInput) -> Result<MemberResult, ServerError> {
     let db = db_from_state()?;
     let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
-    let role = Role::from_db_str(&input.role)
-        .ok_or_else(|| ServerError::failed(format!("unknown role: {}", input.role)))?;
     let role_str = ServerSettings::new(db)
-        .add_member(caller, input.server_id, input.user_id, role)
+        .add_member(caller, input.server_id, input.user_id)
         .map_err(ServerError::failed)?;
     Ok(MemberResult { server_id: input.server_id, user_id: input.user_id, role: role_str })
 }
@@ -1298,20 +1278,6 @@ pub async fn timeout_member(input: TimeoutMemberInput) -> Result<MemberResult, S
         .timeout_member(caller, input.server_id, input.user_id, input.duration_secs)
         .map_err(ServerError::failed)?;
     Ok(MemberResult { server_id: input.server_id, user_id: input.user_id, role: String::new() })
-}
-
-/// Change an existing member's role. Owner or admin may call. The owner's
-/// role can't be changed and the owner role can't be assigned.
-#[server]
-pub async fn set_member_role(input: SetMemberRoleInput) -> Result<MemberResult, ServerError> {
-    let db = db_from_state()?;
-    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
-    let role = Role::from_db_str(&input.role)
-        .ok_or_else(|| ServerError::failed(format!("unknown role: {}", input.role)))?;
-    let role_str = ServerSettings::new(db)
-        .set_member_role(caller, input.server_id, input.user_id, role)
-        .map_err(ServerError::failed)?;
-    Ok(MemberResult { server_id: input.server_id, user_id: input.user_id, role: role_str })
 }
 
 // ── channel reads / unread counts ───────────────────────────────────────────
@@ -1517,8 +1483,6 @@ pub struct DeleteChannelInput {
 pub struct AddMemberInput {
     pub server_id: i64,
     pub user_id: i64,
-    /// `'owner'` / `'admin'` / `'moderator'` / `'member'` (owner rejected).
-    pub role: String,
 }
 
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]
@@ -1549,13 +1513,6 @@ pub struct TimeoutMemberInput {
     /// timeout is applied. Must be positive; the server rejects non-positive
     /// values at the service boundary.
     pub duration_secs: i64,
-}
-
-#[derive(Debug, Clone, Deserialize, serde::Serialize)]
-pub struct SetMemberRoleInput {
-    pub server_id: i64,
-    pub user_id: i64,
-    pub role: String,
 }
 
 /// The id of the newest message the caller has read in a channel. The caller's
@@ -2050,7 +2007,7 @@ mod tests {
         let svc = ServerSettings::new(db.clone());
         // Ban alice (2), then the owner tries to re-add her directly.
         svc.ban_member(1, 1, 2, Some("spam")).unwrap();
-        let err = svc.add_member(1, 1, 2, Role::Member).unwrap_err();
+        let err = svc.add_member(1, 1, 2).unwrap_err();
         assert!(err.contains("banned"), "the ban blocks a direct re-add; got: {err}");
         // Still not a member.
         assert_eq!(db.membership_role(1, 2), None);
@@ -2065,7 +2022,7 @@ mod tests {
         // Unban, then the owner may re-add.
         db.unban(1, 2).unwrap();
         assert!(!db.is_banned(1, 2));
-        let role = svc.add_member(1, 1, 2, Role::Member).unwrap();
+        let role = svc.add_member(1, 1, 2).unwrap();
         assert_eq!(role, "member");
         assert_eq!(db.membership_role(1, 2), Some("member".into()));
     }

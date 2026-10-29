@@ -41,48 +41,6 @@ pub(super) fn live_member_roster(
     names
 }
 
-/// The role a member advances to when their cycle-button is tapped, in the
-/// order member → moderator → admin → owner → member. `'owner'` is included in
-/// the cycle (so all four role strings are reachable) even though the backend
-/// rejects assigning it to anyone who isn't already the owner — the rejection
-/// is surfaced as an inline error rather than pre-validated (the backend is
-/// the single source of truth for who may hold which role).
-pub(super) fn next_role(current: &str) -> &'static str {
-    match current {
-        "member" => "moderator",
-        "moderator" => "admin",
-        "admin" => "owner",
-        // owner and anything unknown cycle back to member.
-        _ => "member",
-    }
-}
-
-/// Client-side permission pre-check mirroring the backend's role bars (the
-/// backend stays the enforcer; this only decides which menu rows RENDER):
-/// roles rank member < moderator < admin < owner; kick and channel-rename
-/// need moderator+, ban / timeout / channel-delete need admin+.
-pub(super) fn role_rank(role: String) -> i32 {
-    match role.trim().to_lowercase().as_str() {
-        "owner" => 3,
-        "admin" => 2,
-        "moderator" => 1,
-        "member" => 0,
-        _ => -1,
-    }
-}
-
-/// The acting (signed-in) user's own role string in the active live roster —
-/// the discriminator for rendering moderation controls (Kick/Ban/Timeout/
-/// Rename/Delete) before the user even taps them. A user not on the roster
-/// (or a guest) resolves to "" and ranks below every bar, so no controls
-/// render. Data comes from the same `list_members` fetch the panel renders.
-pub(super) fn acting_role(members: &Vec<crate::moderation::MemberInfo>, self_id: i64) -> String {
-    members.iter()
-        .find(|m| m.user_id == self_id)
-        .map(|m| m.role.clone())
-        .unwrap_or_default()
-}
-
 /// A small popup action menu anchored below a target element (the member-
 /// row / channel-row context menu Discord opens from a row tap). Rendered by
 /// a `switch` keyed on a SHARED `Signal<Option<i64>>` — the row's tap handler
@@ -222,21 +180,6 @@ pub(super) fn live_member_panel(
         overflow: Some(Overflow::Hidden),
         ..Default::default()
     };
-    let role_btn_style = StyleRules {
-        padding_top: Some(px(2.0)),
-        padding_bottom: Some(px(2.0)),
-        padding_left: Some(px(8.0)),
-        padding_right: Some(px(8.0)),
-        background: Some(col(COMPOSER)),
-        flex_shrink: Some(grow(0.0)),
-        ..rounded(8.0)
-    };
-    let role_label_style = StyleRules {
-        font_size: Some(px(11.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(TEXT_CHANNEL)),
-        ..Default::default()
-    };
     // The Kick/Ban/Timeout actions live in the row-tap `action_menu` popup
     // (red TEXT labels only); this panel renders no moderation pills.
     let confirm_bg_style = StyleRules {
@@ -293,7 +236,6 @@ pub(super) fn live_member_panel(
     for member in roster.iter() {
         let member_id = member.user_id;
         let is_self = member_id == self_id;
-        let role = member.role.clone();
         let confirming = kick_confirm.clone();
         let kick = kick_confirm.clone();
         let banning = ban_confirm.clone();
@@ -310,8 +252,6 @@ pub(super) fn live_member_panel(
         // in nodes.yaml's b60 history; the fix there was the same: clone
         // before the loop body captures it, not just at each use site).
         let name_style = name_style.clone();
-        let role_btn_style = role_btn_style.clone();
-        let role_label_style = role_label_style.clone();
         let confirm_bg_style = confirm_bg_style.clone();
         let confirm_yes_style = confirm_yes_style.clone();
         let confirm_no_style = confirm_no_style.clone();
@@ -433,42 +373,6 @@ pub(super) fn live_member_panel(
                     } else {
                         text(style = name_style_other_branch) { crate::auth::shown_name(&member.username) }
                     }
-                }
-
-                // Role cycle-button: shows the current role; a tap advances it
-                // (member→moderator→admin→owner→member) and calls
-                // `set_member_role`, refreshing the roster on success. The
-                // backend rejects invalid changes (e.g. assigning `owner`),
-                // which surface via the inline error line below.
-                if !is_self {
-                    view(style = role_btn_style.clone()) {
-                        text(style = role_label_style.clone()) {
-                            format!("{role} ▸")
-                        }
-                    }
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            let sid = server_id;
-                            let uid = member_id;
-                            let new_role = next_role(&role);
-                            let err = error;
-                            let kick = kick;
-                            let members = members;
-                            runtime_core::driver::spawn_async(async move {
-                                match crate::moderation::set_member_role(sid, uid, new_role).await {
-                                    Ok(()) => {
-                                        kick.set(None);
-                                        if let Ok(fresh) = crate::moderation::list_members(sid).await {
-                                            crate::mentions::members_loaded(sid, &fresh);
-                                            members.set(fresh);
-                                        }
-                                    }
-                                    Err(msg) => err.set(msg),
-                                }
-                            });
-                        }
-                        TouchResponse::CONSUMED
-                    })
                 }
 
                 // Kick: a two-step inline confirm. First tap shows Confirm/Cancel;

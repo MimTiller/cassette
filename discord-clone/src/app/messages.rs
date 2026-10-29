@@ -203,7 +203,21 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         }
                         // Invite: opens the live "Invite People" overlay, which
                         // mints a real invite for this live server.
-                        view(style = moderation_style.clone(), test_id = "invite-live") {
+                        // Hidden without Create Invite.
+                        view(style = {
+                            let s = moderation_style.clone();
+                            move || if crate::mentions::can(discord_server::permissions::Permissions::CREATE_INVITE) {
+                                s.clone()
+                            } else {
+                                StyleRules {
+                                    width: Some(px(0.0)),
+                                    padding_left: Some(px(0.0)),
+                                    padding_right: Some(px(0.0)),
+                                    overflow: Some(Overflow::Hidden),
+                                    ..s.clone()
+                                }
+                            }
+                        }, test_id = "invite-live") {
                             icon(USER_PLUS).color(|| theme::live(TEXT_MUTED)).size(15.0)
                         }
                         .on_touch(move |_ev| {

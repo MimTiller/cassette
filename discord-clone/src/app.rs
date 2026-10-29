@@ -609,6 +609,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // None whenever `active_live_server` changes (new live server selected, or
     // mock mode re-entered) — a channel id from a different server is stale.
     let active_live_channel: Signal<Option<i64>> = signal(None);
+    crate::mentions::install_channel(active_live_channel);
     // Scrollback paging for the live message list. `load_busy` is `true` while a
     // `History { before_id }` request is in flight (gates the "Load earlier"
     // pill's tap so a double-tap can't fire a second page; the pill's label
@@ -1216,22 +1217,18 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // overlay. `server_id` is `active_live_server` (read at submit time, `None`
     // outside live mode = a no-op, the same inert-outside-live idiom as the
     // channel-management modals above). `name`/`icon`/`new_owner_id` are the
-    // inputs, seeded from the active live server on open; `add_member_user_id` /
-    // `add_member_role` seed the add-member section (numeric id + a role that
-    // starts as `'member'` and cycles via the panel's chip); `busy`/`error` are
-    // the RPC state; `servers` is re-fetched by the panel on any successful
-    // op so the rail's live section shows the new name/icon. There is no
-    // client-side permission logic beyond the panel's owner-only gate on the
-    // transfer section — the backend decides and its message is surfaced verbatim.
+    // inputs, seeded from the active live server on open; `add_member_user_id`
+    // seeds the add-member section; `busy`/`error` are the RPC state;
+    // `servers` is re-fetched by the panel on any successful op so the rail's
+    // live section shows the new name/icon. The panel shows only the sections
+    // the user's permissions allow; the backend enforces them.
     let ss_open: Signal<bool> = signal(false);
     let ss_name: Signal<String> = signal(String::new());
     let ss_icon: Signal<String> = signal(String::new());
     let ss_owner: Signal<String> = signal(String::new());
-    // Add-member section inputs: the numeric user id and the role to grant
-    // (starts at `'member'`; the panel's chip cycles it member→moderator→admin
-    // →owner→member). Seeded on open, below, like `ss_owner`.
+    // Add-member section input: the numeric user id. Seeded on open, below,
+    // like `ss_owner`.
     let ss_add_user_id: Signal<String> = signal(String::new());
-    let ss_add_role: Signal<String> = signal("member".to_string());
     let ss_busy: Signal<bool> = signal(false);
     let ss_err: Signal<String> = signal(String::new());
 
@@ -1382,7 +1379,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         send_failed: send_failed.clone(),
         shortcuts_mode: shortcuts_mode.clone(),
         sidebar_width: sidebar_width.clone(),
-        ss_add_role: ss_add_role.clone(),
         ss_add_user_id: ss_add_user_id.clone(),
         ss_busy: ss_busy.clone(),
         ss_err: ss_err.clone(),
