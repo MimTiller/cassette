@@ -399,6 +399,7 @@ pub fn post_channel_message(
         &WsServerMsg::Message {
             message_id,
             channel_id,
+            server_id,
             author_id: user_id,
             author_username,
             author_avatar: db.user_avatar(user_id),

@@ -154,6 +154,10 @@ pub enum WsServerMsg {
     Message {
         message_id: i64,
         channel_id: i64,
+        /// The channel's server, so a client can apply server-wide
+        /// notification settings to channels it hasn't loaded.
+        #[serde(default)]
+        server_id: i64,
         author_id: i64,
         author_username: String,
         /// The author's avatar (a `/media/…` path) at post time,
@@ -418,6 +422,7 @@ pub async fn message_gateway(
                             has_more,
                         })
                         .await;
+                    let server_id = db.channel_full(channel_id).map(|c| c.1).unwrap_or(0);
                     for m in messages {
                         let author_username = db
                             .user_by_id(m.author_id)
@@ -427,6 +432,7 @@ pub async fn message_gateway(
                             .send(WsServerMsg::Message {
                                 message_id: m.id,
                                 channel_id: m.channel_id,
+                                server_id,
                                 author_id: m.author_id,
                                 author_username,
                                 author_avatar: db.user_avatar(m.author_id),

@@ -73,7 +73,10 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
             let live_fp: Vec<(i64, String, String)> = live_channels
                 .get()
                 .iter()
-                .map(|c| (c.id, c.name.clone(), format!("{}{}", c.kind, if c.private { " private" } else { "" })))
+                .map(|c| {
+                    let muted = crate::notif_prefs::muted(discord_server::notification_settings::Scope::Channel, c.id);
+                    (c.id, c.name.clone(), format!("{}{}{}", c.kind, if c.private { " private" } else { "" }, if muted { " muted" } else { "" }))
+                })
                 .collect();
             // Collapse fingerprint: (category id, collapsed) pairs, ordered by
             // id so it's stable. Read from the shared `collapsed` map — when a
@@ -307,6 +310,32 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                     });
                                 }),
                             ));
+                            {
+                                use discord_server::notification_settings::{NotificationSetting, Scope};
+                                if crate::notif_prefs::muted(Scope::Channel, cid) {
+                                    items.push((
+                                        "Unmute Channel".to_string(),
+                                        false,
+                                        Rc::new(move || {
+                                            let s = crate::notif_prefs::get(Scope::Channel, cid);
+                                            crate::notif_prefs::set(NotificationSetting { muted_until: None, ..s });
+                                        }),
+                                    ));
+                                } else {
+                                    let nm_mute = nm.clone();
+                                    items.push((
+                                        "Mute Channel".to_string(),
+                                        false,
+                                        Rc::new(move || crate::notif_menu::open_for(Scope::Channel, cid, (*nm_mute).clone())),
+                                    ));
+                                }
+                                let nm_notif = nm.clone();
+                                items.push((
+                                    "Notification Settings".to_string(),
+                                    false,
+                                    Rc::new(move || crate::notif_menu::open_for(Scope::Channel, cid, (*nm_notif).clone())),
+                                ));
+                            }
                             if manage {
                                 let nm_perms = nm.clone();
                                 items.push((
@@ -423,6 +452,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                             let is_text = c.kind == "text";
                             let cid = c.id;
                             let private = c.private;
+                            let muted = crate::notif_prefs::muted(discord_server::notification_settings::Scope::Channel, cid);
                             // `live_scroll_handle_row` is an `Rc` (not `Copy`); the
                             // row's `on_touch(move …)` closure moves it, so each
                             // row needs its own clone (the `nm: Rc<String>` idiom
@@ -466,7 +496,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                             // the right instead, inside `chan_actions`).
                             let unread_pill = ui! {
                                 switch(
-                                    move || u_count > 0 && u_mentions == 0,
+                                    move || u_count > 0 && u_mentions == 0 && !muted,
                                     move |on: &bool| {
                                         if !*on {
                                             ui! {
@@ -514,7 +544,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                 ..live_glyph_style()
                             };
                             let label_style = move || StyleRules {
-                                font_weight: Some(if live_sel.get() == Some(cid) || u_count > 0 {
+                                font_weight: Some(if live_sel.get() == Some(cid) || (u_count > 0 && !muted) {
                                     FontWeight::SemiBold
                                 } else {
                                     FontWeight::Normal
@@ -522,7 +552,10 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                 // Inactive names sit in muted grey; a hovered
                                 // row brightens them, the open channel and any
                                 // channel with real unread messages go white.
-                                color: Some(col(if live_sel.get() == Some(cid) || u_count > 0 {
+                                // A muted channel stays dim even with unread.
+                                color: Some(col(if muted && live_sel.get() != Some(cid) {
+                                    theme::TEXT_FAINT
+                                } else if live_sel.get() == Some(cid) || u_count > 0 {
                                     TEXT
                                 } else if hovered.get() {
                                     TEXT_CHANNEL
@@ -557,6 +590,9 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                             .color(|| theme::live(TEXT_MUTED))
                                             .size(18.0)
                                         text(style = label_style) { name }
+                                        if muted {
+                                            icon(BELL_OFF).color(|| theme::live(theme::TEXT_FAINT)).size(14.0)
+                                        }
                                         { actions }
                                         { unread_pill }
                                     }
@@ -615,6 +651,9 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                             .color(|| theme::live(TEXT_MUTED))
                                             .size(18.0)
                                         text(style = label_style) { name }
+                                        if muted {
+                                            icon(BELL_OFF).color(|| theme::live(theme::TEXT_FAINT)).size(14.0)
+                                        }
                                         { actions }
                                         { unread_pill }
                                     }
@@ -854,6 +893,24 @@ fn server_dropdown(
             let mut items: Vec<Option<(String, bool, bool, Rc<dyn Fn()>)>> = Vec::new();
             if crate::mentions::can(P::CREATE_INVITE) {
                 items.push(Some(("Invite People".to_string(), false, true, invite.clone())));
+            }
+            if let Some(sid) = server.get() {
+                use discord_server::notification_settings::{NotificationSetting, Scope};
+                let name = servers.get().into_iter().find(|s| s.id == sid).map(|s| s.name).unwrap_or_default();
+                if crate::notif_prefs::muted(Scope::Server, sid) {
+                    items.push(Some(("Unmute Server".to_string(), false, true, Rc::new(move || {
+                        let s = crate::notif_prefs::get(Scope::Server, sid);
+                        crate::notif_prefs::set(NotificationSetting { muted_until: None, ..s });
+                    }))));
+                } else {
+                    let n = name.clone();
+                    items.push(Some(("Mute Server".to_string(), false, true, Rc::new(move || {
+                        crate::notif_menu::open_for(Scope::Server, sid, n.clone())
+                    }))));
+                }
+                items.push(Some(("Notification Settings".to_string(), false, true, Rc::new(move || {
+                    crate::notif_menu::open_for(Scope::Server, sid, name.clone())
+                }))));
             }
             if crate::server_settings_panel::any_section() {
                 items.push(Some(("Server Settings".to_string(), false, true, settings.clone())));

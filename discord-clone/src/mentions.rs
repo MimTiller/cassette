@@ -126,6 +126,7 @@ pub fn members_loaded(server_id: i64, members: &[discord_server::server_settings
 /// Fetch `server_id`'s roles and the signed-in user's permissions there,
 /// then redraw. Runs on entering a server and on every `RolesChanged`.
 pub fn load_roles(server_id: i64) {
+    crate::notif_prefs::load();
     runtime_core::driver::spawn_async(async move {
         let input = server_roles::ServerRolesInput { server_id };
         if let Ok(snap) = server_roles::server_roles(input).await {

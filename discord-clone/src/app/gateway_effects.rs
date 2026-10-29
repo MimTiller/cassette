@@ -122,6 +122,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             if let Some(discord_server::server_settings::WsServerMsg::Message {
                 message_id,
                 channel_id,
+                server_id,
                 author_id,
                 author_username,
                 author_avatar,
@@ -232,7 +233,9 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 // map), so the toast uses the message content itself, which
                 // is the most useful part.
                 let is_mention = my_id != 0 && mentioned_user_ids.contains(&my_id);
-                let level = notif_level_sig.get();
+                // The User Settings default, overridden by the server's and
+                // channel's own settings and mutes.
+                let level = crate::notif_prefs::mode_for(*server_id, *channel_id, notif_level_sig.get());
                 let matches = match level {
                     crate::notify::NOTHING => false,
                     crate::notify::MENTIONS_ONLY => is_mention,
@@ -607,6 +610,9 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
         move || active_live_channel.get(),
         move |chan: &Option<i64>| {
             if let Some(cid) = *chan {
+                // Many unread messages: offer the jump-to-first-unread bar.
+                let unread = unread_reset_buf.borrow().get(&cid).map_or(0, |u| u.0);
+                super::messages::note_unread_on_open(cid, unread);
                 if *mention_reset_buf.borrow().get(&cid).unwrap_or(&0) > 0 {
                     mention_reset_buf.borrow_mut().insert(cid, 0);
                     mention_reset_rev.set(mention_reset_rev.get() + 1);

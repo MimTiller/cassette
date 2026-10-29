@@ -8,6 +8,23 @@ pub(super) struct MessagesParts {
     pub(super) header: Element,
     pub(super) sent_messages: Element,
     pub(super) typing_row: Element,
+    pub(super) unread_bar: Element,
+}
+
+thread_local! {
+    /// The jump-to-first-unread bar: `(channel, unread count)` while shown.
+    static UNREAD_BAR: Cell<Option<Signal<Option<(i64, i64)>>>> = const { Cell::new(None) };
+}
+
+/// The bar shows when a channel opens with more unread messages than fit
+/// on a screen.
+const UNREAD_BAR_MIN: i64 = 10;
+
+/// A channel was opened with `count` unread messages.
+pub(super) fn note_unread_on_open(channel_id: i64, count: i64) {
+    if let Some(bar) = UNREAD_BAR.with(|b| b.get()) {
+        bar.set((count >= UNREAD_BAR_MIN).then_some((channel_id, count)));
+    }
 }
 
 pub(super) fn build(s: &ShellState) -> MessagesParts {
@@ -83,6 +100,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
             });
         }
     });
+    let on_jump_bar = on_jump.clone();
     let header = switch(
         move || {
             (
@@ -497,7 +515,87 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
         },
     );
 
-    MessagesParts { header, sent_messages, typing_row }
+    // "N new messages since …": a tap jumps to the first unread message
+    // (paging older history in if needed); Mark As Read dismisses it.
+    let unread_bar_sig: Signal<Option<(i64, i64)>> = signal(None);
+    UNREAD_BAR.with(|b| b.set(Some(unread_bar_sig)));
+    let unread_bar = {
+        let live_messages = live_messages.clone();
+        let on_jump = on_jump_bar;
+        switch(
+            move || (unread_bar_sig.get(), active_live_channel.get(), live_revision.get()),
+            move |(bar, open, _rev): &(Option<(i64, i64)>, Option<i64>, u32)| {
+                let none = || ui! { view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {} };
+                let Some((cid, count)) = *bar else { return none() };
+                if *open != Some(cid) {
+                    return none();
+                }
+                let (first_id, since, last_id, all_loaded) = {
+                    let msgs = live_messages.borrow();
+                    let Some(list) = msgs.get(&cid).filter(|l| !l.is_empty()) else { return none() };
+                    let first = &list[list.len().saturating_sub(count as usize)];
+                    (first.0, first.4, list[list.len() - 1].0, list.len() >= count as usize)
+                };
+                let label = if all_loaded {
+                    format!("{count} new messages since {}", super::time_fmt::format_when(since, crate::data::now_secs()))
+                } else {
+                    format!("{count} new messages")
+                };
+                let jump = on_jump.clone();
+                ui! {
+                    view(style = StyleRules {
+                        position: Some(Position::Absolute),
+                        top: Some(px(0.0)),
+                        left: Some(px(0.0)),
+                        right: Some(px(0.0)),
+                        height: Some(px(30.0)),
+                        padding_left: Some(px(16.0)),
+                        padding_right: Some(px(12.0)),
+                        flex_direction: Some(FlexDirection::Row),
+                        align_items: Some(AlignItems::Center),
+                        background: Some(col(theme::ACCENT)),
+                        z_index: Some(5),
+                        ..Default::default()
+                    }) {
+                        view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {
+                            text(style = StyleRules {
+                                font_size: Some(px(13.0)),
+                                font_weight: Some(FontWeight::SemiBold),
+                                color: Some(col(theme::TEXT_ON_ACCENT)),
+                                ..Default::default()
+                            }) { label }
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                unread_bar_sig.set(None);
+                                jump(cid, first_id);
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                        view {
+                            text(style = StyleRules {
+                                font_size: Some(px(13.0)),
+                                font_weight: Some(FontWeight::SemiBold),
+                                color: Some(col(theme::TEXT_ON_ACCENT)),
+                                ..Default::default()
+                            }) { "Mark As Read".to_string() }
+                        }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                unread_bar_sig.set(None);
+                                runtime_core::driver::spawn_async(async move {
+                                    let _ = crate::servers::mark_read(cid, last_id).await;
+                                });
+                            }
+                            TouchResponse::CONSUMED
+                        })
+                    }
+                }
+            },
+        )
+    };
+
+    MessagesParts { header, sent_messages, typing_row, unread_bar }
 }
 
 /// One row of the message list, as plain data (see `build`'s `rows`).

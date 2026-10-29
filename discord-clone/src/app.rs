@@ -49,7 +49,7 @@ use file_picker::{FilePicker, PickRequest, PickOutcome, MediaKind};
 use icons_lucide::{
     CHEVRON_DOWN, CHEVRON_RIGHT, HASH, HEADPHONES,
     MIC, MIC_OFF, PIN, PLUS, SETTINGS, SMILE, SMILE_PLUS,
-    USER_PLUS, USERS, VOLUME_2, MESSAGE_CIRCLE, MENU, LOCK,
+    USER_PLUS, USERS, VOLUME_2, MESSAGE_CIRCLE, MENU, LOCK, BELL_OFF,
 };
 use crate::server_settings_panel::ServerSettingsPanel;
 
@@ -388,6 +388,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
     SHELL_ALIVE.with(|s| *s.borrow_mut() = Some(runtime_core::ScopeAlive::current()));
     mobile::install(signal(mobile::Pane::default()), signal(true));
     crate::channel_permissions::install();
+    crate::notif_prefs::install();
+    crate::notif_menu::install();
     // [Feature 16] `active_server`/`active_channel` are the *mock* selection
     // signals: every pane renders live (backend) content now, so these keep a
     // `SERVERS[0]` default that no real user path ever displays (see each
@@ -1398,9 +1400,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let rail::RailParts { rail_style, rail_top, live_section, rail_actions } = rail::build(&s);
     let modals::ModalsParts { join_el, create_el, cc_el, rc_el, dc_el, invite_el, ss_el } = modals::build(&s);
     let channel_perms_el = crate::channel_permissions::dialog();
+    let notif_menu_el = crate::notif_menu::dialog();
     let user_popups::UserPopupsParts { user_popup_el } = user_popups::build(&s);
     let sidebar::SidebarParts { sidebar } = sidebar::build(&s);
-    let messages::MessagesParts { header, sent_messages, typing_row } = messages::build(&s);
+    let messages::MessagesParts { header, sent_messages, typing_row, unread_bar } = messages::build(&s);
     let composer::ComposerParts { composer_area } = composer::build(&s);
     let member_list::MemberListParts { members_switch } = member_list::build(&s);
 
@@ -1584,6 +1587,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // messages.
                     msg_jump_el
                     follow_el
+                    // "N new messages since …" over the top of the list.
+                    unread_bar
                 }.bind(msg_viewport_ref)
                 typing_row
                 // Positioning ancestor for the @-mention dropdown and the
@@ -1649,6 +1654,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             ss_el
             invite_el
             channel_perms_el
+            notif_menu_el
             // Reaction picker (mock, session-local): full-window emoji grid,
             // painted last so it covers everything while open (collapses to
             // zero size while `picker` is `None`).

@@ -74,6 +74,9 @@ pub mod gifs;
 // Link preview cards (guarded page fetches).
 pub mod link_previews;
 
+// Per-server and per-channel notification levels and mutes.
+pub mod notification_settings;
+
 #[cfg(feature = "server")]
 pub mod db;
 #[cfg(feature = "server")]

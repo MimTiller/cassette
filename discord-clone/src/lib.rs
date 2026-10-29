@@ -37,6 +37,8 @@ mod profile_settings;
 mod dms;
 mod styles;
 mod controls;
+mod notif_prefs;
+mod notif_menu;
 mod embeds;
 mod channel_permissions;
 mod live_dm_view;
