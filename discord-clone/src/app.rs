@@ -102,7 +102,7 @@ use login_screen::*;
 mod layout;
 use layout::*;
 mod shell_state;
-use shell_state::{ShellState, Nav, Layout, Composer, Messages, Members, Overlays};
+use shell_state::{ShellState, Nav, Layout, Composer, Messages, Members, Overlays, Dm};
 mod gateway_effects;
 mod rail;
 mod modals;
@@ -417,14 +417,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // the bottom" is detected as `y < max_seen - threshold`, not as
     // `y > content - viewport`.
     let _live_max_offset: Rc<RefCell<f32>> = Rc::new(RefCell::new(0.0));
-    // The open profile card / user context menu and the profile it shows
-    // (see `user_popups`); the async profile fetch writes here.
-    let user_popup: Signal<Option<user_popups::UserPopup>> = signal(None);
-    let user_profile: Signal<Option<discord_server::profiles::UserProfile>> = signal(None);
-    // The signed-in user's blocked list, and the blocked messages they chose
-    // to reveal this session (see `crate::blocks`).
-    let blocked_users: Signal<Vec<crate::blocks::BlockedUser>> = signal(Vec::new());
-    let revealed_blocked: Signal<Vec<i64>> = signal(Vec::new());
+    // --- dm: shared app-shell state (signals built in shell_state.rs) ---
+    let dm = Dm::new();
+    let Dm { live_dms, live_dm_active, live_dm_messages, live_dm_revision, friends_snap, friends_add_username, friends_add_error, friends_open, blocked_users, .. } = dm.clone();
     // --- members: shared app-shell state (signals built in shell_state.rs) ---
     let members = Members::new();
     let Members { live_members, live_member_error, live_kick_confirm, live_ban_confirm, live_timeout_confirm, members_pref, .. } = members.clone();
@@ -471,23 +466,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
 
 
 
-    // Friends panel (live): the panel snapshot of `list_friends`, flat + tagged
-    // (`0 = incoming / 1 = outgoing / 2 = accepted`) so the panel's `switch`
-    // can key on the whole vector. The ACTOR half of the server's sync path is
-    // in `friends_view` (each mutating RPC re-fetches and `set()`s this); the
-    // OTHER user's half is the `FriendChanged` gateway branch below, which
-    // re-fetches into the same signal — the snapshot IS the rebuild key. The
-    // tab selector (0 = Online, 1 = All, 2 = Pending, 3 = Add Friend) and the
-    // Add Friend draft + inline server error are owned here so a panel rebuild
-    // never drops the typed username.
-    let friends_snap: Signal<Vec<crate::friends_view::FriendRow>> = signal(Vec::new());
-    let friends_tab: Signal<u8> = signal(1);
-    let friends_add_username: Signal<String> = signal(String::new());
-    let friends_add_error: Signal<String> = signal(String::new());
-    // Whether the Friends panel is showing in the live-DM main area (the
-    // "Friends" entry at the top of the live DM column toggles it; while
-    // false the main area shows the selected DM conversation as before).
-    let friends_open: Signal<bool> = signal(false);
 
     // Realtime gateway: the signed session token authenticates the connect
     // (the backend verifies it). It rides the connect URL's `?args=` query —
@@ -654,11 +632,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // with the live state before `gateway_incoming_effect` — see that block.
 
 
-    let live_dms: Signal<Vec<crate::dms::Dm>> = signal(Vec::new());
-    let live_dm_active: Signal<Option<i64>> = signal(None);
-    let live_dm_messages: Rc<RefCell<Vec<(String, String, i64, Option<i64>)>>> =
-        Rc::new(RefCell::new(Vec::new()));
-    let live_dm_revision: Signal<u32> = signal(0);
     // The "start a new DM" draft (a numeric user id), owned here so the typed
     // value survives a list rebuild (when `start_dm` lands, `live_dms` is
     // updated and the list `switch` re-creates its rows — an in-row signal
@@ -736,7 +709,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
             })
         },
     );
-    let live_dm_new_id: Signal<String> = signal(String::new());
     // Friends panel's "Message" action: open/create the live DM with `uid`
     // through the EXISTING DM functions (mirrors `live_dm_new_row`'s start:
     // `start_dm` is idempotent, the returned channel id is selected, history
@@ -932,16 +904,13 @@ fn app_shell(authed: Signal<bool>) -> Element {
 
     // Everything the section builders below read, gathered once.
     let s = ShellState {
+        dm: dm.clone(),
         overlays: overlays.clone(),
         members: members.clone(),
         messages: messages.clone(),
         composer_state: composer_state.clone(),
         layout: layout.clone(),
         nav: nav.clone(),
-        user_popup: user_popup.clone(),
-        blocked_users: blocked_users.clone(),
-        revealed_blocked: revealed_blocked.clone(),
-        user_profile: user_profile.clone(),
         create_open: create_open.clone(),
         create_name: create_name.clone(),
         create_error: create_error.clone(),
@@ -962,22 +931,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
         dc_err: dc_err.clone(),
         dc_name: dc_name.clone(),
         dc_open: dc_open.clone(),
-        friends_add_error: friends_add_error.clone(),
-        friends_add_username: friends_add_username.clone(),
         friends_entry: friends_entry.clone(),
-        friends_open: friends_open.clone(),
-        friends_snap: friends_snap.clone(),
-        friends_tab: friends_tab.clone(),
         gateway: gateway.clone(),
         invite_created: invite_created.clone(),
         invite_err: invite_err.clone(),
         invite_expiry: invite_expiry.clone(),
         invite_mode: invite_mode.clone(),
-        live_dm_active: live_dm_active.clone(),
-        live_dm_messages: live_dm_messages.clone(),
-        live_dm_new_id: live_dm_new_id.clone(),
-        live_dm_revision: live_dm_revision.clone(),
-        live_dms: live_dms.clone(),
         on_dm_message: on_dm_message.clone(),
         rc_busy: rc_busy.clone(),
         rc_cid: rc_cid.clone(),

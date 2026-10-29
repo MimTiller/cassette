@@ -8,7 +8,8 @@ pub(super) struct MemberListParts {
 }
 
 pub(super) fn build(s: &ShellState) -> MemberListParts {
-    let ShellState { blocked_users, user_popup, user_profile, nav, messages, members, .. } = s.clone();
+    let ShellState { nav, messages, members, dm, .. } = s.clone();
+    let Dm { blocked_users, user_popup, user_profile, .. } = dm.clone();
     let Members { live_ban_confirm, live_kick_confirm, live_member_error, live_member_menu, live_members, live_presence, live_presence_rev, live_timeout_confirm, live_timeout_duration, .. } = members.clone();
     let Messages { live_revision, .. } = messages.clone();
 let Nav { active_live_server, .. } = nav.clone();

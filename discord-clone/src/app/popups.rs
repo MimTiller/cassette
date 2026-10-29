@@ -76,7 +76,8 @@ pub(super) struct PopupsParts {
 }
 
 pub(super) fn build(s: &ShellState) -> PopupsParts {
-    let ShellState { cc_open, create_open, dc_open, invite_mode, join_open, rc_open, ss_open, user_popup, nav, composer_state, messages, members, overlays, .. } = s.clone();
+    let ShellState { cc_open, create_open, dc_open, invite_mode, join_open, rc_open, ss_open, nav, composer_state, messages, members, overlays, dm, .. } = s.clone();
+    let Dm { user_popup, .. } = dm.clone();
     let Overlays { live_invite_mode, notif_mode, profile_mode, shortcuts_mode, status_menu, .. } = overlays.clone();
     let Members { live_chan_menu, live_member_menu, moderation_mode, .. } = members.clone();
     let Messages { msg_menu, picker, pinned_panel_open, .. } = messages.clone();

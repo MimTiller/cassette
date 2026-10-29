@@ -14,7 +14,8 @@ pub(super) struct OverlaysParts {
 }
 
 pub(super) fn build(s: &ShellState) -> OverlaysParts {
-    let ShellState { authed, blocked_users, friends_add_error, friends_add_username, friends_entry, friends_open, friends_snap, friends_tab, gateway, live_dm_active, live_dm_messages, live_dm_new_id, live_dm_revision, live_dms, on_dm_message, nav, messages, members, overlays, .. } = s.clone();
+    let ShellState { authed, friends_entry, gateway, on_dm_message, nav, messages, members, overlays, dm, .. } = s.clone();
+    let Dm { blocked_users, friends_add_error, friends_add_username, friends_open, friends_snap, friends_tab, live_dm_active, live_dm_messages, live_dm_new_id, live_dm_revision, live_dms, .. } = dm.clone();
     let Overlays { live_invite_code, live_invite_error, live_invite_mode, notif_level, notif_mode, profile_mode, shortcuts_mode, .. } = overlays.clone();
     let Members { live_members, live_presence, live_presence_rev, moderation_mode, .. } = members.clone();
     let Messages { live_revision, .. } = messages.clone();

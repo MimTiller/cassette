@@ -5,6 +5,7 @@ use super::*;
 
 #[derive(Clone)]
 pub(super) struct ShellState {
+    pub(super) dm: Dm,
     pub(super) overlays: Overlays,
     pub(super) members: Members,
     pub(super) messages: Messages,
@@ -22,22 +23,12 @@ pub(super) struct ShellState {
     pub(super) dc_err: Signal<String>,
     pub(super) dc_name: Signal<String>,
     pub(super) dc_open: Signal<bool>,
-    pub(super) friends_add_error: Signal<String>,
-    pub(super) friends_add_username: Signal<String>,
     pub(super) friends_entry: Rc<dyn Fn() -> Element>,
-    pub(super) friends_open: Signal<bool>,
-    pub(super) friends_snap: Signal<Vec<crate::friends_view::FriendRow>>,
-    pub(super) friends_tab: Signal<u8>,
     pub(super) gateway: server::UseSocket<discord_server::server_settings::WsServerMsg, discord_server::server_settings::WsClientMsg>,
     pub(super) invite_created: Signal<Option<discord_server::invites::Invite>>,
     pub(super) invite_err: Signal<String>,
     pub(super) invite_expiry: Signal<usize>,
     pub(super) invite_mode: Signal<bool>,
-    pub(super) live_dm_active: Signal<Option<i64>>,
-    pub(super) live_dm_messages: Rc<RefCell<Vec<(String, String, i64, Option<i64>)>>>,
-    pub(super) live_dm_new_id: Signal<String>,
-    pub(super) live_dm_revision: Signal<u32>,
-    pub(super) live_dms: Signal<Vec<crate::dms::Dm>>,
     pub(super) on_dm_message: Rc<dyn Fn(i64)>,
     pub(super) rc_busy: Signal<bool>,
     pub(super) rc_cid: Signal<Option<i64>>,
@@ -62,10 +53,6 @@ pub(super) struct ShellState {
     pub(super) join_result: Signal<Option<discord_server::invites::RedeemResult>>,
     pub(super) join_error: Signal<String>,
     pub(super) join_busy: Signal<bool>,
-    pub(super) user_popup: Signal<Option<super::user_popups::UserPopup>>,
-    pub(super) user_profile: Signal<Option<discord_server::profiles::UserProfile>>,
-    pub(super) blocked_users: Signal<Vec<crate::blocks::BlockedUser>>,
-    pub(super) revealed_blocked: Signal<Vec<i64>>,
 }
 
 
@@ -636,6 +623,77 @@ impl Overlays {
             live_invite_mode: live_invite_mode,
             live_invite_code: live_invite_code,
             live_invite_error: live_invite_error,
+        }
+    }
+}
+
+
+#[derive(Clone)]
+pub(super) struct Dm {
+    pub(super) live_dms: Signal<Vec<crate::dms::Dm>>,
+    pub(super) live_dm_active: Signal<Option<i64>>,
+    pub(super) live_dm_messages: Rc<RefCell<Vec<(String, String, i64, Option<i64>)>>>,
+    pub(super) live_dm_revision: Signal<u32>,
+    pub(super) live_dm_new_id: Signal<String>,
+    pub(super) friends_snap: Signal<Vec<crate::friends_view::FriendRow>>,
+    pub(super) friends_tab: Signal<u8>,
+    pub(super) friends_add_username: Signal<String>,
+    pub(super) friends_add_error: Signal<String>,
+    pub(super) friends_open: Signal<bool>,
+    pub(super) user_popup: Signal<Option<super::user_popups::UserPopup>>,
+    pub(super) user_profile: Signal<Option<discord_server::profiles::UserProfile>>,
+    pub(super) blocked_users: Signal<Vec<crate::blocks::BlockedUser>>,
+    pub(super) revealed_blocked: Signal<Vec<i64>>,
+}
+
+impl Dm {
+    /// Fresh signals for this group; wiring around them stays in `app_shell`.
+    pub(super) fn new() -> Dm {
+        let live_dms: Signal<Vec<crate::dms::Dm>> = signal(Vec::new());
+        let live_dm_active: Signal<Option<i64>> = signal(None);
+        let live_dm_messages: Rc<RefCell<Vec<(String, String, i64, Option<i64>)>>> = Rc::new(RefCell::new(Vec::new()));
+        let live_dm_revision: Signal<u32> = signal(0);
+        let live_dm_new_id: Signal<String> = signal(String::new());
+        // Friends panel (live): the panel snapshot of `list_friends`, flat + tagged
+        // (`0 = incoming / 1 = outgoing / 2 = accepted`) so the panel's `switch`
+        // can key on the whole vector. The ACTOR half of the server's sync path is
+        // in `friends_view` (each mutating RPC re-fetches and `set()`s this); the
+        // OTHER user's half is the `FriendChanged` gateway branch below, which
+        // re-fetches into the same signal — the snapshot IS the rebuild key. The
+        // tab selector (0 = Online, 1 = All, 2 = Pending, 3 = Add Friend) and the
+        // Add Friend draft + inline server error are owned here so a panel rebuild
+        // never drops the typed username.
+        let friends_snap: Signal<Vec<crate::friends_view::FriendRow>> = signal(Vec::new());
+        let friends_tab: Signal<u8> = signal(1);
+        let friends_add_username: Signal<String> = signal(String::new());
+        let friends_add_error: Signal<String> = signal(String::new());
+        // Whether the Friends panel is showing in the live-DM main area (the
+        // "Friends" entry at the top of the live DM column toggles it; while
+        // false the main area shows the selected DM conversation as before).
+        let friends_open: Signal<bool> = signal(false);
+        // The open profile card / user context menu and the profile it shows
+        // (see `user_popups`); the async profile fetch writes here.
+        let user_popup: Signal<Option<super::user_popups::UserPopup>> = signal(None);
+        let user_profile: Signal<Option<discord_server::profiles::UserProfile>> = signal(None);
+        // The signed-in user's blocked list, and the blocked messages they chose
+        // to reveal this session (see `crate::blocks`).
+        let blocked_users: Signal<Vec<crate::blocks::BlockedUser>> = signal(Vec::new());
+        let revealed_blocked: Signal<Vec<i64>> = signal(Vec::new());
+        Dm {
+            live_dms: live_dms,
+            live_dm_active: live_dm_active,
+            live_dm_messages: live_dm_messages,
+            live_dm_revision: live_dm_revision,
+            live_dm_new_id: live_dm_new_id,
+            friends_snap: friends_snap,
+            friends_tab: friends_tab,
+            friends_add_username: friends_add_username,
+            friends_add_error: friends_add_error,
+            friends_open: friends_open,
+            user_popup: user_popup,
+            user_profile: user_profile,
+            blocked_users: blocked_users,
+            revealed_blocked: revealed_blocked,
         }
     }
 }
