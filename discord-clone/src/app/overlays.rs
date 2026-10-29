@@ -11,11 +11,10 @@ pub(super) struct OverlaysParts {
     pub(super) live_dm_region: Element,
     pub(super) moderation_region: Element,
     pub(super) live_invite_region: Element,
-    pub(super) bug_reports_region: Element,
 }
 
 pub(super) fn build(s: &ShellState) -> OverlaysParts {
-    let ShellState { active_live_server, active_server, authed, blocked_users, bug_reports_mode,
+    let ShellState { active_live_server, active_server, authed, blocked_users,
         friends_add_error, friends_add_username, friends_entry, friends_open, friends_snap, friends_tab, gateway, live_dm_active, live_dm_messages, live_dm_mode, live_dm_new_id, live_dm_revision, live_dms, live_invite_code, live_invite_error, live_invite_mode, live_members, live_presence, live_presence_rev, live_revision, moderation_mode, notif_level, notif_mode, on_dm_message, profile_mode, shortcuts_mode, .. } = s.clone();
 
     // User Settings: one full-window screen (see `settings_suite`), shown
@@ -522,121 +521,5 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         }
     };
 
-    // --- Bug reports overlay -----------------------------------------------
-    // The `ThreadListRow` "Bug reports" row in the channel sidebar flips
-    // `bug_reports_mode`; this full-screen overlay lists a handful of
-    // hardcoded placeholder reports (mock-only, no backend call). Same
-    // paint-last / collapse-to-zero idiom as `moderation_region`.
-    let bug_reports_close = bug_reports_mode.clone();
-    let bug_reports_header = ui! {
-        view(style = StyleRules {
-            flex_direction: Some(FlexDirection::Row),
-            align_items: Some(AlignItems::Center),
-            justify_content: Some(JustifyContent::SpaceBetween),
-            padding_top: Some(px(16.0)),
-            padding_bottom: Some(px(16.0)),
-            padding_left: Some(px(16.0)),
-            padding_right: Some(px(16.0)),
-            ..Default::default()
-        }) {
-            text(style = StyleRules {
-                font_size: Some(px(18.0)),
-                font_weight: Some(FontWeight::Bold),
-                color: Some(col(TEXT)),
-                ..Default::default()
-            }) { "Bug reports".to_string() }
-            view(style = StyleRules {
-                height: Some(px(26.0)),
-                padding_left: Some(px(12.0)),
-                padding_right: Some(px(12.0)),
-                background: Some(col(BG_SIDEBAR)),
-                align_items: Some(AlignItems::Center),
-                justify_content: Some(JustifyContent::Center),
-                ..rounded(6.0)
-            }) {
-                text(style = StyleRules {
-                    color: Some(col(TEXT)),
-                    font_size: Some(px(12.0)),
-                    font_weight: Some(FontWeight::SemiBold),
-                    ..Default::default()
-                }) { "Done".to_string() }
-            }
-            .on_touch(move |ev| {
-                if ev.phase == TouchPhase::Ended {
-                    bug_reports_close.set(false);
-                }
-                TouchResponse::CONSUMED
-            })
-        }
-    };
-    // (title, reporter, status) — static placeholder reports.
-    let bug_report_rows: Vec<(&str, &str, &str)> = vec![
-        ("Messages fail to load on slow connections", "nova", "Open"),
-        ("Voice channel drops after ~5 minutes", "kito", "Open"),
-        ("Emoji picker does not close on outside tap", "mira", "In review"),
-        ("Sidebar channel names truncate too early", "juno", "In review"),
-        ("DM list loses scroll position on refresh", "sami", "Resolved"),
-    ];
-    let bug_reports_el = ui! {
-        for (title, reporter, status) in &bug_report_rows {
-            view(style = StyleRules {
-                flex_direction: Some(FlexDirection::Column),
-                margin_left: Some(px(16.0)),
-                margin_right: Some(px(16.0)),
-                margin_top: Some(px(8.0)),
-                padding_top: Some(px(10.0)),
-                padding_bottom: Some(px(10.0)),
-                padding_left: Some(px(12.0)),
-                padding_right: Some(px(12.0)),
-                background: Some(col(BG_SIDEBAR)),
-                ..rounded(6.0)
-            }) {
-                text(style = StyleRules {
-                    font_size: Some(px(14.0)),
-                    font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col(TEXT)),
-                    ..Default::default()
-                }) { (*title).to_string() }
-                view(style = StyleRules {
-                    flex_direction: Some(FlexDirection::Row),
-                    justify_content: Some(JustifyContent::SpaceBetween),
-                    margin_top: Some(px(4.0)),
-                    ..Default::default()
-                }) {
-                    text(style = StyleRules {
-                        font_size: Some(px(12.0)),
-                        color: Some(col(TEXT_MUTED)),
-                        ..Default::default()
-                    }) { (format!("reported by {}", reporter)).to_string() }
-                    text(style = StyleRules {
-                        font_size: Some(px(12.0)),
-                        color: Some(col(TEXT_MUTED)),
-                        ..Default::default()
-                    }) { (*status).to_string() }
-                }
-            }
-        }
-    };
-    let bug_reports_open_chk = bug_reports_mode.clone();
-    let bug_reports_wrap = move || StyleRules {
-        position: Some(Position::Absolute),
-        left: Some(px(0.0)),
-        top: Some(px(0.0)),
-        width: Some(if bug_reports_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        height: Some(if bug_reports_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col(theme::OVERLAY)),
-        flex_direction: Some(FlexDirection::Column),
-        overflow: Some(Overflow::Hidden),
-        ..Default::default()
-    };
-    let bug_reports_region = ui! {
-        view(style = bug_reports_wrap) {
-            bug_reports_header
-            view(style = StyleRules { flex_grow: Some(grow(1.0)), background: Some(col(BG_MAIN)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
-                scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { bug_reports_el }
-            }
-        }
-    };
-
-    OverlaysParts { profile_region, notif_region, shortcuts_region, live_dm_region, moderation_region, live_invite_region, bug_reports_region }
+    OverlaysParts { profile_region, notif_region, shortcuts_region, live_dm_region, moderation_region, live_invite_region }
 }

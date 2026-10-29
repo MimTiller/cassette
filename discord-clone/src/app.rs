@@ -1142,10 +1142,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // Mock-only: renders the eight unwired moderation components with hardcoded
     // rows; no backend call.
     let moderation_mode: Signal<bool> = signal(false);
-    // "Bug reports" thread: the `ThreadListRow` in the channel sidebar opens
-    // this as a full-screen overlay (the same toggle idiom as `moderation_mode`).
-    // Mock-only: a handful of hardcoded placeholder reports, no backend call.
-    let bug_reports_mode: Signal<bool> = signal(false);
 
     // Live "Invite People" flow (real backend, live mode only): the `USER_PLUS`
     // action in the live channel header opens this overlay, which mints a real
@@ -1290,7 +1286,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         attach_error: attach_error.clone(),
         attach_next_key: attach_next_key.clone(),
         authed: authed.clone(),
-        bug_reports_mode: bug_reports_mode.clone(),
         cc_busy: cc_busy.clone(),
         cc_err: cc_err.clone(),
         cc_kind: cc_kind.clone(),
@@ -1417,7 +1412,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         overflow: Some(Overflow::Hidden),
         ..Default::default()
     };
-    let overlays::OverlaysParts { profile_region, notif_region, shortcuts_region, live_dm_region, moderation_region, live_invite_region, bug_reports_region } = overlays::build(&s);
+    let overlays::OverlaysParts { profile_region, notif_region, shortcuts_region, live_dm_region, moderation_region, live_invite_region } = overlays::build(&s);
 
     // --- "jump to bottom" scroll tracking ---------------------------------
     // The floating "Jump to bottom" pill only appears while the reader has
@@ -1679,9 +1674,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 pinned_count,
                 pinned_revision,
             )
-            // "Bug reports" overlay: same full-screen, paint-last idiom as
-            // `moderation_region` above.
-            bug_reports_region
             // [Feature 10] New-message notification toast: floats top-right
             // (a `Position::Absolute` child of the root `Relative` ancestor),
             // exactly like the pin toast above. The gateway effect sets

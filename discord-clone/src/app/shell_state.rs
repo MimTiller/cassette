@@ -12,7 +12,6 @@ pub(super) struct ShellState {
     pub(super) attach_error: Signal<String>,
     pub(super) attach_next_key: Signal<i64>,
     pub(super) authed: Signal<bool>,
-    pub(super) bug_reports_mode: Signal<bool>,
     pub(super) cc_busy: Signal<bool>,
     pub(super) cc_err: Signal<String>,
     pub(super) cc_kind: Signal<String>,

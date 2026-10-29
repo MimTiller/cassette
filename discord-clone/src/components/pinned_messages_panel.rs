@@ -22,7 +22,7 @@
 //! on every mutation.
 //!
 //! Idioms, each verified against `components/pin_confirm_toast.rs` / `app.rs`
-//! (the `moderation_region` / `bug_reports_region` overlays):
+//! (the `moderation_region` overlay):
 //! - show/hide is a reactive branch driven by the `switch` key (mounts while
 //!   open, unmounts the moment `open` is cleared);
 //! - every clickable node is a `view(...)` builder with `.on_touch` chained on
