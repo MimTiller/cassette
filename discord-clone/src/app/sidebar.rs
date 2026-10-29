@@ -142,6 +142,11 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                             "No server selected — create or join one to get started."
                                 .to_string()
                         }
+                        // Keeps the user panel at the bottom, as with a server.
+                        view(style = StyleRules {
+                            flex_grow: Some(grow(1.0)),
+                            ..Default::default()
+                        }) {}
                         user
                     }
                 };
