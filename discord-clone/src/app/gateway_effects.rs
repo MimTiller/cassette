@@ -393,6 +393,12 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                     live_rev.set(live_rev.get() + 1);
                 }
             }
+            // A server's custom emoji changed: refetch them if it's on screen.
+            if let Some(discord_server::server_settings::WsServerMsg::EmojiChanged { server_id }) = frame {
+                if crate::mentions::server_id() == Some(*server_id) {
+                    crate::custom_emoji::load(*server_id);
+                }
+            }
             // A message's link preview cards arrived, or an edit changed them.
             if let Some(discord_server::server_settings::WsServerMsg::MessageEmbeds { message_id, embeds, .. }) = frame {
                 if crate::embeds::set(*message_id, embeds.clone()) {

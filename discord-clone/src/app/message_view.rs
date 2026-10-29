@@ -451,8 +451,10 @@ pub(super) fn message_body(body: &str) -> Element {
     // current metrics and grouped consecutive rows stay tight. A body
     // carrying `||…||` spoilers keeps the spoiler path (SDK v1 has no spoiler
     // construct); the two features never stack on one row.
-    if !body.contains("||") && looks_like_markdown(&crate::mentions::without_mentions(body)) {
-        return Element::from(markdown::markdown(linkify_bare_urls(body), md_chat_theme()));
+    // Markdown can't hold inline images, so custom emoji show as `:name:`.
+    let md_body = crate::custom_emoji::plain(body);
+    if !body.contains("||") && looks_like_markdown(&crate::mentions::without_mentions(&md_body)) {
+        return Element::from(markdown::markdown(linkify_bare_urls(&md_body), md_chat_theme()));
     }
     // Split the body into `(is_spoiler, text)` runs. A `||…||` pair becomes a
     // spoiler run; the surrounding slices become plain runs. We walk the body
@@ -506,7 +508,11 @@ pub(super) fn message_body(body: &str) -> Element {
         runs.push((false, String::new()));
     }
 
-    let emoji_size = if is_emoji_only(body) { crate::styles::BodyTextSize::EmojiOnly } else { crate::styles::BodyTextSize::Emoji };
+    // Only emoji (up to 27 custom ones): everything shows big.
+    let (rest, custom) = crate::custom_emoji::without_tokens(body);
+    let jumbo = if custom == 0 { is_emoji_only(body) } else { custom <= 27 && (rest.trim().is_empty() || is_emoji_only(&rest)) };
+    let emoji_size = if jumbo { crate::styles::BodyTextSize::EmojiOnly } else { crate::styles::BodyTextSize::Emoji };
+    let custom_px = if jumbo { 48.0 } else { 22.0 };
     let runs_el: Vec<Element> = runs
         .iter()
         .flat_map(|(is_spoiler, text)| -> Vec<Element> {
@@ -534,10 +540,20 @@ pub(super) fn message_body(body: &str) -> Element {
                     .into_iter()
                     .flat_map(|seg| -> Vec<Element> {
                         match seg {
-                            discord_server::server_roles::MentionSeg::Text(t) => emoji_runs(&t)
+                            discord_server::server_roles::MentionSeg::Text(t) => crate::custom_emoji::split(&t)
                                 .into_iter()
-                                .map(|(is_emoji, piece)| ui! {
-                                    text(style = crate::styles::BodyText().size(if is_emoji { emoji_size } else { crate::styles::BodyTextSize::Text })) { piece }
+                                .flat_map(|piece| -> Vec<Element> {
+                                    match piece {
+                                        crate::custom_emoji::Piece::Emoji { id, name } => {
+                                            vec![crate::custom_emoji::emoji_view(id, &name, custom_px)]
+                                        }
+                                        crate::custom_emoji::Piece::Text(t) => emoji_runs(&t)
+                                            .into_iter()
+                                            .map(|(is_emoji, piece)| ui! {
+                                                text(style = crate::styles::BodyText().size(if is_emoji { emoji_size } else { crate::styles::BodyTextSize::Text })) { piece }
+                                            })
+                                            .collect(),
+                                    }
                                 })
                                 .collect(),
                             mention => vec![mention_pill(mention)],
@@ -1376,7 +1392,7 @@ pub(super) fn live_edit_row(
                 // flag this message id; the list rebuild (keyed on
                 // `live_editing`) mounts the input for this row.
                 editing_sig.set(Some(mid));
-                edit_text.set(seed.clone());
+                edit_text.set(crate::custom_emoji::plain(&seed));
             })),
             Some(Rc::new(move || {
                 confirm_sig.set(Some(mid));
@@ -1440,7 +1456,7 @@ pub(super) fn live_edit_row(
             gateway.send(
                 discord_server::server_settings::WsClientMsg::EditMessage {
                     message_id: mid,
-                    content,
+                    content: crate::custom_emoji::encode_draft(&content),
                 },
             );
         }
@@ -1527,7 +1543,7 @@ pub(super) fn live_edit_row(
                         gateway.send(
                             discord_server::server_settings::WsClientMsg::EditMessage {
                                 message_id: mid,
-                                content,
+                                content: crate::custom_emoji::encode_draft(&content),
                             },
                         );
                     }

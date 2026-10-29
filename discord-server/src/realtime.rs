@@ -133,6 +133,13 @@ impl Hub {
     }
 }
 
+/// A reaction is one emoji (at most 16 chars), or a custom emoji's
+/// `<:name:id>` token.
+fn reaction_ok(emoji: &str) -> bool {
+    let custom = emoji.starts_with("<:") && emoji.ends_with('>') && emoji.len() <= 64;
+    !emoji.trim().is_empty() && (emoji.chars().count() <= 16 || custom)
+}
+
 pub(crate) fn now_millis() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -514,7 +521,7 @@ pub fn add_channel_reaction(
     message_id: i64,
     emoji: &str,
 ) -> Result<(i64, u32), String> {
-    if emoji.trim().is_empty() || emoji.chars().count() > 16 {
+    if !reaction_ok(emoji) {
         return Err("invalid reaction emoji".into());
     }
     let (_author_id, channel_id) = match db.message_row(message_id) {
@@ -548,7 +555,7 @@ pub fn remove_channel_reaction(
     message_id: i64,
     emoji: &str,
 ) -> Result<(i64, u32), String> {
-    if emoji.trim().is_empty() || emoji.chars().count() > 16 {
+    if !reaction_ok(emoji) {
         return Err("invalid reaction emoji".into());
     }
     let (_author_id, channel_id) = match db.message_row(message_id) {

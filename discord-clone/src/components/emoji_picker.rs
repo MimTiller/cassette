@@ -348,6 +348,7 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
         recent_pick.set(cap);
         (pick_cb)(glyph);
     });
+    let on_pick_custom: Rc<dyn Fn(String)> = on_pick_wrap.clone();
 
     // --- grid body: one keyed item per header and cell, so typing in the
     // search box keeps the cells that still match instead of rebuilding all
@@ -554,6 +555,9 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
                     },
                 )
             }
+
+            // The server's own emoji, when it has any.
+            { crate::custom_emoji::picker_row(on_pick_custom.clone()) }
 
             // Rail + scrollable grid.
             view(style = StyleRules {

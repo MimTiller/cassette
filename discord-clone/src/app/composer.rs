@@ -82,7 +82,7 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
         if let Some(live_cid) = live_chan.get() {
             gateway_send.send(discord_server::server_settings::WsClientMsg::Send {
                 channel_id: live_cid,
-                content: body.clone(),
+                content: crate::custom_emoji::encode_draft(&body),
                 reply_to_message_id: reply_target.get(),
                 attachments: inputs,
             });
@@ -527,7 +527,8 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
             let eo = emoji_open_sig;
             let pick_cb: Rc<dyn Fn(String)> = Rc::new(move |glyph: String| {
                 let mut t = c.get();
-                t.push_str(&glyph);
+                // A custom emoji goes into the draft as `:name:`.
+                t.push_str(&crate::custom_emoji::plain(&glyph));
                 c.set(t);
                 eo.set(false);
             });

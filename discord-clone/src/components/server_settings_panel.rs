@@ -45,9 +45,10 @@ use std::rc::Rc;
 // Discord dark palette (kept local so the component is self-contained).
 
 /// The sidebar's sections, in order (the `section` signal's index).
-const SECTIONS: [&str; 3] = ["Overview", "Roles", "Members"];
+const SECTIONS: [&str; 4] = ["Overview", "Roles", "Members", "Emoji"];
 const SECTION_OVERVIEW: usize = 0;
 const SECTION_ROLES: usize = 1;
+const SECTION_EMOJI: usize = 3;
 
 /// Whether the signed-in user may use section `i` (the owner may use all).
 fn section_allowed(i: usize) -> bool {
@@ -55,6 +56,7 @@ fn section_allowed(i: usize) -> bool {
     match i {
         SECTION_OVERVIEW => crate::mentions::can(P::MANAGE_SERVER),
         SECTION_ROLES => crate::mentions::can(P::MANAGE_ROLES),
+        SECTION_EMOJI => crate::mentions::can(P::MANAGE_EXPRESSIONS),
         _ => crate::mentions::can(P::CREATE_INVITE),
     }
 }
@@ -549,6 +551,7 @@ pub fn ServerSettingsPanel(
                 SECTION_OVERVIEW => vec![name_row, icon_row],
                 // Named roles: create, list, delete (admins and the owner).
                 SECTION_ROLES => vec![crate::roles_settings::roles_section(sid.get())],
+                SECTION_EMOJI => vec![crate::emoji_settings::emoji_section(sid.get())],
                 _ => vec![add_row, transfer_el],
             };
             let title = SECTIONS.get(*tab).copied().unwrap_or_default().to_string();

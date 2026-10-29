@@ -133,12 +133,28 @@ pub(super) fn reaction_area(
     let pills: Vec<Element> = list.iter().map(|(emoji, count, reacted)| {
         let em = emoji.to_string();
         let em_close = em.clone();
+        // A custom emoji's chip shows its image.
+        let face = match crate::custom_emoji::token_emoji(&em) {
+            Some(e) => ui! {
+                image(
+                    src = crate::auth::media_url(e.image.clone()),
+                    alt = format!(":{}:", e.name),
+                    style = StyleRules {
+                        width: Some(px(18.0)),
+                        height: Some(px(18.0)),
+                        object_fit: Some(ObjectFit::Contain),
+                        ..Default::default()
+                    },
+                )
+            },
+            None => ui! { text(style = crate::styles::ReactionEmoji()) { em.clone() } },
+        };
         let cnt = *count;
         let will_remove = *reacted;
         let reacted = if *reacted { crate::styles::ReactionPillReacted::On } else { crate::styles::ReactionPillReacted::Off };
         ui! {
             view(style = crate::styles::ReactionPill().reacted(reacted)) {
-                text(style = crate::styles::ReactionEmoji()) { em }
+                { face }
                 text(style = crate::styles::ReactionCount()) { cnt.to_string() }
             }
             .on_touch(move |ev| {

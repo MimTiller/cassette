@@ -198,6 +198,8 @@ pub enum WsServerMsg {
     /// A message's link preview cards, after they were fetched or after an
     /// edit changed its links (empty = remove them).
     MessageEmbeds { message_id: i64, channel_id: i64, embeds: Vec<crate::link_previews::Embed> },
+    /// A server's custom emoji changed; members refetch them.
+    EmojiChanged { server_id: i64 },
     /// The most recent `Message { new: false }` frames for `History`.
     ///
     /// `has_more` is the client's scrollback-exhausted signal: it is `true`

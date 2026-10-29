@@ -127,6 +127,7 @@ pub fn members_loaded(server_id: i64, members: &[discord_server::server_settings
 /// then redraw. Runs on entering a server and on every `RolesChanged`.
 pub fn load_roles(server_id: i64) {
     crate::notif_prefs::load();
+    crate::custom_emoji::load(server_id);
     runtime_core::driver::spawn_async(async move {
         let input = server_roles::ServerRolesInput { server_id };
         if let Ok(snap) = server_roles::server_roles(input).await {

@@ -94,7 +94,7 @@ pub fn excerpt_text(body: &str) -> String {
     if discord_server::gifs::gif_body(body).is_some() {
         return "GIF".to_string();
     }
-    body.to_string()
+    crate::custom_emoji::plain(body)
 }
 
 /// Truncate a message body into a short single-line snippet for the strip:

@@ -37,6 +37,8 @@ mod profile_settings;
 mod dms;
 mod styles;
 mod controls;
+mod custom_emoji;
+mod emoji_settings;
 mod notif_prefs;
 mod notif_menu;
 mod embeds;

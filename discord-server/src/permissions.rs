@@ -59,8 +59,10 @@ impl Permissions {
     pub const MANAGE_SERVER: Self = Self(1 << 13);
     /// Every permission, and channel overwrites don't apply.
     pub const ADMINISTRATOR: Self = Self(1 << 14);
+    /// Upload, rename and delete the server's custom emoji.
+    pub const MANAGE_EXPRESSIONS: Self = Self(1 << 15);
 
-    pub const ALL: Self = Self((1 << 15) - 1);
+    pub const ALL: Self = Self((1 << 16) - 1);
 
     /// What @everyone gets in a new server: read, write, react, attach and
     /// embed. Matches the column default in `0022_permissions.sql`.
@@ -91,7 +93,7 @@ impl Permissions {
 
     /// Every permission with its display name and a one-line description,
     /// in the order a settings screen lists them.
-    pub const FLAGS: [(Self, &'static str, &'static str); 15] = [
+    pub const FLAGS: [(Self, &'static str, &'static str); 16] = [
         (Self::ADMINISTRATOR, "Administrator", "Every permission, in every channel. Grant with care."),
         (Self::MANAGE_SERVER, "Manage Server", "Rename the server, change its icon and what everyone can do."),
         (Self::MANAGE_ROLES, "Manage Roles", "Create, edit and hand out roles below their own."),
@@ -100,6 +102,7 @@ impl Permissions {
         (Self::BAN_MEMBERS, "Ban Members", "Remove members and stop them rejoining."),
         (Self::MODERATE_MEMBERS, "Timeout Members", "Stop members posting for a while."),
         (Self::CREATE_INVITE, "Create Invite", "Make invite links to the server."),
+        (Self::MANAGE_EXPRESSIONS, "Manage Expressions", "Upload, rename and delete the server's custom emoji."),
         (Self::VIEW_CHANNEL, "View Channels", "See channels and read their messages."),
         (Self::SEND_MESSAGES, "Send Messages", "Post in text channels."),
         (Self::ADD_REACTIONS, "Add Reactions", "React to messages with emoji."),
