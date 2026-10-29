@@ -35,6 +35,9 @@ pub struct ChannelSummary {
     pub kind: String,
     pub position: i64,
     pub parent_channel_id: Option<i64>,
+    /// @everyone can't see it (see `ServerContext::is_private`).
+    #[serde(default)]
+    pub private: bool,
 }
 
 #[cfg(feature = "server")]
@@ -113,6 +116,7 @@ pub async fn list_channels(
             kind,
             position,
             parent_channel_id,
+            private: ctx.is_private(id),
         })
         .collect())
 }

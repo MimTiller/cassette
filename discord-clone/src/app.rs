@@ -49,7 +49,7 @@ use file_picker::{FilePicker, PickRequest, PickOutcome, MediaKind};
 use icons_lucide::{
     CHEVRON_DOWN, CHEVRON_RIGHT, HASH, HEADPHONES,
     MIC, MIC_OFF, PIN, PLUS, SETTINGS, SMILE, SMILE_PLUS,
-    USER_PLUS, USERS, VOLUME_2, MESSAGE_CIRCLE, MENU,
+    USER_PLUS, USERS, VOLUME_2, MESSAGE_CIRCLE, MENU, LOCK,
 };
 use crate::server_settings_panel::ServerSettingsPanel;
 
@@ -387,6 +387,7 @@ pub(crate) fn shell_alive() -> runtime_core::ScopeAlive {
 fn app_shell(authed: Signal<bool>) -> Element {
     SHELL_ALIVE.with(|s| *s.borrow_mut() = Some(runtime_core::ScopeAlive::current()));
     mobile::install(signal(mobile::Pane::default()), signal(true));
+    crate::channel_permissions::install();
     // [Feature 16] `active_server`/`active_channel` are the *mock* selection
     // signals: every pane renders live (backend) content now, so these keep a
     // `SERVERS[0]` default that no real user path ever displays (see each
@@ -1396,6 +1397,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let gateway_effects::GatewayEffectsParts { gateway_incoming_effect, mention_reset_effect } = gateway_effects::build(&s);
     let rail::RailParts { rail_style, rail_top, live_section, rail_actions } = rail::build(&s);
     let modals::ModalsParts { join_el, create_el, cc_el, rc_el, dc_el, invite_el, ss_el } = modals::build(&s);
+    let channel_perms_el = crate::channel_permissions::dialog();
     let user_popups::UserPopupsParts { user_popup_el } = user_popups::build(&s);
     let sidebar::SidebarParts { sidebar } = sidebar::build(&s);
     let messages::MessagesParts { header, sent_messages, typing_row } = messages::build(&s);
@@ -1646,6 +1648,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             moderation_region
             ss_el
             invite_el
+            channel_perms_el
             // Reaction picker (mock, session-local): full-window emoji grid,
             // painted last so it covers everything while open (collapses to
             // zero size while `picker` is `None`).

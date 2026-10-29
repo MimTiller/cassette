@@ -61,6 +61,9 @@ pub fn CreateChannelModal(
     let b = busy;
     let e = error;
     let ch = channels;
+    // "Private channel": hidden from @everyone; only its creator (and anyone
+    // later let in) can see it.
+    let private = runtime_core::signal(false);
 
     // Shared card/field/button styles (one static pass).
     let card_style = StyleRules {
@@ -169,6 +172,7 @@ pub fn CreateChannelModal(
             return;
         }
         let kind0 = k.get();
+        let private0 = private.get();
         b.set(true);
         e.set(String::new());
         let e2 = e;
@@ -176,8 +180,9 @@ pub fn CreateChannelModal(
         let ch2 = ch;
         let close2 = close;
         runtime_core::driver::spawn_async(async move {
-            match crate::servers::create_channel(sid0, &trimmed, &kind0, None).await {
+            match crate::servers::create_channel(sid0, &trimmed, &kind0, None, private0).await {
                 Ok(_) => {
+                    private.set(false);
                     // The backend persisted the channel; re-fetch the live
                     // channel list (the same RPC the live sidebar's row fetch
                     // uses) so the new channel appears without a reload, then
@@ -208,8 +213,27 @@ pub fn CreateChannelModal(
         // `kind == "category"` is in the key: a category gets its own title
         // and no Text/Voice toggle (the server menu's Create Category opens
         // this modal with that kind preset).
-        move || (error.get().clone(), busy.get(), k.get() == "category"),
-        move |(err, _busy, is_category): &(String, bool, bool)| {
+        move || (error.get().clone(), busy.get(), k.get() == "category", private.get()),
+        move |(err, _busy, is_category, is_private): &(String, bool, bool, bool)| {
+            let is_private = *is_private;
+            let private_row = || -> Element {
+                ui! {
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Row),
+                        align_items: Some(AlignItems::Center),
+                        gap: Some(px(12.0)),
+                        ..Default::default()
+                    }) {
+                        text(style = StyleRules {
+                            font_size: Some(px(14.0)),
+                            color: Some(col(theme::TEXT_NORMAL)),
+                            flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
+                            ..Default::default()
+                        }) { "Private channel".to_string() }
+                        { crate::controls::toggle(is_private, true, move || private.set(!private.get())) }
+                    }
+                }
+            };
             // Kind segments: each sets `kind`; the active fill reads `kind`
             // reactively (the style closure re-runs on toggle).
             let text_seg = ui! {
@@ -276,6 +300,7 @@ pub fn CreateChannelModal(
                             )
                         }
                         { kind_row() }
+                        { private_row() }
                         text(style = err_style.clone()) { err.clone() }
                         { create_btn }
                     }
@@ -295,6 +320,7 @@ pub fn CreateChannelModal(
                             )
                         }
                         { kind_row() }
+                        { private_row() }
                         { create_btn }
                     }
                 }

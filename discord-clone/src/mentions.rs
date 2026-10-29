@@ -293,6 +293,11 @@ pub fn completion_hint(name: &str) -> Option<String> {
     }
 }
 
+/// The user ids of the active server's members.
+pub fn member_ids() -> Vec<i64> {
+    with(|c| c.users.iter().map(|(id, _)| *id).collect())
+}
+
 /// The username of member `user_id` in the active server.
 pub fn username_of(user_id: i64) -> Option<String> {
     with(|c| c.users.iter().find(|(id, _)| *id == user_id).map(|(_, n)| n.clone()))
@@ -332,6 +337,7 @@ mod tests {
             server_id: 1,
             roles: vec![role(10, 3), role(11, 1)],
             assignments: vec![(2, 11), (3, 10), (3, 11)],
+            ..Default::default()
         };
         assert_eq!(rank_in(&snap, Some(1), 1), Rank::Owner);
         assert_eq!(rank_in(&snap, Some(1), 2), Rank::Role(1));

@@ -36,21 +36,22 @@ pub async fn list_channels(server_id: i64) -> Result<Vec<ChannelSummary>, String
 
 /// Create a channel in a server. `kind` is `"text"` / `"voice"` /
 /// `"category"`; `parent_channel_id` is the category it nests under, or
-/// `None` for top-level. The caller must be the server's owner or admin; the
-/// backend's rejection (e.g. insufficient privileges, a duplicate name) comes
-/// back as the `Err` string.
+/// `None` for top-level; `private` hides it from @everyone. The caller needs
+/// Manage Channels; the backend's rejection (e.g. insufficient privileges, a
+/// duplicate name) comes back as the `Err` string.
 pub async fn create_channel(
     server_id: i64,
     name: &str,
     kind: &str,
     parent_channel_id: Option<i64>,
+    private: bool,
 ) -> Result<discord_server::server_settings::ChannelResult, String> {
     let input = discord_server::server_settings::CreateChannelInput {
         server_id,
         name: name.to_string(),
         kind: kind.to_string(),
         parent_channel_id,
-        private: false,
+        private,
     };
     discord_server::server_settings::create_channel(input)
         .await

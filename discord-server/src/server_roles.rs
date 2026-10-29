@@ -55,6 +55,9 @@ pub struct RolesSnapshot {
     pub roles: Vec<CustomRole>,
     /// `(user_id, role_id)` pairs.
     pub assignments: Vec<(i64, i64)>,
+    /// What @everyone may do server-wide.
+    #[serde(default)]
+    pub everyone_permissions: crate::permissions::Permissions,
 }
 
 impl RolesSnapshot {
@@ -417,6 +420,13 @@ pub fn load_snapshot(db: &Db, server_id: i64) -> RolesSnapshot {
     let Ok(c) = db.lock() else {
         return snap;
     };
+    if let Ok(v) = c.query_row(
+        "SELECT everyone_permissions FROM servers WHERE id = ?1",
+        rusqlite::params![server_id],
+        |r| r.get::<_, i64>(0),
+    ) {
+        snap.everyone_permissions = crate::permissions::Permissions(v as u64);
+    }
     if let Ok(mut stmt) = c.prepare(
         "SELECT id, server_id, name, color, mentionable, position, permissions FROM server_roles
          WHERE server_id = ?1 ORDER BY position DESC, id",
@@ -667,6 +677,7 @@ mod tests {
             server_id: 10,
             roles: vec![plain, low],
             assignments: vec![(2, 5), (2, 1)],
+            ..Default::default()
         };
         assert_eq!(snap.color_of(2), Some("#111111"));
         assert_eq!(snap.color_of(3), None);

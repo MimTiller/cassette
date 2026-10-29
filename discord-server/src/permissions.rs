@@ -408,6 +408,19 @@ impl ServerContext {
         self.channels.iter().map(|&(id, _)| (id, self.in_channel(member, id))).collect()
     }
 
+    /// Whether @everyone can't see `channel_id`: its own or its category's
+    /// overwrites deny them View Channel.
+    pub fn is_private(&self, channel_id: i64) -> bool {
+        let everyone = Member {
+            user_id: 0,
+            is_owner: false,
+            role_ids: Vec::new(),
+            rank: Rank::Everyone,
+            server: self.everyone.minus(Permissions::ADMINISTRATOR),
+        };
+        !self.in_channel(&everyone, channel_id).contains(Permissions::VIEW_CHANNEL)
+    }
+
     /// The user ids of every member holding `perm` in `channel_id`.
     pub fn members_with(&self, channel_id: i64, perm: Permissions) -> Vec<i64> {
         self.members
@@ -857,6 +870,20 @@ mod db_tests {
 
     fn perms(db: &Db, server: i64, user: i64) -> Permissions {
         ServerContext::load(db, server).unwrap().member(user).unwrap().server
+    }
+
+    #[test]
+    fn private_means_everyone_cannot_view() {
+        let (_dir, db) = upgraded();
+        exec(
+            &db,
+            "INSERT INTO channel_overwrites (channel_id, target_kind, target_id, allow, deny) VALUES
+                (11,'everyone',0,0,1),(12,'everyone',0,0,1),(10,'role',1,0,1);",
+        );
+        let ctx = ServerContext::load(&db, 1).unwrap();
+        assert!(!ctx.is_private(10), "denying one role doesn't make it private");
+        assert!(ctx.is_private(11));
+        assert!(ctx.is_private(13), "a channel in a private category is private");
     }
 
     #[test]

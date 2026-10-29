@@ -73,7 +73,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
             let live_fp: Vec<(i64, String, String)> = live_channels
                 .get()
                 .iter()
-                .map(|c| (c.id, c.name.clone(), c.kind.clone()))
+                .map(|c| (c.id, c.name.clone(), format!("{}{}", c.kind, if c.private { " private" } else { "" })))
                 .collect();
             // Collapse fingerprint: (category id, collapsed) pairs, ordered by
             // id so it's stable. Read from the shared `collapsed` map — when a
@@ -308,6 +308,12 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                 }),
                             ));
                             if manage {
+                                let nm_perms = nm.clone();
+                                items.push((
+                                    "Permissions".to_string(),
+                                    false,
+                                    Rc::new(move || crate::channel_permissions::open_for(cid, (*nm_perms).clone())),
+                                ));
                                 items.push((
                                     "Rename".to_string(),
                                     false,
@@ -416,6 +422,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                             let name = c.name.clone();
                             let is_text = c.kind == "text";
                             let cid = c.id;
+                            let private = c.private;
                             // `live_scroll_handle_row` is an `Rc` (not `Copy`); the
                             // row's `on_touch(move …)` closure moves it, so each
                             // row needs its own clone (the `nm: Rc<String>` idiom
@@ -546,7 +553,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                 // is `chan_actions`, built per row above.
                                 ui! {
                                     view(style = row_style) {
-                                        icon(HASH)
+                                        icon(if private { LOCK } else { HASH })
                                             .color(|| theme::live(TEXT_MUTED))
                                             .size(18.0)
                                         text(style = label_style) { name }

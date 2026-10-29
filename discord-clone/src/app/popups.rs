@@ -112,6 +112,7 @@ pub(super) fn build(s: &ShellState) -> PopupsParts {
         flag(moderation_mode),
         flag(profile_mode),
         flag(notif_mode),
+        opt(crate::channel_permissions::open_signal()),
     ]);
 
     // Escape: the open popup, else the open dialog.
