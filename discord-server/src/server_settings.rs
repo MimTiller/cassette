@@ -186,7 +186,14 @@ pub enum WsServerMsg {
         /// the serde default.
         #[serde(default)]
         attachments: Vec<MessageAttachment>,
+        /// Link preview cards. A fresh post has none yet; they follow in a
+        /// `MessageEmbeds` frame.
+        #[serde(default)]
+        embeds: Vec<crate::link_previews::Embed>,
     },
+    /// A message's link preview cards, after they were fetched or after an
+    /// edit changed its links (empty = remove them).
+    MessageEmbeds { message_id: i64, channel_id: i64, embeds: Vec<crate::link_previews::Embed> },
     /// The most recent `Message { new: false }` frames for `History`.
     ///
     /// `has_more` is the client's scrollback-exhausted signal: it is `true`
@@ -444,6 +451,7 @@ pub async fn message_gateway(
                                         a.id, a.filename, a.mime, a.url,
                                     ))
                                     .collect(),
+                                embeds: crate::link_previews::embeds_for(&db, m.id),
                                 })
                             .await;
                     }

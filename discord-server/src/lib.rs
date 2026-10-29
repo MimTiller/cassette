@@ -71,6 +71,9 @@ pub mod search;
 // GIF search for the composer's GIF picker (Giphy, key kept server-side).
 pub mod gifs;
 
+// Link preview cards (guarded page fetches).
+pub mod link_previews;
+
 #[cfg(feature = "server")]
 pub mod db;
 #[cfg(feature = "server")]

@@ -133,8 +133,10 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 reply_to_message_id,
                 reactions,
                 attachments,
+                embeds,
             }) = frame
             {
+                crate::embeds::set(*message_id, embeds.clone());
                 let me = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
                 crate::mentions::mark_message(*message_id, me != 0 && mentioned_user_ids.contains(&me));
                 // The server resolved the author's username for the frame
@@ -386,6 +388,12 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                         live_delete_confirm.set(None);
                     }
                     live_rev.set(live_rev.get() + 1);
+                }
+            }
+            // A message's link preview cards arrived, or an edit changed them.
+            if let Some(discord_server::server_settings::WsServerMsg::MessageEmbeds { message_id, embeds, .. }) = frame {
+                if crate::embeds::set(*message_id, embeds.clone()) {
+                    live_revision.set(live_revision.get() + 1);
                 }
             }
             // The status this user picked, sent on connect and when another

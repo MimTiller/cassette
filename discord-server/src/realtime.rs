@@ -133,7 +133,7 @@ impl Hub {
     }
 }
 
-fn now_millis() -> i64 {
+pub(crate) fn now_millis() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -412,8 +412,11 @@ pub fn post_channel_message(
             // `ReactionAdd` / `ReactionRemove` broadcast frames.
             reactions: Vec::new(),
             attachments: wire_attachments,
+            // Cards follow in a `MessageEmbeds` frame once fetched.
+            embeds: Vec::new(),
         },
     );
+    crate::link_previews::schedule(db, channel_id, message_id, content, perms.contains(Permissions::EMBED_LINKS));
     Ok(())
 }
 
@@ -448,7 +451,7 @@ pub fn edit_channel_message(
     if author != user_id {
         return Err("you can only edit your own messages".into());
     }
-    authorize_text_channel(db, user_id, channel_id, Permissions::VIEW_CHANNEL)?;
+    let (_, perms) = authorize_text_channel(db, user_id, channel_id, Permissions::VIEW_CHANNEL)?;
     let edited_at = now_millis();
     db.update_message(message_id, content, edited_at)
         .map_err(|e| format!("failed to update message: {e}"))?;
@@ -468,6 +471,8 @@ pub fn edit_channel_message(
             mentioned_user_ids,
         },
     );
+    // Links added or removed change the cards.
+    crate::link_previews::schedule(db, channel_id, message_id, content, perms.contains(Permissions::EMBED_LINKS));
     Ok(())
 }
 

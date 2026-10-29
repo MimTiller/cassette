@@ -87,6 +87,125 @@ pub(super) fn attachment_row(atts: &[discord_server::server_settings::MessageAtt
     }
 }
 
+/// Link preview cards under a message, lined up with its text: an accent
+/// bar, the site name, the title (opens the link), up to three lines of
+/// description and the image.
+pub(super) fn embed_cards(embeds: &[discord_server::link_previews::Embed]) -> Element {
+    let cards: Vec<Element> = embeds
+        .iter()
+        .map(|e| {
+            let site_el = e.site_name.clone().map(|s| {
+                ui! {
+                    text(style = StyleRules {
+                        font_size: Some(px(12.0)),
+                        color: Some(col(crate::theme::TEXT_MUTED)),
+                        ..Default::default()
+                    }) { s }
+                }
+            });
+            let title_el = e.title.clone().map(|t| {
+                let url = e.url.clone();
+                ui! {
+                    view {
+                        text(style = StyleRules {
+                            font_size: Some(px(15.0)),
+                            font_weight: Some(FontWeight::SemiBold),
+                            color: Some(col(crate::theme::TEXT_LINK)),
+                            ..Default::default()
+                        }) { t }
+                    }
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            crate::embeds::open(&url);
+                        }
+                        TouchResponse::CONSUMED
+                    })
+                }
+            });
+            let desc_el = e.description.clone().map(|d| {
+                ui! {
+                    text(style = StyleRules {
+                        font_size: Some(px(14.0)),
+                        line_height: Some(runtime_core::Tokenized::Literal(1.3)),
+                        color: Some(col(crate::theme::TEXT_NORMAL)),
+                        max_height: Some(px(55.0)),
+                        overflow: Some(Overflow::Hidden),
+                        ..Default::default()
+                    }) { d }
+                }
+            });
+            let image_el = e.image.clone().map(|src| {
+                let (w, h) = attachment_box(e.image_size, mobile::media_max_width(400.0), 300.0);
+                ui! {
+                    image(
+                        src = crate::auth::media_url(src),
+                        alt = "",
+                        style = StyleRules {
+                            width: Some(px(w)),
+                            height: Some(px(h)),
+                            margin_top: Some(px(6.0)),
+                            object_fit: Some(ObjectFit::Contain),
+                            ..rounded(4.0)
+                        },
+                    )
+                }
+            });
+            ui! {
+                view(style = StyleRules {
+                    flex_direction: Some(FlexDirection::Row),
+                    max_width: Some(px(mobile::media_max_width(432.0))),
+                    background: Some(col(crate::theme::BG_SECONDARY)),
+                    overflow: Some(Overflow::Hidden),
+                    ..rounded(4.0)
+                }) {
+                    view(style = StyleRules {
+                        width: Some(px(4.0)),
+                        flex_shrink: Some(grow(0.0)),
+                        background: Some(col(crate::theme::ACCENT)),
+                        ..Default::default()
+                    }) {}
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Column),
+                        gap: Some(px(4.0)),
+                        padding_top: Some(px(10.0)),
+                        padding_bottom: Some(px(12.0)),
+                        padding_left: Some(px(12.0)),
+                        padding_right: Some(px(12.0)),
+                        flex_shrink: Some(grow(1.0)),
+                        min_width: Some(px(0.0)),
+                        ..Default::default()
+                    }) {
+                        if let Some(el) = site_el {
+                            el
+                        }
+                        if let Some(el) = title_el {
+                            el
+                        }
+                        if let Some(el) = desc_el {
+                            el
+                        }
+                        if let Some(el) = image_el {
+                            el
+                        }
+                    }
+                }
+            }
+        })
+        .collect();
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Column),
+            align_items: Some(AlignItems::FlexStart),
+            gap: Some(px(6.0)),
+            margin_top: Some(px(4.0)),
+            margin_bottom: Some(px(4.0)),
+            padding_left: Some(px(66.0)),
+            padding_right: Some(px(16.0)),
+            ..Default::default()
+        }) { cards }
+    }
+}
+
 #[cfg(test)]
 mod attachment_size_tests {
     use super::attachment_box;

@@ -369,6 +369,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                 mentions_me: crate::mentions::mentions_me(*mid),
                 jumped: jumped == Some(*mid),
                 attachments: attach_render.borrow().get(mid).cloned().unwrap_or_default(),
+                embeds: crate::embeds::get(*mid),
                 reactions: reactions_read.borrow().get(&MessageKey::Live { id: *mid }).cloned().unwrap_or_default(),
                 names_rev,
             })));
@@ -530,6 +531,7 @@ struct MsgRow {
     mentions_me: bool,
     jumped: bool,
     attachments: Vec<discord_server::server_settings::MessageAttachment>,
+    embeds: Vec<discord_server::link_previews::Embed>,
     reactions: Vec<super::reactions_ui::Reaction>,
     /// Bumped when names or roles change, so rows redraw them.
     names_rev: u64,
@@ -637,6 +639,7 @@ impl RowCtx {
             .clone()
             .map(|(author, snippet)| crate::reply_reference_strip::reply_reference_strip(author, snippet));
         let attachments = (!m.attachments.is_empty()).then(|| attachment_row(&m.attachments));
+        let cards = (!m.embeds.is_empty()).then(|| super::message_view::embed_cards(&m.embeds));
         let reactions = reaction_area(key, self.reactions.clone(), self.picker);
         ui! {
             view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) {
@@ -645,6 +648,9 @@ impl RowCtx {
                 }
                 row
                 if let Some(el) = attachments {
+                    el
+                }
+                if let Some(el) = cards {
                     el
                 }
                 reactions
