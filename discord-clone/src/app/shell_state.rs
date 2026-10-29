@@ -5,6 +5,7 @@ use super::*;
 
 #[derive(Clone)]
 pub(super) struct ShellState {
+    pub(super) layout: Layout,
     pub(super) nav: Nav,
     pub(super) attach_busy: Signal<bool>,
     pub(super) attach_error: Signal<String>,
@@ -15,7 +16,6 @@ pub(super) struct ShellState {
     pub(super) cc_kind: Signal<String>,
     pub(super) cc_name: Signal<String>,
     pub(super) cc_open: Signal<bool>,
-    pub(super) collapsed: Rc<RefCell<HashMap<u32, Signal<bool>>>>,
     pub(super) composer: Signal<String>,
     pub(super) dc_busy: Signal<bool>,
     pub(super) dc_cid: Signal<Option<i64>>,
@@ -69,7 +69,6 @@ pub(super) struct ShellState {
     pub(super) live_unread: Rc<RefCell<HashMap<i64, (i64, i64)>>>,
     pub(super) live_unread_rev: Signal<u32>,
     pub(super) load_busy: Signal<bool>,
-    pub(super) member_panel_width: Signal<f32>,
     pub(super) moderation_mode: Signal<bool>,
     pub(super) muted: Signal<bool>,
     pub(super) notif_level: Signal<u32>,
@@ -99,7 +98,6 @@ pub(super) struct ShellState {
     pub(super) reply_target: Signal<Option<i64>>,
     pub(super) send_failed: Signal<bool>,
     pub(super) shortcuts_mode: Signal<bool>,
-    pub(super) sidebar_width: Signal<f32>,
     pub(super) ss_add_role: Signal<String>,
     pub(super) ss_add_user_id: Signal<String>,
     pub(super) ss_busy: Signal<bool>,
@@ -121,7 +119,6 @@ pub(super) struct ShellState {
     pub(super) join_result: Signal<Option<discord_server::invites::RedeemResult>>,
     pub(super) join_error: Signal<String>,
     pub(super) join_busy: Signal<bool>,
-    pub(super) live_collapsed: Signal<Vec<i64>>,
     pub(super) user_popup: Signal<Option<super::user_popups::UserPopup>>,
     pub(super) user_profile: Signal<Option<discord_server::profiles::UserProfile>>,
     pub(super) blocked_users: Signal<Vec<crate::blocks::BlockedUser>>,
@@ -197,6 +194,47 @@ impl Nav {
             joined_voice: joined_voice,
             live_dm_mode: live_dm_mode,
             server_menu_open: server_menu_open,
+        }
+    }
+}
+
+
+#[derive(Clone)]
+pub(super) struct Layout {
+    pub(super) sidebar_width: Signal<f32>,
+    pub(super) member_panel_width: Signal<f32>,
+    pub(super) collapsed: Rc<RefCell<HashMap<u32, Signal<bool>>>>,
+    pub(super) live_collapsed: Signal<Vec<i64>>,
+}
+
+impl Layout {
+    /// Fresh signals for this group; wiring around them stays in `app_shell`.
+    pub(super) fn new() -> Layout {
+        // Resizable column widths (CSS pixels), driven by the thin drag handles
+        // between the channel sidebar / main view and the main view / member list.
+        // Both start at 240px; the handles
+        // clamp to 180..=400. `Signal` is `Copy`, so the drag closures and the
+        // reactive style closures below each capture their own handle.
+        let sidebar_width: Signal<f32> = signal(240.0);
+        let member_panel_width: Signal<f32> = signal(240.0);
+        // Channel-category collapse state: one signal per category id, all
+        // starting expanded (false). Held in an Rc<HashMap> so both the sidebar
+        // `switch` key and its render loop can reach it. The key reads every
+        // category's collapsed value (see below), so when the CategoryHeader
+        // toggles its signal the key changes and the (non-reactive, plain-Rust)
+        // row loop re-runs, re-gating each category's rows on its collapsed flag.
+        // The map lives in `app_shell` scope, so state survives `switch` rebuilds
+        // across server/channel/voice changes.
+        let collapsed: Rc<RefCell<HashMap<u32, Signal<bool>>>> = Rc::new(RefCell::new(HashMap::new()));
+        // The live sidebar's collapsed categories (channel ids). Plain data in one
+        // app_shell-owned signal: a per-category signal created inside the
+        // sidebar's render would be freed on the next rebuild.
+        let live_collapsed: Signal<Vec<i64>> = signal(Vec::new());
+        Layout {
+            sidebar_width: sidebar_width,
+            member_panel_width: member_panel_width,
+            collapsed: collapsed,
+            live_collapsed: live_collapsed,
         }
     }
 }

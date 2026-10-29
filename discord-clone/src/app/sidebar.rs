@@ -9,7 +9,8 @@ pub(super) struct SidebarParts {
 }
 
 pub(super) fn build(s: &ShellState) -> SidebarParts {
-    let ShellState { cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, live_at_bottom, live_chan_menu, live_collapsed, live_members, live_mention_rev, live_scroll_handle, live_unread, live_unread_rev, member_panel_width, muted, notif_mode, profile_mode, rc_busy, rc_cid, rc_err, rc_name, rc_open, sidebar_width, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, status_menu, user_status, nav, .. } = s.clone();
+    let ShellState { cc_busy, cc_err, cc_kind, cc_name, cc_open, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, live_at_bottom, live_chan_menu, live_members, live_mention_rev, live_scroll_handle, live_unread, live_unread_rev, muted, notif_mode, profile_mode, rc_busy, rc_cid, rc_err, rc_name, rc_open, ss_add_role, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, status_menu, user_status, nav, layout, .. } = s.clone();
+let Layout { collapsed, live_collapsed, member_panel_width, sidebar_width, .. } = layout.clone();
 let Nav { active_live_channel, active_live_server, joined_voice, live_channels, live_servers, server_menu_open, .. } = nav.clone();
     // --- channel sidebar -------------------------------------------------
     // Width is driven by the `sidebar_width` signal (a thin drag handle on the

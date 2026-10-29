@@ -102,7 +102,7 @@ use login_screen::*;
 mod layout;
 use layout::*;
 mod shell_state;
-use shell_state::{ShellState, Nav};
+use shell_state::{ShellState, Nav, Layout};
 mod gateway_effects;
 mod rail;
 mod modals;
@@ -391,13 +391,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let nav = Nav::new();
     let Nav { active_server, active_live_server, active_live_channel, live_servers, live_channels, live_dm_mode, .. } = nav.clone();
     let active_channel: Signal<u32> = signal(SERVERS[0].first_text_channel().id);
-    // Resizable column widths (CSS pixels), driven by the thin drag handles
-    // between the channel sidebar / main view and the main view / member list.
-    // Both start at 240px; the handles
-    // clamp to 180..=400. `Signal` is `Copy`, so the drag closures and the
-    // reactive style closures below each capture their own handle.
-    let sidebar_width: Signal<f32> = signal(240.0);
-    let member_panel_width: Signal<f32> = signal(240.0);
+    // --- layout: shared app-shell state (signals built in shell_state.rs) ---
+    let layout = Layout::new();
+    let Layout { sidebar_width, member_panel_width, collapsed, .. } = layout.clone();
     let composer: Signal<String> = signal(String::new());
     // Emoji-picker popover: `true` = the floating emoji grid is open above the
     // smile button. Pure local UI state (no backend), toggled by the smile
@@ -514,19 +510,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // "are you sure?" (None = none). One step, mirroring the composer's
     // "simple confirm" ask — no two-step kick-style confirm.
     let live_delete_confirm: Signal<Option<i64>> = signal(None);
-    // Channel-category collapse state: one signal per category id, all
-    // starting expanded (false). Held in an Rc<HashMap> so both the sidebar
-    // `switch` key and its render loop can reach it. The key reads every
-    // category's collapsed value (see below), so when the CategoryHeader
-    // toggles its signal the key changes and the (non-reactive, plain-Rust)
-    // row loop re-runs, re-gating each category's rows on its collapsed flag.
-    // The map lives in `app_shell` scope, so state survives `switch` rebuilds
-    // across server/channel/voice changes.
-    let collapsed: Rc<RefCell<HashMap<u32, Signal<bool>>>> = Rc::new(RefCell::new(HashMap::new()));
-    // The live sidebar's collapsed categories (channel ids). Plain data in one
-    // app_shell-owned signal: a per-category signal created inside the
-    // sidebar's render would be freed on the next rebuild.
-    let live_collapsed: Signal<Vec<i64>> = signal(Vec::new());
     // The open profile card / user context menu and the profile it shows
     // (see `user_popups`); the async profile fetch writes here.
     let user_popup: Signal<Option<user_popups::UserPopup>> = signal(None);
@@ -1225,6 +1208,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
 
     // Everything the section builders below read, gathered once.
     let s = ShellState {
+        layout: layout.clone(),
         nav: nav.clone(),
         user_popup: user_popup.clone(),
         blocked_users: blocked_users.clone(),
@@ -1233,7 +1217,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         msg_menu: msg_menu.clone(),
         revealed_blocked: revealed_blocked.clone(),
         user_profile: user_profile.clone(),
-        live_collapsed: live_collapsed.clone(),
         create_open: create_open.clone(),
         create_name: create_name.clone(),
         create_error: create_error.clone(),
@@ -1252,7 +1235,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         cc_kind: cc_kind.clone(),
         cc_name: cc_name.clone(),
         cc_open: cc_open.clone(),
-        collapsed: collapsed.clone(),
         composer: composer.clone(),
         dc_busy: dc_busy.clone(),
         dc_cid: dc_cid.clone(),
@@ -1306,7 +1288,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         live_unread: live_unread.clone(),
         live_unread_rev: live_unread_rev.clone(),
         load_busy: load_busy.clone(),
-        member_panel_width: member_panel_width.clone(),
         moderation_mode: moderation_mode.clone(),
         muted: muted.clone(),
         notif_level: notif_level.clone(),
@@ -1336,7 +1317,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         reply_target: reply_target.clone(),
         send_failed: send_failed.clone(),
         shortcuts_mode: shortcuts_mode.clone(),
-        sidebar_width: sidebar_width.clone(),
         ss_add_role: ss_add_role.clone(),
         ss_add_user_id: ss_add_user_id.clone(),
         ss_busy: ss_busy.clone(),
