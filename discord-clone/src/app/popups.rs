@@ -100,6 +100,7 @@ pub(super) fn build(s: &ShellState) -> PopupsParts {
     );
     // Dialogs and full-screen panes Escape closes when no popup is open.
     let dialogs: Rc<Vec<Entry>> = Rc::new(vec![
+        opt(crate::avatar_crop::open_signal()),
         flag(cc_open),
         flag(rc_open),
         flag(dc_open),

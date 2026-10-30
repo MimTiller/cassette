@@ -391,6 +391,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     crate::channel_permissions::install();
     crate::notif_prefs::install();
     crate::notif_menu::install();
+    crate::avatar_crop::install();
     // [Feature 16] `active_server`/`active_channel` are the *mock* selection
     // signals: every pane renders live (backend) content now, so these keep a
     // `SERVERS[0]` default that no real user path ever displays (see each
@@ -1402,6 +1403,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let modals::ModalsParts { join_el, create_el, cc_el, rc_el, dc_el, invite_el, ss_el } = modals::build(&s);
     let channel_perms_el = crate::channel_permissions::dialog();
     let notif_menu_el = crate::notif_menu::dialog();
+    let avatar_crop_el = crate::avatar_crop::dialog();
     let user_popups::UserPopupsParts { user_popup_el } = user_popups::build(&s);
     let sidebar::SidebarParts { sidebar } = sidebar::build(&s);
     let messages::MessagesParts { header, sent_messages, typing_row, unread_bar } = messages::build(&s);
@@ -1656,6 +1658,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             invite_el
             channel_perms_el
             notif_menu_el
+            avatar_crop_el
             // Reaction picker (mock, session-local): full-window emoji grid,
             // painted last so it covers everything while open (collapses to
             // zero size while `picker` is `None`).

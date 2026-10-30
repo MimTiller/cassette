@@ -54,6 +54,9 @@ use file_picker::{FilePicker, PickRequest, PickOutcome, MediaKind};
 // The same Discord dark palette as `app.rs`, kept local so the screen is
 // self-contained.
 
+/// The avatar preview's size on the Profile screen.
+const AVATAR_PREVIEW: f32 = 112.0;
+
 fn grow(v: f32) -> Tokenized<f32> {
     Tokenized::Literal(v)
 }
@@ -76,7 +79,7 @@ fn seeded_avatar() -> String {
 /// The backend's avatar URL cap (`AVATAR_MAX_BYTES` in discord-server's auth
 /// layer) — the whole `data:<mime>;base64,…` URL must fit it. Enforced
 /// client-side so the rejection shows inline instead of a pointless RPC.
-const AVATAR_URL_MAX_BYTES: usize = 256 * 1024;
+pub(crate) const AVATAR_URL_MAX_BYTES: usize = 256 * 1024;
 
 const B64_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -337,6 +340,28 @@ pub fn ProfileSettings() -> Element {
         register_avatar_upload_hook(avatar_url.clone(), av_busy.clone(), av_error.clone());
     };
 
+    // Upload a finished `data:` URL and show it everywhere: the shared
+    // registry is keyed by the REAL username (not the editable display name)
+    // so message rows, member lists and DMs follow it.
+    let save_avatar = move |url: String| {
+        av_busy.set(true);
+        av_error.set(String::new());
+        runtime_core::driver::spawn_async(async move {
+            match crate::auth::set_avatar(Some(url.clone())).await {
+                Ok(_) => {
+                    let name = crate::auth::current_username();
+                    crate::auth::remember_avatar(name.as_str(), Some(url.clone()));
+                    // The persisted session's avatar segment must follow the
+                    // upload so a page refresh restores the new image.
+                    crate::auth::refresh_saved_avatar(Some(url.clone()));
+                    avatar_url.set(url);
+                }
+                Err(msg) => av_error.set(msg),
+            }
+            av_busy.set(false);
+        });
+    };
+
     // Change-avatar handler: open the native picker (single image), read the
     // file in, validate type + size, base64 it into the data URL, fire the
     // `set_avatar` RPC, and on success push into the shared avatar registry
@@ -348,7 +373,6 @@ pub fn ProfileSettings() -> Element {
         }
         let busy = av_busy;
         let err = av_error;
-        let av = avatar_url;
         let picking = av_picking;
         busy.set(true);
         err.set(String::new());
@@ -371,27 +395,25 @@ pub fn ProfileSettings() -> Element {
                 PickOutcome::Picked(files) => {
                     if let Some(file) = files.get(0) {
                         match file.read_all().await {
-                            Ok(bytes) => {
-                                match validate_and_encode(file.mime(), &bytes) {
-                                    Ok(url) => {
-                                        let url_for_save = url.clone();
-                                        match crate::auth::set_avatar(Some(url)).await {
-                                            Ok(_) => {
-                                                // Key the registry on the backend username, which is
-                                                // what every payload carries.
-                                                let name = crate::auth::current_username();
-                                                crate::auth::remember_avatar(name.as_str(), Some(url_for_save.clone()));
-                                                // The persisted session's avatar segment must follow the
-                                                // upload so a page refresh restores the new image.
-                                                crate::auth::refresh_saved_avatar(Some(url_for_save.clone()));
-                                                av.set(url_for_save);
-                                            }
-                                            Err(msg) => err.set(msg),
-                                        }
-                                    }
-                                    Err(msg) => err.set(msg),
+                            // On the web the picture goes through "Position your
+                            // picture" first, which also shrinks it under the cap.
+                            #[cfg(target_arch = "wasm32")]
+                            Ok(bytes) => match accepted_mime(file.mime(), &bytes) {
+                                None => err.set("Pick a PNG, JPEG, WebP or GIF picture".to_string()),
+                                Some(_) if bytes.len() > crate::avatar_crop::MAX_SOURCE_BYTES => {
+                                    err.set("That picture is over 20 MB".to_string())
                                 }
-                            }
+                                Some(mime) => {
+                                    if let Err(msg) = crate::avatar_crop::open(bytes, mime, save_avatar).await {
+                                        err.set(msg);
+                                    }
+                                }
+                            },
+                            #[cfg(not(target_arch = "wasm32"))]
+                            Ok(bytes) => match validate_and_encode(file.mime(), &bytes) {
+                                Ok(url) => save_avatar(url),
+                                Err(msg) => err.set(msg),
+                            },
                             Err(e) => err.set(format!("could not read the file: {e}")),
                         }
                     } else {
@@ -446,77 +468,44 @@ pub fn ProfileSettings() -> Element {
             // read inside the `if`, so it lowers to the `when` primitive and
             // flips on Change-avatar/Remove. Styles are inline: nothing
             // non-Copy is captured across the `when` boundary.
+            view(style = StyleRules { cursor: Some(runtime_core::Cursor::Pointer), ..Default::default() }) {
             if !avatar_url.get().is_empty() {
                 image(
                     src = move || crate::auth::media_url(avatar_url.get().clone()),
                     alt = "Your avatar",
                     style = StyleRules {
-                        width: Some(px(72.0)),
-                        height: Some(px(72.0)),
+                        width: Some(px(AVATAR_PREVIEW)),
+                        height: Some(px(AVATAR_PREVIEW)),
                         flex_shrink: Some(grow(0.0)),
                         object_fit: Some(ObjectFit::Cover),
-                        ..rounded(36.0)
+                        ..rounded(AVATAR_PREVIEW / 2.0)
                     },
                 )
             } else {
                 text(style = StyleRules {
-                    width: Some(px(72.0)),
-                    height: Some(px(72.0)),
+                    width: Some(px(AVATAR_PREVIEW)),
+                    height: Some(px(AVATAR_PREVIEW)),
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
                     background: Some(col(theme::ACCENT)),
                     color: Some(col(theme::TEXT_STRONG)),
-                    font_size: Some(px(30.0)),
+                    font_size: Some(px(44.0)),
                     font_weight: Some(FontWeight::Bold),
-                    ..rounded(36.0)
+                    ..rounded(AVATAR_PREVIEW / 2.0)
                 }) { avatar_letter }
             }
-            text(style = StyleRules {
-                align_self: Some(runtime_core::AlignSelf::Stretch),
-                font_size: Some(px(11.0)),
-                font_weight: Some(FontWeight::SemiBold),
-                color: Some(col(theme::TEXT_MUTED)),
-                ..Default::default()
-            }) { "DISPLAY NAME — SHOWN INSTEAD OF YOUR USERNAME".to_string() }
-            { crate::controls::text_field(display_name, &username, input_style.clone()) }
-            text(style = StyleRules {
-                align_self: Some(runtime_core::AlignSelf::Stretch),
-                font_size: Some(px(11.0)),
-                font_weight: Some(FontWeight::SemiBold),
-                color: Some(col(theme::TEXT_MUTED)),
-                ..Default::default()
-            }) { "ABOUT ME".to_string() }
-            { crate::controls::text_field(about, "A line about yourself", input_style.clone()) }
-            view(style = StyleRules {
-                height: Some(px(34.0)),
-                padding_left: Some(px(16.0)),
-                padding_right: Some(px(16.0)),
-                background: Some(col(theme::ACCENT)),
-                align_items: Some(AlignItems::Center),
-                justify_content: Some(JustifyContent::Center),
-                flex_shrink: Some(grow(0.0)),
-                ..rounded(8.0)
-            }, test_id = "profile-save") {
-                text(style = StyleRules {
-                    font_size: Some(px(13.0)),
-                    font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col(theme::TEXT_ON_ACCENT)),
-                    ..Default::default()
-                }) { move || if profile_busy.get() { "Saving…".to_string() } else { "Save Profile".to_string() } }
             }
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
-                    do_save();
+                    do_change();
                 }
                 TouchResponse::CONSUMED
             })
-            if !profile_note.get().is_empty() {
-                text(style = StyleRules {
-                    font_size: Some(px(12.0)),
-                    color: Some(col(theme::TEXT_MUTED)),
-                    ..Default::default()
-                }) { move || profile_note.get().clone() }
-            }
+            view(style = StyleRules {
+                flex_direction: Some(FlexDirection::Row),
+                gap: Some(px(8.0)),
+                ..Default::default()
+            }) {
             // The "Change avatar" pill: tap it, the platform's native file-open
             // dialog appears, and the chosen image is uploaded on the fly.
             // The label tells the user which phase the upload is in
@@ -576,12 +565,64 @@ pub fn ProfileSettings() -> Element {
                 }
                 TouchResponse::CONSUMED
             })
+            }
+            text(style = StyleRules {
+                font_size: Some(px(12.0)),
+                color: Some(col(theme::TEXT_MUTED)),
+                ..Default::default()
+            }) { "PNG, JPEG, WebP or GIF, up to 20 MB. You can position it in the circle after picking.".to_string() }
             if !av_error.get().is_empty() {
                 text(style = StyleRules {
                     font_size: Some(px(12.0)),
                     color: Some(col(theme::DANGER)),
                     ..Default::default()
                 }) { move || av_error.get().clone() }
+            }
+            text(style = StyleRules {
+                align_self: Some(runtime_core::AlignSelf::Stretch),
+                font_size: Some(px(11.0)),
+                font_weight: Some(FontWeight::SemiBold),
+                color: Some(col(theme::TEXT_MUTED)),
+                ..Default::default()
+            }) { "DISPLAY NAME — SHOWN INSTEAD OF YOUR USERNAME".to_string() }
+            { crate::controls::text_field(display_name, &username, input_style.clone()) }
+            text(style = StyleRules {
+                align_self: Some(runtime_core::AlignSelf::Stretch),
+                font_size: Some(px(11.0)),
+                font_weight: Some(FontWeight::SemiBold),
+                color: Some(col(theme::TEXT_MUTED)),
+                ..Default::default()
+            }) { "ABOUT ME".to_string() }
+            { crate::controls::text_field(about, "A line about yourself", input_style.clone()) }
+            view(style = StyleRules {
+                height: Some(px(34.0)),
+                padding_left: Some(px(16.0)),
+                padding_right: Some(px(16.0)),
+                background: Some(col(theme::ACCENT)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                flex_shrink: Some(grow(0.0)),
+                ..rounded(8.0)
+            }, test_id = "profile-save") {
+                text(style = StyleRules {
+                    font_size: Some(px(13.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    color: Some(col(theme::TEXT_ON_ACCENT)),
+                    ..Default::default()
+                }) { move || if profile_busy.get() { "Saving…".to_string() } else { "Save Profile".to_string() } }
+            }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    do_save();
+                }
+                TouchResponse::CONSUMED
+            })
+            if !profile_note.get().is_empty() {
+                text(style = StyleRules {
+                    font_size: Some(px(12.0)),
+                    color: Some(col(theme::TEXT_MUTED)),
+                    ..Default::default()
+                }) { move || profile_note.get().clone() }
             }
         }
     }
