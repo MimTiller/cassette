@@ -486,6 +486,18 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             // "just joined" / "just left" transition could use them), but the
             // re-fetch is the single source of truth, so it's the whole of the
             // handling here. `frame` is a `&WsServerMsg`, so copy the id out.
+            // Recording the roster also names newcomers in the typing row.
+            if let Some(discord_server::server_settings::WsServerMsg::MemberChanged { server_id, .. }) = frame {
+                if active_live_server.get() == Some(*server_id) {
+                    let sid = *server_id;
+                    runtime_core::driver::spawn_async(async move {
+                        if let Ok(members) = crate::moderation::list_members(sid).await {
+                            crate::mentions::members_loaded(sid, &members);
+                            live_members.set(members);
+                        }
+                    });
+                }
+            }
             // A server's named roles changed: refetch them (name colours,
             // role mentions) when it is the one on screen.
             if let Some(discord_server::server_settings::WsServerMsg::RolesChanged { server_id }) = frame {
