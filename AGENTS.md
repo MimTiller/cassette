@@ -12,7 +12,8 @@ Run these from the repo root. All must pass, with no new warnings:
 (cd discord-clone && cargo check && cargo test)
 ```
 
-For a UI change, also look at it in a browser (see "Testing in a browser").
+For a UI change, also look at it in a browser (see "Testing in a browser"),
+driving it through the idealyst MCP server (see "Driving the app").
 
 ## Rules
 
@@ -110,3 +111,30 @@ idealyst dev --web --local --port 8086 discord-clone
 - **Stopping a server:** by PID only. Never use `pkill -f` or `pgrep -f`
   with a pattern inside an `ssh '…'` command; it matches the shell running
   it and kills that shell.
+
+## Driving the app
+
+Use the idealyst MCP server to drive and inspect the running app. It's what
+the framework provides for development, and it sees the app's own element
+tree.
+
+- **Start it:** `idealyst mcp --project-root <repo>/discord-clone`. Most
+  agent tools take this as an MCP server entry.
+- **Find the app:** with a dev server running and its page open in a
+  browser, the app registers with it. `list_apps` / `wait_for_app` list one
+  app per dev server, with its `project_root`; pick yours by that. Keep one
+  tab per dev server, since several tabs don't show up as separate apps; for
+  a second user, script that side (or run a second dev server).
+- **Drive it:** `find_element` / `find_all_elements` (by `test_id`, label or
+  kind), `click` or `tap_native`, `type_text`, `get_state`, `get_snapshot`,
+  `screenshot`, `get_logs`, `read_signal`, and `call_function` for
+  `#[robot_fn]` hooks such as `avatar.upload`.
+- **`test_id`s live in the app's tree, not the web page's DOM.** Look them
+  up through MCP. Its results say whether each match is `visible` and
+  `in_viewport`; text and position guesses in the DOM can hit hidden copies
+  of a control.
+- **Look things up:** for idealyst questions, use `search`, `read_guide`,
+  `describe_primitive`, `describe_component` and `list_recipes`.
+- **Fall back to scripts only for gaps.** Drive Chrome over the DevTools
+  protocol only for what MCP can't do, and say which gap you hit.
+
