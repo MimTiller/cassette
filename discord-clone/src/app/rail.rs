@@ -300,6 +300,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                                 if let Ok(members) =
                                     crate::moderation::list_members(sid).await
                                 {
+                                    crate::mentions::members_loaded(sid, &members);
                                     live_mbrs.set(members);
                                 }
                                 if let Ok(counts) =

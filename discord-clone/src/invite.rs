@@ -49,6 +49,14 @@ pub async fn create_invite(
         .map_err(|e| crate::errors::friendly(&e))
 }
 
+/// The invite code in what someone pasted: a bare code, or a link ending in
+/// one (`https://…/qcyftbyg`, `discord.gg/qcyftbyg/`, with or without a query).
+pub fn code_from_input(input: &str) -> String {
+    let s = input.trim();
+    let s = s.split(['?', '#']).next().unwrap_or(s).trim_end_matches('/');
+    s.rsplit('/').next().unwrap_or(s).trim().to_string()
+}
+
 /// Join a server by redeeming an invite `code` (the code alone names the
 /// server, like a real Discord invite). Same thin-RPC-stub shape as
 /// `create_invite`: the backend rejects an unknown/expired/fully-spent code
@@ -68,6 +76,14 @@ pub async fn redeem_invite(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pasted_links_give_their_code() {
+        assert_eq!(code_from_input("  qcyftbyg "), "qcyftbyg");
+        assert_eq!(code_from_input("discord.gg/qcyftbyg"), "qcyftbyg");
+        assert_eq!(code_from_input("https://chat.example.com/invite/qcyftbyg/?ref=x"), "qcyftbyg");
+        assert_eq!(code_from_input(""), "");
+    }
 
     #[test]
     fn generated_codes_are_valid_and_stable() {

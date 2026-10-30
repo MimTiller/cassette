@@ -93,8 +93,9 @@ pub fn open_user(user_id: i64, x: f32, y: f32) {
 }
 
 /// The active server's members. Switching servers drops the old server's
-/// roles and permissions until [`load_roles`] fetches the new ones.
-fn set_members(server_id: Option<i64>, members: &[discord_server::server_settings::MemberInfo]) {
+/// roles and permissions until [`load_roles`] fetches the new ones; returns
+/// whether it switched.
+fn set_members(server_id: Option<i64>, members: &[discord_server::server_settings::MemberInfo]) -> bool {
     let switched = with(|c| {
         let switched = c.server_id != server_id;
         if Some(c.roles.server_id) != server_id {
@@ -112,15 +113,21 @@ fn set_members(server_id: Option<i64>, members: &[discord_server::server_setting
     if switched {
         bump_perms();
     }
+    switched
 }
 
-/// A freshly fetched roster for `server_id`: record it, then redraw.
+/// A freshly fetched roster for `server_id`: record it, then redraw. The
+/// first roster for a server (entering it from the rail, creating it, a
+/// refresh) also fetches its roles and the signed-in user's permissions.
 pub fn members_loaded(server_id: i64, members: &[discord_server::server_settings::MemberInfo]) {
     for m in members {
         crate::auth::remember_display_name(&m.username, m.display_name.clone());
     }
-    set_members(Some(server_id), members);
+    let switched = set_members(Some(server_id), members);
     bump();
+    if switched {
+        load_roles(server_id);
+    }
 }
 
 /// Fetch `server_id`'s roles and the signed-in user's permissions there,

@@ -128,7 +128,7 @@ pub fn JoinServerModal(
             return;
         }
         b.set(true);
-        let code_owned = trimmed.to_string();
+        let code_owned = crate::invite::code_from_input(trimmed);
         let r2 = r;
         let e2 = e;
         let b2 = b;
@@ -222,12 +222,9 @@ pub fn JoinServerModal(
                 ui! {
                     view(style = card_style.clone()) {
                         text(style = title_style.clone()) { "Join a Server".to_string() }
-                        text_input(
-                            value = code.clone(),
-                            placeholder = "Invite code",
-                            style = input_style.clone(),
-                            test_id = "join-code-input",
-                        )
+                        // Two-way: `text_input(value = …)` alone only fills
+                        // the box, so typing never reached `code`.
+                        { crate::controls::text_field(code, "Invite code", input_style.clone()) }
                         view(style = btn_style.clone(), test_id = "join-server-join") {
                             text(style = btn_label_style.clone()) { join_label.to_string() }
                         }

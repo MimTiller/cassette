@@ -1,13 +1,13 @@
 //! `invite_link_display` — a self-contained invite-link card for the Discord
-//! clone. Shows the shareable link for a real invite code in a read-only text
+//! clone. Shows a real invite code in a read-only text
 //! field beside a `Copy` button. Pressing `Copy` sets a local `copied` boolean
 //! signal to `true`, which reactively reveals a `"Copied!"` confirmation line —
 //! the boolean exists purely for that display, with no clipboard access and no
 //! backend call.
 //!
 //! The code is a `String` prop (the `#[component]` inline-props idiom — the
-//! macro rewrites it to `Reactive<String>`); the displayed link is derived as
-//! `discord.gg/{code}`. Everything else is local: no backend call, no `Copy`
+//! macro rewrites it to `Reactive<String>`) and is shown as it is.
+//! Everything else is local: no backend call, no `Copy`
 //! persistence (the `Copied!` line is display-only).
 //!
 //! Idioms, each verified against this crate:
@@ -34,15 +34,15 @@ use runtime_core::{
 
 // Discord dark palette (kept local so the component is self-contained).
 
-/// The invite-link card. `code` is the real invite code (the redeemable
-/// handle) shown as `discord.gg/{code}` in a read-only field above a `Copy`
-/// button; pressing `Copy` reveals a `"Copied!"` confirmation. No backend call.
+/// The invite card. `code` is the real invite code (the redeemable handle),
+/// shown in a read-only field above a `Copy` button with a line saying where
+/// to paste it; pressing `Copy` reveals a `"Copied!"` confirmation.
 #[component]
 pub fn InviteLinkDisplay(code: String) -> Element {
-    // The shareable link, derived from the real code prop. Built as a signal
-    // (never written after construction) so the field reads as read-only in
-    // practice — the component's only writer is this initial value.
-    let link = signal(format!("discord.gg/{}", code.get()));
+    // What gets shared: the code itself, which Join a Server takes (it also
+    // accepts a pasted link ending in the code). Built as a signal (never
+    // written after construction) so the field reads as read-only in practice.
+    let link = signal(code.get());
     // Flipped by the Copy button for display only — no clipboard access.
     let copied = signal(false);
 
@@ -82,7 +82,12 @@ pub fn InviteLinkDisplay(code: String) -> Element {
                 font_weight: Some(FontWeight::SemiBold),
                 color: Some(col(theme::TEXT_MUTED)),
                 ..Default::default()
-            }) { "INVITE LINK".to_string() }
+            }) { "INVITE CODE".to_string() }
+            text(style = StyleRules {
+                font_size: Some(px(13.0)),
+                color: Some(col(theme::TEXT_MUTED)),
+                ..Default::default()
+            }) { "Send this code to a friend. They paste it into Add a Server → Join a Server.".to_string() }
             // The read-only field: a controlled `text_input` bound to `link`.
             // `link` is never written by this component, so the value shown is
             // always the real invite link.

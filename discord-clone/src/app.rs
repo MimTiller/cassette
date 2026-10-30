@@ -864,7 +864,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 crate::mentions::members_loaded(sid, &members);
                 lmbrs.set(members);
             }
-            crate::mentions::load_roles(sid);
             if let Ok(counts) = crate::servers::unread_counts(sid).await {
                 let buf = lunread.clone();
                 buf.borrow_mut()
