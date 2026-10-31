@@ -64,15 +64,11 @@ pub fn JoinServerModal(
 
     // Shared card/field/button styles (one static pass).
     let card_style = StyleRules {
-        width: Some(px(360.0)),
-        position: Some(runtime_core::Position::Relative),
         padding_top: Some(px(20.0)),
         padding_bottom: Some(px(20.0)),
         padding_left: Some(px(20.0)),
         padding_right: Some(px(20.0)),
-        background: Some(col(theme::BG_SECONDARY)),
-        flex_direction: Some(FlexDirection::Column),
-        ..rounded(12.0)
+        ..crate::style_helpers::modal_card(360.0)
     };
     let title_style = StyleRules {
         font_size: Some(px(18.0)),
@@ -183,7 +179,12 @@ pub fn JoinServerModal(
                     view(style = card_style.clone()) {
                         text(style = title_style.clone()) { "Join a Server".to_string() }
                         text(style = ok_style.clone()) { role }
-                        { done_btn }
+                        view(style = StyleRules {
+                            margin_top: Some(px(8.0)),
+                            ..crate::style_helpers::footer_strip()
+                        }) {
+                            { done_btn }
+                        }
                         { close_c }
                     }
                 }
@@ -207,7 +208,12 @@ pub fn JoinServerModal(
                     view(style = card_style.clone()) {
                         text(style = title_style.clone()) { "Join a Server".to_string() }
                         text(style = err_style.clone()) { err.clone() }
-                        { retry_btn }
+                        view(style = StyleRules {
+                            margin_top: Some(px(8.0)),
+                            ..crate::style_helpers::footer_strip()
+                        }) {
+                            { retry_btn }
+                        }
                         { close_c }
                     }
                 }
@@ -226,15 +232,20 @@ pub fn JoinServerModal(
                         // the box, so typing never reached `code`.
                         { crate::controls::text_field(code, "Invite code", input_style.clone()) }
                         { close_c }
-                        view(style = btn_style.clone(), test_id = "join-server-join") {
-                            text(style = btn_label_style.clone()) { join_label.to_string() }
-                        }
-                        .on_touch(move |ev| {
-                            if ev.phase == TouchPhase::Ended {
-                                on_join();
+                        view(style = StyleRules {
+                            margin_top: Some(px(8.0)),
+                            ..crate::style_helpers::footer_strip()
+                        }) {
+                            view(style = btn_style.clone(), test_id = "join-server-join") {
+                                text(style = btn_label_style.clone()) { join_label.to_string() }
                             }
-                            TouchResponse::CONSUMED
-                        })
+                            .on_touch(move |ev| {
+                                if ev.phase == TouchPhase::Ended {
+                                    on_join();
+                                }
+                                TouchResponse::CONSUMED
+                            })
+                        }
                     }
                 }
             }

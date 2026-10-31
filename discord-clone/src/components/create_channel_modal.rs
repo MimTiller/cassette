@@ -67,15 +67,11 @@ pub fn CreateChannelModal(
 
     // Shared card/field/button styles (one static pass).
     let card_style = StyleRules {
-        position: Some(runtime_core::Position::Relative),
-        width: Some(px(340.0)),
         padding_top: Some(px(20.0)),
         padding_bottom: Some(px(20.0)),
         padding_left: Some(px(20.0)),
         padding_right: Some(px(20.0)),
-        background: Some(col(theme::BG_SECONDARY)),
-        flex_direction: Some(FlexDirection::Column),
-        ..rounded(12.0)
+        ..crate::style_helpers::modal_card(340.0)
     };
     let title_style = StyleRules {
         font_size: Some(px(18.0)),
@@ -277,7 +273,12 @@ pub fn CreateChannelModal(
                         { kind_row() }
                         { private_row() }
                         text(style = err_style.clone()) { err.clone() }
-                        { create_btn }
+                        view(style = StyleRules {
+                            margin_top: Some(px(8.0)),
+                            ..crate::style_helpers::footer_strip()
+                        }) {
+                            { create_btn }
+                        }
                         { close_btn }
                     }
                 }
@@ -297,7 +298,12 @@ pub fn CreateChannelModal(
                         }
                         { kind_row() }
                         { private_row() }
-                        { create_btn }
+                        view(style = StyleRules {
+                            margin_top: Some(px(8.0)),
+                            ..crate::style_helpers::footer_strip()
+                        }) {
+                            { create_btn }
+                        }
                         { close_btn }
                     }
                 }

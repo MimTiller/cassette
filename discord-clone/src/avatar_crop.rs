@@ -444,11 +444,8 @@ pub(crate) fn dialog() -> Element {
                         move || error.get()
                     }
                     view(style = StyleRules {
-                        flex_direction: Some(FlexDirection::Row),
-                        align_self: Some(runtime_core::AlignSelf::Stretch),
-                        justify_content: Some(JustifyContent::FlexEnd),
-                        gap: Some(px(8.0)),
-                        ..Default::default()
+                        margin_top: Some(px(8.0)),
+                        ..crate::style_helpers::footer_strip()
                     }) {
                         { button_view("Cancel", ButtonKind::Secondary, close) }
                         { button_view("Apply", ButtonKind::Primary, apply) }
@@ -459,10 +456,8 @@ pub(crate) fn dialog() -> Element {
     );
     let card = ui! {
         view(style = StyleRules {
-            width: Some(px(crate::app::mobile::fit_width(360.0))),
-            background: Some(col(theme::BG_PRIMARY)),
             overflow: Some(Overflow::Hidden),
-            ..rounded(8.0)
+            ..crate::style_helpers::modal_card(crate::app::mobile::fit_width(360.0))
         }) {
             { body }
         }

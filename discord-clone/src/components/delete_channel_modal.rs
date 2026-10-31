@@ -61,16 +61,12 @@ pub fn DeleteChannelModal(
 
     // Shared card/button styles (one static pass).
     let card_style = StyleRules {
-        width: Some(px(340.0)),
-        position: Some(runtime_core::Position::Relative),
         padding_top: Some(px(20.0)),
         padding_bottom: Some(px(20.0)),
         padding_left: Some(px(20.0)),
         padding_right: Some(px(20.0)),
-        background: Some(col(theme::BG_SECONDARY)),
-        flex_direction: Some(FlexDirection::Column),
         align_items: Some(AlignItems::Center),
-        ..rounded(12.0)
+        ..crate::style_helpers::modal_card(340.0)
     };
     let title_style = StyleRules {
         font_size: Some(px(18.0)),
@@ -94,11 +90,8 @@ pub fn DeleteChannelModal(
         ..Default::default()
     };
     let btn_row_style = StyleRules {
-        margin_top: Some(px(20.0)),
-        width: Some(px(100.0)), // fills the card width
-        flex_direction: Some(FlexDirection::Row),
-        gap: Some(px(10.0)),
-        ..Default::default()
+        margin_top: Some(px(8.0)),
+        ..crate::style_helpers::footer_strip()
     };
     let cancel_btn_style = StyleRules {
         height: Some(px(40.0)),

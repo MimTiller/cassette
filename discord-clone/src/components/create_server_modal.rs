@@ -57,15 +57,11 @@ pub fn create_server_modal(
 
     // Shared card/field/button styles (one static pass).
     let card_style = StyleRules {
-        width: Some(px(360.0)),
-        position: Some(runtime_core::Position::Relative),
         padding_top: Some(px(20.0)),
         padding_bottom: Some(px(20.0)),
         padding_left: Some(px(20.0)),
         padding_right: Some(px(20.0)),
-        background: Some(col(theme::BG_SECONDARY)),
-        flex_direction: Some(FlexDirection::Column),
-        ..rounded(12.0)
+        ..crate::style_helpers::modal_card(360.0)
     };
     let title_style = StyleRules {
         font_size: Some(px(18.0)),
@@ -84,10 +80,8 @@ pub fn create_server_modal(
         ..crate::style_helpers::text_field_style()
     };
     let btn_row_style = StyleRules {
-        margin_top: Some(px(14.0)),
-        flex_direction: Some(FlexDirection::Row),
-        gap: Some(px(8.0)),
-        ..Default::default()
+        margin_top: Some(px(8.0)),
+        ..crate::style_helpers::footer_strip()
     };
     let create_btn_style = StyleRules {
         height: Some(px(40.0)),
@@ -228,8 +222,8 @@ pub fn create_server_modal(
                 text(style = err_style.clone()) { move || e.get().clone() }
             }
             view(style = btn_row_style.clone()) {
-                { create_btn }
                 { cancel_btn }
+                { create_btn }
             }
             { join_btn }
             { close_btn }

@@ -183,12 +183,10 @@ pub fn InviteModal(
                     }
                 }
             } else {
-                // Create arm: expiry selector + Create button. Both are built
-                // fresh inside this arm (the `switch` render is `Fn` and re-runs,
-                // so a pre-built `Element` from the outer scope would be moved
-                // on the first rebuild — the `Fn`-rebuild idiom the doc header
-                // names). `on_create` is `Copy` (its captures are all `Copy`
-                // signals), so the arm closure captures copies and stays `Fn`.
+                // Create arm: expiry selector; the Create button itself lives
+                // on the footer strip below (built fresh here). `on_create` is
+                // `Copy` (its captures are all `Copy` signals), so the arm
+                // closure captures copies and stays `Fn`.
                 let on_create = on_create;
                 let expiry_sel = ui! {
                     InviteExpirySelector(value = expiry)
@@ -198,21 +196,28 @@ pub fn InviteModal(
                 };
                 ui! {
                     view(style = StyleRules {
-                        padding_top: Some(px(16.0)),
-                        padding_bottom: Some(px(16.0)),
-                        padding_left: Some(px(16.0)),
-                        padding_right: Some(px(16.0)),
+                        flex_direction: Some(FlexDirection::Column),
                         ..Default::default()
                     }) {
                         { expiry_sel }
-                        { create_btn }
+                        view(style = StyleRules {
+                            margin_top: Some(px(8.0)),
+                            ..crate::style_helpers::footer_strip()
+                        }) {
+                            { create_btn }
+                        }
                     }
                 }
             }
         },
     );
 
-    // --- Full-screen wrapper (collapses to zero when `open` is false) -------
+    // --- Card over a dim scrim (the shared modal shell) ----------------------
+    // When `open` is false the scrim collapses to zero size; when true it
+    // fills the window, dims with OVERLAY and centers the card. The card is
+    // the shared modal surface (`style_helpers::modal_card`: BG_FLOATING,
+    // radius 8, drop shadow) with a header row (title + close), a body, and
+    // the Create button on a footer strip.
     let open_chk = open;
     let wrap_style = move || StyleRules {
         position: Some(Position::Absolute),
@@ -220,20 +225,21 @@ pub fn InviteModal(
         top: Some(px(0.0)),
         width: Some(if open_chk.get() { pct(100.0) } else { px(0.0) }),
         height: Some(if open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col(theme::BG_PRIMARY)),
-        flex_direction: Some(FlexDirection::Column),
+        background: Some(col(theme::OVERLAY)),
+        align_items: Some(AlignItems::Center),
+        justify_content: Some(JustifyContent::Center),
         overflow: Some(Overflow::Hidden),
         ..Default::default()
     };
 
     ui! {
         view(style = wrap_style) {
-            { header }
             view(style = StyleRules {
-                flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
+                max_height: Some(pct(85.0)),
                 overflow: Some(Overflow::Hidden),
-                ..Default::default()
+                ..crate::style_helpers::modal_card(340.0)
             }) {
+                { header }
                 body
             }
         }

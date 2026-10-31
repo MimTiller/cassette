@@ -60,15 +60,11 @@ pub fn RenameChannelModal(
 
     // Shared card/field/button styles (one static pass).
     let card_style = StyleRules {
-        width: Some(px(340.0)),
-        position: Some(runtime_core::Position::Relative),
         padding_top: Some(px(20.0)),
         padding_bottom: Some(px(20.0)),
         padding_left: Some(px(20.0)),
         padding_right: Some(px(20.0)),
-        background: Some(col(theme::BG_SECONDARY)),
-        flex_direction: Some(FlexDirection::Column),
-        ..rounded(12.0)
+        ..crate::style_helpers::modal_card(340.0)
     };
     let title_style = StyleRules {
         font_size: Some(px(18.0)),
@@ -88,7 +84,6 @@ pub fn RenameChannelModal(
     };
     let rename_btn_style = StyleRules {
         height: Some(px(40.0)),
-        margin_top: Some(px(16.0)),
         background: Some(col(theme::ACCENT)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
@@ -192,7 +187,12 @@ pub fn RenameChannelModal(
                             test_id = "rename-channel-name-input",
                         )
                         text(style = err_style.clone()) { err.clone() }
-                        { rename_btn }
+                        view(style = StyleRules {
+                            margin_top: Some(px(8.0)),
+                            ..crate::style_helpers::footer_strip()
+                        }) {
+                            { rename_btn }
+                        }
                         { close_c }
                     }
                 }
@@ -205,7 +205,12 @@ pub fn RenameChannelModal(
                         view {
                             text_input(value = name.clone(), on_change = on_name_change.clone(), placeholder = "Channel name", style = input_style.clone(), test_id = "rename-channel-name-input")
                         }
-                        { rename_btn }
+                        view(style = StyleRules {
+                            margin_top: Some(px(8.0)),
+                            ..crate::style_helpers::footer_strip()
+                        }) {
+                            { rename_btn }
+                        }
                         { close_c }
                     }
                 }
