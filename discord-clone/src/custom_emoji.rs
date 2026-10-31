@@ -214,68 +214,94 @@ pub(crate) fn emoji_view(id: i64, name: &str, size: f32) -> Element {
     }
 }
 
-/// The picker's row of this server's emoji; a tap picks the token.
-pub(crate) fn picker_row(on_pick: Rc<dyn Fn(String)>) -> Element {
-    let list = list();
-    if list.is_empty() {
-        return ui! { view {} };
-    }
-    let cells: Vec<Element> = list
-        .iter()
-        .map(|e| {
-            let tok = token(e);
-            let pick = on_pick.clone();
-            ui! {
-                view(style = StyleRules {
-                    width: Some(px(36.0)),
-                    height: Some(px(36.0)),
-                    align_items: Some(AlignItems::Center),
-                    justify_content: Some(runtime_core::JustifyContent::Center),
-                    ..rounded(6.0)
-                }) {
-                    image(
-                        src = crate::auth::media_url(e.image.clone()),
-                        alt = format!(":{}:", e.name),
-                        style = StyleRules {
-                            width: Some(px(28.0)),
-                            height: Some(px(28.0)),
-                            object_fit: Some(ObjectFit::Contain),
-                            ..Default::default()
-                        },
-                    )
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        pick(tok.clone());
-                    }
-                    TouchResponse::CONSUMED
-                })
-            }
-        })
-        .collect();
+/// One picker cell for a server emoji: the image in a 40px tile (the picker
+/// grid's cell size, on its 4px gaps) so the section sits on the same grid as
+/// the unicode emoji beside it. `pick` fires with the emoji's token on tap.
+// idealyst-lint-disable-next-line prefer-component -- one cell built per
+// emoji inside the reactive picker_row; props are plain values there.
+pub(crate) fn picker_cell(e: ServerEmoji, pick: Rc<dyn Fn(String)>) -> Element {
     ui! {
         view(style = StyleRules {
-            flex_direction: Some(FlexDirection::Column),
-            margin_left: Some(px(12.0)),
-            margin_right: Some(px(12.0)),
-            margin_bottom: Some(px(8.0)),
-            max_height: Some(px(120.0)),
-            overflow: Some(runtime_core::Overflow::Hidden),
-            ..Default::default()
+            width: Some(px(40.0)),
+            height: Some(px(40.0)),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(runtime_core::JustifyContent::Center),
+            ..rounded(8.0)
         }) {
-            text(style = StyleRules {
-                font_size: Some(px(11.0)),
-                font_weight: Some(FontWeight::Bold),
-                color: Some(col(theme::TEXT_MUTED)),
-                ..Default::default()
-            }) { "THIS SERVER".to_string() }
-            view(style = StyleRules {
-                flex_direction: Some(FlexDirection::Row),
-                flex_wrap: Some(FlexWrap::Wrap),
-                ..Default::default()
-            }) { cells }
+            image(
+                src = crate::auth::media_url(e.image.clone()),
+                alt = format!(":{}:", e.name),
+                style = StyleRules {
+                    width: Some(px(22.0)),
+                    height: Some(px(22.0)),
+                    object_fit: Some(ObjectFit::Contain),
+                    align_self: Some(AlignSelf::Center),
+                    ..Default::default()
+                },
+            )
         }
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                pick(token(&e).clone());
+            }
+            TouchResponse::CONSUMED
+        })
     }
+}
+
+/// The picker's row of this server's emoji; a tap picks the token. Keyed on
+/// the names revision: the picker card is built once, hidden, before the
+/// active server's emoji load lands, so a build-time snapshot would freeze
+/// an empty section.
+pub(crate) fn picker_row(on_pick: Rc<dyn Fn(String)>) -> Element {
+    let pick = on_pick.clone();
+    // idealyst-lint-disable-next-line prefer-ui-control-flow -- the key is a
+    // plain fn (no signal handle to fold into a ui! match); this arms the
+    // section on the names revision bumped by custom_emoji::load.
+    switch(
+        move || crate::mentions::revision(),
+        move |_: &u32| {
+            let emojis = list();
+            if emojis.is_empty() {
+                return ui! { view {} };
+            }
+            // A local so the inner map closure's Rc::clone doesn't move the
+            // arm closure's own capture (the arm is an Fn).
+            let pick = Rc::clone(&pick);
+            let cells: Vec<Element> = emojis
+                .iter()
+                .map(move |e| picker_cell(e.clone(), pick.clone()))
+                .collect();
+            ui! {
+                view(style = StyleRules {
+                    flex_direction: Some(FlexDirection::Column),
+                    margin_left: Some(px(4.0)),
+                    margin_bottom: Some(px(8.0)),
+                    gap: Some(px(6.0)),
+                    ..Default::default()
+                }) {
+                    text(style = StyleRules {
+                        font_size: Some(px(11.0)),
+                        font_weight: Some(FontWeight::Bold),
+                        color: Some(col(theme::TEXT_MUTED)),
+                        ..Default::default()
+                    }) { "THIS SERVER".to_string() }
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Row),
+                        flex_wrap: Some(FlexWrap::Wrap),
+                        gap: Some(px(4.0)),
+                        // Indent past the picker's 56px category rail (plus its
+                        // own 4px gutters) so the custom cells sit on the same
+                        // column grid as the unicode emoji beside them.
+                        padding_left: Some(px(64.0)),
+                        max_height: Some(px(92.0)),
+                        overflow: Some(runtime_core::Overflow::Hidden),
+                        ..Default::default()
+                    }) { cells }
+                }
+            }
+        },
+    )
 }
 
 #[cfg(test)]
