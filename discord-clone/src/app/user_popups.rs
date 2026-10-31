@@ -185,10 +185,9 @@ fn profile_card(
         left: Some(px(left)),
         top: Some(px(top)),
         width: Some(px(CARD_W)),
-        flex_direction: Some(FlexDirection::Column),
         background: Some(col(theme::BG_USER_PANEL)),
         overflow: Some(Overflow::Hidden),
-        ..rounded(8.0)
+        ..crate::style_helpers::popover_panel()
     };
     let Some(p) = profile else {
         return ui! {
@@ -563,11 +562,9 @@ fn user_menu(
             left: Some(px(left)),
             top: Some(px(top)),
             width: Some(px(MENU_W)),
-            flex_direction: Some(FlexDirection::Column),
             padding_top: Some(px(6.0)),
             padding_bottom: Some(px(6.0)),
-            background: Some(col(theme::BG_FLOATING)),
-            ..rounded(6.0)
+            ..crate::style_helpers::popover_panel()
         }) { rows }
         .on_touch(|_| TouchResponse::CONSUMED)
     }

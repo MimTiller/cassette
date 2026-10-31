@@ -1055,21 +1055,11 @@ pub(super) fn message_overflow_menu(
                     right: Some(px(12.0)),
                     width: Some(px(190.0)),
                     z_index: Some(super::popups::POPUP_Z),
-                    flex_direction: Some(FlexDirection::Column),
                     // Clip, don't scroll: this is a short fixed list (3–5 rows)
                     // that must never scroll; `hidden` keeps the surface from
                     // showing a scrollbar if a row ever wraps past the box.
                     overflow: Some(Overflow::Hidden),
-                    background: Some(col(theme::BG_FLOATING)),
-                    border_top_width: Some(border_width(1.0)),
-                    border_right_width: Some(border_width(1.0)),
-                    border_bottom_width: Some(border_width(1.0)),
-                    border_left_width: Some(border_width(1.0)),
-                    border_top_color: Some(col(BORDER)),
-                    border_right_color: Some(col(BORDER)),
-                    border_bottom_color: Some(col(BORDER)),
-                    border_left_color: Some(col(BORDER)),
-                    ..rounded(8.0)
+                    ..crate::style_helpers::popover_panel()
                 }) {
                     { menu_row("Copy text", on_copy.clone(), open) }
                     {

@@ -398,14 +398,12 @@ fn status_menu_view(
                     right: Some(px(8.0)),
                     bottom: Some(px(56.0)),
                     z_index: Some(super::popups::POPUP_Z),
-                    flex_direction: Some(FlexDirection::Column),
                     gap: Some(px(2.0)),
                     padding_top: Some(px(6.0)),
                     padding_bottom: Some(px(6.0)),
                     padding_left: Some(px(6.0)),
                     padding_right: Some(px(6.0)),
-                    background: Some(col(theme::BG_FLOATING)),
-                    ..rounded(8.0)
+                    ..crate::style_helpers::popover_panel()
                 }, test_id = "status-menu") {
                     { row(Status::Online) }
                     { row(Status::Idle) }

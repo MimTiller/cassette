@@ -17,7 +17,7 @@ use discord_server::gifs::{Gif, GifPage, GifSearchInput};
 use icons_lucide::{SEARCH, VIDEO};
 use runtime_core::{
     after_ms_detached, component, icon, memo, signal, switch, ui, AlignItems, Element,
-    FlexDirection, JustifyContent, ObjectFit, Overflow, Shadow, Signal, StyleRules,
+    FlexDirection, JustifyContent, ObjectFit, Overflow, Signal, StyleRules,
     TouchPhase, TouchResponse, Tokenized,
 };
 use std::rc::Rc;
@@ -282,19 +282,8 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
         view(style = StyleRules {
             width: Some(px(CARD_W)),
             height: Some(px(CARD_H)),
-            flex_direction: Some(FlexDirection::Column),
-            background: Some(col(theme::BG_SECONDARY)),
-            border_top_width: Some(Tokenized::Literal(1.0)),
-            border_right_width: Some(Tokenized::Literal(1.0)),
-            border_bottom_width: Some(Tokenized::Literal(1.0)),
-            border_left_width: Some(Tokenized::Literal(1.0)),
-            border_top_color: Some(col(theme::BG_TERTIARY)),
-            border_right_color: Some(col(theme::BG_TERTIARY)),
-            border_bottom_color: Some(col(theme::BG_TERTIARY)),
-            border_left_color: Some(col(theme::BG_TERTIARY)),
-            shadow: Some(Shadow { x: 0.0, y: 8.0, blur: 24.0, color: col(theme::SHADOW) }),
             overflow: Some(Overflow::Hidden),
-            ..rounded(10.0)
+            ..crate::style_helpers::popover_panel()
         }, test_id = "gif-picker") {
             // Search field (the emoji picker's shape).
             view(style = StyleRules {

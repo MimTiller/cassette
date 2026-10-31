@@ -80,20 +80,12 @@ pub(super) fn action_menu(
                     backdrop = BackdropMode::None,
                 ) {
                     view(style = StyleRules {
-                        flex_direction: Some(FlexDirection::Column),
                         width: Some(px(150.0)),
                         gap: Some(px(2.0)),
-                        background: Some(col(theme::BG_FLOATING)),
-                        border_top_width: Some(border_width(1.0)),
-                        border_right_width: Some(border_width(1.0)),
-                        border_bottom_width: Some(border_width(1.0)),
-                        border_left_width: Some(border_width(1.0)),
-                        border_top_color: Some(col(BORDER)),
-                        border_right_color: Some(col(BORDER)),
-                        border_bottom_color: Some(col(BORDER)),
-                        border_left_color: Some(col(BORDER)),
+                        padding_left: Some(px(8.0)),
+                        padding_right: Some(px(8.0)),
                         overflow: Some(Overflow::Hidden),
-                        ..rounded(8.0)
+                        ..crate::style_helpers::popover_panel()
                     }) {
                         for (label, red, on) in rows.into_iter() {
                             view(style = StyleRules {

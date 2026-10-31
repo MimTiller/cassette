@@ -987,11 +987,9 @@ fn server_dropdown(
                     top: Some(px(50.0)),
                     width: Some(px(220.0)),
                     z_index: Some(super::popups::POPUP_Z),
-                    flex_direction: Some(FlexDirection::Column),
                     padding_top: Some(px(6.0)),
                     padding_bottom: Some(px(6.0)),
-                    background: Some(col(theme::BG_FLOATING)),
-                    ..rounded(6.0)
+                    ..crate::style_helpers::popover_panel()
                 }) { rows }
                 .on_touch(|_| TouchResponse::CONSUMED)
             }
