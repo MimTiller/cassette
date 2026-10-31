@@ -16,7 +16,7 @@ pub fn button_view(label: &str, kind: ButtonKind, on_press: impl Fn() + 'static)
     let label = label.to_string();
     ui! {
         view(style = crate::styles::ButtonBox().kind(kind)) {
-            text(style = crate::styles::ButtonLabel()) { label }
+            text(style = crate::styles::ButtonLabel().kind(button_label_kind(kind))) { label }
         }
         .on_touch(move |ev| {
             if ev.phase == TouchPhase::Ended {
@@ -24,6 +24,40 @@ pub fn button_view(label: &str, kind: ButtonKind, on_press: impl Fn() + 'static)
             }
             TouchResponse::CONSUMED
         })
+    }
+}
+
+/// The same button with a label that reads its state on every render — for
+/// buttons whose text flips while the action is in flight ("Saving…" vs
+/// "Save") — and a `test_id` for the Robot tools.
+pub fn button_view_live(
+    test_id: &'static str,
+    kind: ButtonKind,
+    label: impl Fn() -> String + 'static,
+    on_press: impl Fn() + 'static,
+) -> Element {
+    ui! {
+        view(style = crate::styles::ButtonBox().kind(kind), test_id = test_id) {
+            text(style = crate::styles::ButtonLabel().kind(button_label_kind(kind))) { move || label() }
+        }
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                on_press();
+            }
+            TouchResponse::CONSUMED
+        })
+    }
+}
+
+/// The `ButtonLabel` colour for a box kind, so the text always matches its
+/// pill (the framework's `text` nodes do not inherit their parent's colour).
+pub fn button_label_kind(kind: ButtonKind) -> crate::styles::ButtonLabelKind {
+    match kind {
+        ButtonKind::Primary => crate::styles::ButtonLabelKind::Primary,
+        ButtonKind::Secondary => crate::styles::ButtonLabelKind::Secondary,
+        ButtonKind::Destructive => crate::styles::ButtonLabelKind::Destructive,
+        ButtonKind::DestructiveConfirm => crate::styles::ButtonLabelKind::DestructiveConfirm,
+        ButtonKind::Link => crate::styles::ButtonLabelKind::Link,
     }
 }
 

@@ -28,6 +28,7 @@
 //!   `ServerSettingsPanel` triple, minus the paste input).
 
 use crate::theme;
+use crate::controls::{ButtonKind};
 use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component,
@@ -498,68 +499,31 @@ pub fn ProfileSettings() -> Element {
             })
             view(style = StyleRules {
                 flex_direction: Some(FlexDirection::Row),
-                gap: Some(px(8.0)),
+                gap: Some(px(12.0)),
                 ..Default::default()
             }) {
             // The "Change avatar" pill: tap it, the platform's native file-open
             // dialog appears, and the chosen image is uploaded on the fly.
             // The label tells the user which phase the upload is in
             // (reactive closures re-run when `av_busy` / `av_picking` flip).
-            view(style = StyleRules {
-                height: Some(px(34.0)),
-                padding_left: Some(px(16.0)),
-                padding_right: Some(px(16.0)),
-                background: Some(col(theme::SUCCESS)),
-                align_items: Some(AlignItems::Center),
-                justify_content: Some(JustifyContent::Center),
-                flex_shrink: Some(grow(0.0)),
-                ..rounded(8.0)
-            }, test_id = "profile-change-avatar") {
-                text(style = StyleRules {
-                    font_size: Some(px(13.0)),
-                    font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col(theme::TEXT_STRONG)),
-                    ..Default::default()
-                }) {
-                    move ||
-                        if av_picking.get() {
-                            "Choose a file…".to_string()
-                        } else if av_busy.get() {
-                            "Saving…".to_string()
-                        } else {
-                            "Change avatar".to_string()
-                        }
-                }
-            }
-            .on_touch(move |ev| {
-                if ev.phase == TouchPhase::Ended {
-                    do_change();
-                }
-                TouchResponse::CONSUMED
-            })
-            view(style = StyleRules {
-                height: Some(px(34.0)),
-                padding_left: Some(px(16.0)),
-                padding_right: Some(px(16.0)),
-                background: Some(col(theme::BUTTON_SECONDARY)),
-                align_items: Some(AlignItems::Center),
-                justify_content: Some(JustifyContent::Center),
-                flex_shrink: Some(grow(0.0)),
-                ..rounded(8.0)
-            }, test_id = "profile-remove-avatar") {
-                text(style = StyleRules {
-                    font_size: Some(px(13.0)),
-                    font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col(theme::TEXT_STRONG)),
-                    ..Default::default()
-                }) { move || if av_busy.get() { "Removing…".to_string() } else { "Remove".to_string() } }
-            }
-            .on_touch(move |ev| {
-                if ev.phase == TouchPhase::Ended {
-                    do_remove();
-                }
-                TouchResponse::CONSUMED
-            })
+            { let change_avatar_btn = crate::controls::button_view_live("profile-change-avatar", ButtonKind::Primary, {
+                let av_picking = av_picking.clone();
+                let av_busy = av_busy.clone();
+                move ||
+                    if av_picking.get() {
+                        "Choose a file…".to_string()
+                    } else if av_busy.get() {
+                        "Saving…".to_string()
+                    } else {
+                        "Change avatar".to_string()
+                    }
+            }, do_change);
+                change_avatar_btn }
+            { let remove_avatar_btn = crate::controls::button_view_live("profile-remove-avatar", ButtonKind::Destructive, {
+                let av_busy = av_busy.clone();
+                move || if av_busy.get() { "Removing…".to_string() } else { "Remove".to_string() }
+            }, do_remove);
+                remove_avatar_btn }
             }
             text(style = StyleRules {
                 font_size: Some(px(12.0)),
@@ -589,29 +553,11 @@ pub fn ProfileSettings() -> Element {
                 ..Default::default()
             }) { "ABOUT ME".to_string() }
             { crate::controls::text_field(about, "A line about yourself", input_style.clone()) }
-            view(style = StyleRules {
-                height: Some(px(34.0)),
-                padding_left: Some(px(16.0)),
-                padding_right: Some(px(16.0)),
-                background: Some(col(theme::ACCENT)),
-                align_items: Some(AlignItems::Center),
-                justify_content: Some(JustifyContent::Center),
-                flex_shrink: Some(grow(0.0)),
-                ..rounded(8.0)
-            }, test_id = "profile-save") {
-                text(style = StyleRules {
-                    font_size: Some(px(13.0)),
-                    font_weight: Some(FontWeight::SemiBold),
-                    color: Some(col(theme::TEXT_ON_ACCENT)),
-                    ..Default::default()
-                }) { move || if profile_busy.get() { "Saving…".to_string() } else { "Save Profile".to_string() } }
-            }
-            .on_touch(move |ev| {
-                if ev.phase == TouchPhase::Ended {
-                    do_save();
-                }
-                TouchResponse::CONSUMED
-            })
+            { let save_profile_btn = crate::controls::button_view_live("profile-save", ButtonKind::Primary, {
+                let profile_busy = profile_busy.clone();
+                move || if profile_busy.get() { "Saving…".to_string() } else { "Save Profile".to_string() }
+            }, do_save);
+                save_profile_btn }
             if !profile_note.get().is_empty() {
                 text(style = StyleRules {
                     font_size: Some(px(12.0)),

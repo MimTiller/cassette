@@ -357,42 +357,15 @@ pub fn ServerSettingsPanel(
             let transfer_label = if *busy { "Transferring…" } else { "Transfer" };
             let add_label = if *busy { "Adding…" } else { "Add member" };
             let rename_btn = ui! {
-                view(style = save_btn_style.clone(), test_id = "server-rename-save") {
-                    text(style = btn_label_style.clone()) { rename_label.to_string() }
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        do_rename();
-                    }
-                    TouchResponse::CONSUMED
-                })
+                button(label = rename_label.to_string(), on_click = do_rename, test_id = "server-rename-save", style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Primary))
             };
-            let icon_btn_style = StyleRules {
-                padding_left: Some(px(14.0)),
-                padding_right: Some(px(14.0)),
-                ..save_btn_style.clone()
-            };
+            let icon_save_click = move || do_icon(true);
+            let icon_remove_click = move || do_icon(false);
             let icon_btn = ui! {
-                view(style = icon_btn_style.clone(), test_id = "server-icon-save") {
-                    text(style = btn_label_style.clone()) { icon_label.to_string() }
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        do_icon(true);
-                    }
-                    TouchResponse::CONSUMED
-                })
+                button(label = icon_label.to_string(), on_click = icon_save_click, test_id = "server-icon-save", style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Primary))
             };
             let icon_remove_btn = ui! {
-                view(style = icon_btn_style.clone(), test_id = "server-icon-remove") {
-                    text(style = btn_label_style.clone()) { "Remove".to_string() }
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        do_icon(false);
-                    }
-                    TouchResponse::CONSUMED
-                })
+                button(label = "Remove".to_string(), on_click = icon_remove_click, test_id = "server-icon-remove", style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Destructive))
             };
             // The current icon (or the server's initial), keyed on `ic` so it
             // follows the caller's seed when the panel opens and every save.
@@ -426,15 +399,7 @@ pub fn ServerSettingsPanel(
                 },
             );
             let transfer_btn = ui! {
-                view(style = transfer_btn_style.clone(), test_id = "server-transfer-confirm") {
-                    text(style = btn_label_style.clone()) { transfer_label.to_string() }
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        do_transfer();
-                    }
-                    TouchResponse::CONSUMED
-                })
+                button(label = transfer_label.to_string(), on_click = do_transfer, test_id = "server-transfer-confirm", style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Primary))
             };
             let row_col = move || StyleRules {
                 flex_direction: Some(FlexDirection::Column),
@@ -493,15 +458,7 @@ pub fn ServerSettingsPanel(
                 })
             };
             let add_btn = ui! {
-                view(style = add_btn_style.clone(), test_id = "add-member-confirm") {
-                    text(style = btn_label_style.clone()) { add_label.to_string() }
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        do_add_member();
-                    }
-                    TouchResponse::CONSUMED
-                })
+                button(label = add_label.to_string(), on_click = do_add_member, test_id = "add-member-confirm", style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Primary))
             };
             let add_row = ui! {
                 view(style = row_col()) {

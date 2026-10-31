@@ -113,14 +113,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
     let submit_style = StyleRules {
         align_self: Some(AlignSelf::Stretch),
         margin_top: Some(px(20.0)),
-        height: Some(px(40.0)),
-        background: Some(col(BUTTON)),
-        color: Some(col(TEXT)),
-        font_size: Some(px(15.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        ..rounded(8.0)
+        ..Default::default()
     };
 
     // Server calls finish in callbacks anchored to this screen, so a reply
@@ -278,16 +271,15 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
 
             let tab = |label: &str, target: Screen, test_id: &'static str| {
                 let active = target == current;
-                let signup = target == Screen::SignUp;
                 let tab_style = StyleRules {
                     flex_grow: Some(grow(1.0)),
                     padding_top: Some(px(10.0)),
                     padding_bottom: Some(px(10.0)),
                     align_items: Some(AlignItems::Center),
                     justify_content: Some(JustifyContent::Center),
-                    border_bottom_width: Some(border_width(2.0)),
+                    border_bottom_width: Some(border_width(3.0)),
                     border_bottom_color: Some(if active {
-                        col(if signup { theme::SUCCESS } else { BUTTON })
+                        col(theme::ACCENT)
                     } else {
                         col(theme::DIVIDER)
                     }),
@@ -439,7 +431,6 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
                 (Screen::Reset, false) => "Set Password",
             }
             .to_string();
-            let submit_bg = if is_signup { col(theme::SUCCESS) } else { col(BUTTON) };
             let password_label = if is_reset { "New password" } else { "Password" }.to_string();
             let submit_click = {
                 let on_submit = on_submit.clone();
@@ -518,17 +509,16 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
                     if let Some(el) = err_el {
                         el
                     }
-                    button(
-                        label = submit_label,
-                        test_id = "login-submit",
-                        on_click = submit_click,
-                        // Read live so the button greys out while `busy`.
-                        disabled = move || busy.get(),
-                        style = StyleRules {
-                            background: Some(submit_bg),
-                            ..submit_style.clone()
-                        },
-                    )
+                    view(style = submit_style.clone()) {
+                        button(
+                            label = submit_label,
+                            test_id = "login-submit",
+                            on_click = submit_click,
+                            // Read live so the button greys out while `busy`.
+                            disabled = move || busy.get(),
+                            style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Primary),
+                        )
+                    }
                     switch_link
                 }
             }

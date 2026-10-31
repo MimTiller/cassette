@@ -114,21 +114,6 @@ pub fn CreateChannelModal(
         color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
     };
-    let create_btn_style = StyleRules {
-        height: Some(px(40.0)),
-        margin_top: Some(px(16.0)),
-        background: Some(col(theme::ACCENT)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        flex_direction: Some(FlexDirection::Row),
-        ..rounded(8.0)
-    };
-    let btn_label_style = StyleRules {
-        font_size: Some(px(15.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(theme::TEXT_STRONG)),
-        ..Default::default()
-    };
     let err_style = StyleRules {
         font_size: Some(px(13.0)),
         color: Some(col(theme::DANGER)),
@@ -256,7 +241,6 @@ pub fn CreateChannelModal(
             // time (the `join_label` idiom in `join_modal.rs`): an inline
             // `if/else` returning `&str` inside `text { … }` is parsed as a
             // structural child, not text content, so it is pre-computed.
-            let create_label = if b.get() { "Creating…".to_string() } else { "Create".to_string() };
             let (title, sub, placeholder) = if *is_category {
                 ("New Category", "Group channels under a heading", "Category name")
             } else {
@@ -268,17 +252,11 @@ pub fn CreateChannelModal(
                 }
                 ui! { view(style = seg_row_style.clone()) { { text_seg } { voice_seg } } }
             };
-            let create_btn = ui! {
-                view(style = create_btn_style.clone(), test_id = "create-channel-create") {
-                    text(style = btn_label_style.clone()) { create_label }
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        on_create();
-                    }
-                    TouchResponse::CONSUMED
-                })
-            };
+            let creating = b.clone();
+            let create_btn = crate::controls::button_view_live("create-channel-create", crate::controls::ButtonKind::Primary, {
+                let creating = creating.clone();
+                move || if creating.get() { "Creating…".to_string() } else { "Create".to_string() }
+            }, on_create);
             if !err.is_empty() {
                 ui! {
                     view(style = card_style.clone()) {

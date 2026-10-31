@@ -113,25 +113,6 @@ pub fn InviteModal(
         });
     };
 
-    let create_btn_style = StyleRules {
-        height: Some(px(40.0)),
-        margin_top: Some(px(16.0)),
-        background: Some(col(theme::ACCENT)),
-        color: Some(col(theme::TEXT_STRONG)),
-        font_size: Some(px(15.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        flex_direction: Some(FlexDirection::Row),
-        ..rounded(8.0)
-    };
-    let create_btn_label = StyleRules {
-        font_size: Some(px(15.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(theme::TEXT_STRONG)),
-        ..Default::default()
-    };
-
     // --- Error line ---------------------------------------------------------
     let err_style = StyleRules {
         font_size: Some(px(13.0)),
@@ -207,24 +188,13 @@ pub fn InviteModal(
                 // so a pre-built `Element` from the outer scope would be moved
                 // on the first rebuild — the `Fn`-rebuild idiom the doc header
                 // names). `on_create` is `Copy` (its captures are all `Copy`
-                // signals), and the two styles are cloned, so the arm closure
-                // captures copies and stays `Fn`.
+                // signals), so the arm closure captures copies and stays `Fn`.
                 let on_create = on_create;
-                let style = create_btn_style.clone();
-                let lbl = create_btn_label.clone();
                 let expiry_sel = ui! {
                     InviteExpirySelector(value = expiry)
                 };
                 let create_btn = ui! {
-                    view(style = style, test_id = "invite-create") {
-                        text(style = lbl) { "Create".to_string() }
-                    }
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            on_create();
-                        }
-                        TouchResponse::CONSUMED
-                    })
+                    button(label = "Create".to_string(), on_click = on_create, test_id = "invite-create", style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Primary))
                 };
                 ui! {
                     view(style = StyleRules {
