@@ -50,7 +50,7 @@ use icons_lucide::{PLUS, USERS};
 
 use crate::avatar_chip::{avatar_chip, registered_avatar, mountable_avatar_url};
 use crate::friends::{FriendList};
-use crate::style_helpers::{borderless_input, col, px, rounded, with_radius};
+use crate::style_helpers::{col, px, rounded};
 
 // --- palette (same Discord dark palette as live_dm_view.rs) ------------------
 
@@ -471,12 +471,7 @@ pub fn friends_screen(
                                     },
                                     placeholder = "username",
                                     style = StyleRules {
-                                        height: Some(px(32.0)),
-                                        padding_left: Some(px(10.0)),
-                                        padding_right: Some(px(10.0)),
-                                        background: Some(col(theme::BG_INPUT)),
-                                        color: Some(col(theme::TEXT_STRONG)),
-                                        ..with_radius(borderless_input(), 6.0)
+                                        ..crate::style_helpers::text_field_style()
                                     },
                                     test_id = "friends-add-username",
                                 ).on_key_down(on_enter)

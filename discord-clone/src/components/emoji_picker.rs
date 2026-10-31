@@ -37,7 +37,7 @@
 //!   with no `String`-move issues.
 use crate::theme;
 use crate::emoji_data;
-use crate::style_helpers::{borderless_input, col, px, rounded, with_radius};
+use crate::style_helpers::{col, px, rounded};
 use icons_lucide::SEARCH;
 use runtime_core::{
     component, icon, memo, signal, switch, ui, AlignItems, Element, FlexDirection,
@@ -536,10 +536,7 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
                 margin_left: Some(px(12.0)),
                 gap: Some(px(8.0)),
                 height: Some(px(38.0)),
-                background: Some(col(theme::BG_PRIMARY)),
-                padding_left: Some(px(10.0)),
-                padding_right: Some(px(10.0)),
-                ..with_radius(borderless_input(), 6.0)
+                ..Default::default()
             }) {
                 icon(SEARCH).color(|| theme::live(theme::TEXT_MUTED)).size(16.0)
                 text_input(
@@ -549,9 +546,8 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
                     style = StyleRules {
                         flex_grow: Some(Tokenized::Literal(1.0)),
                         color: Some(col(theme::TEXT_STRONG)),
-                        background: Some(col(theme::BG_PRIMARY)),
                         font_size: Some(px(14.0)),
-                        ..borderless_input()
+                        ..crate::style_helpers::text_field_style()
                     },
                 )
             }

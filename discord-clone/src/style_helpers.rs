@@ -37,6 +37,16 @@ pub fn col(s: &str) -> Tokenized<Color> {
     crate::theme::color(s)
 }
 
+/// The one "this is the current one" row fill used by every nav list: the
+/// server rail's channel list, the DM list, settings section tabs, dropdown
+/// and picker current items. A selected row takes `BG_SELECTED`; a hovered
+/// row is one step lighter (`BG_HOVER`, so hover never outshines selection);
+/// anything else carries no fill. The rail's white edge pill stays Discord's
+/// own signal and is drawn by the caller.
+pub fn selected_fill(on: bool, hovered: bool) -> Tokenized<Color> {
+    col(if on { theme::BG_SELECTED } else if hovered { theme::BG_HOVER } else { "transparent" })
+}
+
 /// Border-zeroing fragment for text inputs.
 ///
 /// The browser UA stylesheet gives `<input type="text">` (and `<textarea>`) a
@@ -70,6 +80,39 @@ pub fn borderless_input() -> StyleRules {
         border_left_width: Some(Tokenized::Literal(0.0)),
         ..Default::default()
     }
+}
+
+/// The app's single canonical **text-field** style: every typed input
+/// (login, sign-up, role name, emoji name, invite code, Join a Server,
+/// DM search, settings fields) shares this treatment — a 1px DIVIDER edge
+/// so the field reads as a field on any fill, `BG_INPUT` panel, a pinned
+/// caret visible on the dark fill, and one height / horizontal padding /
+/// corner radius. Callers override only what their row needs
+/// (`flex_grow`, `align_self`, a `margin_*`) by struct-updating off this.
+/// The framework has no author focus-state hook on a plain `StyleRules`,
+/// so the edge stays DIVIDER at rest (see `style_helpers::borderless_input`
+/// for the UA-border zeroing this replaces with a real border).
+pub fn text_field_style() -> StyleRules {
+    with_radius(
+        StyleRules {
+            height: Some(px(34.0)),
+            padding_left: Some(px(10.0)),
+            padding_right: Some(px(10.0)),
+            background: Some(col(theme::BG_INPUT)),
+            color: Some(col(theme::TEXT_STRONG)),
+            caret_color: Some(col(theme::TEXT_STRONG)),
+            border_top_width: Some(Tokenized::Literal(1.0)),
+            border_right_width: Some(Tokenized::Literal(1.0)),
+            border_bottom_width: Some(Tokenized::Literal(1.0)),
+            border_left_width: Some(Tokenized::Literal(1.0)),
+            border_top_color: Some(col(theme::DIVIDER)),
+            border_right_color: Some(col(theme::DIVIDER)),
+            border_bottom_color: Some(col(theme::DIVIDER)),
+            border_left_color: Some(col(theme::DIVIDER)),
+            ..Default::default()
+        },
+        8.0,
+    )
 }
 
 /// The app's single canonical **section-label** style — the small, uppercase,

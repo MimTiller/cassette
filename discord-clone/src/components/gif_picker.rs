@@ -12,7 +12,7 @@
 //! number, so only the newest search's answer lands; a development key's
 //! 100 calls an hour is not spent one keystroke at a time.
 use crate::theme;
-use crate::style_helpers::{borderless_input, col, px, rounded, with_radius};
+use crate::style_helpers::{col, px, rounded};
 use discord_server::gifs::{Gif, GifPage, GifSearchInput};
 use icons_lucide::{SEARCH, VIDEO};
 use runtime_core::{
@@ -307,10 +307,7 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
                 gap: Some(px(8.0)),
                 height: Some(px(38.0)),
                 flex_shrink: Some(Tokenized::Literal(0.0)),
-                background: Some(col(theme::BG_PRIMARY)),
-                padding_left: Some(px(10.0)),
-                padding_right: Some(px(10.0)),
-                ..with_radius(borderless_input(), 6.0)
+                ..Default::default()
             }) {
                 icon(SEARCH).color(|| theme::live(theme::TEXT_MUTED)).size(16.0)
                 text_input(
@@ -320,9 +317,8 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
                     style = StyleRules {
                         flex_grow: Some(Tokenized::Literal(1.0)),
                         color: Some(col(theme::TEXT_STRONG)),
-                        background: Some(col(theme::BG_PRIMARY)),
                         font_size: Some(px(14.0)),
-                        ..borderless_input()
+                        ..crate::style_helpers::text_field_style()
                     },
                 )
             }

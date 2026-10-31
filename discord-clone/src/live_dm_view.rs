@@ -39,7 +39,7 @@ use runtime_core::{
 use crate::app::{format_when, message_row, same_group};
 use crate::dms::{self, Dm};
 use crate::gif_picker::{GifPicker, gif_button};
-use crate::style_helpers::{borderless_input, col, pct, px, section_label, rounded, with_radius};
+use crate::style_helpers::{col, pct, px, section_label, rounded};
 
 // --- palette -----------------------------------------------------------------
 // The same Discord dark palette as `app.rs` / `dm_view.rs`, kept local so the
@@ -154,13 +154,8 @@ fn live_dm_find_row(
         query.set(s);
     };
     let input_style = StyleRules {
-        height: Some(px(30.0)),
-        padding_left: Some(px(8.0)),
-        padding_right: Some(px(8.0)),
-        background: Some(col(theme::BG_TERTIARY)),
-        color: Some(col(theme::TEXT_STRONG)),
         font_size: Some(px(13.0)),
-        ..with_radius(borderless_input(), 4.0)
+        ..crate::style_helpers::text_field_style()
     };
     let results = switch(
         move || query.get(),
@@ -317,13 +312,7 @@ fn live_dm_row(
             flex_direction: Some(FlexDirection::Row),
             align_items: Some(AlignItems::Center),
             gap: Some(px(10.0)),
-            background: Some(col(if on {
-                theme::BG_SELECTED
-            } else if hovered.get() {
-                theme::BG_HOVER
-            } else {
-                "transparent"
-            })),
+            background: Some(crate::style_helpers::selected_fill(on, hovered.get())),
             ..rounded(8.0)
         }
     };
@@ -577,12 +566,7 @@ fn live_dm_conversation(
     };
     let input_style = StyleRules {
         flex_grow: Some(grow(1.0)),
-        height: Some(px(40.0)),
-        padding_left: Some(px(12.0)),
-        padding_right: Some(px(12.0)),
-        background: Some(col(theme::BG_INPUT)),
-        color: Some(col(theme::TEXT_STRONG)),
-        ..with_radius(borderless_input(), 8.0)
+        ..crate::style_helpers::text_field_style()
     };
 
     // --- GIF picker state (outlives the pane `switch`) ---------------------
@@ -773,12 +757,10 @@ fn live_dm_conversation(
                         placeholder = "Group name (Enter to save, Esc to cancel)",
                         style = StyleRules {
                             width: Some(px(320.0)),
-                            height: Some(px(30.0)),
                             padding_left: Some(px(8.0)),
-                            background: Some(col(theme::BG_TERTIARY)),
-                            color: Some(col(theme::TEXT_STRONG)),
                             font_size: Some(px(15.0)),
-                            ..borderless_input()
+                            color: Some(col(theme::TEXT_STRONG)),
+                            ..crate::style_helpers::text_field_style()
                         },
                     )
                     .on_key_down(save)

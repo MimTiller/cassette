@@ -28,7 +28,7 @@
 //!   `ServerSettingsPanel` triple, minus the paste input).
 
 use crate::theme;
-use crate::style_helpers::{borderless_input, col, px, rounded, with_radius};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component,
     ui,
@@ -315,12 +315,7 @@ pub fn ProfileSettings() -> Element {
         // Full width, like the labels above the fields.
         align_self: Some(runtime_core::AlignSelf::Stretch),
         flex_grow: Some(grow(1.0)),
-        height: Some(px(40.0)),
-        padding_left: Some(px(12.0)),
-        padding_right: Some(px(12.0)),
-        background: Some(col(theme::BG_INPUT)),
-        color: Some(col(theme::TEXT_STRONG)),
-        ..with_radius(borderless_input(), 8.0)
+        ..crate::style_helpers::text_field_style()
     };
 
     // The avatar controls share their state with the handlers: `av_busy` +

@@ -70,7 +70,7 @@ use crate::load_earlier_button::load_earlier_button;
 use crate::edited_label::EditedLabel;
 use crate::settings_suite::UserSettings;
 use crate::keyboard_shortcuts_overlay::keyboard_shortcuts_overlay;
-use crate::style_helpers::{borderless_input, col, pct, px, rounded, section_label, with_radius};
+use crate::style_helpers::{borderless_input, col, pct, px, rounded, section_label};
 use crate::join_modal::JoinServerModal;
 use crate::create_server_modal::create_server_modal;
 use crate::create_channel_modal::CreateChannelModal;

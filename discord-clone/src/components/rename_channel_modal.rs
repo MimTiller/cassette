@@ -30,7 +30,7 @@ use runtime_core::{
     Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
-use crate::style_helpers::{borderless_input, col, pct, px, rounded, with_radius};
+use crate::style_helpers::{col, pct, px, rounded};
 
 // Discord dark palette (kept local so the component is self-contained).
 
@@ -82,14 +82,8 @@ pub fn RenameChannelModal(
         ..Default::default()
     };
     let input_style = StyleRules {
-        height: Some(px(40.0)),
         margin_top: Some(px(16.0)),
-        padding_left: Some(px(12.0)),
-        padding_right: Some(px(12.0)),
-        background: Some(col(theme::BG_TERTIARY)),
-        color: Some(col(theme::TEXT_NORMAL)),
-        font_size: Some(px(15.0)),
-        ..with_radius(borderless_input(), 8.0)
+        ..crate::style_helpers::text_field_style()
     };
     let rename_btn_style = StyleRules {
         height: Some(px(40.0)),

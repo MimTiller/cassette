@@ -526,13 +526,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                 )
                             };
                             let row_style = move || StyleRules {
-                                background: Some(col(if live_sel.get() == Some(cid) {
-                                    BG_ACTIVE
-                                } else if hovered.get() {
-                                    BG_HOVER
-                                } else {
-                                    "transparent"
-                                })),
+                                background: Some(crate::style_helpers::selected_fill(live_sel.get() == Some(cid), hovered.get())),
                                 ..live_row_style()
                             };
                             let _glyph_style = move || StyleRules {

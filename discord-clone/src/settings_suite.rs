@@ -31,7 +31,7 @@
 //! capture copies of the same signals and stay `Fn`.
 
 use crate::theme;
-use crate::style_helpers::{borderless_input, col, pct, px, rounded, with_radius};
+use crate::style_helpers::{col, pct, px, rounded};
 use std::rc::Rc;
 use runtime_core::{
     component, signal, switch, ui, AlignItems, Element, FlexDirection, JustifyContent, Position,
@@ -245,13 +245,8 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
     // UA-default bevel (the light 3D bottom/right edge) doesn't leak as a
     // partial stroke — the same idiom every other `text_input` in the app uses.
     let input_style = StyleRules {
-        height: Some(px(32.0)),
-        background: Some(col(theme::BG_TERTIARY)),
         font_size: Some(px(14.0)),
-        padding_left: Some(px(10.0)),
-        padding_right: Some(px(10.0)),
-        color: Some(col(theme::TEXT_STRONG)),
-        ..with_radius(borderless_input(), 6.0)
+        ..crate::style_helpers::text_field_style()
     };
 
     let blocked_list = switch(
@@ -935,7 +930,7 @@ pub(crate) fn nav_row(label: &str, danger: bool, active: Signal<usize>, index: u
                 padding_right: Some(px(10.0)),
                 flex_direction: Some(FlexDirection::Row),
                 align_items: Some(AlignItems::Center),
-                background: Some(col(if on { theme::BG_SELECTED } else if hovered.get() { theme::BG_HOVER } else { "transparent" })),
+                background: Some(crate::style_helpers::selected_fill(on, hovered.get())),
                 ..rounded(4.0)
             }
         }) {

@@ -39,7 +39,7 @@ use runtime_core::{
 };
 use file_picker::{FilePicker, MediaKind, PickOutcome, PickRequest};
 
-use crate::style_helpers::{borderless_input, col, pct, px, section_label, rounded, with_radius};
+use crate::style_helpers::{col, pct, px, section_label, rounded};
 use std::rc::Rc;
 
 // Discord dark palette (kept local so the component is self-contained).
@@ -105,12 +105,8 @@ pub fn ServerSettingsPanel(
     // --- Shared styles (one static pass) ------------------------------------
     let label_style = section_label();
     let input_style = StyleRules {
-        height: Some(px(36.0)),
-        background: Some(col(theme::BG_TERTIARY)),
-        padding_left: Some(px(10.0)),
-        padding_right: Some(px(10.0)),
         align_items: Some(AlignItems::Center),
-        ..with_radius(borderless_input(), 8.0)
+        ..crate::style_helpers::text_field_style()
     };
     let save_btn_style = StyleRules {
         height: Some(px(34.0)),
@@ -490,14 +486,10 @@ pub fn ServerSettingsPanel(
             // fill the row while the button stays fixed-width.
             let add_uid_input = ui! {
                 text_input(value = add_uid, on_change = move |v: String| add_uid.set(v), placeholder = "New member user id", style = StyleRules {
-                    height: Some(px(34.0)),
-                    background: Some(col(theme::BG_TERTIARY)),
-                    padding_left: Some(px(10.0)),
-                    padding_right: Some(px(10.0)),
-                    align_items: Some(AlignItems::Center),
                     flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
                     flex_shrink: Some(runtime_core::Tokenized::Literal(1.0)),
-                    ..with_radius(borderless_input(), 8.0)
+                    align_items: Some(AlignItems::Center),
+                    ..crate::style_helpers::text_field_style()
                 })
             };
             let add_btn = ui! {

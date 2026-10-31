@@ -108,13 +108,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
     };
     let field_style = StyleRules {
         align_self: Some(AlignSelf::Stretch),
-        height: Some(px(40.0)),
-        padding_left: Some(px(12.0)),
-        padding_right: Some(px(12.0)),
-        background: Some(col(COMPOSER)),
-        color: Some(col(TEXT)),
-        font_size: Some(px(15.0)),
-        ..with_radius(borderless_input(), 8.0)
+        ..crate::style_helpers::text_field_style()
     };
     let submit_style = StyleRules {
         align_self: Some(AlignSelf::Stretch),

@@ -1480,13 +1480,10 @@ pub(super) fn live_edit_row(
         let input_style = StyleRules {
             font_size: Some(px(15.0)),
             color: Some(col(TEXT)),
-            background: Some(col(COMPOSER)),
             padding_top: Some(px(6.0)),
             padding_bottom: Some(px(6.0)),
-            padding_left: Some(px(10.0)),
-            padding_right: Some(px(10.0)),
             flex_grow: Some(grow(1.0)),
-            ..with_radius(borderless_input(), 8.0)
+            ..crate::style_helpers::text_field_style()
         };
         ui! {
             text_input(value = live_edit_text, autofocus = true, on_change = on_edit_type, placeholder = "Edit message", style = input_style, test_id = "edit-input")

@@ -14,7 +14,7 @@ use runtime_core::{
 use crate::controls::{button_view, ButtonKind};
 use crate::dms::{self, Dm};
 use crate::live_dm_view::LiveDmMsg;
-use crate::style_helpers::{borderless_input, col, pct, px, rounded, with_radius};
+use crate::style_helpers::{col, pct, px, rounded};
 use crate::theme;
 
 /// What the picker is for: a new group, or adding people to group `dm_id`.
@@ -157,7 +157,7 @@ pub(crate) fn picker_dialog(
                             height: Some(px(40.0)),
                             padding_left: Some(px(8.0)),
                             padding_right: Some(px(8.0)),
-                            background: Some(col(if on { theme::BG_SELECTED } else { "transparent" })),
+                            background: Some(crate::style_helpers::selected_fill(on, false)),
                             ..rounded(4.0)
                         }) {
                             { crate::avatar_chip::avatar_chip(username.as_str(), theme::ACCENT, 28.0, 13.0) }
@@ -271,13 +271,8 @@ pub(crate) fn picker_dialog(
                         on_change = move |v: String| name.set(v),
                         placeholder = "Group name (optional)",
                         style = StyleRules {
-                            height: Some(px(36.0)),
-                            padding_left: Some(px(10.0)),
-                            padding_right: Some(px(10.0)),
-                            background: Some(col(theme::BG_TERTIARY)),
-                            color: Some(col(theme::TEXT_STRONG)),
                             font_size: Some(px(14.0)),
-                            ..with_radius(borderless_input(), 4.0)
+                            ..crate::style_helpers::text_field_style()
                         },
                     )
                 }
