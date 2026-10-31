@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use discord_server::server_emoji::{self as se, ServerEmoji};
-use runtime_core::{ui, AlignItems, Element, FlexDirection, FlexWrap, FontWeight, ObjectFit, StyleRules, TouchPhase, TouchResponse};
+use runtime_core::{ui, AlignItems, AlignSelf, Element, FlexDirection, FlexWrap, FontWeight, ObjectFit, StyleRules, TouchPhase, TouchResponse, switch};
 
 use crate::style_helpers::{col, px, rounded};
 use crate::theme;
@@ -194,6 +194,12 @@ pub(crate) fn emoji_view(id: i64, name: &str, size: f32) -> Element {
                     width: Some(px(size)),
                     height: Some(px(size)),
                     object_fit: Some(ObjectFit::Contain),
+                    // The body flow baseline-aligns children, which parks an
+                    // inline image high on the line (its bottom edge sits on
+                    // the text baseline). Center it on the line instead: the
+                    // text keeps its own baseline slot, so the line height is
+                    // unchanged and the image reads mid-text like Discord's.
+                    align_self: Some(AlignSelf::Center),
                     // The spaces around it collapse in the flow.
                     margin_left: Some(px(3.0)),
                     margin_right: Some(px(3.0)),
