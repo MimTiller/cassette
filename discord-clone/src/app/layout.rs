@@ -93,6 +93,28 @@ pub(super) const MAIN_MIN: f32 = 520.0;
 /// so a narrow window never shrinks it past what a manual drag can reach.
 pub(super) const SIDEBAR_MIN: f32 = 180.0;
 
+/// The chat column's content width: the whole message pane at the CURRENT
+/// viewport (window less rail, the two handles, and the panels as the
+/// `effective_panel_widths_for` squeeze renders them) less the row's 16px
+/// padding both sides. Message-row blocks — attachments, embed cards — size
+/// to this so they share the text column's right edge instead of hugging
+/// fixed caps and leaving a dead strip.
+pub(super) fn chat_content_width_for(vw: f32, sidebar: f32, member: f32) -> f32 {
+    if vw == 0.0 {
+        return 934.0;
+    }
+    let pane = vw - RAIL - 2.0 * HANDLE - sidebar - member;
+    (pane - 2.0 * 16.0).max(320.0)
+}
+
+/// `(rendered sidebar width, rendered member width)` for the current viewport,
+/// then the chat column's content width: `member` counts as 0 while the
+/// member panel is hidden, exactly as the layout collapses it.
+pub(super) fn chat_content_width(sidebar: Signal<f32>, member: Signal<f32>, member_visible: bool) -> f32 {
+    let (sb, mem) = effective_panel_widths(sidebar, member);
+    chat_content_width_for(viewport_size().get().width, sb, if member_visible { mem } else { 0.0 })
+}
+
 /// `(rendered sidebar width, rendered member width)` for the current viewport.
 /// Keeps the main message column at a hard floor of `MAIN_MIN` and squeezes
 /// the two side panels to make room, in Discord's own order: the member list

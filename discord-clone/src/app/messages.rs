@@ -28,7 +28,7 @@ pub(super) fn note_unread_on_open(channel_id: i64, count: i64) {
 }
 
 pub(super) fn build(s: &ShellState) -> MessagesParts {
-    let ShellState { active_live_channel, active_live_server, blocked_users, gateway, has_more_earlier, live_at_bottom, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_invite_mode, live_messages, live_revision, live_scroll_handle, live_servers, live_typing, live_typing_rev, load_busy, members_pref, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, revealed_blocked, translate_key, user_popup, user_profile, .. } = s.clone();
+    let ShellState { active_live_channel, active_live_server, blocked_users, gateway, has_more_earlier, live_at_bottom, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_invite_mode, live_messages, live_revision, live_scroll_handle, live_servers, live_typing, live_typing_rev, load_busy, member_panel_width, members_pref, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, revealed_blocked, sidebar_width, translate_key, user_popup, user_profile, .. } = s.clone();
     // --- main view -------------------------------------------------------
     let header_style = StyleRules {
         padding_top: Some(px(10.0)),
@@ -312,6 +312,20 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     };
     crate::mentions::set_open_user(Rc::new(move |uid, x, y| popup_ctx.open(uid, x, y, false)));
     let reactions_read = reactions.clone();
+    // The chat column's content width: what row-level blocks (attachments,
+    // embed cards) fill so they end on the same right edge as the message
+    // rows, rather than hugging fixed caps and leaving a dead strip. Keyed on
+    // the same inputs the layout's own reactive widths read (manual panel
+    // widths + viewport + the member-list toggle), so it re-resolves on a
+    // resize or drag; the member panel deducts 0 while hidden, exactly like
+    // the layout collapses it.
+    let col_w = memo(move || {
+        super::layout::chat_content_width(
+            sidebar_width.clone(),
+            member_panel_width.clone(),
+            super::members_visible(members_pref.clone()),
+        )
+    });
     let rows = memo(move || -> Vec<ListRow> {
         let names_rev = crate::mentions::names_version();
         let _ = (live_revision.get(), reaction_rev.get());
@@ -418,6 +432,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
         live_revision,
         load_busy,
         popup_ctx,
+        col_w,
     };
     // Which of the list's three states shows: no channel, an empty channel,
     // or the messages.
@@ -668,6 +683,10 @@ struct RowCtx {
     live_revision: Signal<u32>,
     load_busy: Signal<bool>,
     popup_ctx: user_popups::UserPopupCtx,
+    /// The chat column's content width (pane less gutters): row-level blocks
+    /// (attachments, embed cards) size to it so they share the text column's
+    /// right edge instead of hugging fixed caps and leaving a dead strip.
+    col_w: runtime_core::Memo<f32>,
 }
 
 impl RowCtx {
@@ -736,8 +755,8 @@ impl RowCtx {
             .reply
             .clone()
             .map(|(author, snippet)| crate::reply_reference_strip::reply_reference_strip(author, snippet));
-        let attachments = (!m.attachments.is_empty()).then(|| attachment_row(&m.attachments));
-        let cards = (!m.embeds.is_empty()).then(|| super::message_view::embed_cards(&m.embeds));
+        let attachments = (!m.attachments.is_empty()).then(|| attachment_row(&m.attachments, self.col_w.get()));
+        let cards = (!m.embeds.is_empty()).then(|| super::message_view::embed_cards(&m.embeds, self.col_w.get()));
         let reactions = reaction_area(key, self.reactions.clone(), self.picker);
         ui! {
             view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) {
