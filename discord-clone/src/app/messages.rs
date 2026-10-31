@@ -444,23 +444,35 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     let sent_messages = switch(
         move || list_state.get(),
         move |state: &u8| {
-            let hint = match *state {
-                0 => "Create or join a server to start messaging.",
-                1 => "No messages yet -- say hi!",
-                _ => {
-                    let ctx = ctx.clone();
-                    return ui! {
-                        view(style = StyleRules {
-                            flex_direction: Some(FlexDirection::Column),
-                            ..Default::default()
-                        }) {
-                            for row in rows, key = row.key() {
-                                { ctx.render(&row) }
-                            }
+            if *state == 2u8 {
+                let ctx = ctx.clone();
+                return ui! {
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Column),
+                        ..Default::default()
+                    }) {
+                        for row in rows, key = row.key() {
+                            { ctx.render(&row) }
                         }
-                    };
-                }
-            };
+                    }
+                };
+            }
+            // An empty channel opens with Discord's "Welcome to #name!" block
+            // pinned to the top of the feed: a big # in a circle, the heading
+            // and a muted line, with the composer left bottom-pinned below.
+            if *state == 1u8 {
+                let channel = active_live_channel
+                    .get()
+                    .and_then(|cid|
+                        live_channels
+                            .get()
+                            .iter()
+                            .find(|c| c.id == cid)
+                            .map(|c| c.name.clone())
+                    )
+                    .unwrap_or_default();
+                return welcome_block(&channel);
+            }
             ui! {
                 view(style = StyleRules {
                     flex_grow: Some(grow(1.0)),
@@ -469,11 +481,31 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                     padding_top: Some(px(24.0)),
                     ..Default::default()
                 }) {
-                    text(style = StyleRules {
-                        font_size: Some(px(14.0)),
-                        color: Some(col(TEXT_MUTED)),
+                    // "no servers yet" gets a call to action, not just a
+                    // muted sentence: a plus-disc icon matching the rail's
+                    // green add-server button.
+                    view(style = StyleRules {
+                        width: Some(px(48.0)),
+                        height: Some(px(48.0)),
+                        align_items: Some(AlignItems::Center),
+                        justify_content: Some(JustifyContent::Center),
+                        background: Some(col(theme::BG_INPUT)),
+                        ..rounded(24.0)
+                    }) {
+                        icon(PLUS).color(|| theme::live(theme::SUCCESS)).size(22.0)
+                    }
+                    view(style = StyleRules {
+                        margin_top: Some(px(12.0)),
+                        align_items: Some(AlignItems::Center),
+                        justify_content: Some(JustifyContent::Center),
                         ..Default::default()
-                    }) { hint.to_string() }
+                    }) {
+                        text(style = StyleRules {
+                            font_size: Some(px(14.0)),
+                            color: Some(col(TEXT_MUTED)),
+                            ..Default::default()
+                        }) { "Create or join a server to start messaging.".to_string() }
+                    }
                 }
             }
         },

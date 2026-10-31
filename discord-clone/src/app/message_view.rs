@@ -279,6 +279,49 @@ pub(super) fn insert_live_msg(
     true
 }
 
+/// Discord's "Welcome to #name!" header block for an EMPTY channel: it pins
+/// to the top of the feed (not centered in a void) — a 56px `#` in a soft
+/// circle, the heading, and a muted line. The composer stays bottom-pinned
+/// below it, so the pane reads as a channel with nothing posted yet.
+#[allow(non_snake_case)]
+pub(super) fn welcome_block(channel_name: &str) -> Element {
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Column),
+            align_items: Some(AlignItems::Center),
+            padding_top: Some(px(24.0)),
+            padding_bottom: Some(px(16.0)),
+            ..Default::default()
+        }) {
+            view(style = StyleRules {
+                width: Some(px(56.0)),
+                height: Some(px(56.0)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                background: Some(col(BG_SIDEBAR)),
+                ..rounded(28.0)
+            }) {
+                icon(HASH).color(move || theme::live(theme::ACCENT)).size(28.0)
+            }
+            text(style = StyleRules {
+                margin_top: Some(px(16.0)),
+                font_size: Some(px(20.0)),
+                font_weight: Some(FontWeight::Bold),
+                color: Some(col(TEXT)),
+                text_align: Some(TextAlign::Center),
+                ..Default::default()
+            }) { format!("Welcome to #{}!", channel_name) }
+            text(style = StyleRules {
+                margin_top: Some(px(8.0)),
+                font_size: Some(px(13.0)),
+                color: Some(col(TEXT_MUTED)),
+                text_align: Some(TextAlign::Center),
+                ..Default::default()
+            }) { format!("This is the start of the #{} conversation.", channel_name) }
+        }
+    }
+}
+
 /// The "start of conversation" anchor for a live channel — a centered, muted
 /// line (e.g. "Jump to the start of the #general conversation") shown ABOVE the
 /// earliest loaded message. It is the empty-state's sibling for channels that

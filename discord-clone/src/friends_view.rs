@@ -184,17 +184,32 @@ fn friend_row(name: String, avatar: Option<String>, actions: Vec<Element>) -> El
     }
 }
 
-/// A centered muted hint (shown when a tab has no rows).
-fn centered_hint(text: String) -> Element {
+/// A centered muted hint with an icon above it (shown when a tab or list is
+/// empty): the glyph gives the empty space something to say beyond a bare
+/// sentence. `glyph` is an `icons_lucide` name.
+fn centered_hint(glyph: runtime_core::IconData, text: String) -> Element {
     ui! {
         view(style = StyleRules {
             flex_grow: Some(grow(1.0)),
             align_items: Some(AlignItems::Center),
             justify_content: Some(JustifyContent::Center),
+            padding_top: Some(px(16.0)),
             ..Default::default()
         }) {
+            view(style = StyleRules {
+                width: Some(px(56.0)),
+                height: Some(px(56.0)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                ..Default::default()
+            }) {
+                icon(glyph)
+                    .color(move || theme::live(theme::TEXT_MUTED))
+                    .size(28.0)
+            }
             text(
                 style = StyleRules {
+                    margin_top: Some(px(12.0)),
                     font_size: Some(px(14.0)),
                     color: Some(col(theme::TEXT_MUTED)),
                     ..Default::default()
@@ -523,7 +538,7 @@ pub fn friends_screen(
                         overflow: Some(Overflow::Hidden),
                         ..Default::default()
                     }) {
-                        centered_hint(hint)
+                        centered_hint(USERS, hint)
                     }
                 };
             }

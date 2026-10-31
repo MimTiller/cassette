@@ -485,6 +485,7 @@ fn live_dm_list(
                 .map(|dm| live_dm_row(dm, active.clone(), _msgs.clone(), rev.clone(), presence.clone()))
                 .collect();
             let entry = (friends_entry)();
+            let no_dms = dms.is_empty();
             ui! {
                 view(style = column_style) {
                     { find_row }
@@ -511,6 +512,29 @@ fn live_dm_list(
                         overflow: Some(Overflow::Hidden),
                         ..Default::default()
                     }) {
+                        // Empty DM list: a message glyph + one line, so the
+                        // column points at the search field above rather than
+                        // going blank.
+                        if no_dms {
+                            view(style = StyleRules {
+                                width: Some(px(56.0)),
+                                height: Some(px(56.0)),
+                                align_items: Some(AlignItems::Center),
+                                justify_content: Some(JustifyContent::Center),
+                                margin_top: Some(px(16.0)),
+                                ..Default::default()
+                            }) {
+                                runtime_core::icon(icons_lucide::MESSAGE_CIRCLE)
+                                    .color(move || theme::live(theme::TEXT_MUTED))
+                                    .size(28.0)
+                            }
+                            text(style = StyleRules {
+                                margin_top: Some(px(12.0)),
+                                font_size: Some(px(14.0)),
+                                color: Some(col(theme::TEXT_MUTED)),
+                                ..Default::default()
+                            }) { "No direct messages yet — search or start one above.".to_string() }
+                        }
                         scroll_view(style = StyleRules {
                             flex_grow: Some(grow(1.0)),
                             ..Default::default()
@@ -702,17 +726,30 @@ fn live_dm_conversation(
             };
 
             if cid == 0 {
-                // No DM selected yet: a centered, muted hint.
+                // No DM selected yet: a centered, muted hint with the
+                // message glyph, so the pane points at the search field
+                // above rather than floating a bare sentence.
                 return ui! {
                     view(style = pane_style) {
                         view(style = StyleRules {
                             flex_grow: Some(grow(1.0)),
                             align_items: Some(AlignItems::Center),
                             justify_content: Some(JustifyContent::Center),
-                            padding_top: Some(px(24.0)),
                             ..Default::default()
                         }) {
+                            view(style = StyleRules {
+                                width: Some(px(56.0)),
+                                height: Some(px(56.0)),
+                                align_items: Some(AlignItems::Center),
+                                justify_content: Some(JustifyContent::Center),
+                                ..Default::default()
+                            }) {
+                                runtime_core::icon(icons_lucide::MESSAGE_CIRCLE)
+                                    .color(move || theme::live(theme::TEXT_MUTED))
+                                    .size(28.0)
+                            }
                             text(style = StyleRules {
+                                margin_top: Some(px(12.0)),
                                 font_size: Some(px(14.0)),
                                 color: Some(col(theme::TEXT_MUTED)),
                                 ..Default::default()
