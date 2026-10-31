@@ -13,6 +13,64 @@ enum Screen {
     Reset,
 }
 
+/// Decoration for the login canvas: a cassette-motif outline (a rounded
+/// shell with two reel circles) drawn from theme roles only, absolutely
+/// positioned at an offset from the canvas centre.
+fn cassette_motif(x: f32, y: f32) -> Element {
+    ui! {
+        view(style = StyleRules {
+            position: Some(Position::Absolute),
+            left: Some(pct(50.0)),
+            top: Some(pct(50.0)),
+            margin_left: Some(px(x)),
+            margin_top: Some(px(y)),
+            opacity: Some(Tokenized::Literal(0.5)),
+            border_top_width: Some(border_width(2.0)),
+            border_right_width: Some(border_width(2.0)),
+            border_bottom_width: Some(border_width(2.0)),
+            border_left_width: Some(border_width(2.0)),
+            border_top_color: Some(col(theme::DIVIDER)),
+            border_right_color: Some(col(theme::DIVIDER)),
+            border_bottom_color: Some(col(theme::DIVIDER)),
+            border_left_color: Some(col(theme::DIVIDER)),
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(JustifyContent::Center),
+            gap: Some(px(34.0)),
+            padding_left: Some(px(18.0)),
+            padding_right: Some(px(18.0)),
+            ..rounded(14.0)
+        }) {
+            view(style = StyleRules {
+                width: Some(px(44.0)),
+                height: Some(px(44.0)),
+                border_top_width: Some(border_width(2.0)),
+                border_right_width: Some(border_width(2.0)),
+                border_bottom_width: Some(border_width(2.0)),
+                border_left_width: Some(border_width(2.0)),
+                border_top_color: Some(col(theme::DIVIDER)),
+                border_right_color: Some(col(theme::DIVIDER)),
+                border_bottom_color: Some(col(theme::DIVIDER)),
+                border_left_color: Some(col(theme::DIVIDER)),
+                ..rounded(22.0)
+            }) {}
+            view(style = StyleRules {
+                width: Some(px(44.0)),
+                height: Some(px(44.0)),
+                border_top_width: Some(border_width(2.0)),
+                border_right_width: Some(border_width(2.0)),
+                border_bottom_width: Some(border_width(2.0)),
+                border_left_width: Some(border_width(2.0)),
+                border_top_color: Some(col(theme::DIVIDER)),
+                border_right_color: Some(col(theme::DIVIDER)),
+                border_bottom_color: Some(col(theme::DIVIDER)),
+                border_left_color: Some(col(theme::DIVIDER)),
+                ..rounded(22.0)
+            }) {}
+        }
+    }
+}
+
 /// The login screen, shown while `authed` is false. One card with two tabs,
 /// "Log In" and "Sign Up". Sign-up has its own heading, a confirm-password
 /// field, a username hint and a green submit button, so the two forms don't
@@ -42,12 +100,12 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
     }
 
     let card_style = StyleRules {
-        width: Some(px(crate::app::mobile::fit_width(400.0))),
+        width: Some(px(crate::app::mobile::fit_width(480.0))),
         padding_top: Some(px(32.0)),
-        padding_bottom: Some(px(32.0)),
-        padding_left: Some(px(32.0)),
-        padding_right: Some(px(32.0)),
-        background: Some(col(BG_SIDEBAR)),
+        padding_bottom: Some(px(36.0)),
+        padding_left: Some(px(36.0)),
+        padding_right: Some(px(36.0)),
+        background: Some(col(theme::BG_SECONDARY)),
         border_top_width: Some(border_width(1.0)),
         border_right_width: Some(border_width(1.0)),
         border_bottom_width: Some(border_width(1.0)),
@@ -56,6 +114,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
         border_right_color: Some(col(BORDER)),
         border_bottom_color: Some(col(BORDER)),
         border_left_color: Some(col(BORDER)),
+        shadow: Some(runtime_core::Shadow { x: 0.0, y: 8.0, blur: 16.0, color: col(theme::SHADOW) }),
         flex_direction: Some(FlexDirection::Column),
         align_items: Some(AlignItems::Center),
         ..rounded(12.0)
@@ -472,7 +531,12 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
 
             ui! {
                 view(style = StyleRules {
-                    align_self: Some(AlignSelf::Stretch),
+                    // One inset column for the whole form: the fields, the
+                    // primary button and the switch link share it, so the
+                    // card reads as a single grid rather than a full-width
+                    // button crowding inset fields.
+                    width: Some(px(crate::app::mobile::fit_width(312.0))),
+                    align_self: Some(AlignSelf::Center),
                     flex_direction: Some(FlexDirection::Column),
                     ..Default::default()
                 }) {
@@ -533,8 +597,36 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             align_items: Some(AlignItems::Center),
             justify_content: Some(JustifyContent::Center),
             overflow: Some(Overflow::Hidden),
+            position: Some(Position::Relative),
             ..Default::default()
         }) {
+            // Decoration behind the card: two huge soft accent washes in
+            // opposite corners, plus a faint cassette-motif pair (a rounded
+            // shell with two reel circles) framing the card. All pure theme
+            // roles at low opacity, so the canvas reads as decorated rather
+            // than a bare fill, in every palette.
+            view(style = StyleRules {
+                position: Some(Position::Absolute),
+                left: Some(px(-140.0)),
+                top: Some(px(-180.0)),
+                width: Some(px(420.0)),
+                height: Some(px(420.0)),
+                background: Some(col(theme::BG_ACCENT_SUBTLE)),
+                opacity: Some(Tokenized::Literal(0.35)),
+                ..rounded(210.0)
+            }) {}
+            view(style = StyleRules {
+                position: Some(Position::Absolute),
+                right: Some(px(-160.0)),
+                bottom: Some(px(-200.0)),
+                width: Some(px(460.0)),
+                height: Some(px(460.0)),
+                background: Some(col(theme::BG_USER_PANEL)),
+                opacity: Some(Tokenized::Literal(0.6)),
+                ..rounded(230.0)
+            }) {}
+            cassette_motif(-90.0, 120.0)
+            cassette_motif(30.0, -140.0)
             view(style = card_style) {
                 view(style = logo_style) {
                     text(style = logo_text_style) { "C".to_string() }
