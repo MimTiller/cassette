@@ -48,12 +48,12 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     // Moderation panel. A `Copy` handle on `moderation_open` is captured by
     // its `.on_touch` closure below.
     let moderation_style = StyleRules {
-        width: Some(px(24.0)),
-        height: Some(px(24.0)),
+        width: Some(px(28.0)),
+        height: Some(px(28.0)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         background: Some(col(COMPOSER)),
-        ..rounded(12.0)
+        ..rounded(14.0)
     };
 
     // Live-mode header: a live channel's name has no mock counterpart, so it's
@@ -159,7 +159,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         // folded into the `switch` key so the badge count
                         // re-renders when an Unpin lands.
                         view(style = moderation_style.clone(), test_id = "pin-live") {
-                            icon(PIN).color(|| theme::live(TEXT_MUTED)).size(15.0)
+                            icon(PIN).color(|| theme::live(TEXT_MUTED)).size(20.0)
                         }
                         .on_touch(move |_ev| {
                             let open_p = pinned_panel_open;
@@ -236,7 +236,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                                 }
                             }
                         }, test_id = "invite-live") {
-                            icon(USER_PLUS).color(|| theme::live(TEXT_MUTED)).size(15.0)
+                            icon(USER_PLUS).color(|| theme::live(TEXT_MUTED)).size(20.0)
                         }
                         .on_touch(move |_ev| {
                             live_invite_open.set(true);
@@ -244,7 +244,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         })
                         // Show / hide the member list.
                         view(style = moderation_style.clone(), test_id = "toggle-members") {
-                            icon(USERS).color(move || theme::live(if super::members_visible(members_pref) { theme::TEXT_STRONG } else { TEXT_MUTED })).size(15.0)
+                            icon(USERS).color(move || theme::live(if super::members_visible(members_pref) { theme::TEXT_STRONG } else { TEXT_MUTED })).size(20.0)
                         }
                         .on_touch(move |ev| {
                             if ev.phase == TouchPhase::Ended {
