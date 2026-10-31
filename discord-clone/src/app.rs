@@ -49,7 +49,7 @@ use file_picker::{FilePicker, PickRequest, PickOutcome, MediaKind};
 use icons_lucide::{
     CHEVRON_DOWN, CHEVRON_RIGHT, HASH, HEADPHONES,
     MIC, MIC_OFF, PIN, PLUS, SETTINGS, SMILE, SMILE_PLUS,
-    USER_PLUS, USERS, VOLUME_2, MESSAGE_CIRCLE, MENU, LOCK, BELL_OFF,
+    USER_PLUS, USERS, VOLUME_2, MENU, LOCK, BELL_OFF,
 };
 use crate::server_settings_panel::ServerSettingsPanel;
 
@@ -1398,7 +1398,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let popups::PopupsParts { catcher_el: popup_catcher_el, exclusive_el: popup_exclusive_el } = popups::build(&s);
 
     let gateway_effects::GatewayEffectsParts { gateway_incoming_effect, mention_reset_effect } = gateway_effects::build(&s);
-    let rail::RailParts { rail_style, rail_top, live_section, rail_actions } = rail::build(&s);
+    let rail::RailParts { rail_style, rail_top, rail_list } = rail::build(&s);
     let modals::ModalsParts { join_el, create_el, cc_el, rc_el, dc_el, invite_el, ss_el } = modals::build(&s);
     let channel_perms_el = crate::channel_permissions::dialog();
     let notif_menu_el = crate::notif_menu::dialog();
@@ -1541,7 +1541,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 overflow: Some(Overflow::Hidden),
                 ..Default::default()
             }) {
-                view(style = rail_style) { rail_top live_section rail_actions gateway_incoming_effect mention_reset_effect }
+                view(style = rail_style) { rail_top rail_list gateway_incoming_effect mention_reset_effect }
                 sidebar
                 // Drag handle on the channel sidebar's right edge: dragging it
                 // left/right resizes `sidebar_width` (right = grow, so sign `+1`).
