@@ -121,6 +121,7 @@ pub(crate) fn settings_card(title: String, children: Vec<Element>) -> Element {
             padding_left: Some(px(16.0)),
             padding_right: Some(px(16.0)),
             background: Some(col(theme::BG_SECONDARY)),
+            width: Some(pct(100.0)),
             ..rounded(8.0)
         }) {
             { title_el }
