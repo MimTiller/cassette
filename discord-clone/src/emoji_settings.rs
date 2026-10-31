@@ -161,7 +161,7 @@ pub fn emoji_section(server_id: Option<i64>) -> Element {
     );
 
     ui! {
-        view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(12.0)), max_width: Some(px(560.0)), ..Default::default() }) {
+        view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(16.0)), max_width: Some(px(660.0)), ..Default::default() }) {
             text(style = StyleRules { font_size: Some(px(12.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) {
                 "Anyone in the server can use these in messages (:name:) and reactions. PNG, GIF or WebP, up to 256 KB.".to_string()
             }

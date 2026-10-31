@@ -507,7 +507,7 @@ pub fn ServerSettingsPanel(
             ui! {
                 view(style = StyleRules {
                     flex_direction: Some(FlexDirection::Column),
-                    gap: Some(px(20.0)),
+                    gap: Some(px(16.0)),
                     ..Default::default()
                 }) {
                     text(style = StyleRules {

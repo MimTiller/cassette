@@ -451,12 +451,11 @@ pub fn ProfileSettings() -> Element {
     ui! {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Column),
-            align_items: Some(AlignItems::Center),
+            gap: Some(px(16.0)),
             background: Some(col(theme::BG_PRIMARY)),
             padding_top: Some(px(24.0)),
             padding_left: Some(px(20.0)),
             padding_right: Some(px(20.0)),
-            gap: Some(px(16.0)),
             ..Default::default()
         }) {
             // The avatar chip: the uploaded image when set, else the colored
@@ -464,6 +463,7 @@ pub fn ProfileSettings() -> Element {
             // read inside the `if`, so it lowers to the `when` primitive and
             // flips on Change-avatar/Remove. Styles are inline: nothing
             // non-Copy is captured across the `when` boundary.
+            view(style = StyleRules { justify_content: Some(JustifyContent::Center), ..Default::default() }) {
             view(style = StyleRules { cursor: Some(runtime_core::Cursor::Pointer), ..Default::default() }) {
             if !avatar_url.get().is_empty() {
                 image(
@@ -497,15 +497,12 @@ pub fn ProfileSettings() -> Element {
                 }
                 TouchResponse::CONSUMED
             })
+            }
             view(style = StyleRules {
                 flex_direction: Some(FlexDirection::Row),
                 gap: Some(px(12.0)),
                 ..Default::default()
             }) {
-            // The "Change avatar" pill: tap it, the platform's native file-open
-            // dialog appears, and the chosen image is uploaded on the fly.
-            // The label tells the user which phase the upload is in
-            // (reactive closures re-run when `av_busy` / `av_picking` flip).
             { let change_avatar_btn = crate::controls::button_view_live("profile-change-avatar", ButtonKind::Primary, {
                 let av_picking = av_picking.clone();
                 let av_busy = av_busy.clone();
@@ -537,22 +534,12 @@ pub fn ProfileSettings() -> Element {
                     ..Default::default()
                 }) { move || av_error.get().clone() }
             }
-            text(style = StyleRules {
-                align_self: Some(runtime_core::AlignSelf::Stretch),
-                font_size: Some(px(11.0)),
-                font_weight: Some(FontWeight::SemiBold),
-                color: Some(col(theme::TEXT_MUTED)),
-                ..Default::default()
-            }) { "DISPLAY NAME — SHOWN INSTEAD OF YOUR USERNAME".to_string() }
-            { crate::controls::text_field(display_name, &username, input_style.clone()) }
-            text(style = StyleRules {
-                align_self: Some(runtime_core::AlignSelf::Stretch),
-                font_size: Some(px(11.0)),
-                font_weight: Some(FontWeight::SemiBold),
-                color: Some(col(theme::TEXT_MUTED)),
-                ..Default::default()
-            }) { "ABOUT ME".to_string() }
-            { crate::controls::text_field(about, "A line about yourself", input_style.clone()) }
+            { crate::settings_suite::settings_card("Display name".to_string(), vec![
+                ui! { crate::controls::text_field(display_name, &username, input_style.clone()) }
+            ]) }
+            { crate::settings_suite::settings_card("About me".to_string(), vec![
+                ui! { crate::controls::text_field(about, "A line about yourself", input_style.clone()) }
+            ]) }
             { let save_profile_btn = crate::controls::button_view_live("profile-save", ButtonKind::Primary, {
                 let profile_busy = profile_busy.clone();
                 move || if profile_busy.get() { "Saving…".to_string() } else { "Save Profile".to_string() }

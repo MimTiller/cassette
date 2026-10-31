@@ -493,7 +493,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
     };
 
     ui! {
-        view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(10.0)), max_width: Some(px(560.0)), ..Default::default() }) {
+        view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(16.0)), max_width: Some(px(660.0)), ..Default::default() }) {
             text(style = small(theme::TEXT_MUTED)) {
                 "Roles colour names, can be @mentioned and grant permissions. Higher roles outrank lower ones. Select a role to see its permissions; give a member a role from their profile card.".to_string()
             }
