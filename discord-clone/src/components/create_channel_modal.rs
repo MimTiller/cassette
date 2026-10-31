@@ -67,6 +67,7 @@ pub fn CreateChannelModal(
 
     // Shared card/field/button styles (one static pass).
     let card_style = StyleRules {
+        position: Some(runtime_core::Position::Relative),
         width: Some(px(340.0)),
         padding_top: Some(px(20.0)),
         padding_bottom: Some(px(20.0)),
@@ -257,6 +258,8 @@ pub fn CreateChannelModal(
                 let creating = creating.clone();
                 move || if creating.get() { "Creating…".to_string() } else { "Create".to_string() }
             }, on_create);
+            let close2 = close;
+            let close_btn = ui! { crate::controls::modal_close_button(move || close2.set(false)) };
             if !err.is_empty() {
                 ui! {
                     view(style = card_style.clone()) {
@@ -275,6 +278,7 @@ pub fn CreateChannelModal(
                         { private_row() }
                         text(style = err_style.clone()) { err.clone() }
                         { create_btn }
+                        { close_btn }
                     }
                 }
             } else {
@@ -294,6 +298,7 @@ pub fn CreateChannelModal(
                         { kind_row() }
                         { private_row() }
                         { create_btn }
+                        { close_btn }
                     }
                 }
             }

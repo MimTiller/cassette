@@ -65,6 +65,7 @@ pub fn JoinServerModal(
     // Shared card/field/button styles (one static pass).
     let card_style = StyleRules {
         width: Some(px(360.0)),
+        position: Some(runtime_core::Position::Relative),
         padding_top: Some(px(20.0)),
         padding_bottom: Some(px(20.0)),
         padding_left: Some(px(20.0)),
@@ -177,11 +178,13 @@ pub fn JoinServerModal(
                         TouchResponse::CONSUMED
                     })
                 };
+                let close_c = ui! { crate::controls::modal_close_button(move || close.set(false)) };
                 ui! {
                     view(style = card_style.clone()) {
                         text(style = title_style.clone()) { "Join a Server".to_string() }
                         text(style = ok_style.clone()) { role }
                         { done_btn }
+                        { close_c }
                     }
                 }
             } else if !err.is_empty() {
@@ -199,15 +202,18 @@ pub fn JoinServerModal(
                         TouchResponse::CONSUMED
                     })
                 };
+                let close_c = ui! { crate::controls::modal_close_button(move || close.set(false)) };
                 ui! {
                     view(style = card_style.clone()) {
                         text(style = title_style.clone()) { "Join a Server".to_string() }
                         text(style = err_style.clone()) { err.clone() }
                         { retry_btn }
+                        { close_c }
                     }
                 }
             } else {
                 // --- Input arm: code field + Join button -----------------------
+                let close_c = ui! { crate::controls::modal_close_button(move || close.set(false)) };
                 let join_label = if busy.get() { "Joining…" } else { "Join" };
                 // The button is inlined as a `view` tag (not a `{ splat }`) so
                 // that `text_input(...)` is followed by a *call*, not a block —
@@ -219,6 +225,7 @@ pub fn JoinServerModal(
                         // Two-way: `text_input(value = …)` alone only fills
                         // the box, so typing never reached `code`.
                         { crate::controls::text_field(code, "Invite code", input_style.clone()) }
+                        { close_c }
                         view(style = btn_style.clone(), test_id = "join-server-join") {
                             text(style = btn_label_style.clone()) { join_label.to_string() }
                         }

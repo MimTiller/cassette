@@ -1,7 +1,7 @@
 //! Small shared controls: a text button, a text field and an on/off switch.
 
 use runtime_core::{
-    ui, AlignItems, Element, FlexDirection, JustifyContent, Signal, StyleRules, Tokenized, TouchPhase,
+    ui, AlignItems, Element, FlexDirection, JustifyContent, Position, PointerEvents, Signal, StyleRules, Tokenized, TouchPhase,
     TouchResponse,
 };
 
@@ -39,6 +39,38 @@ pub fn button_view_live(
     ui! {
         view(style = crate::styles::ButtonBox().kind(kind), test_id = test_id) {
             text(style = crate::styles::ButtonLabel().kind(button_label_kind(kind))) { move || label() }
+        }
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                on_press();
+            }
+            TouchResponse::CONSUMED
+        })
+    }
+}
+
+/// A modal's header close glyph: ✕ in a ring, top-right of the card, tap
+/// closes. The ✕ text carries no hit testing so the ring's `on_touch` sees
+/// taps on the glyph itself (a Text child would swallow them).
+pub fn modal_close_button(on_press: impl Fn() + 'static) -> Element {
+    ui! {
+        view(style = StyleRules {
+            position: Some(Position::Absolute),
+            right: Some(px(12.0)),
+            top: Some(px(12.0)),
+            width: Some(px(32.0)),
+            height: Some(px(32.0)),
+            background: Some(col(theme::BUTTON_SECONDARY)),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(JustifyContent::Center),
+            ..rounded(16.0)
+        }) {
+            text(style = StyleRules {
+                pointer_events: Some(PointerEvents::None),
+                font_size: Some(px(16.0)),
+                color: Some(col(theme::TEXT_MUTED)),
+                ..Default::default()
+            }) { "✕".to_string() }
         }
         .on_touch(move |ev| {
             if ev.phase == TouchPhase::Ended {

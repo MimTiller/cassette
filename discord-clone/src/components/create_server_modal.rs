@@ -58,6 +58,7 @@ pub fn create_server_modal(
     // Shared card/field/button styles (one static pass).
     let card_style = StyleRules {
         width: Some(px(360.0)),
+        position: Some(runtime_core::Position::Relative),
         padding_top: Some(px(20.0)),
         padding_bottom: Some(px(20.0)),
         padding_left: Some(px(20.0)),
@@ -191,6 +192,7 @@ pub fn create_server_modal(
         })
     };
 
+    let close_btn = ui! { crate::controls::modal_close_button(move || close.set(false)) };
     let card = ui! {
         view(style = card_style.clone()) {
             text(style = title_style.clone()) { "Add a Server".to_string() }
@@ -230,6 +232,7 @@ pub fn create_server_modal(
                 { cancel_btn }
             }
             { join_btn }
+            { close_btn }
         }
         .on_touch(move |_ev| TouchResponse::CONSUMED)
     };

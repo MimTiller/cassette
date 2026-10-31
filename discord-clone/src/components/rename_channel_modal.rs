@@ -61,6 +61,7 @@ pub fn RenameChannelModal(
     // Shared card/field/button styles (one static pass).
     let card_style = StyleRules {
         width: Some(px(340.0)),
+        position: Some(runtime_core::Position::Relative),
         padding_top: Some(px(20.0)),
         padding_bottom: Some(px(20.0)),
         padding_left: Some(px(20.0)),
@@ -179,6 +180,7 @@ pub fn RenameChannelModal(
                 })
             };
             if !err.is_empty() {
+                let close_c = ui! { crate::controls::modal_close_button(move || close.set(false)) };
                 ui! {
                     view(style = card_style.clone()) {
                         text(style = title_style.clone()) { "Rename Channel".to_string() }
@@ -191,9 +193,11 @@ pub fn RenameChannelModal(
                         )
                         text(style = err_style.clone()) { err.clone() }
                         { rename_btn }
+                        { close_c }
                     }
                 }
             } else {
+                let close_c = ui! { crate::controls::modal_close_button(move || close.set(false)) };
                 ui! {
                     view(style = card_style.clone()) {
                         text(style = title_style.clone()) { "Rename Channel".to_string() }
@@ -202,6 +206,7 @@ pub fn RenameChannelModal(
                             text_input(value = name.clone(), on_change = on_name_change.clone(), placeholder = "Channel name", style = input_style.clone(), test_id = "rename-channel-name-input")
                         }
                         { rename_btn }
+                        { close_c }
                     }
                 }
             }
