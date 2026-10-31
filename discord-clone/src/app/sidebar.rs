@@ -860,7 +860,7 @@ fn live_category_header(id: i64, name: String, collapsed: Signal<Vec<i64>>) -> E
             ..Default::default()
         }, test_id = "live-category") {
             icon(if is_collapsed { CHEVRON_RIGHT } else { CHEVRON_DOWN })
-                .color(|| theme::live(TEXT_MUTED))
+                .color(|| theme::live(theme::TEXT_FAINT))
                 .size(12.0)
             text(style = StyleRules {
                 font_size: Some(px(12.0)),
