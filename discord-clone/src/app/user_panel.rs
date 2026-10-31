@@ -92,23 +92,9 @@ pub(super) fn user_panel(
                 color: Some(col(TEXT)),
                 ..Default::default()
             };
-            let dot_style = StyleRules {
-                position: Some(Position::Absolute),
-                right: Some(px(0.0)),
-                bottom: Some(px(0.0)),
-                width: Some(px(11.0)),
-                height: Some(px(11.0)),
-                background: Some(col(status.color())),
-                border_top_width: Some(border_width(2.0)),
-                border_right_width: Some(border_width(2.0)),
-                border_bottom_width: Some(border_width(2.0)),
-                border_left_width: Some(border_width(2.0)),
-                border_top_color: Some(col(USER_BAR)),
-                border_right_color: Some(col(USER_BAR)),
-                border_bottom_color: Some(col(USER_BAR)),
-                border_left_color: Some(col(USER_BAR)),
-                ..rounded(6.0)
-            };
+            // The shared 10px presence dot, ring cut out in the panel's own
+            // fill — the one convention used on every avatar surface.
+            let dot = crate::avatar_chip::presence_dot(status.color(), USER_BAR);
             let text_stack = StyleRules {
                 flex_direction: Some(FlexDirection::Column),
                 flex_grow: Some(grow(1.0)),
@@ -222,6 +208,7 @@ pub(super) fn user_panel(
                         flex_shrink: Some(grow(0.0)),
                         ..rounded(16.0)
                     }) {
+                        { dot }
                         image(
                             src = crate::auth::media_url(url.clone()),
                             alt = "Your avatar",
@@ -233,7 +220,6 @@ pub(super) fn user_panel(
                                 ..rounded(16.0)
                             },
                         )
-                        view(style = dot_style) {}
                     }
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
@@ -246,7 +232,7 @@ pub(super) fn user_panel(
                 ui! {
                     view(style = avatar_style) {
                         text(style = initial_style) { initial }
-                        view(style = dot_style) {}
+                        { dot }
                     }
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {

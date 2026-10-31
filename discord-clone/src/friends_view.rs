@@ -42,13 +42,13 @@ use std::collections::HashMap;
 
 use runtime_core::{
     AlignItems, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent,
-    KeyOutcome, ObjectFit, Overflow, Signal, StyleRules, Tokenized, TouchEvent,
+    KeyOutcome, Overflow, Signal, StyleRules, Tokenized, TouchEvent,
     TouchPhase, TouchResponse, switch, ui,
 };
 use runtime_core::icon;
 use icons_lucide::{PLUS, USERS};
 
-use crate::avatar_chip::{avatar_chip, registered_avatar, mountable_avatar_url};
+use crate::avatar_chip::{avatar_chip, avatar_chip_url, registered_avatar, mountable_avatar_url};
 use crate::friends::{FriendList};
 use crate::style_helpers::{col, px, rounded};
 
@@ -143,36 +143,12 @@ fn name_style() -> StyleRules {
 /// what prevents that class of bug.
 fn friend_avatar_chip(name: &str, avatar: Option<String>) -> Element {
     if let Some(url) = registered_avatar(name) {
-        ui! {
-            image(
-                src = crate::auth::media_url(url.clone()),
-                alt = format!("{} avatar", name),
-                style = StyleRules {
-                    width: Some(px(34.0)),
-                    height: Some(px(34.0)),
-                    flex_shrink: Some(grow(0.0)),
-                    object_fit: Some(ObjectFit::Cover),
-                    ..rounded(10.0)
-                },
-            )
-        }
+        avatar_chip_url(name, url.as_str(), 34.0)
     } else if let Some(url) = avatar {
         // The row's own snapshot URL, gated the same way: only data:/http(s):
         // with a non-empty base64 body may mount.
         if mountable_avatar_url(url.as_str()) {
-            ui! {
-                image(
-                    src = crate::auth::media_url(url.clone()),
-                    alt = format!("{} avatar", name),
-                    style = StyleRules {
-                        width: Some(px(34.0)),
-                        height: Some(px(34.0)),
-                        flex_shrink: Some(grow(0.0)),
-                        object_fit: Some(ObjectFit::Cover),
-                        ..rounded(10.0)
-                    },
-                )
-            }
+            avatar_chip_url(name, url.as_str(), 34.0)
         } else {
             avatar_chip(name, theme::ACCENT, 34.0)
         }

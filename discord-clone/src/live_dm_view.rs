@@ -28,11 +28,12 @@
 
 use crate::theme;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use runtime_core::{
     AlignItems, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent,
-    KeyOutcome, ObjectFit, Overflow, Signal, StyleRules, Tokenized,
+    KeyOutcome, Overflow, Position, Signal, StyleRules, Tokenized,
     TouchPhase, TouchResponse, signal, switch, ui,
 };
 
@@ -271,6 +272,7 @@ fn live_dm_row(
     active: Signal<Option<i64>>,
     msgs: Rc<RefCell<Vec<LiveDmMsg>>>,
     rev: Signal<u32>,
+    presence: Rc<RefCell<HashMap<i64, String>>>,
 ) -> Element {
     // The "other" participant: the one whose id isn't the signed-in user.
     // If the id isn't known yet (rare; the list is only fetched post-login),
@@ -299,6 +301,13 @@ fn live_dm_row(
     // may mount — an unresolvable src is what rendered a broken-image
     // placeholder whose alt text leaked onto the row.
     let avatar_img = crate::avatar_chip::registered_avatar(name.as_str());
+    // The participant's presence status drives the row's dot. A 1:1 row's
+    // other participant falls back: the signed-in user (their own presence
+    // is in the map once the socket is up) reads online before any frame.
+    let other_id = other.as_ref().map(|p| p.user_id).unwrap_or(0);
+    let status_str = presence.borrow().get(&other_id).cloned()
+        .unwrap_or((if other_id == me { "online" } else { "offline" }).to_string());
+    let status_role = crate::avatar_chip::presence_status_role(status_str.as_str());
 
     let hovered = signal(false);
     let row_style = move || {
@@ -344,21 +353,11 @@ fn live_dm_row(
     };
 
     // The chip: uploaded image (round-cropped) when the shared client
-    // registry knows the participant, else the pre-existing initial chip.
-    let avatar_chip = if let Some(url) = &avatar_img {
-        ui! {
-            image(
-                src = crate::auth::media_url(url.clone()),
-                alt = format!("{} avatar", name),
-                style = StyleRules {
-                    width: Some(px(34.0)),
-                    height: Some(px(34.0)),
-                    flex_shrink: Some(grow(0.0)),
-                    object_fit: Some(ObjectFit::Cover),
-                    ..rounded(10.0)
-                },
-            )
-        }
+    // registry knows the participant, else the pre-existing initial chip —
+    // always a circle (the shared helper decides the shape), with the
+    // participant's presence dot at its bottom-right.
+    let inner_chip: Element = if let Some(url) = &avatar_img {
+        crate::avatar_chip::avatar_chip_url(name.as_str(), url.as_str(), 34.0)
     } else if is_group {
         ui! {
             view(style = avatar_style) {
@@ -369,6 +368,20 @@ fn live_dm_row(
         ui! {
             view(style = avatar_style) {
                 text(style = initial_style) { initial }
+            }
+        }
+    };
+    let avatar_chip = ui! {
+        view(style = StyleRules {
+            width: Some(px(34.0)),
+            height: Some(px(34.0)),
+            position: Some(Position::Relative),
+            flex_shrink: Some(grow(0.0)),
+            ..Default::default()
+        }) {
+            { inner_chip }
+            if !is_group {
+                { crate::avatar_chip::presence_dot(status_role, theme::BG_SECONDARY) }
             }
         }
     };
@@ -426,6 +439,8 @@ fn live_dm_list(
     members: Signal<Vec<crate::moderation::MemberInfo>>,
     friends_entry: Rc<dyn Fn() -> Element>,
     picker: Signal<Option<crate::group_dm::Picker>>,
+    presence: Rc<RefCell<HashMap<i64, String>>>,
+    presence_rev: Signal<u32>,
 ) -> Element {
     // Fills the window on a phone, where it is the whole list pane.
     let column_style = move || StyleRules {
@@ -447,8 +462,9 @@ fn live_dm_list(
     };
 
     let list = switch(
-        move || live_dms.get(),
-        move |dms: &Vec<Dm>| {
+        move || (live_dms.get(), presence_rev.get()),
+        move |key: &(Vec<Dm>, u32)| {
+            let (dms, _rev) = key;
             // `switch`'s render is `Fn` (called on every key change) — clone
             // the captured styles so the closure borrows them rather than
             // moving them out (the whiteboard idiom, cf. `app.rs`'s sidebar).
@@ -466,7 +482,7 @@ fn live_dm_list(
             let rows: Vec<Element> = dms
                 .iter()
                 .cloned()
-                .map(|dm| live_dm_row(dm, active.clone(), _msgs.clone(), rev.clone()))
+                .map(|dm| live_dm_row(dm, active.clone(), _msgs.clone(), rev.clone(), presence.clone()))
                 .collect();
             let entry = (friends_entry)();
             ui! {
@@ -1035,6 +1051,8 @@ pub fn live_dm_screen(
     friends_entry: Rc<dyn Fn() -> Element>,
     friends_open: Signal<bool>,
     friends_panel: Rc<dyn Fn() -> Element>,
+    presence: Rc<RefCell<HashMap<i64, String>>>,
+    presence_rev: Signal<u32>,
 ) -> Element {
     let effect = dm_incoming_effect(frame_seq, live_dms, active.clone(), msgs.clone(), rev.clone());
     let picker: Signal<Option<crate::group_dm::Picker>> = signal(None);
@@ -1084,7 +1102,7 @@ pub fn live_dm_screen(
                 overflow: Some(Overflow::Hidden),
                 ..Default::default()
             }) {
-                live_dm_list(live_dms.clone(), active.clone(), msgs.clone(), rev.clone(), new_id, friends, members, friends_entry, picker)
+                live_dm_list(live_dms.clone(), active.clone(), msgs.clone(), rev.clone(), new_id, friends, members, friends_entry, picker, presence.clone(), presence_rev.clone())
             }
             view(style = move || StyleRules {
                 flex_direction: Some(FlexDirection::Row),

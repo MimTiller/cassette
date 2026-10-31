@@ -109,7 +109,7 @@ pub(super) fn build(s: &ShellState) -> UserPopupsParts {
     let ShellState {
         active_live_server, composer, live_ban_confirm, live_dm_active, live_dm_messages,
         live_dm_mode, live_dm_revision, live_dms, live_kick_confirm, live_members, live_timeout_confirm,
-        profile_mode, user_popup, user_profile, blocked_users, live_revision, ..
+        profile_mode, user_popup, user_profile, blocked_users, live_revision, live_presence, live_presence_rev, ..
     } = s.clone();
     let ctx = UserPopupCtx {
         popup: user_popup,
@@ -118,6 +118,7 @@ pub(super) fn build(s: &ShellState) -> UserPopupsParts {
         blocked: blocked_users,
         live_rev: live_revision,
     };
+    let presence_map = live_presence.clone();
     // Open (or start) the DM with a user and show the DM screen.
     let open_dm: Rc<dyn Fn(i64)> = {
         let msgs = live_dm_messages.clone();
@@ -128,8 +129,8 @@ pub(super) fn build(s: &ShellState) -> UserPopupsParts {
     };
     // `live_revision` is in the key so a role change redraws an open card.
     let user_popup_el = switch(
-        move || (user_popup.get(), user_profile.get(), live_revision.get()),
-        move |(popup, profile, _rev): &(Option<UserPopup>, Option<UserProfile>, u32)| {
+        move || (user_popup.get(), user_profile.get(), live_revision.get(), live_presence_rev.get()),
+        move |(popup, profile, _rev, _pres_rev): &(Option<UserPopup>, Option<UserProfile>, u32, u32)| {
             let Some(popup) = *popup else {
                 return ui! { view(style = StyleRules { width: Some(px(0.0)), height: Some(px(0.0)), ..Default::default() }) {} };
             };
@@ -137,7 +138,7 @@ pub(super) fn build(s: &ShellState) -> UserPopupsParts {
                 UserPopup::Card { user_id, .. } | UserPopup::Menu { user_id, .. } => p.user_id == user_id,
             });
             let body = match popup {
-                UserPopup::Card { x, y, .. } => profile_card(profile, x, y, ctx, open_dm.clone(), profile_mode),
+                UserPopup::Card { x, y, .. } => profile_card(profile, x, y, ctx, open_dm.clone(), profile_mode, presence_map.clone()),
                 UserPopup::Menu { user_id, x, y } => user_menu(
                     user_id, profile, x, y, ctx, open_dm.clone(), composer, live_members,
                     live_kick_confirm, live_ban_confirm, live_timeout_confirm,
@@ -178,6 +179,7 @@ fn profile_card(
     ctx: UserPopupCtx,
     open_dm: Rc<dyn Fn(i64)>,
     profile_mode: Signal<bool>,
+    presence: Rc<RefCell<HashMap<i64, String>>>,
 ) -> Element {
     let (left, top) = place(x, y, CARD_W, CARD_H);
     let frame = StyleRules {
@@ -303,7 +305,20 @@ fn profile_card(
                 background: Some(col(theme::BG_USER_PANEL)),
                 ..rounded(44.0)
             }) {
-                { crate::avatar_chip::avatar_chip(name.as_str(), BUTTON, 80.0) }
+                view(style = StyleRules {
+                    width: Some(px(80.0)),
+                    height: Some(px(80.0)),
+                    position: Some(Position::Relative),
+                    ..Default::default()
+                }) {
+                    { crate::avatar_chip::avatar_chip(name.as_str(), BUTTON, 80.0) }
+                    { crate::avatar_chip::presence_dot(
+                        crate::avatar_chip::presence_status_role(
+                            (presence.borrow().get(&p.user_id).cloned().unwrap_or("offline".to_string())).as_str()
+                        ),
+                        banner_color(&name),
+                    ) }
+                }
             }
             view(style = StyleRules {
                 flex_direction: Some(FlexDirection::Column),
