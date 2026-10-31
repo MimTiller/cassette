@@ -625,8 +625,8 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
                 opacity: Some(Tokenized::Literal(0.6)),
                 ..rounded(230.0)
             }) {}
-            cassette_motif(-90.0, 120.0)
-            cassette_motif(30.0, -140.0)
+            cassette_motif(-460.0, -60.0)
+            cassette_motif(420.0, 80.0)
             view(style = card_style) {
                 view(style = logo_style) {
                     text(style = logo_text_style) { "C".to_string() }
