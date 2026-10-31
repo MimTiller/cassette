@@ -35,7 +35,7 @@
 use crate::theme;
 use runtime_core::{
     component, signal, switch, ui, AlignItems, Element, FlexDirection, FontWeight,
-    JustifyContent, ObjectFit, Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
+    JustifyContent, ObjectFit, Overflow, Position, Signal, StyleRules, TouchResponse,
 };
 use file_picker::{FilePicker, MediaKind, PickOutcome, PickRequest};
 
@@ -107,37 +107,6 @@ pub fn ServerSettingsPanel(
     let input_style = StyleRules {
         align_items: Some(AlignItems::Center),
         ..crate::style_helpers::text_field_style()
-    };
-    let save_btn_style = StyleRules {
-        height: Some(px(34.0)),
-        background: Some(col(theme::BUTTON_SECONDARY)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        flex_direction: Some(FlexDirection::Row),
-        ..rounded(8.0)
-    };
-    let transfer_btn_style = StyleRules {
-        height: Some(px(34.0)),
-        background: Some(col(theme::SUCCESS_STRONG)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        flex_direction: Some(FlexDirection::Row),
-        ..rounded(8.0)
-    };
-    // The add-member section's "Add member" button (green, like transfer).
-    let add_btn_style = StyleRules {
-        height: Some(px(34.0)),
-        background: Some(col(theme::SUCCESS_STRONG)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        flex_direction: Some(FlexDirection::Row),
-        ..rounded(8.0)
-    };
-    let btn_label_style = StyleRules {
-        font_size: Some(px(14.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(theme::TEXT_STRONG)),
-        ..Default::default()
     };
     let err_style = StyleRules {
         font_size: Some(px(12.0)),
@@ -403,8 +372,7 @@ pub fn ServerSettingsPanel(
             };
             let row_col = move || StyleRules {
                 flex_direction: Some(FlexDirection::Column),
-                gap: Some(px(8.0)),
-                max_width: Some(px(480.0)),
+                gap: Some(px(16.0)),
                 ..Default::default()
             };
             // The add-member action row lays its controls out horizontally
