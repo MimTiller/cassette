@@ -5,3 +5,5 @@
 *.session-secret
 media/
 giphy.key
+e2e/out/
+__pycache__/
