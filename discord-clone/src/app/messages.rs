@@ -161,7 +161,11 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         view(style = moderation_style.clone(), test_id = "pin-live") {
                             icon(PIN).color(|| theme::live(TEXT_MUTED)).size(15.0)
                         }
-                        .on_touch(move |_ev| {
+                        .on_touch(move |ev| {
+                            // Mouse hover arrives as `Hovered`; only a finished press opens.
+                            if ev.phase != TouchPhase::Ended {
+                                return TouchResponse::CONSUMED;
+                            }
                             let open_p = pinned_panel_open;
                             let msgs_p = pinned_messages;
                             let err_p = pinned_error;
@@ -238,8 +242,10 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         }, test_id = "invite-live") {
                             icon(USER_PLUS).color(|| theme::live(TEXT_MUTED)).size(15.0)
                         }
-                        .on_touch(move |_ev| {
-                            live_invite_open.set(true);
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                live_invite_open.set(true);
+                            }
                             TouchResponse::CONSUMED
                         })
                         // Show / hide the member list.
