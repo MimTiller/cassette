@@ -218,7 +218,7 @@ pub(crate) fn emoji_view(id: i64, name: &str, size: f32) -> Element {
 /// grid's cell size, on its 4px gaps) so the section sits on the same grid as
 /// the unicode emoji beside it. `pick` fires with the emoji's token on tap.
 // idealyst-lint-disable-next-line prefer-component -- one cell built per
-// emoji inside the reactive picker_row; props are plain values there.
+// emoji in a data loop, props are plain values.
 pub(crate) fn picker_cell(e: ServerEmoji, pick: Rc<dyn Fn(String)>) -> Element {
     ui! {
         view(style = StyleRules {
@@ -255,9 +255,8 @@ pub(crate) fn picker_cell(e: ServerEmoji, pick: Rc<dyn Fn(String)>) -> Element {
 /// an empty section.
 pub(crate) fn picker_row(on_pick: Rc<dyn Fn(String)>) -> Element {
     let pick = on_pick.clone();
-    // idealyst-lint-disable-next-line prefer-ui-control-flow -- the key is a
-    // plain fn (no signal handle to fold into a ui! match); this arms the
-    // section on the names revision bumped by custom_emoji::load.
+    // idealyst-lint-disable-next-line prefer-ui-control-flow -- keyed on a
+    // plain revision fn (no signal handle to fold into a ui! match).
     switch(
         move || crate::mentions::revision(),
         move |_: &u32| {
@@ -290,10 +289,10 @@ pub(crate) fn picker_row(on_pick: Rc<dyn Fn(String)>) -> Element {
                         flex_direction: Some(FlexDirection::Row),
                         flex_wrap: Some(FlexWrap::Wrap),
                         gap: Some(px(4.0)),
-                        // Indent past the picker's 56px category rail (plus its
-                        // own 4px gutters) so the custom cells sit on the same
-                        // column grid as the unicode emoji beside them.
-                        padding_left: Some(px(64.0)),
+                        // Indent past the picker's 56px category rail so the
+                        // custom cells start on the grid's first column, then
+                        // match the grid's own 4px gutter.
+                        padding_left: Some(px(60.0)),
                         max_height: Some(px(92.0)),
                         overflow: Some(runtime_core::Overflow::Hidden),
                         ..Default::default()
