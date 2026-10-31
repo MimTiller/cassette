@@ -160,7 +160,7 @@ pub(crate) fn picker_dialog(
                             background: Some(crate::style_helpers::selected_fill(on, false)),
                             ..rounded(4.0)
                         }) {
-                            { crate::avatar_chip::avatar_chip(username.as_str(), theme::ACCENT, 28.0, 13.0) }
+                            { crate::avatar_chip::avatar_chip(username.as_str(), theme::ACCENT, 28.0) }
                             text(style = StyleRules {
                                 flex_grow: Some(grow(1.0)),
                                 font_size: Some(px(15.0)),
@@ -382,7 +382,7 @@ pub(crate) fn members_panel(dm: &Dm) -> Element {
                     padding_right: Some(px(8.0)),
                     ..Default::default()
                 }) {
-                    { crate::avatar_chip::avatar_chip(username.as_str(), theme::ACCENT, 28.0, 13.0) }
+                    { crate::avatar_chip::avatar_chip(username.as_str(), theme::ACCENT, 28.0) }
                     text(style = StyleRules {
                         flex_grow: Some(grow(1.0)),
                         min_width: Some(px(0.0)),

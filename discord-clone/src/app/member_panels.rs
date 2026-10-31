@@ -297,7 +297,6 @@ pub(super) fn live_member_panel(
             member.username.as_str(),
             BUTTON,
             MEMBER_CHIP_SIZE,
-            MEMBER_CHIP_SIZE / 2.0,
         );
         let avatar_wrap_style = StyleRules {
             position: Some(Position::Relative),

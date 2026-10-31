@@ -65,7 +65,7 @@ pub fn reply_reference_strip(author: String, snippet: String) -> Element {
                 gap: Some(px(6.0)),
                 ..Default::default()
             }) {
-                { reply_avatar_chip(author.as_str(), theme::BG_SELECTED, 16.0, 8.0) }
+                { reply_avatar_chip(author.as_str(), theme::BG_SELECTED, 16.0) }
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
                     font_weight: Some(FontWeight::SemiBold),

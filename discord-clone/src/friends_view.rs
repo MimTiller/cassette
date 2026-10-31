@@ -174,10 +174,10 @@ fn friend_avatar_chip(name: &str, avatar: Option<String>) -> Element {
                 )
             }
         } else {
-            avatar_chip(name, theme::ACCENT, 34.0, 10.0)
+            avatar_chip(name, theme::ACCENT, 34.0)
         }
     } else {
-        avatar_chip(name, theme::ACCENT, 34.0, 10.0)
+        avatar_chip(name, theme::ACCENT, 34.0)
     }
 }
 

@@ -187,7 +187,7 @@ fn live_dm_find_row(
                         padding_right: Some(px(6.0)),
                         ..rounded(4.0)
                     }, test_id = "live-dm-find-result") {
-                        { crate::avatar_chip::avatar_chip(name.as_str(), theme::ACCENT, 24.0, 12.0) }
+                        { crate::avatar_chip::avatar_chip(name.as_str(), theme::ACCENT, 24.0) }
                         text(style = StyleRules {
                             font_size: Some(px(14.0)),
                             color: Some(col(theme::TEXT_STRONG)),
@@ -323,7 +323,7 @@ fn live_dm_row(
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         background: Some(col(theme::ACCENT)),
-        ..rounded(10.0)
+        ..rounded(17.0)
     };
     let initial_style = StyleRules {
         font_size: Some(px(15.0)),

@@ -303,7 +303,7 @@ fn profile_card(
                 background: Some(col(theme::BG_USER_PANEL)),
                 ..rounded(44.0)
             }) {
-                { crate::avatar_chip::avatar_chip(name.as_str(), BUTTON, 80.0, 40.0) }
+                { crate::avatar_chip::avatar_chip(name.as_str(), BUTTON, 80.0) }
             }
             view(style = StyleRules {
                 flex_direction: Some(FlexDirection::Column),

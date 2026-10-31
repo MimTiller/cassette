@@ -291,7 +291,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                         padding_bottom: Some(px(6.0)),
                         ..Default::default()
                     }) {
-                        { crate::avatar_chip::avatar_chip(b.username.as_str(), theme::ACCENT, 28.0, 14.0) }
+                        { crate::avatar_chip::avatar_chip(b.username.as_str(), theme::ACCENT, 28.0) }
                         text(style = StyleRules { flex_grow: Some(runtime_core::Tokenized::Literal(1.0)), font_size: Some(px(14.0)), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { b.username.clone() }
                         view(style = StyleRules {
                             height: Some(px(28.0)),
