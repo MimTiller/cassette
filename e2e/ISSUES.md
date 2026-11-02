@@ -12,13 +12,6 @@ Screenshots are in `/root/discord-ref/e2e-issues-2026-10-31/` on the dev box.
    `group_dm::refresh`. Test: test_dms_friends, "a brand-new DM appears in the
    other person's list live". Shot: `1-new-dm-not-listed.png`.
 
-2. **Denied Send Messages leaves the composer open.** The owner denies Send
-   Messages for @everyone in #general; the member's composer still reads
-   "Message #general", typing works, and Enter silently does nothing (the
-   server refuses it). The no-permission bar never shows, live or after
-   switching channels. Test: test_permissions, "the composer shows the
-   no-permission bar". Shot: `2-denied-composer-open.png`.
-
 3. **Delete in the message menu does nothing visible.** Menu → Delete closes
    the menu, but the inline "Delete this message? Confirm / No" strip never
    appears and the message stays. (Suspected; the app exposes no signals to
@@ -44,9 +37,6 @@ Screenshots are in `/root/discord-ref/e2e-issues-2026-10-31/` on the dev box.
 
 8. **Search jump doesn't highlight the message** (carried over from the
    earlier run, not re-checked). Test: test_search.
-
-9. **Blocking hides messages** is still KNOWN in test_dms_friends (right-click
-   → Block didn't collapse the blocked user's DM text); not investigated yet.
 
 11. **The Invite People page has no header background.** It is a full-screen
     page whose top strip is transparent, so the title "Invite People" draws
