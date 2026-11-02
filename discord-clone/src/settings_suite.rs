@@ -813,7 +813,7 @@ pub(crate) fn settings_layout(nav: Vec<Element>, panel: Element, close: Option<R
                         let pad = if crate::app::mobile::is_phone() { 16.0 } else { 40.0 };
                         StyleRules {
                             flex_direction: Some(FlexDirection::Column),
-                            max_width: Some(px(740.0)),
+                            max_width: Some(px(crate::app::mobile::fit_width(740.0))),
                             padding_top: Some(px(if crate::app::mobile::is_phone() { 16.0 } else { 60.0 })),
                             padding_bottom: Some(px(80.0)),
                             padding_left: Some(px(pad)),
