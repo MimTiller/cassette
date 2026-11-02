@@ -5,11 +5,12 @@ Rules for anyone changing this repo, human or agent. Read
 
 ## Before you call a change done
 
-Run these from the repo root. All must pass, with no new warnings:
+Run these from the repo root. All must pass, with no new warnings from `cargo` or `idealyst lint`:
 
 ```bash
 (cd discord-server && cargo check --features server && cargo test --features server)
 (cd discord-clone && cargo check && cargo test)
+idealyst lint discord-clone
 ```
 
 For a UI change, also look at it in a browser (see "Testing in a browser"),
@@ -98,12 +99,14 @@ audio comes last, after everything else.
 Start a dev server from the **repo root**, with the crate as an argument:
 
 ```bash
-idealyst dev --web --local --port 8086 discord-clone
+idealyst dev --web --local --port <free-port> discord-clone
 ```
 
 - **Start it from the repo root.** Started from inside `discord-clone/`, it
   opens a fresh empty `discord.db` there, and logins fail.
-- **Use a free port.** :8080 is the live site.
+- **Use a free port, and one dev server per worktree.** :8080 is staging, on
+  `main`. Prod is a separate release build. MCP only picks an app by itself
+  when one app is registered for your project.
 - **Hot patches can leave old code running.** If the page contradicts the
   code, stop the server and move `discord-clone/target/idealyst-web-*/idealyst-hotpatch`
   (and `target/idealyst-web-*/idealyst-hotpatch`) aside, then restart. The
@@ -122,7 +125,9 @@ tree.
   agent tools take this as an MCP server entry.
 - **Find the app:** with a dev server running and its page open in a
   browser, the app registers with it. `list_apps` / `wait_for_app` list one
-  app per dev server, with its `project_root`; pick yours by that. Keep one
+  app per dev server, with its `project_root`. Leave the `app` argument out
+  and MCP uses the one in your project; `app` takes a selector such as
+  `Discord Clone:web`, never a path, port or pid. Keep one
   tab per dev server, since several tabs don't show up as separate apps; for
   a second user, script that side (or run a second dev server).
 - **Drive it:** `find_element` / `find_all_elements` (by `test_id`, label or

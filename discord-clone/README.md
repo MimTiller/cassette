@@ -4,9 +4,6 @@ This is the client crate of [Cassette](../README.md). The top-level README
 covers features, setup and configuration; this page covers how the pieces fit
 together and how authentication works.
 
-See [`RESUME.md`](RESUME.md) for a detailed engineering log of what was built
-and the framework pitfalls hit along the way.
-
 ## Architecture notes
 
 - `discord-server`'s `server` binary is both the API host (axum) **and** the
