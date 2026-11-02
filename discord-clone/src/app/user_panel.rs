@@ -250,9 +250,12 @@ pub(super) fn user_panel(
             // 18px icons: the single row must fit the avatar, the name
             // column and the three icon buttons in the 224px the 240px
             // sidebar leaves after the panel's 8px side padding.
-            let icon_btn_style = StyleRules {
-                width: Some(px(18.0)),
-                height: Some(px(18.0)),
+            let icon_btn_style = move || StyleRules {
+                // 18px icons fit the desktop sidebar's 224px row (avatar +
+                // name + three buttons); a phone's sidebar is the whole
+                // window, so the buttons grow to a comfortable tap size.
+                width: Some(px(if crate::app::mobile::is_phone() { 28.0 } else { 18.0 })),
+                height: Some(px(if crate::app::mobile::is_phone() { 28.0 } else { 18.0 })),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
                 flex_shrink: Some(grow(0.0)),
