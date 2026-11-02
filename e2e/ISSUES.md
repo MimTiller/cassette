@@ -24,12 +24,6 @@ Screenshots are in `/root/discord-ref/e2e-issues-2026-10-31/` on the dev box.
    sliver ("ONLINE — 1" wraps, names cut off) on every client. Seen in
    test_messages. Shot: `4-member-list-squeezed.png`.
 
-6. **No new-messages bar in the channel a server opens on.** Entering a
-   server opens #general before `unread_counts` returns, so its count reads 0
-   and the "N new messages" bar never shows there (it works for a channel
-   opened afterwards). Test: test_notifications. Shot:
-   `6-no-unread-bar-on-entry.png`.
-
 7. **Pinning a live message gives no confirmation.** Nothing sets
    `pin_visible` for live rows (only the removed mock rows did), so the
    "Message pinned!" toast never shows; only the header count changes. Test:
