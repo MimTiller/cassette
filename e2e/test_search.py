@@ -18,6 +18,10 @@ SHOTS = sys.argv[2] if len(sys.argv) > 2 else "/tmp/cassette-e2e"
 
 TIMEOUT = 300
 
+# A row holding the text with the jump highlight's background (theme MENTION_ROW).
+HIGHLIGHT = ("[...document.querySelectorAll('*')].some(e => "
+             "/240, 178, 50/.test(getComputedStyle(e).backgroundColor) "
+             "&& e.textContent.includes(%r))")
 NEEDLE = "needle message here"
 
 
@@ -61,23 +65,19 @@ async def main():
 
         # click the result card -> jump to the message + highlight
         jump_ok = False
-        p = await s.text_pos(NEEDLE, xmin=s.W * 0.15, xmax=s.W * 0.55)
+        p = await s.text_pos(NEEDLE, xmin=s.W * 0.55, ymax=s.H * 0.3)
         if p:
             await s.click(*p)
-            jumped = await s.until(s.painted(NEEDLE, xmin=s.W * 0.3), timeout=12,
-                                   why="jumped to the message")
-            hi = await s.row_highlight_bg(NEEDLE)
+            jumped = await s.until(s.not_painted("1 result"), timeout=12,
+                                   why="the result card closed")
+            hi = await s.until(HIGHLIGHT % NEEDLE, timeout=5, why="the row highlight")
             jump_ok = jumped and bool(hi)
-            s.known_bug("clicking the result jumps to the message", bool(jumped),
-                        why="result card tap")
-            s.known_bug("the jumped-to message is highlighted", bool(hi),
-                        why="row highlight after jump")
+            s.check("clicking the result jumps to the message", bool(jumped))
+            s.check("the jumped-to message is highlighted", bool(hi))
             await s.shot("search2-jumped.png")
         else:
-            s.known_bug("clicking the result jumps to the message", False,
-                        why="card not painted")
-            s.known_bug("the jumped-to message is highlighted", False,
-                        why="no card")
+            s.check("clicking the result jumps to the message", False)
+            s.check("the jumped-to message is highlighted", False)
 
         errs = [e["params"].get("exceptionDetails", {}).get("message", "")
                 for e in s._events if e["method"] == "Runtime.exceptionThrown"]

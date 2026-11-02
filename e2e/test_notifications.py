@@ -83,7 +83,7 @@ async def main():
         bar = await a.text_pos_regex(r"\d+ new messages")
         if bar:
             await a.click(*bar)
-            jumped = await a.until(a.painted("lobby0", xmin=a.W * 0.3),
+            jumped = await a.until(a.painted("lobby0", xmin=a.W * 0.2),
                                    timeout=8, why="first unread in view")
             a.known_bug("tapping the bar jumps to the first unread", jumped,
                         why="bar -> jump")

@@ -57,13 +57,13 @@ async def main():
 
         # A sends the mention; A sees it
         await a.send_message(msg)
-        seen_a = await a.until(a.painted(msg, xmin=a.W * 0.3, xmax=a.W * 0.9),
+        seen_a = await a.until(a.painted(msg, xmin=a.W * 0.2, xmax=a.W * 0.9),
                                timeout=10, why="A sees own message")
         a.check("A sees its own message", seen_a)
         await a.shot("duo4-a-sent.png")
 
         # B's view shows it highlighted (mention pill on the row)
-        seen_b = await b.until(b.painted(msg, xmin=b.W * 0.3, xmax=b.W * 0.9),
+        seen_b = await b.until(b.painted(msg, xmin=b.W * 0.2, xmax=b.W * 0.9),
                                timeout=20, why="B receives A's message")
         b.check("B sees A's message in its own view", seen_b)
         pill = await b.pill_bg(f"@{b_user}")   # the pill is its own leaf
@@ -73,11 +73,11 @@ async def main():
 
         # B replies; A sees it live over its open gateway
         await b.send_message(reply)
-        seen_b_own = await b.until(b.painted(reply, xmin=b.W * 0.3),
+        seen_b_own = await b.until(b.painted(reply, xmin=b.W * 0.2),
                                    timeout=10, why="B sees own reply")
         b.check("B sees its reply", seen_b_own)
         await b.shot("duo6-b-replied.png")
-        seen_a2 = await a.until(a.painted(reply, xmin=a.W * 0.3, xmax=a.W * 0.9),
+        seen_a2 = await a.until(a.painted(reply, xmin=a.W * 0.2, xmax=a.W * 0.9),
                                 timeout=15, why="A receives B's reply live")
         a.check("A sees B's reply without reloading", seen_a2)
         await a.shot("duo7-a-sees-reply.png")

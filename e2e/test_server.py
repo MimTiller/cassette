@@ -50,13 +50,13 @@ async def main():
             raise MissingElement("Create Channel row not painted in the menu")
         await s.create_channel(channel)
         s.check("create channel: it shows in the sidebar",
-                await s.visible(channel, xmin=s.W * 0.1, xmax=s.W * 0.45))
+                await s.visible(channel, xmin=72, xmax=s.W * 0.45))
         await s.shot("srv2-channel.png")
 
         # send a message and see it appear
         await s.send_message(msg)
         appeared = await s.until(
-            s.painted(msg, xmin=s.W * 0.3, xmax=s.W * 0.9), timeout=10,
+            s.painted(msg, xmin=s.W * 0.2, xmax=s.W * 0.9), timeout=10,
             why="sent message painted")
         s.check("send message: it appears in the message view", appeared)
         await s.shot("srv3-sent.png")
@@ -72,22 +72,18 @@ async def main():
         s.check("edit: the new text shows with an (edited) marker", ok_edit)
         await s.shot("srv4-edited.png")
 
-        # delete it (reopen the menu on the edited row). App bug: the
-        # delete-confirm strip mounts in a zero-width flex column, so it lands
-        # at x=-17 y=1544 — off-screen (see ISSUES.md); mark KNOWN and keep
-        # the check.
+        # delete it (reopen the menu on the edited row)
         menu = await s.open_message_menu(edited)
+        await asyncio.sleep(0.6)
         del_ok = False
         clicked_del = menu and await s.click_text("Delete", xmin=s.W * 0.6, ymax=s.H * 0.6)
         if clicked_del:
             await asyncio.sleep(1.0)
             await s.shot("srv5a-after-delete-click.png")
-            confirmed = await s.until(s.painted("Delete this message?"),
-                                      timeout=6, why="confirm strip")
+            confirmed = await s.until(s.painted("Confirm"), timeout=6, why="confirm strip")
             del_ok = confirmed and await s.click_text("Confirm", xmin=312, ymax=s.H) \
                 and await s.until(s.not_painted(edited), timeout=10, why="message gone")
-        s.known_bug("delete: the message disappears", del_ok,
-                    why="menu Delete -> inline confirm strip -> Confirm")
+        s.check("delete: the message disappears", del_ok)
         await s.shot("srv5-deleted.png")
 
         errs = [e["params"].get("exceptionDetails", {}).get("message", "")

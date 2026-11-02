@@ -48,7 +48,7 @@ async def main():
         await a.login(a_user, pw)
         target = "the target message"
         await a.send_message(target)
-        ok = await a.until(a.painted(target, xmin=a.W * 0.3), timeout=10,
+        ok = await a.until(a.painted(target, xmin=a.W * 0.2), timeout=10,
                            why="target message painted")
         a.check("target message is painted", ok)
 
@@ -65,7 +65,7 @@ async def main():
             replied = bool(prev) and bool(await a.send_message("reply body here"))
             await asyncio.sleep(0.5)
         rep_seen = replied and await a.until(
-            a.painted("reply body here", xmin=a.W * 0.3), timeout=10,
+            a.painted("reply body here", xmin=a.W * 0.2), timeout=10,
             why="reply visible in the thread")
         a.known_bug("reply: the reply renders under the target", bool(rep_seen),
                     why="Reply row -> preview bar -> sent reply")
@@ -89,7 +89,7 @@ async def main():
         cells = []
         if clicked:
             # First cell of Smileys & People (emoji are 2 UTF-16 units, so match by text).
-            cell = await a.text_pos("\U0001f600", xmin=a.W * 0.3, ymin=150)
+            cell = await a.text_pos("\U0001f600", xmin=a.W * 0.2, ymin=150)
             cells = [cell] if cell else []
             if cell:
                 await a.click(*cell)
@@ -105,9 +105,9 @@ async def main():
         a.known_bug("adding a reaction paints a pill under the message",
                     react_ok, why="React button -> emoji picker -> pill")
         if react_ok:
-            await a.click_starts(glyph, xmin=a.W * 0.3)
+            await a.click_starts(glyph, xmin=a.W * 0.2)
             still = await a.ev(painted_re(a, f"^{re.escape(glyph)}",
-                                          xmin=int(a.W * 0.3), xmax=int(a.W * 0.9)))
+                                          xmin=int(a.W * 0.2), xmax=int(a.W * 0.9)))
             a.known_bug("clicking the pill removes the reaction", not still,
                         why="pill toggle")
 
@@ -136,10 +136,10 @@ async def main():
 
         # --- markdown: bold + inline code ---
         await a.send_message("bold check **boldword** end")
-        md = await a.until(a.painted("boldword", xmin=a.W * 0.3), timeout=10,
+        md = await a.until(a.painted("boldword", xmin=a.W * 0.2), timeout=10,
                            why="bold parsed into its own run")
         await a.send_message("code `codeword` end")
-        md2 = await a.until(a.painted("codeword", xmin=a.W * 0.3), timeout=10,
+        md2 = await a.until(a.painted("codeword", xmin=a.W * 0.2), timeout=10,
                             why="inline code parsed")
         a.check("markdown bold renders", md)
         a.check("markdown inline code renders", md2)
@@ -154,6 +154,9 @@ async def main():
             if row:
                 break
         wrapped = row and (row[3] - row[1]) > 24 and row[2] < a.W * 0.95
+        panel = await a.ev("[...document.querySelectorAll('*')].filter(e => e.children.length === 0 "
+                           "&& /^ONLINE/.test(e.textContent.trim())).map(e => e.getBoundingClientRect().x)[0]")
+        a.check("a long message leaves the member list its width", bool(panel) and panel < a.W - 200)
         a.known_bug("a long message wraps instead of overflowing", bool(wrapped),
                     why="row box %s" % (row or "missing"))
 
@@ -169,7 +172,7 @@ async def main():
         jumped = False
         if jb:
             await a.click_text("Jump to bottom")
-            jumped = await a.until(a.painted(filler[-1], xmin=a.W * 0.3),
+            jumped = await a.until(a.painted(filler[-1], xmin=a.W * 0.2),
                                    timeout=8, why="bottom row back in view")
         a.known_bug("scrolling up shows Jump to bottom and it works",
                     bool(jb and jumped), why="button then bottom row")

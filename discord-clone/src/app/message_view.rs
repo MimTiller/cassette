@@ -965,6 +965,12 @@ pub(crate) fn message_row(
         // gutter time anchors to the row's `Position::Relative` wrapper
         // (`message_row_with_actions`), 16px inside its left edge.
         let hovered = signal(false);
+        // Only the clock ("5:49 PM") fits the gutter.
+        let mut parts = when.rsplitn(3, ' ');
+        let clock = match (parts.next(), parts.next()) {
+            (Some(period), Some(time)) => format!("{time} {period}"),
+            _ => when.clone(),
+        };
         return ui! {
             view(style = crate::styles::MessageGroupedBox(), on_hover = move |on: bool| hovered.set(on)) {
                 { message_body(body) }
@@ -977,7 +983,7 @@ pub(crate) fn message_row(
                         font_size: Some(px(11.0)),
                         color: Some(col(crate::theme::TEXT_FAINT)),
                         ..Default::default()
-                    }) { when.clone() }
+                    }) { clock.clone() }
                 }
             }
         };

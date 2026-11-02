@@ -160,7 +160,7 @@ async def main():
         await b.type_ph_start("Message", "should not post", select=False)
         await b.enter()
         await asyncio.sleep(1.5)
-        posted = await b.visible("should not post", xmin=b.W * 0.3)
+        posted = await b.visible("should not post", xmin=b.W * 0.2)
         b.check("the denied member's send does not post", not posted)
 
         errs = [e["params"].get("exceptionDetails", {}).get("message", "")

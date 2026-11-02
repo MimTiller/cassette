@@ -611,6 +611,7 @@ pub(super) fn live_member_panel(
     ui! {
         view(style = StyleRules {
             width: Some(px(260.0)),
+            flex_shrink: Some(grow(0.0)),
             background: Some(col(BG_SIDEBAR)),
             border_left_width: Some(border_width(1.0)),
             border_left_color: Some(col(BORDER)),

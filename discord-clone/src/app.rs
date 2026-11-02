@@ -1413,6 +1413,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     let main_style = move || StyleRules {
         flex_grow: Some(grow(if mobile::hidden(mobile::Pane::Chat) { 0.0 } else { 1.0 })),
         width: mobile::hidden(mobile::Pane::Chat).then(|| px(0.0)),
+        // Without this a long message's min-content width would squeeze the
+        // member list instead of wrapping.
+        min_width: Some(px(0.0)),
         background: Some(col(BG_MAIN)),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
@@ -1616,6 +1619,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     top: phone.then(|| px(0.0)),
                     right: phone.then(|| px(0.0)),
                     background: phone.then(|| col(theme::OVERLAY)),
+                    flex_shrink: Some(grow(0.0)),
                     overflow: Some(Overflow::Hidden),
                     ..Default::default()
                 }

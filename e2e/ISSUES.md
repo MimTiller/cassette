@@ -12,18 +12,6 @@ Screenshots are in `/root/discord-ref/e2e-issues-2026-10-31/` on the dev box.
    `group_dm::refresh`. Test: test_dms_friends, "a brand-new DM appears in the
    other person's list live". Shot: `1-new-dm-not-listed.png`.
 
-3. **Delete in the message menu does nothing visible.** Menu → Delete closes
-   the menu, but the inline "Delete this message? Confirm / No" strip never
-   appears and the message stays. (Suspected; the app exposes no signals to
-   MCP, so `live_delete_confirm` couldn't be read directly.) Test:
-   test_server, "delete: the message disappears". Shot:
-   `3-delete-no-confirm.png`.
-
-4. **A long wrapped message squeezes the member list.** After a ~200-word
-   message the chat column grows and the member list shrinks to a ~70px
-   sliver ("ONLINE — 1" wraps, names cut off) on every client. Seen in
-   test_messages. Shot: `4-member-list-squeezed.png`.
-
 6. **No new-messages bar in the channel a server opens on.** Entering a
    server opens #general before `unread_counts` returns, so its count reads 0
    and the "N new messages" bar never shows there (it works for a channel
@@ -34,9 +22,6 @@ Screenshots are in `/root/discord-ref/e2e-issues-2026-10-31/` on the dev box.
    `pin_visible` for live rows (only the removed mock rows did), so the
    "Message pinned!" toast never shows; only the header count changes. Test:
    test_messages, "pin: the pin toast confirms".
-
-8. **Search jump doesn't highlight the message** (carried over from the
-   earlier run, not re-checked). Test: test_search.
 
 11. **The Invite People page has no header background.** It is a full-screen
     page whose top strip is transparent, so the title "Invite People" draws

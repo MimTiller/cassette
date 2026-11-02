@@ -45,13 +45,13 @@ class MissingElement(Exception):
     pass
 
 
-def _paint_js(elem, W, H):
+def _paint_js(elem, W, H, xmin=-1.0, ymin=-1.0):
     """JS predicate: elem's centre is on-screen and nothing opaque paints over
     it. Collapsed overlays sit off-viewport (their rects land in negative or
     beyond-edge coordinates), and open modals have opaque backgrounds — a
     transparent empty container over the point does not hide the text."""
     return (f"(() => {{ const r = {elem}.getBoundingClientRect(); "
-            f"if (!(r.width > 0 && r.height > 0)) return false; "
+            f"if (!(r.width > 0 && r.height > 0 && r.x > {xmin} && r.y > {ymin})) return false; "
             f"const x = r.x + r.width / 2, y = r.y + r.height / 2; "
             f"if (!(x >= 0 && x < {W} && y >= 0 && y < {H})) return false; "
             f"if (getComputedStyle({elem}).visibility === 'hidden') return false; "
@@ -175,14 +175,14 @@ class Session:
         ymax = int(ymax) if ymax is not None else self.H
         return await self.ev(
             f"[...document.querySelectorAll('*')].reverse().some(e => e.textContent.trim() === {json.dumps(t)} && "
-            + _paint_js("e", xmax, ymax) + ")")
+            + _paint_js("e", xmax, ymax, xmin, ymin) + ")")
 
     async def text_pos(self, t, xmin=-1.0, xmax=None, ymin=-1.0, ymax=None):
         xmax = int(xmax) if xmax is not None else self.W
         ymax = int(ymax) if ymax is not None else self.H
         return await self.ev(
             f"(() => {{ const e = [...document.querySelectorAll('*')].reverse().find(e => e.textContent.trim() === {json.dumps(t)} && "
-            + _paint_js("e", xmax, ymax) + f"); if (!e) return null; const r = e.getBoundingClientRect(); return [r.x + r.width/2, r.y + r.height/2]; }})()")
+            + _paint_js("e", xmax, ymax, xmin, ymin) + f"); if (!e) return null; const r = e.getBoundingClientRect(); return [r.x + r.width/2, r.y + r.height/2]; }})()")
 
     async def text_pos_regex(self, pattern, xmin=-1.0, xmax=None, ymin=-1.0, ymax=None):
         """Viewport-painted centre of the leaf whose text matches this regex."""
@@ -190,7 +190,7 @@ class Session:
         ymax = int(ymax) if ymax is not None else self.H
         return await self.ev(
             f"(() => {{ const e = [...document.querySelectorAll('*')].reverse().find(e => e.children.length === 0 && RegExp({json.dumps(pattern)}, 'u').test(e.textContent.trim()) && "
-            + _paint_js("e", xmax, ymax) + f"); if (!e) return null; const r = e.getBoundingClientRect(); return [r.x + r.width/2, r.y + r.height/2]; }})()")
+            + _paint_js("e", xmax, ymax, xmin, ymin) + f"); if (!e) return null; const r = e.getBoundingClientRect(); return [r.x + r.width/2, r.y + r.height/2]; }})()")
 
     async def click_text(self, t, xmin=-1.0, xmax=None, ymin=-1.0, ymax=None, tries=6):
         for i in range(tries):
@@ -208,7 +208,7 @@ class Session:
         ymax = ymax if ymax is not None else self.H
         p = await self.ev(
             f"(() => {{ const e = [...document.querySelectorAll('*')].reverse().find(e => e.children.length === 0 && e.textContent.trim().startsWith({json.dumps(prefix)}) && "
-            + _paint_js("e", xmax, ymax) + f"); if (!e) return null; const r = e.getBoundingClientRect(); return [r.x + r.width/2, r.y + r.height/2]; }})()")
+            + _paint_js("e", xmax, ymax, xmin, ymin) + f"); if (!e) return null; const r = e.getBoundingClientRect(); return [r.x + r.width/2, r.y + r.height/2]; }})()")
         if not p:
             return False
         await self.click(*p)
@@ -219,7 +219,7 @@ class Session:
         xmax = xmax if xmax is not None else self.W
         ymax = ymax if ymax is not None else self.H
         return (f"[...document.querySelectorAll('*')].reverse().some(e => e.textContent.trim() === {json.dumps(t)} && "
-                + _paint_js("e", xmax, ymax) + ")")
+                + _paint_js("e", xmax, ymax, xmin, ymin) + ")")
 
     def not_painted(self, t):
         return "!" + self.painted(t)
@@ -330,7 +330,7 @@ class Session:
 
     def app_live(self):
         """Logged-in shell is live: the rail's presence line or the settings sidebar paints."""
-        return f"({self.painted('Online')} || {self.painted('USER SETTINGS', xmax=int(self.W * 0.3))})"
+        return f"({self.painted('Online')} || {self.painted('USER SETTINGS', xmax=int(self.W * 0.2))})"
 
     # ---- auth flows ----------------------------------------------------------
 
@@ -365,7 +365,7 @@ class Session:
         await asyncio.sleep(1.2)
         if not await self.click_text("Edit Profile", xmax=self.W * 0.35):
             raise MissingElement("'Edit Profile' popup row not painted")
-        await self.wait_for(self.painted("USER SETTINGS", xmax=self.W * 0.3),
+        await self.wait_for(self.painted("USER SETTINGS", xmax=self.W * 0.2),
                             timeout=15, why="user settings sidebar")
 
     async def log_out(self):
@@ -373,7 +373,7 @@ class Session:
 
         Assumes User Settings is already open (does not re-open it).
         """
-        if not await self.click_text("Log Out", xmax=self.W * 0.3):
+        if not await self.click_text("Log Out", xmax=self.W * 0.2):
             raise MissingElement("Log Out row not painted in the settings sidebar")
         await self.wait_for(self.painted("Welcome back!"), timeout=40, step=1,
                             why="login screen after sign-out")
@@ -493,7 +493,7 @@ class Session:
         if not joined:
             await self.shot("join-not-confirmed.png")
             raise MissingElement("the join was never confirmed")
-        await self.click_text("Done", xmin=self.W * 0.3)
+        await self.click_text("Done", xmin=self.W * 0.2)
         await asyncio.sleep(1.0)
 
     # ---- messages -------------------------------------------------------------
@@ -603,7 +603,7 @@ class Session:
         await self.open_server_menu(name)
         if not await self.click_menu_item("Server Settings"):
             raise MissingElement("Server Settings not in the server menu")
-        await self.wait_for(self.painted("Overview", xmax=self.W * 0.3),
+        await self.wait_for(self.painted("Overview", xmax=self.W * 0.2),
                             timeout=15, why="server settings sidebar")
 
     async def settings_section(self, label, xmax_frac=0.3):

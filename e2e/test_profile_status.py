@@ -135,9 +135,9 @@ async def main():
         got_ap = await a.click_text("Appearance", xmax=int(a.W * 0.4))
         if not got_ap:
             got_ap = await a.settings_section("Appearance")
-        clicked = (await a.click_text("Miami", xmin=int(a.W * 0.3))
-                   or await a.click_text("Memphis", xmin=int(a.W * 0.3))
-                   or await a.click_text("Bubblegum", xmin=int(a.W * 0.3)))
+        clicked = (await a.click_text("Miami", xmin=int(a.W * 0.2))
+                   or await a.click_text("Memphis", xmin=int(a.W * 0.2))
+                   or await a.click_text("Bubblegum", xmin=int(a.W * 0.2)))
         a.check("the Appearance section offers a cassette icon picker", bool(clicked))
         await asyncio.sleep(1.5)
         href_after = await a.ev("(document.querySelector('link[rel=icon]') || document.querySelector('link')).href")
