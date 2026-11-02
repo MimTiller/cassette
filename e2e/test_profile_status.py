@@ -15,8 +15,7 @@ from cdp import Session, MissingElement, WaitTimeout, CDPTimeout, CDPError
 from srv_helper import signup_login, srv
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8085"
-SHOTS = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "out")
+SHOTS = sys.argv[2] if len(sys.argv) > 2 else "/tmp/cassette-e2e"
 
 TIMEOUT = 360
 

@@ -18,6 +18,7 @@ Element finding is by VISIBLE text, input placeholders and position; test_id
 values from the Rust code are not rendered into the DOM.
 """
 import asyncio
+import os
 import base64
 import json
 import urllib.request
@@ -304,6 +305,7 @@ class Session:
                 raise CDPError(f"CDP Page.captureScreenshot failed: {msg['error']}")
             data = msg.get("result", {})
             break
+        os.makedirs(self.shots, exist_ok=True)
         path = f"{self.shots}/{name}"
         with open(path, "wb") as f:
             f.write(base64.b64decode(data["data"]))

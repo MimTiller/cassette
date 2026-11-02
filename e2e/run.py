@@ -1,7 +1,8 @@
 """Run every e2e/test_*.py in order against a base URL; print ok/KNOWN/FAIL.
 
 Usage: run.py [base_url] [--timeout SECS]
-Default base: http://127.0.0.1:8086. Screenshots land in e2e/out/ (gitignored).
+Default base: http://127.0.0.1:8086. Screenshots land in /tmp/cassette-e2e, outside the repo: the dev server
+watches the repo, so a file written inside it reloads the app mid-test.
 Each test's overall timeout comes from its top-level `TIMEOUT = N` line
 (seconds), else --timeout. The suite exits non-zero on any failure that is not
 marked known_bug by the test.
@@ -42,7 +43,7 @@ def main():
         del argv[i:i + 2]
     positional = [a for a in argv if not a.startswith("--")]
     base = positional[0] if positional else "http://127.0.0.1:8086"
-    out = os.path.join(HERE, "out")
+    out = "/tmp/cassette-e2e"
     os.makedirs(out, exist_ok=True)
 
     tests = sorted(glob.glob(os.path.join(HERE, "test_*.py")))
@@ -61,7 +62,7 @@ def main():
         t0 = time.time()
         crashed = False
         try:
-            proc = subprocess.run([sys.executable, path, base, out],
+            proc = subprocess.run([sys.executable, "-B", path, base, out],
                                   capture_output=True, text=True, timeout=per)
             out_text, err_text, crashed = proc.stdout, proc.stderr, proc.returncode != 0
         except subprocess.TimeoutExpired as e:

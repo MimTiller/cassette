@@ -18,7 +18,9 @@ How it works
 - srv_helper.py: POST /_srv/<fn> with a JSON array body + Bearer token, for
   seeding server data (accounts, roles, emoji) that the UI cannot script
   directly. UI assertions still look at what the browser paints.
-- Screenshots land in out/ (gitignored). ISSUES.md logs every glaring app
+- Screenshots land in /tmp/cassette-e2e, outside the repo: the dev server
+  watches the repo, so writing there reloads the app mid-test. Run a test by
+  hand with `python3 -B`. ISSUES.md logs every glaring app
   problem found while running the suite — do not fix app code from here.
 
 Tests
