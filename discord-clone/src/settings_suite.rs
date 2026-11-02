@@ -758,7 +758,9 @@ pub(crate) fn settings_layout(nav: Vec<Element>, panel: Element, close: Option<R
             view(style = move || {
                 let hidden = crate::app::mobile::settings_hidden(true);
                 StyleRules {
-                    flex_grow: Some(runtime_core::Tokenized::Literal(0.0)),
+                    // On a phone the nav sidebar fills the window while it
+                    // shows (basis 0 + grow), instead of collapsing to zero.
+                    flex_grow: Some(runtime_core::Tokenized::Literal(if crate::app::mobile::is_phone() && !hidden { 1.0 } else { 0.0 })),
                     flex_shrink: Some(runtime_core::Tokenized::Literal(0.0)),
                     flex_basis: Some(px(if crate::app::mobile::is_phone() { 0.0 } else { 260.0 })),
                     width: hidden.then(|| px(0.0)),
