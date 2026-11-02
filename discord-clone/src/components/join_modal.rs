@@ -30,6 +30,8 @@
 //! `invite_modal.rs`) so the `.method` chain lives outside the `ui!` child
 //! position.
 use crate::theme;
+use std::rc::Rc;
+
 use runtime_core::{
     component, switch, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
     Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
@@ -44,8 +46,10 @@ use crate::style_helpers::{col, pct, px, rounded};
 /// `error` holds the backend's rejection message on failure; `busy` is true
 /// while the RPC is in flight (the Join button shows a pending label);
 /// `servers` is the caller's live server list, re-fetched on a successful
-/// redeem so the new server appears in the rail. All signals are owned by the
-/// caller and reset on re-open.
+/// redeem so the new server appears in the rail; `on_enter` is called with the
+/// joined server's id on success so the caller auto-enters the new server
+/// (the enter-live pattern the rail's tile handler and Create modal use).
+/// All signals are owned by the caller and reset on re-open.
 #[component]
 pub fn JoinServerModal(
     open: Signal<bool>,
@@ -54,6 +58,7 @@ pub fn JoinServerModal(
     error: Signal<String>,
     busy: Signal<bool>,
     servers: Signal<Vec<crate::servers::ServerSummary>>,
+    on_enter: Option<Rc<dyn Fn(i64)>>,
 ) -> Element {
     let close = open;
     let c = code;
@@ -61,6 +66,7 @@ pub fn JoinServerModal(
     let e = error;
     let b = busy;
     let srv = servers;
+    let enter = on_enter;
 
     // Shared card/field/button styles (one static pass).
     let card_style = StyleRules {
@@ -112,7 +118,10 @@ pub fn JoinServerModal(
     // `move` closure: `Signal` is `Copy`, so every captured copy stays `Fn`
     // across taps. The only client-side gate is non-emptiness; the backend's
     // rejection (unknown / expired / fully spent) is surfaced verbatim.
-    let on_join = move || {
+    // `spawn_then_in` anchored on the app shell: redeem and the list refresh
+    // happen in the future, every signal write happens in the callback, so a
+    // torn-down scope can't land a write on a freed slot.
+    let on_join: Rc<dyn Fn()> = Rc::new(move || {
         let raw = c.get();
         let trimmed = raw.trim();
         if trimmed.is_empty() {
@@ -124,26 +133,36 @@ pub fn JoinServerModal(
         let e2 = e;
         let b2 = b;
         let srv2 = srv;
-        runtime_core::driver::spawn_async(async move {
-            match crate::invite::redeem_invite(&code_owned).await {
-                Ok(res) => {
-                    r2.set(Some(res));
-                    e2.set(String::new());
-                    // The backend persisted the membership; re-fetch the live
-                    // server list (the same RPC the rail's live section uses)
-                    // so the newly-joined server appears without a reload.
-                    if let Ok(list) = crate::servers::list_servers().await {
+        let enter = enter.clone();
+        runtime_core::spawn_then_in(
+            &crate::app::shell_alive(),
+            async move {
+                let joined = crate::invite::redeem_invite(&code_owned).await;
+                let list = crate::servers::list_servers().await.ok().unwrap_or_else(Vec::new);
+                (joined, list)
+            },
+            move |(joined, list)| {
+                match joined {
+                    Ok(res) => {
+                        let sid = res.server_id;
+                        r2.set(Some(res));
+                        e2.set(String::new());
                         srv2.set(list);
+                        // Auto-enter the joined server: the caller's handler
+                        // selects it and pulls its channels/roster/unread.
+                        if let Some(cb) = enter {
+                            cb(sid);
+                        }
+                    }
+                    Err(msg) => {
+                        r2.set(None);
+                        e2.set(msg);
                     }
                 }
-                Err(msg) => {
-                    r2.set(None);
-                    e2.set(msg);
-                }
-            }
-            b2.set(false);
-        });
-    };
+                b2.set(false);
+            },
+        );
+    });
 
     // --- Body: one switch keyed on (result, error) ---------------------------
     // Priority: success > error > input. Each arm builds its own `Element`
@@ -221,6 +240,7 @@ pub fn JoinServerModal(
                 // --- Input arm: code field + Join button -----------------------
                 let close_c = ui! { crate::controls::modal_close_button(move || close.set(false)) };
                 let join_label = if busy.get() { "Joining…" } else { "Join" };
+                let join_fn = on_join.clone();
                 // The button is inlined as a `view` tag (not a `{ splat }`) so
                 // that `text_input(...)` is followed by a *call*, not a block —
                 // a `call { … }` would attach the block as the `text_input`'s
@@ -241,7 +261,7 @@ pub fn JoinServerModal(
                             }
                             .on_touch(move |ev| {
                                 if ev.phase == TouchPhase::Ended {
-                                    on_join();
+                                    join_fn();
                                 }
                                 TouchResponse::CONSUMED
                             })

@@ -20,6 +20,17 @@ pub(super) fn build(s: &ShellState) -> ModalsParts {
     // The `#[component]` `name = expr` call form is only parsed inside `ui!`,
     // so the modal is wrapped in a `view` (the wrapper is a positioned
     // ancestor for the full-screen overlay, like the Profile/notif regions).
+    // A successful redeem auto-enters the joined server: select it, clear
+    // stale channel/moderation state, and pull its channels + roster + unread
+    // counts (the enter-live pattern the rail's tile handler and Create modal
+    // use), so after Done the server is open rather than "No server selected".
+    // The shell_state helper spawns its fetches through `spawn_then_in` itself,
+    // anchored on `shell_alive()` so a torn-down scope can't land a write on a
+    // freed slot.
+    let join_enter: std::rc::Rc<dyn Fn(i64)> = std::rc::Rc::new({
+        let shell = s.clone();
+        move |sid: i64| { enter_live_server(shell.clone(), sid, shell.live_unread.clone()); }
+    });
     let join_el = ui! {
         view {
             JoinServerModal(
@@ -29,6 +40,7 @@ pub(super) fn build(s: &ShellState) -> ModalsParts {
                 error = join_error,
                 busy = join_busy,
                 servers = live_servers,
+                on_enter = Some(join_enter),
             )
         }
     };
