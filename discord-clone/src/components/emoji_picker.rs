@@ -37,11 +37,11 @@
 //!   with no `String`-move issues.
 use crate::theme;
 use crate::emoji_data;
-use crate::style_helpers::{borderless_input, col, px, rounded, with_radius};
+use crate::style_helpers::{col, px, rounded};
 use icons_lucide::SEARCH;
 use runtime_core::{
-    component, icon, memo, signal, switch, ui, AlignItems, Element, FlexDirection,
-    FlexWrap, JustifyContent, Overflow, Position, Ref, ScrollViewHandle, Shadow, Signal,
+    component, icon, memo, signal, switch, ui, AlignItems, Element, FlexDirection, FlexWrap,
+    JustifyContent, Overflow, Position, Ref, ScrollViewHandle, Signal,
     StyleRules, TouchPhase, TouchResponse, Tokenized,
 };
 use std::rc::Rc;
@@ -512,19 +512,8 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
         view(style = StyleRules {
             width: Some(px(crate::app::mobile::fit_width(420.0))),
             height: Some(px(440.0)),
-            flex_direction: Some(FlexDirection::Column),
-            background: Some(col(theme::BG_SECONDARY)),
-            border_top_width: Some(Tokenized::Literal(1.0)),
-            border_right_width: Some(Tokenized::Literal(1.0)),
-            border_bottom_width: Some(Tokenized::Literal(1.0)),
-            border_left_width: Some(Tokenized::Literal(1.0)),
-            border_top_color: Some(col(theme::BG_TERTIARY)),
-            border_right_color: Some(col(theme::BG_TERTIARY)),
-            border_bottom_color: Some(col(theme::BG_TERTIARY)),
-            border_left_color: Some(col(theme::BG_TERTIARY)),
-            shadow: Some(Shadow { x: 0.0, y: 8.0, blur: 24.0, color: col(theme::SHADOW) }),
             overflow: Some(Overflow::Hidden),
-            ..rounded(10.0)
+            ..crate::style_helpers::popover_panel()
         }) {
             // Search field (magnifier + input, the message_search_bar shape).
             view(style = StyleRules {
@@ -536,10 +525,7 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
                 margin_left: Some(px(12.0)),
                 gap: Some(px(8.0)),
                 height: Some(px(38.0)),
-                background: Some(col(theme::BG_PRIMARY)),
-                padding_left: Some(px(10.0)),
-                padding_right: Some(px(10.0)),
-                ..with_radius(borderless_input(), 6.0)
+                ..Default::default()
             }) {
                 icon(SEARCH).color(|| theme::live(theme::TEXT_MUTED)).size(16.0)
                 text_input(
@@ -549,9 +535,8 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
                     style = StyleRules {
                         flex_grow: Some(Tokenized::Literal(1.0)),
                         color: Some(col(theme::TEXT_STRONG)),
-                        background: Some(col(theme::BG_PRIMARY)),
                         font_size: Some(px(14.0)),
-                        ..borderless_input()
+                        ..crate::style_helpers::text_field_style()
                     },
                 )
             }

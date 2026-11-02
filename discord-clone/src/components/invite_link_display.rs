@@ -26,7 +26,7 @@
 //!   style is written inline in `style = …` (fresh per evaluation).
 
 use crate::theme;
-use crate::style_helpers::{borderless_input, col, px, rounded, with_radius};
+use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
     StyleRules,
@@ -95,12 +95,8 @@ pub fn InviteLinkDisplay(code: String) -> Element {
                 value = link,
                 style = StyleRules {
                     height: Some(px(40.0)),
-                    padding_left: Some(px(12.0)),
-                    padding_right: Some(px(12.0)),
-                    background: Some(col(theme::BG_TERTIARY)),
-                    color: Some(col(theme::TEXT_STRONG)),
                     font_size: Some(px(15.0)),
-                    ..with_radius(borderless_input(), 8.0)
+                    ..crate::style_helpers::text_field_style()
                 },
             )
             button(

@@ -112,33 +112,39 @@ pub fn grow(v: f32) -> Tokenized<f32> {
     Tokenized::Literal(v)
 }
 
-/// The chip at a given box size (px) and corner radius (px). `tint` is the
-/// initial-circle background. Callers pass the same sizes they drew before,
-/// so only the broken-image class is fixed — the layout is untouched.
-pub fn avatar_chip(name: &str, tint: &str, size: f32, radius: f32) -> Element {
-    let initial = name.chars().next().unwrap_or('?').to_uppercase().to_string();
-    if let Some(url) = registered_avatar(name) {
-        ui! {
-            view(style = StyleRules {
-                position: Some(Position::Relative),
+/// Presence dots: the dot itself is this wide; the ring punched out of the
+/// surface around it is that wide.
+pub const PRESENCE_DOT_PX: f32 = 10.0;
+pub const PRESENCE_RING_PX: f32 = 2.0;
+
+/// A circle chip from an explicit avatar URL (already gated mountable by the
+/// caller): cover-cropped at `size`, radius always size/2.
+pub fn avatar_chip_url(name: &str, url: &str, size: f32) -> Element {
+    let radius = size / 2.0;
+    ui! {
+        image(
+            src = crate::auth::media_url(url.to_string()),
+            alt = format!("{} avatar", name),
+            style = StyleRules {
                 width: Some(px(size)),
                 height: Some(px(size)),
                 flex_shrink: Some(grow(0.0)),
-                ..Default::default()
-            }) {
-                image(
-                    src = crate::auth::media_url(url.clone()),
-                    alt = format!("{} avatar", name),
-                    style = StyleRules {
-                        width: Some(px(size)),
-                        height: Some(px(size)),
-                        flex_shrink: Some(grow(0.0)),
-                        object_fit: Some(ObjectFit::Cover),
-                        ..rounded(radius)
-                    },
-                )
-            }
-        }
+                object_fit: Some(ObjectFit::Cover),
+                ..rounded(radius)
+            },
+        )
+    }
+}
+
+/// The chip at a given box size (px). Every avatar is a CIRCLE — the radius
+/// is always size/2 and decided here, so a call site cannot reintroduce a
+/// rounded square; a surface that wants the chip bigger just passes a bigger
+/// size. `tint` is the initial-circle background.
+pub fn avatar_chip(name: &str, tint: &str, size: f32) -> Element {
+    let radius = size / 2.0;
+    let initial = name.chars().next().unwrap_or('?').to_uppercase().to_string();
+    if let Some(url) = registered_avatar(name) {
+        avatar_chip_url(name, url.as_str(), size)
     } else {
         ui! {
             view(style = StyleRules {
@@ -158,6 +164,61 @@ pub fn avatar_chip(name: &str, tint: &str, size: f32, radius: f32) -> Element {
                 }) { initial }
             }
         }
+    }
+}
+
+/// One presence dot convention, everywhere the app shows one: a
+/// `PRESENCE_DOT_PX` dot with a `PRESENCE_RING_PX` ring punched out in the
+/// colour of the surface behind the avatar (Discord's cut-out look, so the
+/// dot reads against the chip edge AND against a dimmed row). Returns an
+/// absolutely-positioned element for the bottom-right corner — the avatar
+/// box it rides must be `Position::Relative` and sized to the chip.
+pub fn presence_dot(status_role: &str, ring_role: &str) -> Element {
+    let total = PRESENCE_DOT_PX + 2.0 * PRESENCE_RING_PX;
+    // Offline is Discord's hollow ring; the other statuses are filled discs.
+    let hollow = status_role.eq_ignore_ascii_case(crate::theme::TEXT_FAINT);
+    ui! {
+        view(style = StyleRules {
+            position: Some(Position::Absolute),
+            right: Some(px(0.0)),
+            bottom: Some(px(0.0)),
+            width: Some(px(total)),
+            height: Some(px(total)),
+            background: Some(col(ring_role)),
+            ..rounded(total / 2.0)
+        }) {
+            view(style = StyleRules {
+                position: Some(Position::Absolute),
+                right: Some(px(PRESENCE_RING_PX)),
+                bottom: Some(px(PRESENCE_RING_PX)),
+                width: Some(px(PRESENCE_DOT_PX)),
+                height: Some(px(PRESENCE_DOT_PX)),
+                background: Some(col(if hollow { "transparent" } else { status_role })),
+                border_top_width: Some(Tokenized::Literal(if hollow { 2.0 } else { 0.0 })),
+                border_right_width: Some(Tokenized::Literal(if hollow { 2.0 } else { 0.0 })),
+                border_bottom_width: Some(Tokenized::Literal(if hollow { 2.0 } else { 0.0 })),
+                border_left_width: Some(Tokenized::Literal(if hollow { 2.0 } else { 0.0 })),
+                border_top_color: Some(col(if hollow { status_role } else { "transparent" })),
+                border_right_color: Some(col(if hollow { status_role } else { "transparent" })),
+                border_bottom_color: Some(col(if hollow { status_role } else { "transparent" })),
+                border_left_color: Some(col(if hollow { status_role } else { "transparent" })),
+                ..rounded(PRESENCE_DOT_PX / 2.0)
+            }) {}
+        }
+    }
+}
+
+/// Map a wire presence status (the gateway `Presence` frame strings and the
+/// `Status::wire` names) to its dot's colour role. Unknown / absent /
+/// invisible statuses are offline: `TEXT_FAINT`.
+pub fn presence_status_role(status: &str) -> &str {
+    match status {
+        "online" => theme::SUCCESS,
+        "away" => theme::WARNING,
+        "idle" => theme::WARNING,
+        "dnd" => theme::DANGER,
+        "do_not_disturb" => theme::DANGER,
+        _ => theme::TEXT_FAINT,
     }
 }
 

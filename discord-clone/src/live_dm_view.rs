@@ -28,18 +28,19 @@
 
 use crate::theme;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use runtime_core::{
     AlignItems, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent,
-    KeyOutcome, ObjectFit, Overflow, Signal, StyleRules, Tokenized,
+    KeyOutcome, Overflow, Position, Signal, StyleRules, Tokenized,
     TouchPhase, TouchResponse, signal, switch, ui,
 };
 
 use crate::app::{format_when, message_row, same_group};
 use crate::dms::{self, Dm};
 use crate::gif_picker::{GifPicker, gif_button};
-use crate::style_helpers::{borderless_input, col, pct, px, section_label, rounded, with_radius};
+use crate::style_helpers::{col, pct, px, section_label, rounded};
 
 // --- palette -----------------------------------------------------------------
 // The same Discord dark palette as `app.rs` / `dm_view.rs`, kept local so the
@@ -154,13 +155,8 @@ fn live_dm_find_row(
         query.set(s);
     };
     let input_style = StyleRules {
-        height: Some(px(30.0)),
-        padding_left: Some(px(8.0)),
-        padding_right: Some(px(8.0)),
-        background: Some(col(theme::BG_TERTIARY)),
-        color: Some(col(theme::TEXT_STRONG)),
         font_size: Some(px(13.0)),
-        ..with_radius(borderless_input(), 4.0)
+        ..crate::style_helpers::text_field_style()
     };
     let results = switch(
         move || query.get(),
@@ -192,7 +188,7 @@ fn live_dm_find_row(
                         padding_right: Some(px(6.0)),
                         ..rounded(4.0)
                     }, test_id = "live-dm-find-result") {
-                        { crate::avatar_chip::avatar_chip(name.as_str(), theme::ACCENT, 24.0, 12.0) }
+                        { crate::avatar_chip::avatar_chip(name.as_str(), theme::ACCENT, 24.0) }
                         text(style = StyleRules {
                             font_size: Some(px(14.0)),
                             color: Some(col(theme::TEXT_STRONG)),
@@ -276,6 +272,7 @@ fn live_dm_row(
     active: Signal<Option<i64>>,
     msgs: Rc<RefCell<Vec<LiveDmMsg>>>,
     rev: Signal<u32>,
+    presence: Rc<RefCell<HashMap<i64, String>>>,
 ) -> Element {
     // The "other" participant: the one whose id isn't the signed-in user.
     // If the id isn't known yet (rare; the list is only fetched post-login),
@@ -304,6 +301,13 @@ fn live_dm_row(
     // may mount — an unresolvable src is what rendered a broken-image
     // placeholder whose alt text leaked onto the row.
     let avatar_img = crate::avatar_chip::registered_avatar(name.as_str());
+    // The participant's presence status drives the row's dot. A 1:1 row's
+    // other participant falls back: the signed-in user (their own presence
+    // is in the map once the socket is up) reads online before any frame.
+    let other_id = other.as_ref().map(|p| p.user_id).unwrap_or(0);
+    let status_str = presence.borrow().get(&other_id).cloned()
+        .unwrap_or((if other_id == me { "online" } else { "offline" }).to_string());
+    let status_role = crate::avatar_chip::presence_status_role(status_str.as_str());
 
     let hovered = signal(false);
     let row_style = move || {
@@ -317,13 +321,7 @@ fn live_dm_row(
             flex_direction: Some(FlexDirection::Row),
             align_items: Some(AlignItems::Center),
             gap: Some(px(10.0)),
-            background: Some(col(if on {
-                theme::BG_SELECTED
-            } else if hovered.get() {
-                theme::BG_HOVER
-            } else {
-                "transparent"
-            })),
+            background: Some(crate::style_helpers::selected_fill(on, hovered.get())),
             ..rounded(8.0)
         }
     };
@@ -334,7 +332,7 @@ fn live_dm_row(
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         background: Some(col(theme::ACCENT)),
-        ..rounded(10.0)
+        ..rounded(17.0)
     };
     let initial_style = StyleRules {
         font_size: Some(px(15.0)),
@@ -355,21 +353,11 @@ fn live_dm_row(
     };
 
     // The chip: uploaded image (round-cropped) when the shared client
-    // registry knows the participant, else the pre-existing initial chip.
-    let avatar_chip = if let Some(url) = &avatar_img {
-        ui! {
-            image(
-                src = crate::auth::media_url(url.clone()),
-                alt = format!("{} avatar", name),
-                style = StyleRules {
-                    width: Some(px(34.0)),
-                    height: Some(px(34.0)),
-                    flex_shrink: Some(grow(0.0)),
-                    object_fit: Some(ObjectFit::Cover),
-                    ..rounded(10.0)
-                },
-            )
-        }
+    // registry knows the participant, else the pre-existing initial chip —
+    // always a circle (the shared helper decides the shape), with the
+    // participant's presence dot at its bottom-right.
+    let inner_chip: Element = if let Some(url) = &avatar_img {
+        crate::avatar_chip::avatar_chip_url(name.as_str(), url.as_str(), 34.0)
     } else if is_group {
         ui! {
             view(style = avatar_style) {
@@ -380,6 +368,20 @@ fn live_dm_row(
         ui! {
             view(style = avatar_style) {
                 text(style = initial_style) { initial }
+            }
+        }
+    };
+    let avatar_chip = ui! {
+        view(style = StyleRules {
+            width: Some(px(34.0)),
+            height: Some(px(34.0)),
+            position: Some(Position::Relative),
+            flex_shrink: Some(grow(0.0)),
+            ..Default::default()
+        }) {
+            { inner_chip }
+            if !is_group {
+                { crate::avatar_chip::presence_dot(status_role, theme::BG_SECONDARY) }
             }
         }
     };
@@ -437,6 +439,8 @@ fn live_dm_list(
     members: Signal<Vec<crate::moderation::MemberInfo>>,
     friends_entry: Rc<dyn Fn() -> Element>,
     picker: Signal<Option<crate::group_dm::Picker>>,
+    presence: Rc<RefCell<HashMap<i64, String>>>,
+    presence_rev: Signal<u32>,
 ) -> Element {
     // Fills the window on a phone, where it is the whole list pane.
     let column_style = move || StyleRules {
@@ -458,8 +462,9 @@ fn live_dm_list(
     };
 
     let list = switch(
-        move || live_dms.get(),
-        move |dms: &Vec<Dm>| {
+        move || (live_dms.get(), presence_rev.get()),
+        move |key: &(Vec<Dm>, u32)| {
+            let (dms, _rev) = key;
             // `switch`'s render is `Fn` (called on every key change) — clone
             // the captured styles so the closure borrows them rather than
             // moving them out (the whiteboard idiom, cf. `app.rs`'s sidebar).
@@ -477,9 +482,10 @@ fn live_dm_list(
             let rows: Vec<Element> = dms
                 .iter()
                 .cloned()
-                .map(|dm| live_dm_row(dm, active.clone(), _msgs.clone(), rev.clone()))
+                .map(|dm| live_dm_row(dm, active.clone(), _msgs.clone(), rev.clone(), presence.clone()))
                 .collect();
             let entry = (friends_entry)();
+            let no_dms = dms.is_empty();
             ui! {
                 view(style = column_style) {
                     { find_row }
@@ -506,6 +512,29 @@ fn live_dm_list(
                         overflow: Some(Overflow::Hidden),
                         ..Default::default()
                     }) {
+                        // Empty DM list: a message glyph + one line, so the
+                        // column points at the search field above rather than
+                        // going blank.
+                        if no_dms {
+                            view(style = StyleRules {
+                                width: Some(px(56.0)),
+                                height: Some(px(56.0)),
+                                align_items: Some(AlignItems::Center),
+                                justify_content: Some(JustifyContent::Center),
+                                margin_top: Some(px(16.0)),
+                                ..Default::default()
+                            }) {
+                                runtime_core::icon(icons_lucide::MESSAGE_CIRCLE)
+                                    .color(move || theme::live(theme::TEXT_MUTED))
+                                    .size(28.0)
+                            }
+                            text(style = StyleRules {
+                                margin_top: Some(px(12.0)),
+                                font_size: Some(px(14.0)),
+                                color: Some(col(theme::TEXT_MUTED)),
+                                ..Default::default()
+                            }) { "No direct messages yet — search or start one above.".to_string() }
+                        }
                         scroll_view(style = StyleRules {
                             flex_grow: Some(grow(1.0)),
                             ..Default::default()
@@ -577,12 +606,7 @@ fn live_dm_conversation(
     };
     let input_style = StyleRules {
         flex_grow: Some(grow(1.0)),
-        height: Some(px(40.0)),
-        padding_left: Some(px(12.0)),
-        padding_right: Some(px(12.0)),
-        background: Some(col(theme::BG_INPUT)),
-        color: Some(col(theme::TEXT_STRONG)),
-        ..with_radius(borderless_input(), 8.0)
+        ..crate::style_helpers::text_field_style()
     };
 
     // --- GIF picker state (outlives the pane `switch`) ---------------------
@@ -702,17 +726,30 @@ fn live_dm_conversation(
             };
 
             if cid == 0 {
-                // No DM selected yet: a centered, muted hint.
+                // No DM selected yet: a centered, muted hint with the
+                // message glyph, so the pane points at the search field
+                // above rather than floating a bare sentence.
                 return ui! {
                     view(style = pane_style) {
                         view(style = StyleRules {
                             flex_grow: Some(grow(1.0)),
                             align_items: Some(AlignItems::Center),
                             justify_content: Some(JustifyContent::Center),
-                            padding_top: Some(px(24.0)),
                             ..Default::default()
                         }) {
+                            view(style = StyleRules {
+                                width: Some(px(56.0)),
+                                height: Some(px(56.0)),
+                                align_items: Some(AlignItems::Center),
+                                justify_content: Some(JustifyContent::Center),
+                                ..Default::default()
+                            }) {
+                                runtime_core::icon(icons_lucide::MESSAGE_CIRCLE)
+                                    .color(move || theme::live(theme::TEXT_MUTED))
+                                    .size(28.0)
+                            }
                             text(style = StyleRules {
+                                margin_top: Some(px(12.0)),
                                 font_size: Some(px(14.0)),
                                 color: Some(col(theme::TEXT_MUTED)),
                                 ..Default::default()
@@ -773,12 +810,10 @@ fn live_dm_conversation(
                         placeholder = "Group name (Enter to save, Esc to cancel)",
                         style = StyleRules {
                             width: Some(px(320.0)),
-                            height: Some(px(30.0)),
                             padding_left: Some(px(8.0)),
-                            background: Some(col(theme::BG_TERTIARY)),
-                            color: Some(col(theme::TEXT_STRONG)),
                             font_size: Some(px(15.0)),
-                            ..borderless_input()
+                            color: Some(col(theme::TEXT_STRONG)),
+                            ..crate::style_helpers::text_field_style()
                         },
                     )
                     .on_key_down(save)
@@ -1053,6 +1088,8 @@ pub fn live_dm_screen(
     friends_entry: Rc<dyn Fn() -> Element>,
     friends_open: Signal<bool>,
     friends_panel: Rc<dyn Fn() -> Element>,
+    presence: Rc<RefCell<HashMap<i64, String>>>,
+    presence_rev: Signal<u32>,
 ) -> Element {
     let effect = dm_incoming_effect(frame_seq, live_dms, active.clone(), msgs.clone(), rev.clone());
     let picker: Signal<Option<crate::group_dm::Picker>> = signal(None);
@@ -1102,7 +1139,7 @@ pub fn live_dm_screen(
                 overflow: Some(Overflow::Hidden),
                 ..Default::default()
             }) {
-                live_dm_list(live_dms.clone(), active.clone(), msgs.clone(), rev.clone(), new_id, friends, members, friends_entry, picker)
+                live_dm_list(live_dms.clone(), active.clone(), msgs.clone(), rev.clone(), new_id, friends, members, friends_entry, picker, presence.clone(), presence_rev.clone())
             }
             view(style = move || StyleRules {
                 flex_direction: Some(FlexDirection::Row),

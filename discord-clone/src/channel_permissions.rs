@@ -459,11 +459,9 @@ pub(crate) fn dialog() -> Element {
     let open = s.open;
     let card = ui! {
         view(style = StyleRules {
-            width: Some(px(crate::app::mobile::fit_width(520.0))),
             max_height: Some(pct(85.0)),
-            background: Some(col(theme::BG_PRIMARY)),
             overflow: Some(Overflow::Hidden),
-            ..rounded(8.0)
+            ..crate::style_helpers::modal_card(crate::app::mobile::fit_width(520.0))
         }) {
             scroll_view(style = StyleRules {
                 flex_grow: Some(Tokenized::Literal(1.0)),

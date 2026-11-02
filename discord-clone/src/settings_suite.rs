@@ -31,7 +31,7 @@
 //! capture copies of the same signals and stay `Fn`.
 
 use crate::theme;
-use crate::style_helpers::{borderless_input, col, pct, px, rounded, with_radius};
+use crate::style_helpers::{col, pct, px, rounded, section_label};
 use std::rc::Rc;
 use runtime_core::{
     component, signal, switch, ui, AlignItems, Element, FlexDirection, JustifyContent, Position,
@@ -102,6 +102,34 @@ fn option_row(label: &str, idx: u32, selected: Signal<u32>, on_pick: Rc<dyn Fn(u
     }
 }
 
+/// One group of related settings rows: a `BG_SECONDARY` card with a small
+/// uppercase muted title and 16px rhythm inside; cards stack at 16px gaps.
+/// The content column's grid unit for every settings pane.
+pub(crate) fn settings_card(title: String, children: Vec<Element>) -> Element {
+    let title_el: Element =
+        if title.is_empty() {
+            ui! { view {} }
+        } else {
+            ui! { text(style = section_label()) { title } }
+        };
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Column),
+            gap: Some(px(16.0)),
+            padding_top: Some(px(16.0)),
+            padding_bottom: Some(px(16.0)),
+            padding_left: Some(px(16.0)),
+            padding_right: Some(px(16.0)),
+            background: Some(col(theme::BG_SECONDARY)),
+            width: Some(pct(100.0)),
+            ..rounded(8.0)
+        }) {
+            { title_el }
+            { children }
+        }
+    }
+}
+
 /// The **Notifications** tab: the three-level picker, now wired. Selecting a
 /// notifying level (0 or 1) persists it and requests browser permission;
 /// selecting "Nothing" (2) just persists.
@@ -128,21 +156,14 @@ fn notifications_tab(selected: Signal<u32>) -> Element {
     ui! {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Column),
-            gap: Some(px(8.0)),
+            gap: Some(px(16.0)),
             padding_top: Some(px(16.0)),
             padding_bottom: Some(px(16.0)),
             padding_left: Some(px(16.0)),
             padding_right: Some(px(16.0)),
             ..Default::default()
         }) {
-            text(style = StyleRules {
-                font_size: Some(px(14.0)),
-                color: Some(col(theme::TEXT_STRONG)),
-                ..Default::default()
-            }) { "Message notifications".to_string() }
-            all
-            mentions
-            nothing
+            { crate::settings_suite::settings_card("Message notifications".to_string(), vec![all, mentions, nothing]) }
             text(style = StyleRules {
                 font_size: Some(px(12.0)),
                 color: Some(col(theme::TEXT_MUTED)),
@@ -245,13 +266,8 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
     // UA-default bevel (the light 3D bottom/right edge) doesn't leak as a
     // partial stroke — the same idiom every other `text_input` in the app uses.
     let input_style = StyleRules {
-        height: Some(px(32.0)),
-        background: Some(col(theme::BG_TERTIARY)),
         font_size: Some(px(14.0)),
-        padding_left: Some(px(10.0)),
-        padding_right: Some(px(10.0)),
-        color: Some(col(theme::TEXT_STRONG)),
-        ..with_radius(borderless_input(), 6.0)
+        ..crate::style_helpers::text_field_style()
     };
 
     let blocked_list = switch(
@@ -275,7 +291,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                         padding_bottom: Some(px(6.0)),
                         ..Default::default()
                     }) {
-                        { crate::avatar_chip::avatar_chip(b.username.as_str(), theme::ACCENT, 28.0, 14.0) }
+                        { crate::avatar_chip::avatar_chip(b.username.as_str(), theme::ACCENT, 28.0) }
                         text(style = StyleRules { flex_grow: Some(runtime_core::Tokenized::Literal(1.0)), font_size: Some(px(14.0)), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { b.username.clone() }
                         view(style = StyleRules {
                             height: Some(px(28.0)),
@@ -301,80 +317,76 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
         },
     );
 
+    let name_field = ui! {
+        text_input(
+            value = name.clone(),
+            on_change = on_name_change,
+            placeholder = "New display name",
+            style = input_style.clone(),
+        )
+    };
+    let name_save = ui! {
+        button(
+            label = "Save name".to_string(),
+            on_click = do_name,
+            style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Primary)
+        )
+    };
+    let pw_cur_field = ui! {
+        text_input(
+            value = cur_pw.clone(),
+            on_change = on_cur_change,
+            placeholder = "Current password",
+            style = input_style.clone(),
+        )
+    };
+    let pw_new_field = ui! {
+        text_input(
+            value = new_pw.clone(),
+            on_change = on_new_change,
+            placeholder = "New password",
+            style = input_style.clone(),
+        )
+    };
+    let pw_save = ui! {
+        button(
+            label = "Update password".to_string(),
+            on_click = do_pw,
+            style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Primary)
+        )
+    };
+    let logout_btn = ui! {
+        button(
+            label = "Log out of all devices".to_string(),
+            on_click = move || crate::auth::request_logout_everywhere(),
+            test_id = "logout-everywhere",
+            style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::DestructiveConfirm)
+        )
+    };
+    let sessions_note = ui! {
+        text(style = StyleRules {
+            font_size: Some(px(13.0)),
+            color: Some(col(theme::TEXT_MUTED)),
+            ..Default::default()
+        }) { "Signs this account out everywhere it is logged in, including here.".to_string() }
+    };
+    let name_card = settings_card("Display name".to_string(), vec![name_field, name_save]);
+    let pw_card = settings_card("Change password".to_string(), vec![pw_cur_field, pw_new_field, pw_save]);
+    let blocked_card = settings_card("Blocked users".to_string(), vec![blocked_list]);
+    let sessions_card = settings_card("Sessions".to_string(), vec![sessions_note, logout_btn]);
+
     ui! {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Column),
-            gap: Some(px(18.0)),
+            gap: Some(px(16.0)),
             padding_top: Some(px(16.0)),
             padding_bottom: Some(px(16.0)),
             padding_left: Some(px(16.0)),
             padding_right: Some(px(16.0)),
             ..Default::default()
         }) {
-            // ── Display name ──
-            text(style = StyleRules {
-                font_size: Some(px(14.0)),
-                color: Some(col(theme::TEXT_STRONG)),
-                ..Default::default()
-            }) { "Display name".to_string() }
-            text_input(
-                value = name.clone(),
-                on_change = on_name_change,
-                placeholder = "New display name",
-                style = input_style.clone(),
-            )
-            button(
-                label = "Save name".to_string(),
-                on_click = do_name,
-                style = StyleRules {
-                    color: Some(col(theme::TEXT_ON_ACCENT)),
-                    align_self: Some(runtime_core::AlignSelf::FlexStart),
-                    height: Some(px(28.0)),
-                    padding_left: Some(px(14.0)),
-                    padding_right: Some(px(14.0)),
-                    background: Some(col(theme::ACCENT)),
-                    align_items: Some(AlignItems::Center),
-                    justify_content: Some(JustifyContent::Center),
-                    flex_direction: Some(FlexDirection::Row),
-                    ..rounded(6.0)
-                }
-            )
-
-            // ── Password ──
-            text(style = StyleRules {
-                font_size: Some(px(14.0)),
-                color: Some(col(theme::TEXT_STRONG)),
-                ..Default::default()
-            }) { "Change password".to_string() }
-            text_input(
-                value = cur_pw.clone(),
-                on_change = on_cur_change,
-                placeholder = "Current password",
-                style = input_style.clone(),
-            )
-            text_input(
-                value = new_pw.clone(),
-                on_change = on_new_change,
-                placeholder = "New password",
-                style = input_style.clone(),
-            )
-            button(
-                label = "Update password".to_string(),
-                on_click = do_pw,
-                style = StyleRules {
-                    color: Some(col(theme::TEXT_ON_ACCENT)),
-                    align_self: Some(runtime_core::AlignSelf::FlexStart),
-                    height: Some(px(28.0)),
-                    padding_left: Some(px(14.0)),
-                    padding_right: Some(px(14.0)),
-                    background: Some(col(theme::ACCENT)),
-                    align_items: Some(AlignItems::Center),
-                    justify_content: Some(JustifyContent::Center),
-                    flex_direction: Some(FlexDirection::Row),
-                    ..rounded(6.0)
-                }
-            )
-
+            { name_card }
+            { pw_card }
             // ── Shared result line ── (reactive: reads `msg`/`msg_kind`)
             if !msg.get().is_empty() {
                 if msg_kind.get() == 2 {
@@ -391,57 +403,8 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                     }) { move || msg.get().to_string() }
                 }
             }
-
-            // ── Blocked users ── (the account's real block list; Unblock
-            // takes effect at once, and their messages show again)
-            text(style = StyleRules {
-                font_size: Some(px(12.0)),
-                font_weight: Some(runtime_core::FontWeight::Bold),
-                color: Some(col(theme::TEXT_MUTED)),
-                margin_top: Some(px(24.0)),
-                ..Default::default()
-            }) { "BLOCKED USERS".to_string() }
-            { blocked_list }
-
-            // ── Sessions ── (revokes every login of this account, this
-            // device's included)
-            text(style = StyleRules {
-                font_size: Some(px(12.0)),
-                font_weight: Some(runtime_core::FontWeight::Bold),
-                color: Some(col(theme::TEXT_MUTED)),
-                margin_top: Some(px(24.0)),
-                ..Default::default()
-            }) { "SESSIONS".to_string() }
-            text(style = StyleRules {
-                font_size: Some(px(13.0)),
-                color: Some(col(theme::TEXT_MUTED)),
-                margin_top: Some(px(6.0)),
-                margin_bottom: Some(px(8.0)),
-                ..Default::default()
-            }) { "Signs this account out everywhere it is logged in, including here.".to_string() }
-            view(style = StyleRules {
-                height: Some(px(32.0)),
-                padding_left: Some(px(16.0)),
-                padding_right: Some(px(16.0)),
-                align_self: Some(runtime_core::AlignSelf::FlexStart),
-                align_items: Some(AlignItems::Center),
-                justify_content: Some(JustifyContent::Center),
-                background: Some(col(theme::DANGER_STRONG)),
-                ..rounded(4.0)
-            }, test_id = "logout-everywhere") {
-                text(style = StyleRules {
-                    font_size: Some(px(14.0)),
-                    font_weight: Some(runtime_core::FontWeight::SemiBold),
-                    color: Some(col(theme::TEXT_ON_ACCENT)),
-                    ..Default::default()
-                }) { "Log out of all devices".to_string() }
-            }
-            .on_touch(|ev| {
-                if ev.phase == TouchPhase::Ended {
-                    crate::auth::request_logout_everywhere();
-                }
-                TouchResponse::CONSUMED
-            })
+            { blocked_card }
+            { sessions_card }
         }
     }
 }
@@ -647,55 +610,43 @@ fn appearance_tab(accent: Signal<String>) -> Element {
             padding_right: Some(px(16.0)),
             ..Default::default()
         }) {
-            text(style = StyleRules {
-                font_size: Some(px(14.0)),
-                color: Some(col(theme::TEXT_STRONG)),
-                ..Default::default()
-            }) { "Theme".to_string() }
-            view(style = StyleRules {
-                flex_direction: Some(FlexDirection::Row),
-                flex_wrap: Some(runtime_core::FlexWrap::Wrap),
-                gap: Some(px(16.0)),
-                margin_bottom: Some(px(12.0)),
-                ..Default::default()
-            }) { theme_cards }
-            text(style = StyleRules {
-                font_size: Some(px(14.0)),
-                color: Some(col(theme::TEXT_STRONG)),
-                ..Default::default()
-            }) { "Accent color".to_string() }
-            text(style = StyleRules {
-                font_size: Some(px(12.0)),
-                color: Some(col(theme::TEXT_MUTED)),
-                ..Default::default()
-            }) { "The highlight colour for buttons, selection and mentions. Picking a theme resets it to that theme's own."
-                .to_string() }
-            view(style = StyleRules {
-                flex_direction: Some(FlexDirection::Row),
-                gap: Some(px(10.0)),
-                ..Default::default()
-            }) {
-                for hex in ACCENTS.iter() {
-                    accent_swatch(*hex, accent.clone(), on_pick.clone())
-                }
-            }
-            text(style = StyleRules {
-                font_size: Some(px(14.0)),
-                color: Some(col(theme::TEXT_STRONG)),
-                margin_top: Some(px(12.0)),
-                ..Default::default()
-            }) { "App icon".to_string() }
-            text(style = StyleRules {
-                font_size: Some(px(12.0)),
-                color: Some(col(theme::TEXT_MUTED)),
-                ..Default::default()
-            }) { "The cassette in your browser tab.".to_string() }
-            view(style = StyleRules {
-                flex_direction: Some(FlexDirection::Row),
-                flex_wrap: Some(runtime_core::FlexWrap::Wrap),
-                gap: Some(px(16.0)),
-                ..Default::default()
-            }) { icon_cards }
+            { crate::settings_suite::settings_card("Theme".to_string(), vec![
+                ui! { view(style = StyleRules {
+                    flex_direction: Some(FlexDirection::Row),
+                    flex_wrap: Some(runtime_core::FlexWrap::Wrap),
+                    gap: Some(px(16.0)),
+                    ..Default::default()
+                }) { theme_cards } },
+            ]) }
+            { crate::settings_suite::settings_card("Accent color".to_string(), vec![
+                ui! { text(style = StyleRules {
+                    font_size: Some(px(12.0)),
+                    color: Some(col(theme::TEXT_MUTED)),
+                    ..Default::default()
+                }) { "The highlight colour for buttons, selection and mentions. Picking a theme resets it to that theme's own.".to_string() } },
+                ui! { view(style = StyleRules {
+                    flex_direction: Some(FlexDirection::Row),
+                    gap: Some(px(10.0)),
+                    ..Default::default()
+                }) {
+                    for hex in ACCENTS.iter() {
+                        accent_swatch(*hex, accent.clone(), on_pick.clone())
+                    }
+                } },
+            ]) }
+            { crate::settings_suite::settings_card("App icon".to_string(), vec![
+                ui! { text(style = StyleRules {
+                    font_size: Some(px(12.0)),
+                    color: Some(col(theme::TEXT_MUTED)),
+                    ..Default::default()
+                }) { "The cassette in your browser tab.".to_string() } },
+                ui! { view(style = StyleRules {
+                    flex_direction: Some(FlexDirection::Row),
+                    flex_wrap: Some(runtime_core::FlexWrap::Wrap),
+                    gap: Some(px(16.0)),
+                    ..Default::default()
+                }) { icon_cards } },
+            ]) }
         }
     }
 }
@@ -764,15 +715,13 @@ pub fn UserSettings(
 /// A sidebar group heading ("USER SETTINGS", a server's name). `first` drops
 /// the space above it.
 pub(crate) fn nav_heading(label: impl Fn() -> String + 'static, first: bool) -> Element {
+    let base = section_label();
     ui! {
         text(style = StyleRules {
-            font_size: Some(px(12.0)),
-            font_weight: Some(runtime_core::FontWeight::Bold),
-            color: Some(col(theme::TEXT_MUTED)),
             padding_left: Some(px(10.0)),
             padding_top: Some(px(if first { 0.0 } else { 16.0 })),
             padding_bottom: Some(px(6.0)),
-            ..Default::default()
+            ..base.clone()
         }) { move || label() }
     }
 }
@@ -809,9 +758,11 @@ pub(crate) fn settings_layout(nav: Vec<Element>, panel: Element, close: Option<R
             view(style = move || {
                 let hidden = crate::app::mobile::settings_hidden(true);
                 StyleRules {
-                    flex_grow: Some(runtime_core::Tokenized::Literal(if hidden { 0.0 } else { 1.0 })),
+                    // On a phone the nav sidebar fills the window while it
+                    // shows (basis 0 + grow), instead of collapsing to zero.
+                    flex_grow: Some(runtime_core::Tokenized::Literal(if crate::app::mobile::is_phone() && !hidden { 1.0 } else { 0.0 })),
                     flex_shrink: Some(runtime_core::Tokenized::Literal(0.0)),
-                    flex_basis: Some(px(if crate::app::mobile::is_phone() { 0.0 } else { 218.0 })),
+                    flex_basis: Some(px(if crate::app::mobile::is_phone() { 0.0 } else { 260.0 })),
                     width: hidden.then(|| px(0.0)),
                     flex_direction: Some(FlexDirection::Row),
                     justify_content: Some(if crate::app::mobile::is_phone() { JustifyContent::FlexStart } else { JustifyContent::FlexEnd }),
@@ -852,7 +803,9 @@ pub(crate) fn settings_layout(nav: Vec<Element>, panel: Element, close: Option<R
                 }
             }) {
                 scroll_view(style = move || StyleRules {
-                    flex_grow: Some(runtime_core::Tokenized::Literal(if crate::app::mobile::settings_hidden(false) { 0.0 } else { 1.0 })),
+                    flex_grow: Some(runtime_core::Tokenized::Literal(0.0)),
+                    flex_shrink: Some(runtime_core::Tokenized::Literal(1.0)),
+                    flex_basis: Some(px(if crate::app::mobile::settings_hidden(false) { 0.0 } else { 740.0 })),
                     width: crate::app::mobile::settings_hidden(false).then(|| px(0.0)),
                     ..Default::default()
                 }) {
@@ -860,7 +813,7 @@ pub(crate) fn settings_layout(nav: Vec<Element>, panel: Element, close: Option<R
                         let pad = if crate::app::mobile::is_phone() { 16.0 } else { 40.0 };
                         StyleRules {
                             flex_direction: Some(FlexDirection::Column),
-                            max_width: Some(px(740.0)),
+                            max_width: Some(px(crate::app::mobile::fit_width(740.0))),
                             padding_top: Some(px(if crate::app::mobile::is_phone() { 16.0 } else { 60.0 })),
                             padding_bottom: Some(px(80.0)),
                             padding_left: Some(px(pad)),
@@ -872,8 +825,10 @@ pub(crate) fn settings_layout(nav: Vec<Element>, panel: Element, close: Option<R
                         { panel }
                     }
                 }
+                view(style = StyleRules { flex_grow: Some(runtime_core::Tokenized::Literal(1.0)), ..Default::default() }) {}
                 view(style = StyleRules {
                     width: Some(px(72.0)),
+                    flex_grow: Some(runtime_core::Tokenized::Literal(0.0)),
                     flex_shrink: Some(runtime_core::Tokenized::Literal(0.0)),
                     padding_top: Some(px(60.0)),
                     flex_direction: Some(FlexDirection::Column),
@@ -896,7 +851,7 @@ pub(crate) fn settings_layout(nav: Vec<Element>, panel: Element, close: Option<R
                         border_left_color: Some(col(theme::TEXT_MUTED)),
                         ..rounded(18.0)
                     }, test_id = "settings-close") {
-                        text(style = StyleRules { font_size: Some(px(16.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { "✕".to_string() }
+                        text(style = StyleRules { font_size: Some(px(16.0)), color: Some(col(theme::TEXT_MUTED)), pointer_events: Some(runtime_core::PointerEvents::None), ..Default::default() }) { "✕".to_string() }
                     }
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
@@ -935,7 +890,7 @@ pub(crate) fn nav_row(label: &str, danger: bool, active: Signal<usize>, index: u
                 padding_right: Some(px(10.0)),
                 flex_direction: Some(FlexDirection::Row),
                 align_items: Some(AlignItems::Center),
-                background: Some(col(if on { theme::BG_SELECTED } else if hovered.get() { theme::BG_HOVER } else { "transparent" })),
+                background: Some(crate::style_helpers::selected_fill(on, hovered.get())),
                 ..rounded(4.0)
             }
         }) {

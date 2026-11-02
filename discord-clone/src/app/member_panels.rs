@@ -80,20 +80,12 @@ pub(super) fn action_menu(
                     backdrop = BackdropMode::None,
                 ) {
                     view(style = StyleRules {
-                        flex_direction: Some(FlexDirection::Column),
                         width: Some(px(150.0)),
                         gap: Some(px(2.0)),
-                        background: Some(col(theme::BG_FLOATING)),
-                        border_top_width: Some(border_width(1.0)),
-                        border_right_width: Some(border_width(1.0)),
-                        border_bottom_width: Some(border_width(1.0)),
-                        border_left_width: Some(border_width(1.0)),
-                        border_top_color: Some(col(BORDER)),
-                        border_right_color: Some(col(BORDER)),
-                        border_bottom_color: Some(col(BORDER)),
-                        border_left_color: Some(col(BORDER)),
+                        padding_left: Some(px(8.0)),
+                        padding_right: Some(px(8.0)),
                         overflow: Some(Overflow::Hidden),
-                        ..rounded(8.0)
+                        ..crate::style_helpers::popover_panel()
                     }) {
                         for (label, red, on) in rows.into_iter() {
                             view(style = StyleRules {
@@ -289,13 +281,10 @@ pub(super) fn live_member_panel(
             Some("do_not_disturb") => false,
             _ => true,
         };
-        let presence_color = match presence.get(&member_id).map(|s| s.as_str()) {
-            Some("online") => theme::SUCCESS,
-            Some("away") => theme::WARNING,
-            Some("dnd") => theme::DANGER,
-            Some("offline") => theme::TEXT_FAINT,
-            _ => theme::TEXT_FAINT,
-        };
+        // Live presence dot for this row: the shared status→colour map.
+        let presence_color = crate::avatar_chip::presence_status_role(
+            presence.get(&member_id).map(|s| s.as_str()).unwrap_or("offline")
+        );
         // The row's avatar: the shared `avatar_chip` helper — uploaded image
         // when the client registry has one, else the letter chip — in a
         // `Position::Relative` wrapper carrying the presence dot absolutely at
@@ -305,7 +294,6 @@ pub(super) fn live_member_panel(
             member.username.as_str(),
             BUTTON,
             MEMBER_CHIP_SIZE,
-            MEMBER_CHIP_SIZE / 2.0,
         );
         let avatar_wrap_style = StyleRules {
             position: Some(Position::Relative),
@@ -314,26 +302,10 @@ pub(super) fn live_member_panel(
             flex_shrink: Some(grow(0.0)),
             ..Default::default()
         };
-        // Presence ring matches the panel background so the dot reads as
-        // "cut out" of the avatar edge (Discord's look).
-        let ring_bg = BG_SIDEBAR;
-        let dot_style = StyleRules {
-            position: Some(Position::Absolute),
-            right: Some(px(0.0)),
-            bottom: Some(px(0.0)),
-            width: Some(px(11.0)),
-            height: Some(px(11.0)),
-            background: Some(col(presence_color)),
-            border_top_width: Some(border_width(2.0)),
-            border_right_width: Some(border_width(2.0)),
-            border_bottom_width: Some(border_width(2.0)),
-            border_left_width: Some(border_width(2.0)),
-            border_top_color: Some(col(ring_bg)),
-            border_right_color: Some(col(ring_bg)),
-            border_bottom_color: Some(col(ring_bg)),
-            border_left_color: Some(col(ring_bg)),
-            ..rounded(6.0)
-        };
+        // The shared 10px presence dot with its ring cut out in the panel
+        // background — one convention for every surface (member list, DM
+        // list, user panel, profile card).
+        let dot = crate::avatar_chip::presence_dot(presence_color, BG_SIDEBAR);
 
         let row = ui! {
             view(style = StyleRules {
@@ -354,7 +326,7 @@ pub(super) fn live_member_panel(
                 // the panel bg color), like the mock member row / user panel.
                 view(style = avatar_wrap_style.clone()) {
                     { chip }
-                    view(style = dot_style.clone()) {}
+                    { dot }
                 }
                 // Name (+ a "(you)" tag on the signed-in user's own row).
                 // flex_shrink 0 + min content: the wrapper must NEVER collapse

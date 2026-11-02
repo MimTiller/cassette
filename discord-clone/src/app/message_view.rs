@@ -48,11 +48,15 @@ pub(super) fn attachment_box(size: Option<(u32, u32)>, max_w: f32, max_h: f32) -
 /// size comes from the server because a reactive style fed from the image's
 /// `on_load` natural size never took effect in the live app (the node
 /// rendered 0x0).
-pub(super) fn attachment_row(atts: &[discord_server::server_settings::MessageAttachment]) -> Element {
+pub(super) fn attachment_row(atts: &[discord_server::server_settings::MessageAttachment], col_w: f32) -> Element {
+    // `col_w` (the live chat column) replaces the fixed 520px single-image cap
+    // so a lone image ends on the text column's right edge instead of leaving
+    // a dead strip beside it; a pair keeps the smaller grid square so two can
+    // sit side by side.
     let (max_w, max_h) = if atts.len() > 1 {
         (ATTACHMENT_GRID_MAX, ATTACHMENT_GRID_MAX)
     } else {
-        (ATTACHMENT_MAX_W, ATTACHMENT_MAX_H)
+        (col_w, ATTACHMENT_MAX_H)
     };
     let cells: Vec<Element> = atts.iter().map(|a| {
         let data = crate::auth::media_url(a.url.clone());
@@ -90,7 +94,7 @@ pub(super) fn attachment_row(atts: &[discord_server::server_settings::MessageAtt
 /// Link preview cards under a message, lined up with its text: an accent
 /// bar, the site name, the title (opens the link), up to three lines of
 /// description and the image.
-pub(super) fn embed_cards(embeds: &[discord_server::link_previews::Embed]) -> Element {
+pub(super) fn embed_cards(embeds: &[discord_server::link_previews::Embed], col_w: f32) -> Element {
     let cards: Vec<Element> = embeds
         .iter()
         .map(|e| {
@@ -153,7 +157,10 @@ pub(super) fn embed_cards(embeds: &[discord_server::link_previews::Embed]) -> El
             ui! {
                 view(style = StyleRules {
                     flex_direction: Some(FlexDirection::Row),
-                    max_width: Some(px(mobile::media_max_width(432.0))),
+                    // The card spans the chat column (`col_w`), not a fixed
+                    // 432px cap, so previews sit on the same right edge as
+                    // the rows above and the column shows no dead strip.
+                    width: Some(px(col_w)),
                     background: Some(col(crate::theme::BG_SECONDARY)),
                     overflow: Some(Overflow::Hidden),
                     ..rounded(4.0)
@@ -270,6 +277,49 @@ pub(super) fn insert_live_msg(
         .min(buf.len());
     buf.insert(pos, msg);
     true
+}
+
+/// Discord's "Welcome to #name!" header block for an EMPTY channel: it pins
+/// to the top of the feed (not centered in a void) — a 56px `#` in a soft
+/// circle, the heading, and a muted line. The composer stays bottom-pinned
+/// below it, so the pane reads as a channel with nothing posted yet.
+#[allow(non_snake_case)]
+pub(super) fn welcome_block(channel_name: &str) -> Element {
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Column),
+            align_items: Some(AlignItems::Center),
+            padding_top: Some(px(24.0)),
+            padding_bottom: Some(px(16.0)),
+            ..Default::default()
+        }) {
+            view(style = StyleRules {
+                width: Some(px(56.0)),
+                height: Some(px(56.0)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                background: Some(col(BG_SIDEBAR)),
+                ..rounded(28.0)
+            }) {
+                icon(HASH).color(move || theme::live(theme::ACCENT)).size(28.0)
+            }
+            text(style = StyleRules {
+                margin_top: Some(px(16.0)),
+                font_size: Some(px(20.0)),
+                font_weight: Some(FontWeight::Bold),
+                color: Some(col(TEXT)),
+                text_align: Some(TextAlign::Center),
+                ..Default::default()
+            }) { format!("Welcome to #{}!", channel_name) }
+            text(style = StyleRules {
+                margin_top: Some(px(8.0)),
+                font_size: Some(px(13.0)),
+                color: Some(col(TEXT_MUTED)),
+                text_align: Some(TextAlign::Center),
+                ..Default::default()
+            }) { format!("This is the start of the #{} conversation.", channel_name) }
+        }
+    }
 }
 
 /// The "start of conversation" anchor for a live channel — a centered, muted
@@ -908,14 +958,27 @@ pub(crate) fn message_row(
         // header. Just the body, tightly spaced above the row it follows
         // (3px vs the 8px of a fresh header row) and left-aligned under
         // where the name would start: 16px pad + 40px avatar + 10px gap.
-        // No right padding — at this width the body is full-width anyway.
+        // The left gutter stays empty at rest; hovering the row reveals the
+        // message's time there (Discord's convention), so consecutive rows
+        // read as one author's block without losing their timestamps. The
+        // `hovered` signal is driven by this box's own `on_hover`; the
+        // gutter time anchors to the row's `Position::Relative` wrapper
+        // (`message_row_with_actions`), 16px inside its left edge.
+        let hovered = signal(false);
         return ui! {
-            view(style = crate::styles::MessageGroupedBox()) {
-                // `message_body` renders markdown-bearing bodies through the
-                // SDK; a plain body is one `text` run at the same 15px/TEXT
-                // styling, so grouped consecutive rows keep their tight look.
+            view(style = crate::styles::MessageGroupedBox(), on_hover = move |on: bool| hovered.set(on)) {
                 { message_body(body) }
                 if edited { EditedLabel() }
+                if hovered.get() {
+                    text(style = StyleRules {
+                        position: Some(Position::Absolute),
+                        left: Some(px(16.0)),
+                        top: Some(px(4.0)),
+                        font_size: Some(px(11.0)),
+                        color: Some(col(crate::theme::TEXT_FAINT)),
+                        ..Default::default()
+                    }) { when.clone() }
+                }
             }
         };
     }
@@ -1055,21 +1118,11 @@ pub(super) fn message_overflow_menu(
                     right: Some(px(12.0)),
                     width: Some(px(190.0)),
                     z_index: Some(super::popups::POPUP_Z),
-                    flex_direction: Some(FlexDirection::Column),
                     // Clip, don't scroll: this is a short fixed list (3–5 rows)
                     // that must never scroll; `hidden` keeps the surface from
                     // showing a scrollbar if a row ever wraps past the box.
                     overflow: Some(Overflow::Hidden),
-                    background: Some(col(theme::BG_FLOATING)),
-                    border_top_width: Some(border_width(1.0)),
-                    border_right_width: Some(border_width(1.0)),
-                    border_bottom_width: Some(border_width(1.0)),
-                    border_left_width: Some(border_width(1.0)),
-                    border_top_color: Some(col(BORDER)),
-                    border_right_color: Some(col(BORDER)),
-                    border_bottom_color: Some(col(BORDER)),
-                    border_left_color: Some(col(BORDER)),
-                    ..rounded(8.0)
+                    ..crate::style_helpers::popover_panel()
                 }) {
                     { menu_row("Copy text", on_copy.clone(), open) }
                     {
@@ -1480,13 +1533,10 @@ pub(super) fn live_edit_row(
         let input_style = StyleRules {
             font_size: Some(px(15.0)),
             color: Some(col(TEXT)),
-            background: Some(col(COMPOSER)),
             padding_top: Some(px(6.0)),
             padding_bottom: Some(px(6.0)),
-            padding_left: Some(px(10.0)),
-            padding_right: Some(px(10.0)),
             flex_grow: Some(grow(1.0)),
-            ..with_radius(borderless_input(), 8.0)
+            ..crate::style_helpers::text_field_style()
         };
         ui! {
             text_input(value = live_edit_text, autofocus = true, on_change = on_edit_type, placeholder = "Edit message", style = input_style, test_id = "edit-input")

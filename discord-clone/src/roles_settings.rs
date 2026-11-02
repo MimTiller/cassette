@@ -5,7 +5,7 @@
 //! edits roles below their own; everyone else sees the list. Members are
 //! given roles from their profile card.
 
-use crate::style_helpers::{borderless_input, col, px, rounded, with_radius};
+use crate::style_helpers::{col, px, rounded};
 use crate::theme;
 use discord_server::permissions::{self, Permissions, Rank};
 use discord_server::server_roles::{self, CustomRole};
@@ -115,7 +115,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
     let list = switch(
         move || (roles.get(), everyone.get(), selected.get()),
         move |(list, everyone_perms, sel): &(Vec<CustomRole>, Permissions, Option<Selected>)| {
-            let row_bg = |on: bool| if on { Some(col(theme::BG_SELECTED)) } else { None };
+            let row_bg = |on: bool| Some(crate::style_helpers::selected_fill(on, false));
             let mut rows: Vec<Element> = list
                 .iter()
                 .enumerate()
@@ -447,14 +447,10 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
             view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(8.0)), margin_bottom: Some(px(8.0)), ..Default::default() }) {
                 view(style = StyleRules { flex_direction: Some(FlexDirection::Row), gap: Some(px(8.0)), ..Default::default() }) {
                     text_input(value = name, on_change = move |v: String| name.set(v), placeholder = "New role name", style = StyleRules {
-                        height: Some(px(34.0)),
-                        flex_grow: Some(Tokenized::Literal(1.0)),
-                        flex_shrink: Some(Tokenized::Literal(1.0)),
-                        min_width: Some(px(0.0)),
-                        padding_left: Some(px(10.0)),
-                        padding_right: Some(px(10.0)),
-                        background: Some(col(theme::BG_TERTIARY)),
-                        ..with_radius(borderless_input(), 8.0)
+                       flex_grow: Some(Tokenized::Literal(1.0)),
+                       flex_shrink: Some(Tokenized::Literal(1.0)),
+                       min_width: Some(px(0.0)),
+                       ..crate::style_helpers::text_field_style()
                     })
                     view(style = StyleRules {
                         height: Some(px(34.0)),
@@ -497,7 +493,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
     };
 
     ui! {
-        view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(10.0)), max_width: Some(px(560.0)), ..Default::default() }) {
+        view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(16.0)), max_width: Some(px(660.0)), ..Default::default() }) {
             text(style = small(theme::TEXT_MUTED)) {
                 "Roles colour names, can be @mentioned and grant permissions. Higher roles outrank lower ones. Select a role to see its permissions; give a member a role from their profile card.".to_string()
             }

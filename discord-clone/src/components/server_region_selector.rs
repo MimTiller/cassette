@@ -110,7 +110,7 @@ pub fn ServerRegionSelector() -> Element {
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),
                         gap: Some(px(10.0)),
-                        background: Some(col(if sel { theme::BG_SELECTED } else { "transparent" })),
+                        background: Some(crate::style_helpers::selected_fill(sel, false)),
                         ..rounded(8.0)
                     }
                 }) {

@@ -9,7 +9,7 @@ use runtime_core::{
 };
 
 use crate::controls::{button_view, text_field, ButtonKind};
-use crate::style_helpers::{borderless_input, col, px, with_radius};
+use crate::style_helpers::{col, px};
 use crate::theme;
 
 fn reload(server_id: i64, list: Signal<Vec<ServerEmoji>>) {
@@ -22,14 +22,9 @@ fn reload(server_id: i64, list: Signal<Vec<ServerEmoji>>) {
 
 fn input_style() -> StyleRules {
     StyleRules {
-        height: Some(px(34.0)),
         flex_grow: Some(Tokenized::Literal(1.0)),
         min_width: Some(px(0.0)),
-        padding_left: Some(px(10.0)),
-        padding_right: Some(px(10.0)),
-        background: Some(col(theme::BG_TERTIARY)),
-        color: Some(col(theme::TEXT_NORMAL)),
-        ..with_radius(borderless_input(), 8.0)
+        ..crate::style_helpers::text_field_style()
     }
 }
 
@@ -166,7 +161,7 @@ pub fn emoji_section(server_id: Option<i64>) -> Element {
     );
 
     ui! {
-        view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(12.0)), max_width: Some(px(560.0)), ..Default::default() }) {
+        view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(16.0)), max_width: Some(px(660.0)), ..Default::default() }) {
             text(style = StyleRules { font_size: Some(px(12.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) {
                 "Anyone in the server can use these in messages (:name:) and reactions. PNG, GIF or WebP, up to 256 KB.".to_string()
             }

@@ -71,7 +71,7 @@ pub fn SlashCommandDropdown() -> Element {
                         padding_right: Some(px(12.0)),
                         flex_direction: Some(FlexDirection::Row),
                         align_items: Some(AlignItems::Center),
-                        background: Some(col(if sel { theme::BG_SELECTED } else { "transparent" })),
+                        background: Some(crate::style_helpers::selected_fill(sel, false)),
                         ..rounded(8.0)
                     }
                 }) {
