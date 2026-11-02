@@ -370,6 +370,8 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
     // Same full-screen, paint-last idiom as `moderation_region`; inert outside
     // live mode (no entry point + `active_live_server` is None on a mock server).
     let live_invite_close = live_invite_mode.clone();
+    // The header carries the page's own fill so the strip never shows the
+    // channel chrome underneath it while the page is open.
     let live_invite_header = ui! {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Row),
@@ -379,6 +381,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
             padding_bottom: Some(px(16.0)),
             padding_left: Some(px(16.0)),
             padding_right: Some(px(16.0)),
+            background: Some(col(BG_MAIN)),
             ..Default::default()
         }) {
             text(style = StyleRules {
