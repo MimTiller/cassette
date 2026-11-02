@@ -136,3 +136,73 @@ pub(super) struct ShellState {
     pub(super) msg_menu: Signal<Option<MessageKey>>,
     pub(super) members_pref: Signal<Option<bool>>,
 }
+
+/// Enter live mode on server `sid`: select it, clear channel + moderation
+/// state left over from a previously live server, then pull its channels
+/// (auto-selecting the first text channel), roster and unread counts in one
+/// spawn anchored on the app shell, so every write lands in the callback
+/// rather than across an await. Shared by the rail's tile handler, the Create
+/// modal and the Join modal; `unread_buf` picks the unread map the caller
+/// displays (`live_unread` for the panes, `rail_unread` for the rail).
+pub(super) fn enter_live_server(
+    s: ShellState,
+    sid: i64,
+    unread_buf: Rc<RefCell<HashMap<i64, (i64, i64)>>>,
+) {
+    s.active_live_server.set(Some(sid));
+    s.active_live_channel.set(None);
+    s.live_kick_confirm.set(None);
+    s.live_ban_confirm.set(None);
+    s.live_timeout_confirm.set(None);
+    s.live_member_error.set(String::new());
+    s.live_members.set(Vec::new());
+
+    let gw = s.gateway;
+    let live_ch = s.live_channels;
+    let live_ch_sel = s.active_live_channel;
+    let lmem = s.live_members;
+    let buf = unread_buf;
+    let rev = s.live_unread_rev;
+    runtime_core::spawn_then_in(
+        &crate::app::shell_alive(),
+        async move {
+            let channels = crate::servers::list_channels(sid).await.ok();
+            let members = crate::moderation::list_members(sid).await.ok();
+            let counts = crate::servers::unread_counts(sid).await.ok();
+            (channels, members, counts)
+        },
+        move |(channels, members, counts)| {
+            if let Some(channels) = channels {
+                let first = channels
+                    .iter()
+                    .find(|c| c.kind == "text")
+                    .map(|c| c.id);
+                live_ch.set(channels);
+                if let Some(id) = first {
+                    live_ch_sel.set(Some(id));
+                    // Persist the landing spot so a refresh re-enters here.
+                    crate::auth::save_last_view_channel(sid, id);
+                    // Auto-selecting does not populate the channel's messages
+                    // on its own, so request History like a manual row tap.
+                    gw.send(
+                        discord_server::server_settings::WsClientMsg::History {
+                            channel_id: id,
+                            before_id: None,
+                        },
+                    );
+                }
+            }
+            if let Some(members) = members {
+                crate::mentions::members_loaded(sid, &members);
+                lmem.set(members);
+            }
+            if let Some(counts) = counts {
+                buf.borrow_mut()
+                    .extend(counts.into_iter().map(|c| {
+                        (c.channel_id, (c.count, c.unread_mentions))
+                    }));
+                rev.set(rev.get() + 1);
+            }
+        },
+    );
+}

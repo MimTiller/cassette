@@ -11,7 +11,11 @@ pub(super) struct RailParts {
 }
 
 pub(super) fn build(s: &ShellState) -> RailParts {
-    let ShellState { active_live_channel, active_live_server, create_busy, create_error, create_name, create_open, friends_snap, gateway, live_ban_confirm, live_channels, live_dm_active, live_dm_mode, live_dms, live_kick_confirm, live_member_error, live_members, live_servers, live_timeout_confirm, live_unread_rev, rail_unread, .. } = s.clone();
+    let ShellState { active_live_server, create_busy, create_error, create_name, create_open, friends_snap, gateway, live_dm_active, live_dm_mode, live_dms, live_servers, rail_unread, .. } = s.clone();
+    // Owned copy for the tile handlers: the rail lambdas must be `'static`,
+    // so they capture this clone (never the `s` reference) and hand it to
+    // `enter_live_server` when a tile is tapped.
+    let shell = s.clone();
     // --- server rail -----------------------------------------------------
     let rail_style = StyleRules {
         width: Some(px(72.0)),
@@ -196,6 +200,11 @@ pub(super) fn build(s: &ShellState) -> RailParts {
             };
             let rows: Vec<Element> = servers.iter().map(|s| {
                 let initial = s.name.chars().next().unwrap_or('?').to_string();
+                // Per-tile owned copies: the tile's on_touch lambda moves
+                // these into itself, so each tile needs its own Rc/struct
+                // copy rather than sharing the captured outer binding.
+                let tile_shell = shell.clone();
+                let tile_unread = rail_unread.clone();
                 // The uploaded icon fills the 48px tile with the tile's own
                 // rounding; servers without one keep the initial letter.
                 let face = match s.icon_url.clone().filter(|u| !u.is_empty()) {
@@ -216,15 +225,6 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                 };
                 let sid = s.id;
                 let active_live = active_live_server.clone();
-                let live_ch = live_channels.clone();
-                let live_ch_sel = active_live_channel.clone();
-                let unread_buf = rail_unread.clone();
-                let unread_rev = live_unread_rev.clone();
-                let live_mbrs = live_members.clone();
-                let live_mbr_err = live_member_error.clone();
-                let live_kick = live_kick_confirm.clone();
-                let live_ban = live_ban_confirm.clone();
-                let live_timeout = live_timeout_confirm.clone();
                 let base = row_style.clone();
                 ui! {
                     view(style = base.clone()) {
@@ -248,98 +248,12 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                         { face }
                     }
                     // Enter live mode: select this real server and pull its
-                    // channels (async `#[server]` RPC, same pattern as the
-                    // `live_servers` fetch above). Any previously selected live
-                    // channel is stale now (it belonged to a different server),
-                    // so reset it alongside `active_live_server`.
+                    // channels/roster/unread via the shared enter-live helper
+                    // (same one the Create and Join modals call). The rail
+                    // displays unread from `rail_unread`.
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
-                            active_live.set(Some(sid));
-                            live_ch_sel.set(None);
-                            // Clear any stale moderation state from a previous
-                            // live server (kick + ban + timeout confirm and error text).
-                            live_kick.set(None);
-                            live_ban.set(None);
-                            live_timeout.set(None);
-                            live_mbr_err.set(String::new());
-                            live_mbrs.set(Vec::new());
-                            // Clone the `Rc` before handing it to the `async move`
-                            // block: the block outlives the `on_touch` `Fn`
-                            // closure, so moving the captured `unread_buf`
-                            // straight into it would be a move out of the
-                            // closure (E0507). The clone shares the same
-                            // `RefCell`, so the fetch writes the shared map.
-                            let unread_buf = unread_buf.clone();
-                            runtime_core::driver::spawn_async(async move {
-                                // Channels, the member roster, and the
-                                // per-channel unread counts are independent
-                                // `#[server]` RPCs; fetch all three in one
-                                // spawn so the live view is populated together.
-                                if let Ok(channels) =
-                                    crate::servers::list_channels(sid).await
-                                {
-                                    // Auto-select the first text channel so the
-                                    // main panes enter live mode: the header,
-                                    // message list, and composer all key on
-                                    // `active_live_channel`, which stays `None`
-                                    // here until a channel row is tapped. The
-                                    // mock tile handler does the same via
-                                    // `first_text_channel()` — without it,
-                                    // clicking a live tile updates only the
-                                    // sidebar (keyed on `active_live_server`)
-                                    // and the header / messages keep showing the
-                                    // mock server. Resolved before `channels`
-                                    // is moved into `live_ch`.
-                                    let first = channels
-                                        .iter()
-                                        .find(|c| c.kind == "text")
-                                        .map(|c| c.id);
-                                    live_ch.set(channels);
-                                    if let Some(id) = first {
-                                        live_ch_sel.set(Some(id));
-                                        // Persist the exact landing spot (this
-                                        // server + this first channel) keyed by
-                                        // user id, so a refresh re-enters HERE
-                                        // — not the account's first server.
-                                        crate::auth::save_last_view_channel(sid, id);
-                                        // Auto-selecting only sets which channel
-                                        // is "active" — it does NOT populate
-                                        // `live_messages` for it. A manual row
-                                        // tap also sends History (see the
-                                        // channel row's `on_touch` below); do
-                                        // the same here so the auto-selected
-                                        // channel isn't stuck showing stale/no
-                                        // messages until the user re-taps it.
-                                        gateway.send(
-                                            discord_server::server_settings::WsClientMsg::History {
-                                                channel_id: id,
-                                                before_id: None,
-                                            },
-                                        );
-                                    }
-                                }
-                                if let Ok(members) =
-                                    crate::moderation::list_members(sid).await
-                                {
-                                    crate::mentions::members_loaded(sid, &members);
-                                    live_mbrs.set(members);
-                                }
-                                if let Ok(counts) =
-                                    crate::servers::unread_counts(sid).await
-                                {
-                                    // Clone the `Rc`: this `async move` block
-                                    // outlives the `on_touch` `Fn` closure that
-                                    // captured it, so a plain capture would be
-                                    // a move out of the closure (E0507).
-                                    let buf = unread_buf.clone();
-                                    let rev = unread_rev;
-                                    buf.borrow_mut()
-                                        .extend(counts.into_iter().map(|c| {
-                                            (c.channel_id, (c.count, c.unread_mentions))
-                                        }));
-                                    rev.set(rev.get() + 1);
-                                }
-                            });
+                            enter_live_server(tile_shell.clone(), sid, tile_unread.clone())
                         }
                         TouchResponse::CONSUMED
                     })

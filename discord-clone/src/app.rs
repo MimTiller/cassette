@@ -102,7 +102,7 @@ use login_screen::*;
 mod layout;
 use layout::*;
 mod shell_state;
-use shell_state::ShellState;
+use shell_state::{ShellState, enter_live_server};
 mod gateway_effects;
 mod rail;
 mod modals;
