@@ -327,8 +327,8 @@ class Session:
         return f"!!{self.input_startswith('Message')}"
 
     def app_live(self):
-        """Logged-in shell is live: the settings sidebar paints."""
-        return self.painted("USER SETTINGS", xmax=int(self.W * 0.3))
+        """Logged-in shell is live: the rail's presence line or the settings sidebar paints."""
+        return f"({self.painted('Online')} || {self.painted('USER SETTINGS', xmax=int(self.W * 0.3))})"
 
     # ---- auth flows ----------------------------------------------------------
 
