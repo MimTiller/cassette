@@ -317,6 +317,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
         live_rev: live_revision,
     };
     crate::mentions::set_open_user(Rc::new(move |uid, x, y| popup_ctx.open(uid, x, y, false)));
+    crate::mentions::set_open_user_menu(Rc::new(move |uid, x, y| popup_ctx.open(uid, x, y, true)));
     let reactions_read = reactions.clone();
     // The chat column's content width: what row-level blocks (attachments,
     // embed cards) fill so they end on the same right edge as the message

@@ -35,6 +35,7 @@ struct Ctx {
     /// Counts changes to names, members and roles (see [`names_version`]).
     names_version: u64,
     open_user: Option<Rc<dyn Fn(i64, f32, f32)>>,
+    open_user_menu: Option<Rc<dyn Fn(i64, f32, f32)>>,
 }
 
 thread_local! {
@@ -90,6 +91,32 @@ pub fn open_user(user_id: i64, x: f32, y: f32) {
     if let Some(f) = with(|c| c.open_user.clone()) {
         f(user_id, x, y);
     }
+}
+
+/// How the DM screen opens a user's context menu (set by the message list).
+pub fn set_open_user_menu(f: Rc<dyn Fn(i64, f32, f32)>) {
+    with(|c| c.open_user_menu = Some(f));
+}
+
+pub fn open_user_menu(user_id: i64, x: f32, y: f32) {
+    if let Some(f) = with(|c| c.open_user_menu.clone()) {
+        f(user_id, x, y);
+    }
+}
+
+/// A press handler for `user_id`'s avatar or name: a click opens their card,
+/// a right-click (a secondary press only ever delivers `Began`) their menu.
+pub fn author_press(user_id: i64) -> Rc<dyn Fn(&runtime_core::TouchEvent) -> runtime_core::TouchResponse> {
+    Rc::new(move |ev: &runtime_core::TouchEvent| {
+        let p = ev.window_position;
+        let secondary = runtime_shared::touch::pointer_button().opens_context_menu();
+        match ev.phase {
+            runtime_core::TouchPhase::Began if secondary => open_user_menu(user_id, p.x, p.y),
+            runtime_core::TouchPhase::Ended if !secondary => open_user(user_id, p.x, p.y),
+            _ => {}
+        }
+        runtime_core::TouchResponse::CONSUMED
+    })
 }
 
 /// The active server's members. Switching servers drops the old server's

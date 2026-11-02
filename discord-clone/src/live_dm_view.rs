@@ -34,7 +34,7 @@ use std::rc::Rc;
 use runtime_core::{
     AlignItems, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent,
     KeyOutcome, Overflow, Position, Signal, StyleRules, Tokenized,
-    TouchPhase, TouchResponse, signal, switch, ui,
+    TouchEvent, TouchPhase, TouchResponse, signal, switch, ui,
 };
 
 use crate::app::{format_when, message_row, same_group};
@@ -415,6 +415,10 @@ fn live_dm_row(
         }
         .on_hover(move |on| hovered.set(on))
         .on_touch(move |ev| {
+            if is_user_menu_press(ev) && !is_group && other_id != 0 {
+                crate::mentions::open_user_menu(other_id, ev.window_position.x, ev.window_position.y);
+                return TouchResponse::CONSUMED;
+            }
             if ev.phase == TouchPhase::Ended {
                 active.set(Some(dm_id));
                 crate::app::mobile::show(crate::app::mobile::Pane::Chat);
@@ -426,6 +430,12 @@ fn live_dm_row(
             TouchResponse::CONSUMED
         })
     }
+}
+
+/// Whether `ev` is the press that opens a context menu: a secondary press
+/// only ever delivers `Began`.
+fn is_user_menu_press(ev: &TouchEvent) -> bool {
+    ev.phase == TouchPhase::Began && runtime_shared::touch::pointer_button().opens_context_menu()
 }
 
 /// The live DM list column: a "DIRECT MESSAGES" section label, a
@@ -881,6 +891,26 @@ fn live_dm_conversation(
                     }
                 }
             });
+            // A 1:1 header's name opens that person's menu on a right-click.
+            let me = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+            let menu_user = this_dm
+                .as_ref()
+                .filter(|_| !is_group)
+                .and_then(|d| d.participants.iter().find(|p| p.user_id != me))
+                .map(|p| (p.user_id, p.username.clone()));
+            let (menu_user, menu_name) = (menu_user.as_ref().map(|m| m.0), menu_user.as_ref().map(|m| m.1.clone()));
+            let title_el = match menu_user {
+                Some(user_id) => ui! {
+                    view { { title_el } }
+                    .on_touch(move |ev| {
+                        if is_user_menu_press(ev) {
+                            crate::mentions::open_user_menu(user_id, ev.window_position.x, ev.window_position.y);
+                        }
+                        TouchResponse::CONSUMED
+                    })
+                },
+                None => title_el,
+            };
             let header_el = ui! {
                 view(style = header_style) {
                     { crate::app::mobile::back_button("dm-mobile-back", || crate::app::mobile::show(crate::app::mobile::Pane::List)) }
@@ -960,6 +990,10 @@ fn live_dm_conversation(
                     .map(|(pa, pts)| same_group(pa, *pts, author.as_str(), ts_s))
                     .unwrap_or(false)
                     && edited_at.is_none();
+                // The other person's name and avatar open their card and menu.
+                let on_author = menu_user
+                    .filter(|_| menu_name.as_ref() == Some(author))
+                    .map(crate::mentions::author_press);
                 rows.push(message_row(
                     author.as_str(),
                     theme::ACCENT,
@@ -968,7 +1002,7 @@ fn live_dm_conversation(
                     crate::app::format_full_when(ts_s),
                     edited_at.is_some(),
                     grouped,
-                    None,
+                    on_author,
                 ));
                 prev = Some((author.clone(), ts_s));
             }
