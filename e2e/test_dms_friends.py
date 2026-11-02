@@ -100,8 +100,7 @@ async def main():
         if pos:
             await a.click(*pos)
             dm_seen = await a.until("!!" + a.input_startswith("Message"), timeout=10, why="DM composer")
-            a.known_bug("a search result shows the DM instead of leaving Friends up", bool(dm_seen),
-                        why="the DM row opens and is selected, but the Friends panel stays in the main area")
+            a.check("a search result shows the DM instead of leaving Friends up", bool(dm_seen))
             if not dm_seen:
                 await a.click_text("Friends", **LIST)      # the entry toggles the panel off
                 dm_seen = await a.until("!!" + a.input_startswith("Message"), timeout=10,
