@@ -114,16 +114,9 @@ async def main():
         a.check("A sends the DM and sees it", bool(dm_ok))
         if not dm_ok:
             await a.shot("dm0-a-send-failed.png")
-        # B's list should gain the new DM live (it doesn't: a DmMessage frame for a
-        # DM that isn't in the list is dropped; see ISSUES.md). Workaround: close
-        # and reopen the DM screen, which refetches the list.
+        # B's list should gain the new DM live.
         row = await b.until(b.painted(a_user, **LIST), timeout=15, why="DM row on B's list")
-        b.known_bug("a brand-new DM appears in the other person's list live", bool(row),
-                    why="live_dm_view dm_incoming_effect drops DmMessage frames for unknown DMs")
-        if not row:
-            await b.click_text("Done", xmin=b.W * 0.8)
-            await b.click(36, 36)
-            row = await b.until(b.painted(a_user, **LIST), timeout=15, why="DM row after reopen")
+        b.check("a brand-new DM appears in the other person's list live", bool(row))
         if row:
             await b.click(*(await b.text_pos(a_user, **LIST)))
             if not await b.until("!!" + b.input_startswith("Message"), timeout=6, why="B's DM composer"):

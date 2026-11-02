@@ -1016,6 +1016,18 @@ pub fn dm_incoming_effect(
                 // The author's avatar rides the frame: register it so the DM
                 // pane's rows (and the rail) draw it instead of the initial.
                 crate::auth::remember_avatar(author_username.as_str(), author_avatar.clone());
+                // A message in a DM this client has never seen (the other
+                // person just started it) means the list is stale: refetch it
+                // so the new row shows up live.
+                if !live_dms.get().iter().any(|d| d.channel_id == dm_id) {
+                    crate::group_dm::refresh(live_dms, dm_active, dm_buf.clone(), dm_rev);
+                    return ui! {
+                        view(style = StyleRules {
+                            height: Some(px(0.0)),
+                            ..Default::default()
+                        }) {}
+                    };
+                }
                 // Only buffer frames for the currently-open conversation —
                 // the buffer holds exactly one DM's history at a time, and
                 // re-selecting a DM re-fetches its history anyway, so
