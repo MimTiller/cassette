@@ -46,14 +46,11 @@ async def main():
         # The invite overlay is full-screen: close it so A's composer shows.
         await a.click_text("Done", xmin=a.W * 0.8, ymax=80)
         await b.join_via_code(code)
-        # After joining, the app stays on "No server selected" (ISSUES.md);
-        # open the new server from its rail icon.
+        # A successful join auto-enters the new server (the join modal's
+        # enter-live pattern), so it lands open without a click.
         landed = await b.until(b.painted(server, xmax=b.W * 0.45), timeout=5,
                                why="joined server opened by itself")
-        b.known_bug("joining opens the new server", landed,
-                    why="Join -> Done leaves No server selected; the rail icon is there")
-        if not landed:
-            await b.click(36, 115)
+        b.check("joining opens the new server", landed)
         joined = await b.until(b.painted(server, xmax=b.W * 0.45),
                                timeout=20, why="server painted after join")
         b.check("B joins with A's invite code", joined)

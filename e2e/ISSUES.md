@@ -31,12 +31,6 @@ Screenshots are in `/root/discord-ref/e2e-issues-2026-10-31/` on the dev box.
    sliver ("ONLINE — 1" wraps, names cut off) on every client. Seen in
    test_messages. Shot: `4-member-list-squeezed.png`.
 
-5. **Starting a DM from the search box leaves the Friends panel up.** With
-   Friends open, picking a person in "Find or start a conversation" creates
-   and selects the DM row, but the main area keeps showing Friends until you
-   click the Friends entry. Test: test_dms_friends, "a search result shows
-   the DM instead of leaving Friends up". Shot: `5-friends-panel-stays.png`.
-
 6. **No new-messages bar in the channel a server opens on.** Entering a
    server opens #general before `unread_counts` returns, so its count reads 0
    and the "N new messages" bar never shows there (it works for a channel
@@ -53,10 +47,6 @@ Screenshots are in `/root/discord-ref/e2e-issues-2026-10-31/` on the dev box.
 
 9. **Blocking hides messages** is still KNOWN in test_dms_friends (right-click
    → Block didn't collapse the blocked user's DM text); not investigated yet.
-
-10. **Joining a server doesn't open it.** After "Joined! Your role is:
-    member" → Done, the app stays on "No server selected"; the new server is
-    in the rail but you have to click it. Test: test_two_users.
 
 11. **The Invite People page has no header background.** It is a full-screen
     page whose top strip is transparent, so the title "Invite People" draws
