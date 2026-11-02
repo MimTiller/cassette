@@ -1726,5 +1726,11 @@ const MEMBERS_AUTO_MIN_WIDTH: f32 = 1200.0;
 /// Whether the member list shows: the header toggle's choice, or, until the
 /// toggle is used, whether the window is wide enough.
 pub(super) fn members_visible(pref: Signal<Option<bool>>) -> bool {
+    // A phone shows the member slide-over only over the chat: while the List
+    // pane is up the overlay would sit on top of the rail and channel list,
+    // so it is impossible there — whatever the header toggle asked for.
+    if mobile::hidden(mobile::Pane::Chat) {
+        return false;
+    }
     pref.get().unwrap_or_else(|| viewport_size().get().width >= MEMBERS_AUTO_MIN_WIDTH)
 }
