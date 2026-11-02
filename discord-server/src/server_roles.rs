@@ -526,9 +526,11 @@ fn db_from_state() -> Result<Db, ServerError> {
 /// their permissions and the channels they can see.
 #[cfg(feature = "server")]
 pub fn announce(db: &Db, server_id: i64) {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     crate::realtime::hub().publish(
         &crate::realtime::server_audience(db, server_id),
-        &crate::server_settings::WsServerMsg::RolesChanged { server_id },
+        &crate::server_settings::WsServerMsg::RolesChanged { server_id, seq },
     );
 }
 

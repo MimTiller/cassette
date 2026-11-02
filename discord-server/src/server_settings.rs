@@ -237,8 +237,14 @@ pub enum WsServerMsg {
         mentioned_user_ids: Vec<i64>,
     },
     /// A server's named roles or their holders changed; clients refetch
-    /// `server_roles::server_roles`.
-    RolesChanged { server_id: i64 },
+    /// `server_roles::server_roles`. `seq` differs on every frame: the
+    /// client's frame `switch` skips a value equal to the last one, which
+    /// would drop a second change to the same server.
+    RolesChanged {
+        server_id: i64,
+        #[serde(default)]
+        seq: u64,
+    },
     /// A channel message was deleted. The client drops its stored entry for
     /// `message_id`.
     MessageDeleted { message_id: i64, channel_id: i64 },

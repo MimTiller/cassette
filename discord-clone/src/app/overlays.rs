@@ -173,6 +173,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         friends_panel,
         live_presence.clone(),
         live_presence_rev.clone(),
+        blocked_users,
     );
     let live_dm_close = live_dm_mode.clone();
     let live_dm_header = ui! {

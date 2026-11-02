@@ -15,8 +15,7 @@ from cdp import Session, MissingElement, WaitTimeout, CDPTimeout, CDPError
 from srv_helper import signup_login, srv
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8085"
-SHOTS = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "out")
+SHOTS = sys.argv[2] if len(sys.argv) > 2 else "/tmp/cassette-e2e"
 
 TIMEOUT = 420
 
@@ -183,17 +182,16 @@ async def main():
         pos = await b.text_pos(a_user, xmin=b.W * 0.15, ymax=b.H * 0.5)
         blocked = False
         if pos:
+            await b.cdp("Page.bringToFront")
             await right_click_at(b, *pos)
             blocked = await b.click_text("Block", xmin=b.W * 0.15)
             if not blocked:
                 await b.shot("dm-block-menu.png")
             hidden = blocked and await b.until(
                 b.not_painted(dm_msg), timeout=8, why="A's DM text hidden")
-            b.known_bug("blocking hides the blocked user's messages", bool(hidden),
-                        why="right-click -> Block -> collapsed")
+            b.check("blocking hides the blocked user's messages", bool(hidden))
         else:
-            b.known_bug("blocking hides the blocked user's messages", False,
-                        why="name position not found in DM view")
+            b.check("blocking hides the blocked user's messages", False)
 
         errs = [e["params"].get("exceptionDetails", {}).get("message", "")
                 for e in a._events if e["method"] == "Runtime.exceptionThrown"]

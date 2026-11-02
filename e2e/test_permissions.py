@@ -16,8 +16,7 @@ from cdp import Session, MissingElement, WaitTimeout, CDPTimeout, CDPError
 from srv_helper import signup_login, srv
 
 BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8085"
-SHOTS = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "out")
+SHOTS = sys.argv[2] if len(sys.argv) > 2 else "/tmp/cassette-e2e"
 
 TIMEOUT = 420
 
@@ -144,17 +143,17 @@ async def main():
                                                 "allow": 0, "deny": SEND}, ra["token"])
         # --- the member's composer shows the no-permission bar ---
         # B has #general open while the owner changes it: the bar should appear live.
+        # A background tab doesn't paint, so bring B's to the front first.
+        await b.cdp("Page.bringToFront")
         live_bar = await b.until(b.painted(NO_PERM), timeout=10, why="no-permission bar")
-        b.known_bug("the no-permission bar appears live when the owner denies Send Messages",
-                    bool(live_bar), why="composer only re-checks permissions when it is rebuilt")
+        b.check("the no-permission bar appears live when the owner denies Send Messages", bool(live_bar))
         if not live_bar:
             await b.shot("perm3-member-composer.png")
             await b.click_text("secret", xmin=72, xmax=312)
             await asyncio.sleep(1.0)
             await b.click_text("general", xmin=72, xmax=312)
         bar = await b.until(b.painted(NO_PERM), timeout=10, why="no-permission bar")
-        b.known_bug("the composer shows the no-permission bar", bar,
-                    why="Send Messages denied (server refuses the send) but the composer stays open")
+        b.check("the composer shows the no-permission bar", bar)
         if not bar:
             await b.shot("perm4-member-after-switch.png")
         posted = False

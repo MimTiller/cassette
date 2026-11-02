@@ -500,7 +500,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             }
             // A server's named roles changed: refetch them (name colours,
             // role mentions) when it is the one on screen.
-            if let Some(discord_server::server_settings::WsServerMsg::RolesChanged { server_id }) = frame {
+            if let Some(discord_server::server_settings::WsServerMsg::RolesChanged { server_id, .. }) = frame {
                 if crate::mentions::server_id() == Some(*server_id) {
                     crate::mentions::load_roles(*server_id);
                 }

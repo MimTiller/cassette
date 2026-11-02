@@ -569,8 +569,12 @@ fn live_dm_conversation(
     rev: Signal<u32>,
     picker: Signal<Option<crate::group_dm::Picker>>,
     members_open: Signal<bool>,
+    blocked: Signal<Vec<crate::blocks::BlockedUser>>,
 ) -> Element {
     let renaming = signal(false);
+    // Blocked messages the user chose to show, by `created_at`: `LiveDmMsg`
+    // carries no message id.
+    let revealed: Signal<Vec<i64>> = signal(Vec::new());
     let rename_text = signal(String::new());
     let pane_style = StyleRules {
         flex_grow: Some(grow(1.0)),
@@ -629,8 +633,11 @@ fn live_dm_conversation(
     // channel list in `app.rs` uses. The whole pane (header + rows + composer)
     // is built inside this render, since the header name depends on `active`.
     let body = switch(
-        move || (active.get(), rev.get(), live_dms.get(), members_open.get(), renaming.get()),
-        move |(_cid, _r, _dms, _members, _renaming): &(Option<i64>, u32, Vec<Dm>, bool, bool)| {
+        move || {
+            let blocked_names: Vec<String> = blocked.get().into_iter().map(|b| b.username).collect();
+            (active.get(), rev.get(), live_dms.get(), members_open.get(), renaming.get(), blocked_names)
+        },
+        move |(_cid, _r, _dms, _members, _renaming, blocked_names): &(Option<i64>, u32, Vec<Dm>, bool, bool, Vec<String>)| {
             // `switch`'s render is `Fn` (re-called on every key change) — clone
             // the captured styles so we borrow them rather than move them out.
             let pane_style = pane_style.clone();
@@ -933,7 +940,19 @@ fn live_dm_conversation(
             // its own header (a marker on a headerless row would be orphaned).
             let mut rows: Vec<Element> = Vec::with_capacity(mine.len());
             let mut prev: Option<(String, i64)> = None;
+            // Messages from blocked users collapse into one row per run, as
+            // in a channel.
+            let mut hidden_run: Vec<i64> = Vec::new();
+            let shown = revealed.get();
             for (author, body, ts, edited_at) in mine.iter() {
+                if blocked_names.contains(author) && !shown.contains(ts) {
+                    hidden_run.push(*ts);
+                    continue;
+                }
+                if !hidden_run.is_empty() {
+                    rows.push(crate::blocks::hidden_run_row(std::mem::take(&mut hidden_run), revealed, rev));
+                    prev = None;
+                }
                 let ts_s = ms_to_secs(*ts);
                 let when = format_when(ts_s, now);
                 let grouped = prev
@@ -952,6 +971,9 @@ fn live_dm_conversation(
                     None,
                 ));
                 prev = Some((author.clone(), ts_s));
+            }
+            if !hidden_run.is_empty() {
+                rows.push(crate::blocks::hidden_run_row(hidden_run, revealed, rev));
             }
             wrap(ui! {
                 view(style = pane_style) {
@@ -1109,6 +1131,7 @@ pub fn live_dm_screen(
     friends_panel: Rc<dyn Fn() -> Element>,
     presence: Rc<RefCell<HashMap<i64, String>>>,
     presence_rev: Signal<u32>,
+    blocked: Signal<Vec<crate::blocks::BlockedUser>>,
 ) -> Element {
     let effect = dm_incoming_effect(frame_seq, live_dms, active.clone(), msgs.clone(), rev.clone());
     let picker: Signal<Option<crate::group_dm::Picker>> = signal(None);
@@ -1136,6 +1159,7 @@ pub fn live_dm_screen(
                     conv_rev.clone(),
                     picker,
                     members_open,
+                    blocked,
                 )
             }
         },
