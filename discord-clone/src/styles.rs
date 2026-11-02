@@ -288,7 +288,14 @@ stylesheet! {
 }
 
 stylesheet! {
-    /// A text button; `kind` picks its colour.
+    /// A text button; `kind` picks its colours. The whole app's button
+    /// vocabulary: `primary` is the one action of the moment (accent fill),
+    /// `secondary` a neutral companion, `destructive` removes something at
+    /// rest (danger outline + danger text, no fill), `destructive_confirm` is
+    /// the final yes-click of a danger flow (danger fill), and `link` is an
+    /// inline link-style control. Height, padding, radius, flex-shrink and
+    /// font weight are shared by every kind so pairs of buttons sit on one
+    /// grid. Success green belongs to state ("Saved.") text, never a button.
     pub ButtonBox<()> {
         base(_t) {
             height: 36.0,
@@ -296,15 +303,34 @@ stylesheet! {
             flex_direction: FlexDirection::Row,
             align_items: AlignItems::Center,
             justify_content: JustifyContent::Center,
-            border_radius: 4.0,
+            border_radius: 6.0,
+            flex_shrink: 0.0,
+            color: col(theme::TEXT_ON_ACCENT),
             background: col(theme::ACCENT),
         }
         variant kind {
             #[default]
             primary(_t) {}
-            secondary(_t) { background: col(theme::BUTTON_SECONDARY) }
-            success(_t) { background: col(theme::SUCCESS_STRONG) }
-            danger(_t) { background: col(theme::DANGER) }
+            secondary(_t) {
+                background: col(theme::BUTTON_SECONDARY),
+                color: col(theme::TEXT_STRONG),
+            }
+            destructive(_t) {
+                background: col("transparent"),
+                border_width: 1.0,
+                border_color: col(theme::DANGER),
+                color: col(theme::DANGER),
+            }
+            destructive_confirm(_t) {
+                background: col(theme::DANGER_STRONG),
+                color: col(theme::TEXT_ON_ACCENT),
+            }
+            link(_t) {
+                background: col("transparent"),
+                height: 28.0,
+                color: col(theme::TEXT_LINK),
+                underline: true,
+            }
         }
         state hovered(_t) {
             opacity: 0.88,
@@ -316,11 +342,22 @@ stylesheet! {
 }
 
 stylesheet! {
+    /// The label inside a `button_view` pill; mirrors `ButtonBox`'s kinds so
+    /// the text colour matches its box (an inherited `color` would do it on
+    /// native, but the framework's `text` nodes take their own style).
     pub ButtonLabel<()> {
         base(_t) {
             font_size: 14.0,
             font_weight: FontWeight::SemiBold,
             color: col(theme::TEXT_ON_ACCENT),
+        }
+        variant kind {
+            #[default]
+            primary(_t) {}
+            secondary(_t) { color: col(theme::TEXT_STRONG) }
+            destructive(_t) { color: col(theme::DANGER) }
+            destructive_confirm(_t) {}
+            link(_t) { color: col(theme::TEXT_LINK) }
         }
     }
 }

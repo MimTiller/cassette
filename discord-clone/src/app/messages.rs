@@ -28,7 +28,7 @@ pub(super) fn note_unread_on_open(channel_id: i64, count: i64) {
 }
 
 pub(super) fn build(s: &ShellState) -> MessagesParts {
-    let ShellState { active_live_channel, active_live_server, blocked_users, gateway, has_more_earlier, live_at_bottom, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_invite_mode, live_messages, live_revision, live_scroll_handle, live_servers, live_typing, live_typing_rev, load_busy, members_pref, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, revealed_blocked, translate_key, user_popup, user_profile, .. } = s.clone();
+    let ShellState { active_live_channel, active_live_server, blocked_users, gateway, has_more_earlier, live_at_bottom, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_invite_mode, live_messages, live_servers, live_presence, live_revision, live_scroll_handle, live_typing, live_typing_rev, load_busy, member_panel_width, members_pref, picker, pin_visible, pinned_count, pinned_error, pinned_messages, pinned_panel_open, pinned_revision, reaction_rev, reactions, reply_ctx, reply_target, revealed_blocked, sidebar_width, translate_key, user_popup, user_profile, .. } = s.clone();
     // --- main view -------------------------------------------------------
     let header_style = StyleRules {
         padding_top: Some(px(10.0)),
@@ -48,12 +48,12 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     // Moderation panel. A `Copy` handle on `moderation_open` is captured by
     // its `.on_touch` closure below.
     let moderation_style = StyleRules {
-        width: Some(px(24.0)),
-        height: Some(px(24.0)),
+        width: Some(px(28.0)),
+        height: Some(px(28.0)),
         align_items: Some(AlignItems::Center),
         justify_content: Some(JustifyContent::Center),
         background: Some(col(COMPOSER)),
-        ..rounded(12.0)
+        ..rounded(14.0)
     };
 
     // Live-mode header: a live channel's name has no mock counterpart, so it's
@@ -159,9 +159,13 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         // folded into the `switch` key so the badge count
                         // re-renders when an Unpin lands.
                         view(style = moderation_style.clone(), test_id = "pin-live") {
-                            icon(PIN).color(|| theme::live(TEXT_MUTED)).size(15.0)
+                            icon(PIN).color(|| theme::live(TEXT_MUTED)).size(20.0)
                         }
-                        .on_touch(move |_ev| {
+                        .on_touch(move |ev| {
+                            // Mouse hover arrives as `Hovered`; only a finished press opens.
+                            if ev.phase != TouchPhase::Ended {
+                                return TouchResponse::CONSUMED;
+                            }
                             let open_p = pinned_panel_open;
                             let msgs_p = pinned_messages;
                             let err_p = pinned_error;
@@ -236,15 +240,17 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                                 }
                             }
                         }, test_id = "invite-live") {
-                            icon(USER_PLUS).color(|| theme::live(TEXT_MUTED)).size(15.0)
+                            icon(USER_PLUS).color(|| theme::live(TEXT_MUTED)).size(20.0)
                         }
-                        .on_touch(move |_ev| {
-                            live_invite_open.set(true);
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                live_invite_open.set(true);
+                            }
                             TouchResponse::CONSUMED
                         })
                         // Show / hide the member list.
                         view(style = moderation_style.clone(), test_id = "toggle-members") {
-                            icon(USERS).color(move || theme::live(if super::members_visible(members_pref) { theme::TEXT_STRONG } else { TEXT_MUTED })).size(15.0)
+                            icon(USERS).color(move || theme::live(if super::members_visible(members_pref) { theme::TEXT_STRONG } else { TEXT_MUTED })).size(20.0)
                         }
                         .on_touch(move |ev| {
                             if ev.phase == TouchPhase::Ended {
@@ -312,6 +318,20 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     };
     crate::mentions::set_open_user(Rc::new(move |uid, x, y| popup_ctx.open(uid, x, y, false)));
     let reactions_read = reactions.clone();
+    // The chat column's content width: what row-level blocks (attachments,
+    // embed cards) fill so they end on the same right edge as the message
+    // rows, rather than hugging fixed caps and leaving a dead strip. Keyed on
+    // the same inputs the layout's own reactive widths read (manual panel
+    // widths + viewport + the member-list toggle), so it re-resolves on a
+    // resize or drag; the member panel deducts 0 while hidden, exactly like
+    // the layout collapses it.
+    let col_w = memo(move || {
+        super::layout::chat_content_width(
+            sidebar_width.clone(),
+            member_panel_width.clone(),
+            super::members_visible(members_pref.clone()),
+        )
+    });
     let rows = memo(move || -> Vec<ListRow> {
         let names_rev = crate::mentions::names_version();
         let _ = (live_revision.get(), reaction_rev.get());
@@ -418,6 +438,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
         live_revision,
         load_busy,
         popup_ctx,
+        col_w,
     };
     // Which of the list's three states shows: no channel, an empty channel,
     // or the messages.
@@ -429,23 +450,35 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     let sent_messages = switch(
         move || list_state.get(),
         move |state: &u8| {
-            let hint = match *state {
-                0 => "Create or join a server to start messaging.",
-                1 => "No messages yet -- say hi!",
-                _ => {
-                    let ctx = ctx.clone();
-                    return ui! {
-                        view(style = StyleRules {
-                            flex_direction: Some(FlexDirection::Column),
-                            ..Default::default()
-                        }) {
-                            for row in rows, key = row.key() {
-                                { ctx.render(&row) }
-                            }
+            if *state == 2u8 {
+                let ctx = ctx.clone();
+                return ui! {
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Column),
+                        ..Default::default()
+                    }) {
+                        for row in rows, key = row.key() {
+                            { ctx.render(&row) }
                         }
-                    };
-                }
-            };
+                    }
+                };
+            }
+            // An empty channel opens with Discord's "Welcome to #name!" block
+            // pinned to the top of the feed: a big # in a circle, the heading
+            // and a muted line, with the composer left bottom-pinned below.
+            if *state == 1u8 {
+                let channel = active_live_channel
+                    .get()
+                    .and_then(|cid|
+                        live_channels
+                            .get()
+                            .iter()
+                            .find(|c| c.id == cid)
+                            .map(|c| c.name.clone())
+                    )
+                    .unwrap_or_default();
+                return welcome_block(&channel);
+            }
             ui! {
                 view(style = StyleRules {
                     flex_grow: Some(grow(1.0)),
@@ -454,11 +487,31 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                     padding_top: Some(px(24.0)),
                     ..Default::default()
                 }) {
-                    text(style = StyleRules {
-                        font_size: Some(px(14.0)),
-                        color: Some(col(TEXT_MUTED)),
+                    // "no servers yet" gets a call to action, not just a
+                    // muted sentence: a plus-disc icon matching the rail's
+                    // green add-server button.
+                    view(style = StyleRules {
+                        width: Some(px(48.0)),
+                        height: Some(px(48.0)),
+                        align_items: Some(AlignItems::Center),
+                        justify_content: Some(JustifyContent::Center),
+                        background: Some(col(theme::BG_INPUT)),
+                        ..rounded(24.0)
+                    }) {
+                        icon(PLUS).color(|| theme::live(theme::SUCCESS)).size(22.0)
+                    }
+                    view(style = StyleRules {
+                        margin_top: Some(px(12.0)),
+                        align_items: Some(AlignItems::Center),
+                        justify_content: Some(JustifyContent::Center),
                         ..Default::default()
-                    }) { hint.to_string() }
+                    }) {
+                        text(style = StyleRules {
+                            font_size: Some(px(14.0)),
+                            color: Some(col(TEXT_MUTED)),
+                            ..Default::default()
+                        }) { "Create or join a server to start messaging.".to_string() }
+                    }
                 }
             }
         },
@@ -668,6 +721,10 @@ struct RowCtx {
     live_revision: Signal<u32>,
     load_busy: Signal<bool>,
     popup_ctx: user_popups::UserPopupCtx,
+    /// The chat column's content width (pane less gutters): row-level blocks
+    /// (attachments, embed cards) size to it so they share the text column's
+    /// right edge instead of hugging fixed caps and leaving a dead strip.
+    col_w: runtime_core::Memo<f32>,
 }
 
 impl RowCtx {
@@ -736,8 +793,8 @@ impl RowCtx {
             .reply
             .clone()
             .map(|(author, snippet)| crate::reply_reference_strip::reply_reference_strip(author, snippet));
-        let attachments = (!m.attachments.is_empty()).then(|| attachment_row(&m.attachments));
-        let cards = (!m.embeds.is_empty()).then(|| super::message_view::embed_cards(&m.embeds));
+        let attachments = (!m.attachments.is_empty()).then(|| attachment_row(&m.attachments, self.col_w.get()));
+        let cards = (!m.embeds.is_empty()).then(|| super::message_view::embed_cards(&m.embeds, self.col_w.get()));
         let reactions = reaction_area(key, self.reactions.clone(), self.picker);
         ui! {
             view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) {

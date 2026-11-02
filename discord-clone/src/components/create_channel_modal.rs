@@ -34,7 +34,7 @@ use runtime_core::{
     Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
-use crate::style_helpers::{borderless_input, col, pct, px, rounded, with_radius};
+use crate::style_helpers::{col, pct, px, rounded};
 
 // Discord dark palette (kept local so the component is self-contained).
 
@@ -67,14 +67,11 @@ pub fn CreateChannelModal(
 
     // Shared card/field/button styles (one static pass).
     let card_style = StyleRules {
-        width: Some(px(340.0)),
         padding_top: Some(px(20.0)),
         padding_bottom: Some(px(20.0)),
         padding_left: Some(px(20.0)),
         padding_right: Some(px(20.0)),
-        background: Some(col(theme::BG_SECONDARY)),
-        flex_direction: Some(FlexDirection::Column),
-        ..rounded(12.0)
+        ..crate::style_helpers::modal_card(340.0)
     };
     let title_style = StyleRules {
         font_size: Some(px(18.0)),
@@ -89,14 +86,8 @@ pub fn CreateChannelModal(
         ..Default::default()
     };
     let input_style = StyleRules {
-        height: Some(px(40.0)),
         margin_top: Some(px(16.0)),
-        padding_left: Some(px(12.0)),
-        padding_right: Some(px(12.0)),
-        background: Some(col(theme::BG_TERTIARY)),
-        color: Some(col(theme::TEXT_NORMAL)),
-        font_size: Some(px(15.0)),
-        ..with_radius(borderless_input(), 8.0)
+        ..crate::style_helpers::text_field_style()
     };
     let seg_row_style = StyleRules {
         margin_top: Some(px(12.0)),
@@ -116,21 +107,6 @@ pub fn CreateChannelModal(
     };
     let seg_label_style = StyleRules {
         font_size: Some(px(14.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(theme::TEXT_STRONG)),
-        ..Default::default()
-    };
-    let create_btn_style = StyleRules {
-        height: Some(px(40.0)),
-        margin_top: Some(px(16.0)),
-        background: Some(col(theme::ACCENT)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        flex_direction: Some(FlexDirection::Row),
-        ..rounded(8.0)
-    };
-    let btn_label_style = StyleRules {
-        font_size: Some(px(15.0)),
         font_weight: Some(FontWeight::SemiBold),
         color: Some(col(theme::TEXT_STRONG)),
         ..Default::default()
@@ -262,7 +238,6 @@ pub fn CreateChannelModal(
             // time (the `join_label` idiom in `join_modal.rs`): an inline
             // `if/else` returning `&str` inside `text { … }` is parsed as a
             // structural child, not text content, so it is pre-computed.
-            let create_label = if b.get() { "Creating…".to_string() } else { "Create".to_string() };
             let (title, sub, placeholder) = if *is_category {
                 ("New Category", "Group channels under a heading", "Category name")
             } else {
@@ -274,17 +249,13 @@ pub fn CreateChannelModal(
                 }
                 ui! { view(style = seg_row_style.clone()) { { text_seg } { voice_seg } } }
             };
-            let create_btn = ui! {
-                view(style = create_btn_style.clone(), test_id = "create-channel-create") {
-                    text(style = btn_label_style.clone()) { create_label }
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        on_create();
-                    }
-                    TouchResponse::CONSUMED
-                })
-            };
+            let creating = b.clone();
+            let create_btn = crate::controls::button_view_live("create-channel-create", crate::controls::ButtonKind::Primary, {
+                let creating = creating.clone();
+                move || if creating.get() { "Creating…".to_string() } else { "Create".to_string() }
+            }, on_create);
+            let close2 = close;
+            let close_btn = ui! { crate::controls::modal_close_button(move || close2.set(false)) };
             if !err.is_empty() {
                 ui! {
                     view(style = card_style.clone()) {
@@ -302,7 +273,13 @@ pub fn CreateChannelModal(
                         { kind_row() }
                         { private_row() }
                         text(style = err_style.clone()) { err.clone() }
-                        { create_btn }
+                        view(style = StyleRules {
+                            margin_top: Some(px(8.0)),
+                            ..crate::style_helpers::footer_strip()
+                        }) {
+                            { create_btn }
+                        }
+                        { close_btn }
                     }
                 }
             } else {
@@ -321,7 +298,13 @@ pub fn CreateChannelModal(
                         }
                         { kind_row() }
                         { private_row() }
-                        { create_btn }
+                        view(style = StyleRules {
+                            margin_top: Some(px(8.0)),
+                            ..crate::style_helpers::footer_strip()
+                        }) {
+                            { create_btn }
+                        }
+                        { close_btn }
                     }
                 }
             }

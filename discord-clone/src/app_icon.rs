@@ -56,6 +56,12 @@ impl AppIcon {
     }
 }
 
+/// A grey, see-through cassette for the rail's Direct Messages button
+/// while DMs are closed.
+pub fn rail_mono_url() -> String {
+    svg_data_url(include_str!("../icons/rail_mono.svg"))
+}
+
 /// `svg` as a `data:image/svg+xml,…` URL: double quotes become single ones
 /// and anything a URL can't carry as-is is percent-encoded.
 fn svg_data_url(svg: &str) -> String {

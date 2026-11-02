@@ -35,7 +35,7 @@ use runtime_core::{
     Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
-use crate::style_helpers::{borderless_input, col, pct, px, rounded, with_radius};
+use crate::style_helpers::{col, pct, px, rounded};
 
 // Discord dark palette (kept local so the component is self-contained).
 
@@ -64,14 +64,11 @@ pub fn JoinServerModal(
 
     // Shared card/field/button styles (one static pass).
     let card_style = StyleRules {
-        width: Some(px(360.0)),
         padding_top: Some(px(20.0)),
         padding_bottom: Some(px(20.0)),
         padding_left: Some(px(20.0)),
         padding_right: Some(px(20.0)),
-        background: Some(col(theme::BG_SECONDARY)),
-        flex_direction: Some(FlexDirection::Column),
-        ..rounded(12.0)
+        ..crate::style_helpers::modal_card(360.0)
     };
     let title_style = StyleRules {
         font_size: Some(px(18.0)),
@@ -80,14 +77,8 @@ pub fn JoinServerModal(
         ..Default::default()
     };
     let input_style = StyleRules {
-        height: Some(px(40.0)),
         margin_top: Some(px(16.0)),
-        padding_left: Some(px(12.0)),
-        padding_right: Some(px(12.0)),
-        background: Some(col(theme::BG_TERTIARY)),
-        color: Some(col(theme::TEXT_NORMAL)),
-        font_size: Some(px(15.0)),
-        ..with_radius(borderless_input(), 8.0)
+        ..crate::style_helpers::text_field_style()
     };
     let btn_style = StyleRules {
         height: Some(px(40.0)),
@@ -183,11 +174,18 @@ pub fn JoinServerModal(
                         TouchResponse::CONSUMED
                     })
                 };
+                let close_c = ui! { crate::controls::modal_close_button(move || close.set(false)) };
                 ui! {
                     view(style = card_style.clone()) {
                         text(style = title_style.clone()) { "Join a Server".to_string() }
                         text(style = ok_style.clone()) { role }
-                        { done_btn }
+                        view(style = StyleRules {
+                            margin_top: Some(px(8.0)),
+                            ..crate::style_helpers::footer_strip()
+                        }) {
+                            { done_btn }
+                        }
+                        { close_c }
                     }
                 }
             } else if !err.is_empty() {
@@ -205,15 +203,23 @@ pub fn JoinServerModal(
                         TouchResponse::CONSUMED
                     })
                 };
+                let close_c = ui! { crate::controls::modal_close_button(move || close.set(false)) };
                 ui! {
                     view(style = card_style.clone()) {
                         text(style = title_style.clone()) { "Join a Server".to_string() }
                         text(style = err_style.clone()) { err.clone() }
-                        { retry_btn }
+                        view(style = StyleRules {
+                            margin_top: Some(px(8.0)),
+                            ..crate::style_helpers::footer_strip()
+                        }) {
+                            { retry_btn }
+                        }
+                        { close_c }
                     }
                 }
             } else {
                 // --- Input arm: code field + Join button -----------------------
+                let close_c = ui! { crate::controls::modal_close_button(move || close.set(false)) };
                 let join_label = if busy.get() { "Joining…" } else { "Join" };
                 // The button is inlined as a `view` tag (not a `{ splat }`) so
                 // that `text_input(...)` is followed by a *call*, not a block —
@@ -225,15 +231,21 @@ pub fn JoinServerModal(
                         // Two-way: `text_input(value = …)` alone only fills
                         // the box, so typing never reached `code`.
                         { crate::controls::text_field(code, "Invite code", input_style.clone()) }
-                        view(style = btn_style.clone(), test_id = "join-server-join") {
-                            text(style = btn_label_style.clone()) { join_label.to_string() }
-                        }
-                        .on_touch(move |ev| {
-                            if ev.phase == TouchPhase::Ended {
-                                on_join();
+                        { close_c }
+                        view(style = StyleRules {
+                            margin_top: Some(px(8.0)),
+                            ..crate::style_helpers::footer_strip()
+                        }) {
+                            view(style = btn_style.clone(), test_id = "join-server-join") {
+                                text(style = btn_label_style.clone()) { join_label.to_string() }
                             }
-                            TouchResponse::CONSUMED
-                        })
+                            .on_touch(move |ev| {
+                                if ev.phase == TouchPhase::Ended {
+                                    on_join();
+                                }
+                                TouchResponse::CONSUMED
+                            })
+                        }
                     }
                 }
             }

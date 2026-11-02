@@ -147,13 +147,14 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
     // while `friends_open` is on (`Element` is not `Clone`, hence a factory —
     // all state is signals owned in app_shell scope, so a rebuild is cheap and
     // state-stable). Reads the app_shell live-presence map for the Online tab.
+    let live_presence_rc = live_presence.clone();
     let friends_panel = Rc::new(
         move || crate::friends_view::friends_screen(
             friends_snap.clone(),
             friends_tab.clone(),
             friends_add_username.clone(),
             friends_add_error.clone(),
-            live_presence.clone(),
+            live_presence_rc.clone(),
             live_presence_rev.clone(),
             on_dm_message.clone(),
         ),
@@ -170,6 +171,8 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         friends_entry,
         friends_open,
         friends_panel,
+        live_presence.clone(),
+        live_presence_rev.clone(),
     );
     let live_dm_close = live_dm_mode.clone();
     let live_dm_header = ui! {

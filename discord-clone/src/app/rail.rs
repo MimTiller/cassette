@@ -7,8 +7,7 @@ use super::*;
 pub(super) struct RailParts {
     pub(super) rail_style: StyleRules,
     pub(super) rail_top: Element,
-    pub(super) live_section: Element,
-    pub(super) rail_actions: Element,
+    pub(super) rail_list: Element,
 }
 
 pub(super) fn build(s: &ShellState) -> RailParts {
@@ -21,6 +20,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
         align_items: Some(AlignItems::Center),
         gap: Some(px(10.0)),
         padding_top: Some(px(12.0)),
+        // The DM button stays put; only `rail_list` below it scrolls.
         overflow: Some(Overflow::Hidden),
         ..Default::default()
     };
@@ -113,7 +113,28 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                     opacity: Some(Tokenized::Literal(if live_dm_mode.get() { 1.0 } else { 0.0 })),
                     ..rounded(2.0)
                 }) {}
-                icon(MESSAGE_CIRCLE).color(|| theme::live(TEXT_MUTED)).size(20.0)
+                // The cassette: grey while DMs are closed, the chosen app
+                // icon in colour while they're open (read on each toggle, so
+                // an Appearance change shows the next time).
+                { switch(
+                    move || live_dm_mode.get(),
+                    |open: &bool| ui! {
+                        image(
+                            src = if *open {
+                                crate::app_icon::current().data_url()
+                            } else {
+                                crate::app_icon::rail_mono_url()
+                            },
+                            alt = "Direct Messages".to_string(),
+                            style = StyleRules {
+                                width: Some(px(32.0)),
+                                height: Some(px(32.0)),
+                                flex_shrink: Some(grow(0.0)),
+                                ..Default::default()
+                            },
+                        )
+                    },
+                ) }
             }
             // Direct Messages. Every account is signed in, so this row always
             // drives the live DM screen (the demo DM screen is gone).
@@ -361,5 +382,35 @@ pub(super) fn build(s: &ShellState) -> RailParts {
         }
     };
 
-    RailParts { rail_style, rail_top, live_section, rail_actions }
+    // Servers and the add button scroll under the fixed DM button, as in
+    // Discord. The column keeps the rail's 72px so the selection pill at
+    // left -12 still sits on the rail edge.
+    let rail_list = ui! {
+        view(style = StyleRules {
+            flex_grow: Some(grow(1.0)),
+            width: Some(px(72.0)),
+            overflow: Some(Overflow::Hidden),
+            ..Default::default()
+        }) {
+            scroll_view(style = StyleRules {
+                flex_grow: Some(grow(1.0)),
+                scrollbar: Some(runtime_core::ScrollbarVisibility::Hidden),
+                ..Default::default()
+            }) {
+                view(style = StyleRules {
+                    width: Some(px(72.0)),
+                    flex_direction: Some(FlexDirection::Column),
+                    align_items: Some(AlignItems::Center),
+                    gap: Some(px(10.0)),
+                    padding_bottom: Some(px(12.0)),
+                    ..Default::default()
+                }) {
+                    live_section
+                    rail_actions
+                }
+            }
+        }
+    };
+
+    RailParts { rail_style, rail_top, rail_list }
 }

@@ -35,11 +35,11 @@
 use crate::theme;
 use runtime_core::{
     component, signal, switch, ui, AlignItems, Element, FlexDirection, FontWeight,
-    JustifyContent, ObjectFit, Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
+    JustifyContent, ObjectFit, Overflow, Position, Signal, StyleRules, TouchResponse,
 };
 use file_picker::{FilePicker, MediaKind, PickOutcome, PickRequest};
 
-use crate::style_helpers::{borderless_input, col, pct, px, section_label, rounded, with_radius};
+use crate::style_helpers::{col, pct, px, section_label, rounded};
 use std::rc::Rc;
 
 // Discord dark palette (kept local so the component is self-contained).
@@ -105,43 +105,8 @@ pub fn ServerSettingsPanel(
     // --- Shared styles (one static pass) ------------------------------------
     let label_style = section_label();
     let input_style = StyleRules {
-        height: Some(px(36.0)),
-        background: Some(col(theme::BG_TERTIARY)),
-        padding_left: Some(px(10.0)),
-        padding_right: Some(px(10.0)),
         align_items: Some(AlignItems::Center),
-        ..with_radius(borderless_input(), 8.0)
-    };
-    let save_btn_style = StyleRules {
-        height: Some(px(34.0)),
-        background: Some(col(theme::BUTTON_SECONDARY)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        flex_direction: Some(FlexDirection::Row),
-        ..rounded(8.0)
-    };
-    let transfer_btn_style = StyleRules {
-        height: Some(px(34.0)),
-        background: Some(col(theme::SUCCESS_STRONG)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        flex_direction: Some(FlexDirection::Row),
-        ..rounded(8.0)
-    };
-    // The add-member section's "Add member" button (green, like transfer).
-    let add_btn_style = StyleRules {
-        height: Some(px(34.0)),
-        background: Some(col(theme::SUCCESS_STRONG)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        flex_direction: Some(FlexDirection::Row),
-        ..rounded(8.0)
-    };
-    let btn_label_style = StyleRules {
-        font_size: Some(px(14.0)),
-        font_weight: Some(FontWeight::SemiBold),
-        color: Some(col(theme::TEXT_STRONG)),
-        ..Default::default()
+        ..crate::style_helpers::text_field_style()
     };
     let err_style = StyleRules {
         font_size: Some(px(12.0)),
@@ -361,42 +326,15 @@ pub fn ServerSettingsPanel(
             let transfer_label = if *busy { "Transferring…" } else { "Transfer" };
             let add_label = if *busy { "Adding…" } else { "Add member" };
             let rename_btn = ui! {
-                view(style = save_btn_style.clone(), test_id = "server-rename-save") {
-                    text(style = btn_label_style.clone()) { rename_label.to_string() }
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        do_rename();
-                    }
-                    TouchResponse::CONSUMED
-                })
+                button(label = rename_label.to_string(), on_click = do_rename, test_id = "server-rename-save", style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Primary))
             };
-            let icon_btn_style = StyleRules {
-                padding_left: Some(px(14.0)),
-                padding_right: Some(px(14.0)),
-                ..save_btn_style.clone()
-            };
+            let icon_save_click = move || do_icon(true);
+            let icon_remove_click = move || do_icon(false);
             let icon_btn = ui! {
-                view(style = icon_btn_style.clone(), test_id = "server-icon-save") {
-                    text(style = btn_label_style.clone()) { icon_label.to_string() }
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        do_icon(true);
-                    }
-                    TouchResponse::CONSUMED
-                })
+                button(label = icon_label.to_string(), on_click = icon_save_click, test_id = "server-icon-save", style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Primary))
             };
             let icon_remove_btn = ui! {
-                view(style = icon_btn_style.clone(), test_id = "server-icon-remove") {
-                    text(style = btn_label_style.clone()) { "Remove".to_string() }
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        do_icon(false);
-                    }
-                    TouchResponse::CONSUMED
-                })
+                button(label = "Remove".to_string(), on_click = icon_remove_click, test_id = "server-icon-remove", style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Destructive))
             };
             // The current icon (or the server's initial), keyed on `ic` so it
             // follows the caller's seed when the panel opens and every save.
@@ -430,20 +368,11 @@ pub fn ServerSettingsPanel(
                 },
             );
             let transfer_btn = ui! {
-                view(style = transfer_btn_style.clone(), test_id = "server-transfer-confirm") {
-                    text(style = btn_label_style.clone()) { transfer_label.to_string() }
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        do_transfer();
-                    }
-                    TouchResponse::CONSUMED
-                })
+                button(label = transfer_label.to_string(), on_click = do_transfer, test_id = "server-transfer-confirm", style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Primary))
             };
             let row_col = move || StyleRules {
                 flex_direction: Some(FlexDirection::Column),
-                gap: Some(px(8.0)),
-                max_width: Some(px(480.0)),
+                gap: Some(px(16.0)),
                 ..Default::default()
             };
             // The add-member action row lays its controls out horizontally
@@ -490,26 +419,14 @@ pub fn ServerSettingsPanel(
             // fill the row while the button stays fixed-width.
             let add_uid_input = ui! {
                 text_input(value = add_uid, on_change = move |v: String| add_uid.set(v), placeholder = "New member user id", style = StyleRules {
-                    height: Some(px(34.0)),
-                    background: Some(col(theme::BG_TERTIARY)),
-                    padding_left: Some(px(10.0)),
-                    padding_right: Some(px(10.0)),
-                    align_items: Some(AlignItems::Center),
                     flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
                     flex_shrink: Some(runtime_core::Tokenized::Literal(1.0)),
-                    ..with_radius(borderless_input(), 8.0)
+                    align_items: Some(AlignItems::Center),
+                    ..crate::style_helpers::text_field_style()
                 })
             };
             let add_btn = ui! {
-                view(style = add_btn_style.clone(), test_id = "add-member-confirm") {
-                    text(style = btn_label_style.clone()) { add_label.to_string() }
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        do_add_member();
-                    }
-                    TouchResponse::CONSUMED
-                })
+                button(label = add_label.to_string(), on_click = do_add_member, test_id = "add-member-confirm", style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Primary))
             };
             let add_row = ui! {
                 view(style = row_col()) {
@@ -558,7 +475,7 @@ pub fn ServerSettingsPanel(
             ui! {
                 view(style = StyleRules {
                     flex_direction: Some(FlexDirection::Column),
-                    gap: Some(px(20.0)),
+                    gap: Some(px(16.0)),
                     ..Default::default()
                 }) {
                     text(style = StyleRules {

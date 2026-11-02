@@ -9,7 +9,7 @@ pub(super) struct SidebarParts {
 }
 
 pub(super) fn build(s: &ShellState) -> SidebarParts {
-    let ShellState { active_live_channel, active_live_server, cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, joined_voice, live_at_bottom, live_chan_menu, live_channels, live_collapsed, live_mention_rev, live_scroll_handle, live_servers, live_unread, live_unread_rev, member_panel_width, muted, notif_mode, profile_mode, rc_busy, rc_cid, rc_err, rc_name, rc_open, server_menu_open, sidebar_width, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, status_menu, user_status, .. } = s.clone();
+    let ShellState { active_live_channel, active_live_server, cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, create_busy, create_error, create_name, create_open, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, joined_voice, live_at_bottom, live_chan_menu, live_channels, live_collapsed, live_mention_rev, live_scroll_handle, live_servers, live_unread, live_unread_rev, member_panel_width, muted, notif_mode, profile_mode, rc_busy, rc_cid, rc_err, rc_name, rc_open, server_menu_open, sidebar_width, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, status_menu, user_status, .. } = s.clone();
     // --- channel sidebar -------------------------------------------------
     // Width is driven by the `sidebar_width` signal (a thin drag handle on the
     // sidebar's right edge resizes it). A rules *closure* so the width
@@ -141,10 +141,39 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                 );
                 return ui! {
                     view(style = sidebar_style.clone()) {
-                        text(style = cat_style.clone()) {
-                            "No server selected — create or join one to get started."
-                                .to_string()
+                        // "No servers yet" is a call to action: the same
+                        // green add-server affordance the rail shows, wired
+                        // to the create-server modal it opens.
+                        view(style = StyleRules {
+                            flex_grow: Some(grow(1.0)),
+                            align_items: Some(AlignItems::Center),
+                            justify_content: Some(JustifyContent::Center),
+                            padding_top: Some(px(16.0)),
+                            ..Default::default()
+                        }, test_id = "sidebar-no-servers") {
+                            view(style = StyleRules {
+                                width: Some(px(48.0)),
+                                height: Some(px(48.0)),
+                                align_items: Some(AlignItems::Center),
+                                justify_content: Some(JustifyContent::Center),
+                                background: Some(col(BG_SIDEBAR)),
+                                ..rounded(24.0)
+                            }) {
+                                icon(PLUS).color(|| theme::live(theme::SUCCESS)).size(20.0)
+                            }
+                            text(style = cat_style.clone()) {
+                                "No server selected — create or join one to get started.".to_string()
+                            }
                         }
+                        .on_touch(move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                create_name.set(String::new());
+                                create_error.set(String::new());
+                                create_busy.set(false);
+                                create_open.set(true);
+                            }
+                            TouchResponse::CONSUMED
+                        })
                         // Keeps the user panel at the bottom, as with a server.
                         view(style = StyleRules {
                             flex_grow: Some(grow(1.0)),
@@ -526,13 +555,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                 )
                             };
                             let row_style = move || StyleRules {
-                                background: Some(col(if live_sel.get() == Some(cid) {
-                                    BG_ACTIVE
-                                } else if hovered.get() {
-                                    BG_HOVER
-                                } else {
-                                    "transparent"
-                                })),
+                                background: Some(crate::style_helpers::selected_fill(live_sel.get() == Some(cid), hovered.get())),
                                 ..live_row_style()
                             };
                             let _glyph_style = move || StyleRules {
@@ -837,7 +860,7 @@ fn live_category_header(id: i64, name: String, collapsed: Signal<Vec<i64>>) -> E
             ..Default::default()
         }, test_id = "live-category") {
             icon(if is_collapsed { CHEVRON_RIGHT } else { CHEVRON_DOWN })
-                .color(|| theme::live(TEXT_MUTED))
+                .color(|| theme::live(theme::TEXT_FAINT))
                 .size(12.0)
             text(style = StyleRules {
                 font_size: Some(px(12.0)),
@@ -993,11 +1016,9 @@ fn server_dropdown(
                     top: Some(px(50.0)),
                     width: Some(px(220.0)),
                     z_index: Some(super::popups::POPUP_Z),
-                    flex_direction: Some(FlexDirection::Column),
                     padding_top: Some(px(6.0)),
                     padding_bottom: Some(px(6.0)),
-                    background: Some(col(theme::BG_FLOATING)),
-                    ..rounded(6.0)
+                    ..crate::style_helpers::popover_panel()
                 }) { rows }
                 .on_touch(|_| TouchResponse::CONSUMED)
             }

@@ -42,15 +42,15 @@ use std::collections::HashMap;
 
 use runtime_core::{
     AlignItems, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent,
-    KeyOutcome, ObjectFit, Overflow, Signal, StyleRules, Tokenized, TouchEvent,
+    KeyOutcome, Overflow, Signal, StyleRules, Tokenized, TouchEvent,
     TouchPhase, TouchResponse, switch, ui,
 };
 use runtime_core::icon;
 use icons_lucide::{PLUS, USERS};
 
-use crate::avatar_chip::{avatar_chip, registered_avatar, mountable_avatar_url};
+use crate::avatar_chip::{avatar_chip, avatar_chip_url, registered_avatar, mountable_avatar_url};
 use crate::friends::{FriendList};
-use crate::style_helpers::{borderless_input, col, px, rounded, with_radius};
+use crate::style_helpers::{col, px, rounded};
 
 // --- palette (same Discord dark palette as live_dm_view.rs) ------------------
 
@@ -143,41 +143,17 @@ fn name_style() -> StyleRules {
 /// what prevents that class of bug.
 fn friend_avatar_chip(name: &str, avatar: Option<String>) -> Element {
     if let Some(url) = registered_avatar(name) {
-        ui! {
-            image(
-                src = crate::auth::media_url(url.clone()),
-                alt = format!("{} avatar", name),
-                style = StyleRules {
-                    width: Some(px(34.0)),
-                    height: Some(px(34.0)),
-                    flex_shrink: Some(grow(0.0)),
-                    object_fit: Some(ObjectFit::Cover),
-                    ..rounded(10.0)
-                },
-            )
-        }
+        avatar_chip_url(name, url.as_str(), 34.0)
     } else if let Some(url) = avatar {
         // The row's own snapshot URL, gated the same way: only data:/http(s):
         // with a non-empty base64 body may mount.
         if mountable_avatar_url(url.as_str()) {
-            ui! {
-                image(
-                    src = crate::auth::media_url(url.clone()),
-                    alt = format!("{} avatar", name),
-                    style = StyleRules {
-                        width: Some(px(34.0)),
-                        height: Some(px(34.0)),
-                        flex_shrink: Some(grow(0.0)),
-                        object_fit: Some(ObjectFit::Cover),
-                        ..rounded(10.0)
-                    },
-                )
-            }
+            avatar_chip_url(name, url.as_str(), 34.0)
         } else {
-            avatar_chip(name, theme::ACCENT, 34.0, 10.0)
+            avatar_chip(name, theme::ACCENT, 34.0)
         }
     } else {
-        avatar_chip(name, theme::ACCENT, 34.0, 10.0)
+        avatar_chip(name, theme::ACCENT, 34.0)
     }
 }
 
@@ -208,17 +184,32 @@ fn friend_row(name: String, avatar: Option<String>, actions: Vec<Element>) -> El
     }
 }
 
-/// A centered muted hint (shown when a tab has no rows).
-fn centered_hint(text: String) -> Element {
+/// A centered muted hint with an icon above it (shown when a tab or list is
+/// empty): the glyph gives the empty space something to say beyond a bare
+/// sentence. `glyph` is an `icons_lucide` name.
+fn centered_hint(glyph: runtime_core::IconData, text: String) -> Element {
     ui! {
         view(style = StyleRules {
             flex_grow: Some(grow(1.0)),
             align_items: Some(AlignItems::Center),
             justify_content: Some(JustifyContent::Center),
+            padding_top: Some(px(16.0)),
             ..Default::default()
         }) {
+            view(style = StyleRules {
+                width: Some(px(56.0)),
+                height: Some(px(56.0)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                ..Default::default()
+            }) {
+                icon(glyph)
+                    .color(move || theme::live(theme::TEXT_MUTED))
+                    .size(28.0)
+            }
             text(
                 style = StyleRules {
+                    margin_top: Some(px(12.0)),
                     font_size: Some(px(14.0)),
                     color: Some(col(theme::TEXT_MUTED)),
                     ..Default::default()
@@ -471,12 +462,7 @@ pub fn friends_screen(
                                     },
                                     placeholder = "username",
                                     style = StyleRules {
-                                        height: Some(px(32.0)),
-                                        padding_left: Some(px(10.0)),
-                                        padding_right: Some(px(10.0)),
-                                        background: Some(col(theme::BG_INPUT)),
-                                        color: Some(col(theme::TEXT_STRONG)),
-                                        ..with_radius(borderless_input(), 6.0)
+                                        ..crate::style_helpers::text_field_style()
                                     },
                                     test_id = "friends-add-username",
                                 ).on_key_down(on_enter)
@@ -552,7 +538,7 @@ pub fn friends_screen(
                         overflow: Some(Overflow::Hidden),
                         ..Default::default()
                     }) {
-                        centered_hint(hint)
+                        centered_hint(USERS, hint)
                     }
                 };
             }
