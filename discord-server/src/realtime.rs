@@ -1085,7 +1085,16 @@ mod tests {
 
         // The FIRST reaction (alice's 👍, count 1) bounced to BOTH sockets:
         // alice's own echo plus bob's copy, each with the post-state count 1.
-        match rx.try_recv().expect("reactor echo") {
+        // Other modules' tests publish to the shared hub without the e2e lock
+        // (friends, profiles, ...), so skip to the reaction frame itself.
+        let first_reaction = |rx: &mut mpsc::Receiver<WsServerMsg>| loop {
+            match rx.try_recv() {
+                Ok(m @ WsServerMsg::ReactionAdd { .. }) => break Some(m),
+                Ok(_) => continue,
+                Err(_) => break None,
+            }
+        };
+        match first_reaction(&mut rx).expect("reactor echo") {
             WsServerMsg::ReactionAdd { message_id, channel_id, user_id, emoji, count, .. } => {
                 assert_eq!((message_id, channel_id, user_id, count), (mid, 1, 1, 1u32));
                 assert_eq!(emoji, "👍", "the echo names the emoji");
@@ -1094,7 +1103,7 @@ mod tests {
         }
         assert!(
             matches!(
-                rx2.try_recv().expect("co-member sees the reaction live"),
+                first_reaction(&mut rx2).expect("co-member sees the reaction live"),
                 WsServerMsg::ReactionAdd { message_id, emoji, count, .. }
                     if message_id == mid && emoji == "👍" && count == 1u32
             ),
