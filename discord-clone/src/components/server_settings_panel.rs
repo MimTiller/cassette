@@ -134,24 +134,50 @@ pub fn ServerSettingsPanel(
         let srv2 = srv;
         let nm2 = nm;
         let ic2 = ic;
-        runtime_core::driver::spawn_async(async move {
-            match crate::servers::rename_server(sid0, &new_name).await {
-                Ok(r) => {
-                    if let Ok(list) = crate::servers::list_servers().await {
-                        srv2.set(list);
+        // Shell state: the RPCs happen in the future and every signal write
+        // lands in the callback, anchored on the app shell so a torn-down
+        // scope drops the writes instead of touching freed slots.
+        runtime_core::spawn_then_in(
+            &crate::app::shell_alive(),
+            async move {
+                let renamed = crate::servers::rename_server(sid0, &new_name).await;
+                let list = match renamed {
+                    Ok(_) => crate::servers::list_servers().await.ok(),
+                    Err(_) => None,
+                };
+                (renamed, list)
+            },
+            move |(renamed, list)| {
+                match renamed {
+                    Ok(r) => {
+                        if let Some(list) = list {
+                            srv2.set(list);
+                        }
+                        nm2.set(r.name.clone());
+                        ic2.set(r.icon_url.clone().unwrap_or_default());
                     }
-                    nm2.set(r.name.clone());
-                    ic2.set(r.icon_url.clone().unwrap_or_default());
+                    Err(msg) => e2.set(msg),
                 }
-                Err(msg) => e2.set(msg),
-            }
-            b2.set(false);
-        });
+                b2.set(false);
+            },
+        );
     };
     // Upload: pick one image (the avatar flow's picker + encode, against the
     // same 256 KB cap the backend applies to icons) and save it. `ic` holds the
     // stored `/media/…` path the preview shows. Remove clears it. A dismissed
     // picker is not an error.
+    // What the icon handler's future returns so its callback can do every
+    // signal write: an abort (silent, or with a message to show) or the
+    // saved icon plus the refreshed server list.
+    struct IconOutcome {
+        skipped: bool,
+        err: Option<String>,
+        icon_url: Option<String>,
+        servers: Option<Vec<crate::servers::ServerSummary>>,
+    }
+    let icon_abort = move |err: Option<String>| IconOutcome {
+        skipped: true, err, icon_url: None, servers: None
+    };
     let do_icon = move |upload: bool| {
         let Some(sid0) = sid.get() else {
             return;
@@ -165,50 +191,55 @@ pub fn ServerSettingsPanel(
         let e2 = e;
         let srv2 = srv;
         let ic2 = ic;
-        runtime_core::driver::spawn_async(async move {
-            let icon_opt = if upload {
-                let picked = match FilePicker::new().pick(PickRequest::media(MediaKind::Images)).await {
-                    Ok(PickOutcome::Picked(files)) => files,
-                    Ok(_) => {
-                        b2.set(false);
-                        return;
+        // Shell state: the picker, the read and the RPCs happen in the
+        // future and every signal write lands in the callback, anchored on
+        // the app shell so a torn-down scope drops the writes.
+        runtime_core::spawn_then_in(
+            &crate::app::shell_alive(),
+            async move {
+                let icon_opt = if upload {
+                    let picked = match FilePicker::new().pick(PickRequest::media(MediaKind::Images)).await {
+                        Ok(PickOutcome::Picked(files)) => files,
+                        Ok(_) => return icon_abort(None),
+                        Err(err) => return icon_abort(Some(format!("file picker: {err}"))),
+                    };
+                    let Some(file) = picked.get(0) else {
+                        return icon_abort(None)
+                    };
+                    let encoded = match file.read_all().await {
+                        Ok(bytes) => crate::profile_settings::validate_and_encode_small_image(file.mime(), &bytes, "icon"),
+                        Err(err) => Err(format!("could not read the file: {err}")),
+                    };
+                    match encoded {
+                        Ok(url) => Some(url),
+                        Err(msg) => return icon_abort(Some(msg)),
                     }
-                    Err(err) => {
-                        e2.set(format!("file picker: {err}"));
-                        b2.set(false);
-                        return;
+                } else {
+                    None
+                };
+                match crate::servers::set_server_icon(sid0, icon_opt).await {
+                    Ok(r) => {
+                        let servers = if let Ok(list) = crate::servers::list_servers().await { Some(list) } else { None };
+                        IconOutcome { skipped: false, err: None, icon_url: Some(r.icon_url.clone().unwrap_or_default()), servers }
                     }
-                };
-                let Some(file) = picked.get(0) else {
-                    b2.set(false);
-                    return;
-                };
-                let encoded = match file.read_all().await {
-                    Ok(bytes) => crate::profile_settings::validate_and_encode_small_image(file.mime(), &bytes, "icon"),
-                    Err(err) => Err(format!("could not read the file: {err}")),
-                };
-                match encoded {
-                    Ok(url) => Some(url),
-                    Err(msg) => {
-                        e2.set(msg);
-                        b2.set(false);
-                        return;
-                    }
+                    Err(msg) => IconOutcome { skipped: false, err: Some(msg), icon_url: None, servers: None },
                 }
-            } else {
-                None
-            };
-            match crate::servers::set_server_icon(sid0, icon_opt).await {
-                Ok(r) => {
-                    if let Ok(list) = crate::servers::list_servers().await {
+            },
+            move |outcome: IconOutcome| {
+                if let Some(msg) = outcome.err {
+                    e2.set(msg);
+                }
+                if !outcome.skipped {
+                    if let Some(list) = outcome.servers {
                         srv2.set(list);
                     }
-                    ic2.set(r.icon_url.clone().unwrap_or_default());
+                    if let Some(url) = outcome.icon_url {
+                        ic2.set(url);
+                    }
                 }
-                Err(msg) => e2.set(msg),
-            }
-            b2.set(false);
-        });
+                b2.set(false);
+            },
+        );
     };
     let do_transfer = move || {
         let Some(sid0) = sid.get() else {
@@ -223,25 +254,39 @@ pub fn ServerSettingsPanel(
                 let e2 = e;
                 let srv2 = srv;
                 let mbrs2 = mbrs;
-                runtime_core::driver::spawn_async(async move {
-                    match crate::servers::transfer_server_ownership(sid0, new_owner_id).await {
-                        Ok(_) => {
-                            if let Ok(list) = crate::servers::list_servers().await {
-                                srv2.set(list);
-                            }
-                            // Ownership just changed, so re-pull the roster: the
-                            // owner-only gate on the transfer section reads the
-                            // caller's `role` from it, and it needs to flip off
-                            // for the (now former) owner without a server re-select.
-                            if let Ok(members) = crate::moderation::list_members(sid0).await {
-                                crate::mentions::members_loaded(sid0, &members);
-                                mbrs2.set(members);
-                            }
+                // Shell state: the RPCs happen in the future and every write
+                // lands in the callback, anchored on the app shell.
+                runtime_core::spawn_then_in(
+                    &crate::app::shell_alive(),
+                    async move {
+                        let transferred = crate::servers::transfer_server_ownership(sid0, new_owner_id).await;
+                        if transferred.is_err() {
+                            return (transferred, None, None);
                         }
-                        Err(msg) => e2.set(msg),
-                    }
-                    b2.set(false);
-                });
+                        let servers = crate::servers::list_servers().await.ok();
+                        let members = crate::moderation::list_members(sid0).await.ok();
+                        (transferred, servers, members)
+                    },
+                    move |(transferred, servers, members)| {
+                        match transferred {
+                            Ok(_) => {
+                                if let Some(list) = servers {
+                                    srv2.set(list);
+                                }
+                                // Ownership just changed, so re-pull the roster: the
+                                // owner-only gate on the transfer section reads the
+                                // caller's `role` from it, and it needs to flip off
+                                // for the (now former) owner without a server re-select.
+                                if let Some(members) = members {
+                                    crate::mentions::members_loaded(sid0, &members);
+                                    mbrs2.set(members);
+                                }
+                            }
+                            Err(msg) => e2.set(msg),
+                        }
+                        b2.set(false);
+                    },
+                );
             }
             Err(_) => {
                 e.set("Enter the new owner's numeric user id".to_string());
@@ -264,21 +309,31 @@ pub fn ServerSettingsPanel(
                 let b2 = b;
                 let e2 = e;
                 let mbrs2 = mbrs;
-                runtime_core::driver::spawn_async(async move {
-                    match crate::moderation::add_member(sid0, user_id).await {
-                        Ok(()) => {
-                            // The roster changed (a new member row / a re-role),
-                            // so re-fetch it the same way `do_transfer` does —
-                            // the panel rebuilds off the `members` signal key.
-                            if let Ok(members) = crate::moderation::list_members(sid0).await {
-                                crate::mentions::members_loaded(sid0, &members);
-                                mbrs2.set(members);
+                // Shell state: the RPCs happen in the future and every write
+                // lands in the callback, anchored on the app shell.
+                runtime_core::spawn_then_in(
+                    &crate::app::shell_alive(),
+                    async move {
+                        let added = crate::moderation::add_member(sid0, user_id).await;
+                        let members = if added.is_ok() { crate::moderation::list_members(sid0).await.ok() } else { None };
+                        (added, members)
+                    },
+                    move |(added, members)| {
+                        match added {
+                            Ok(()) => {
+                                // The roster changed (a new member row / a re-role),
+                                // so re-fetch it the same way `do_transfer` does —
+                                // the panel rebuilds off the `members` signal key.
+                                if let Some(members) = members {
+                                    crate::mentions::members_loaded(sid0, &members);
+                                    mbrs2.set(members);
+                                }
                             }
+                            Err(msg) => e2.set(msg),
                         }
-                        Err(msg) => e2.set(msg),
-                    }
-                    b2.set(false);
-                });
+                        b2.set(false);
+                    },
+                );
             }
             Err(_) => {
                 e.set("Enter the new member's numeric user id".to_string());
