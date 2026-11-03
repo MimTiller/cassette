@@ -60,9 +60,11 @@ driving it through the idealyst MCP server (see "Driving the app").
   (`crate::module::Name(..)`).
 - **Timers:** handles from `after_ms` and `after_animation_frame` cancel when
   dropped. Use `after_ms_detached` for fire-and-forget.
-- **Server calls: `spawn_then_in`, never a raw `spawn_async` that writes
+- **Server calls: `spawn_then_in`, never a raw spawn that writes
   signals.** Put the call in the future and every signal write in the
-  callback; the callback is skipped if its scope has gone. Anchor it with
+  callback; the callback is skipped if its scope has gone. `spawn_async` is
+  deprecated: use `spawn_detached` only for work that must finish even after
+  the screen is gone and writes no signals (a fire-and-forget mark-read). Anchor it with
   `runtime_core::ScopeAlive::current()` taken in the component body (a
   handler's own node dies when its first write rebuilds it), or with
   `crate::app::shell_alive()` for app-shell state changed from a menu or
