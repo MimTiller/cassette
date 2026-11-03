@@ -138,12 +138,14 @@ fn notifications_tab(selected: Signal<u32>) -> Element {
     let sel1 = selected.clone();
     let sel2 = selected.clone();
 
-    // On picking a notifying level: persist + request browser permission
-    // (async, fire-and-forget). "Nothing" just persists (no permission need).
+    // On picking a notifying level: persist + request browser permission.
+    // Detached: the prompt is the browser's, nothing here reads the answer,
+    // and it should still be asked if the tab closes first. "Nothing" just
+    // persists (no permission need).
     let on_pick = Rc::new(move |idx: u32| {
         crate::notify::save_mode(idx);
         if idx < crate::notify::NOTHING {
-            runtime_core::driver::spawn_async(async move {
+            runtime_core::driver::spawn_detached(async move {
                 crate::notify::request_permission().await;
             });
         }
@@ -185,6 +187,9 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
     let new_pw = signal(String::new());
     let msg = signal(String::new());
     let msg_kind = signal(0u32); // 0 = idle, 1 = error, 2 = ok
+    // The result lines are this tab's own signals, so the RPC callbacks are
+    // anchored on the tab and dropped if it closes mid-request.
+    let alive = runtime_core::ScopeAlive::current();
 
     // Change display name: spawn the RPC, surface the result inline.
     // A bare `move || {}` closure (its three `Signal` captures are `Copy`, so it
@@ -195,6 +200,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
         let name = name.clone();
         let msg = msg.clone();
         let kind = msg_kind.clone();
+        let alive = alive.clone();
         move || {
             let handle = name.get();
             if handle.trim().is_empty() {
@@ -203,8 +209,8 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                 return;
             }
             msg.set(String::new());
-            runtime_core::driver::spawn_async(async move {
-                match crate::auth::change_username(&handle).await {
+            runtime_core::spawn_then_in(&alive, async move { crate::auth::change_username(&handle).await }, move |result| {
+                match result {
                     Ok(new_name) => {
                         msg.set(format!("Display name set to {new_name}."));
                         kind.set(2);
@@ -225,6 +231,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
         let new = new_pw.clone();
         let msg = msg.clone();
         let kind = msg_kind.clone();
+        let alive = alive.clone();
         move || {
             let cur_v = cur.get();
             let new_v = new.get();
@@ -234,8 +241,8 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                 return;
             }
             msg.set(String::new());
-            runtime_core::driver::spawn_async(async move {
-                match crate::auth::change_password(&cur_v, &new_v).await {
+            runtime_core::spawn_then_in(&alive, async move { crate::auth::change_password(&cur_v, &new_v).await }, move |result| {
+                match result {
                     Ok(()) => {
                         msg.set("Password changed.".to_string());
                         kind.set(2);

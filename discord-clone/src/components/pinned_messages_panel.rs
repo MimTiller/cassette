@@ -256,8 +256,8 @@ fn pin_row(
         let rc = rev_c;
         let ec = err_c;
         let mc = msgs_c;
-        runtime_core::driver::spawn_async(async move {
-            match unpin_message(mid2).await {
+        runtime_core::spawn_then_in(&crate::app::shell_alive(), unpin_message(mid2), move |result| {
+            match result {
                 Ok(res) => {
                     cc.set(res.pinned_count);
                     // Remove the just-unpinned row from the list (the

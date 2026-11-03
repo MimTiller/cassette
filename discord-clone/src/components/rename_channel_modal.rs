@@ -134,18 +134,31 @@ pub fn RenameChannelModal(
         let b2 = b;
         let ch2 = ch;
         let close2 = close;
-        runtime_core::driver::spawn_async(async move {
-            match crate::servers::rename_channel(sid0, cid0, &trimmed).await {
-                Ok(_) => {
-                    if let Ok(list) = crate::servers::list_channels(sid0).await {
-                        ch2.set(list);
+        // Anchored on the app shell (the modal's signals live there): both
+        // RPCs happen in the future and every signal write in the callback.
+        runtime_core::spawn_then_in(
+            &crate::app::shell_alive(),
+            async move {
+                let done = crate::servers::rename_channel(sid0, cid0, &trimmed).await;
+                let list = match done {
+                    Ok(_) => crate::servers::list_channels(sid0).await.ok(),
+                    Err(_) => None,
+                };
+                (done, list)
+            },
+            move |(done, list)| {
+                match done {
+                    Ok(_) => {
+                        if let Some(list) = list {
+                            ch2.set(list);
+                        }
+                        close2.set(false);
                     }
-                    close2.set(false);
+                    Err(msg) => e2.set(msg),
                 }
-                Err(msg) => e2.set(msg),
-            }
-            b2.set(false);
-        });
+                b2.set(false);
+            },
+        );
     };
 
     // --- Body: one switch keyed on `error` -----------------------------------
