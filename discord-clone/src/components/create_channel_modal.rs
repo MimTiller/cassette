@@ -155,23 +155,37 @@ pub fn CreateChannelModal(
         let b2 = b;
         let ch2 = ch;
         let close2 = close;
-        runtime_core::driver::spawn_async(async move {
-            match crate::servers::create_channel(sid0, &trimmed, &kind0, None, private0).await {
-                Ok(_) => {
-                    private.set(false);
-                    // The backend persisted the channel; re-fetch the live
-                    // channel list (the same RPC the live sidebar's row fetch
-                    // uses) so the new channel appears without a reload, then
-                    // close the modal.
-                    if let Ok(list) = crate::servers::list_channels(sid0).await {
-                        ch2.set(list);
+        // `spawn_then_in` anchored on the app shell: both RPCs happen in the
+        // future and every signal write happens in the callback, so a torn-
+        // down scope can't land a write on a freed slot (join_modal idiom).
+        runtime_core::spawn_then_in(
+            &crate::app::shell_alive(),
+            async move {
+                let created = crate::servers::create_channel(sid0, &trimmed, &kind0, None, private0).await;
+                let list = match created {
+                    Ok(_) => crate::servers::list_channels(sid0).await.ok(),
+                    Err(_) => None,
+                };
+                (created, list)
+            },
+            move |(created, list)| {
+                match created {
+                    Ok(_) => {
+                        private.set(false);
+                        // The backend persisted the channel; re-fetch the live
+                        // channel list (the same RPC the live sidebar's row
+                        // fetch uses) so the new channel appears without a
+                        // reload, then close the modal.
+                        if let Some(list) = list {
+                            ch2.set(list);
+                        }
+                        close2.set(false);
                     }
-                    close2.set(false);
+                    Err(msg) => e2.set(msg),
                 }
-                Err(msg) => e2.set(msg),
-            }
-            b2.set(false);
-        });
+                b2.set(false);
+            },
+        );
     };
 
     // --- Body: one switch keyed on (error, busy) -----------------------------

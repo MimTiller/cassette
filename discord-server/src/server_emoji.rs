@@ -166,7 +166,7 @@ pub fn delete(db: &Db, caller: i64, emoji_id: i64) -> Result<i64, String> {
 fn announce(db: &Db, server_id: i64) {
     crate::realtime::hub().publish(
         &crate::realtime::server_audience(db, server_id),
-        &crate::server_settings::WsServerMsg::EmojiChanged { server_id },
+        &crate::server_settings::WsServerMsg::EmojiChanged { server_id, seq: crate::server_settings::next_frame_seq() },
     );
 }
 

@@ -536,6 +536,7 @@ pub async fn send_dm_message(input: SendDmMessageInput) -> Result<SendDmMessageR
             author_avatar: db.user_avatar(message.author_id),
             content: message.content.clone(),
             created_at: message.created_at,
+            seq: crate::server_settings::next_frame_seq(),
         },
     );
     Ok(SendDmMessageResult { message })
@@ -560,7 +561,7 @@ pub async fn list_dm_messages(input: ListDmMessagesInput) -> Result<Vec<DmMessag
 fn announce_dm(db: &Db, dm_id: i64, also: &[i64]) {
     let mut audience: Vec<i64> = db.dm_participants_of(dm_id).into_iter().map(|(id, _)| id).collect();
     audience.extend_from_slice(also);
-    crate::realtime::hub().publish(&audience, &crate::server_settings::WsServerMsg::DmChanged { dm_id });
+    crate::realtime::hub().publish(&audience, &crate::server_settings::WsServerMsg::DmChanged { dm_id, seq: crate::server_settings::next_frame_seq() });
 }
 
 /// Start a group DM with some of the caller's friends.

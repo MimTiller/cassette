@@ -12,9 +12,9 @@ use crate::controls::{button_view, text_field, ButtonKind};
 use crate::style_helpers::{col, px};
 use crate::theme;
 
-fn reload(server_id: i64, list: Signal<Vec<ServerEmoji>>) {
-    runtime_core::driver::spawn_async(async move {
-        if let Ok(l) = se::server_emoji(se::ServerEmojiInput { server_id }).await {
+fn reload(server_id: i64, list: Signal<Vec<ServerEmoji>>, alive: runtime_core::ScopeAlive) {
+    runtime_core::spawn_then_in(&alive, se::server_emoji(se::ServerEmojiInput { server_id }), move |result| {
+        if let Ok(l) = result {
             list.set(l);
         }
     });
@@ -36,9 +36,15 @@ pub fn emoji_section(server_id: Option<i64>) -> Element {
     let name = signal(String::new());
     let error = signal(String::new());
     let busy = signal(false);
-    reload(sid, list);
+    // Replies land in this section's signals, so they are anchored to it:
+    // if the section is torn down mid-flight the callback is simply dropped.
+    // Each `move` handler owns its own copy of the token (ScopeAlive is
+    // Clone, not Copy).
+    let alive = runtime_core::ScopeAlive::current();
+    reload(sid, list, alive.clone());
 
     // Pick an image and upload it under the typed name.
+    let al_upload = alive.clone();
     let upload = move || {
         if busy.get() {
             return;
@@ -50,6 +56,7 @@ pub fn emoji_section(server_id: Option<i64>) -> Element {
         }
         busy.set(true);
         error.set(String::new());
+        let al = al_upload.clone();
         runtime_core::driver::spawn_async(async move {
             let picked = FilePicker::new().pick(PickRequest::media(MediaKind::Images)).await;
             let file = match picked {
@@ -68,7 +75,7 @@ pub fn emoji_section(server_id: Option<i64>) -> Element {
                             match se::upload_emoji(input).await {
                                 Ok(_) => {
                                     name.set(String::new());
-                                    reload(sid, list);
+                                    reload(sid, list, al);
                                 }
                                 Err(e) => error.set(crate::errors::friendly(&e)),
                             }
@@ -82,6 +89,7 @@ pub fn emoji_section(server_id: Option<i64>) -> Element {
         });
     };
 
+    let al_rows = alive.clone();
     let rows = switch(
         move || list.get(),
         move |items: &Vec<ServerEmoji>| {
@@ -91,25 +99,29 @@ pub fn emoji_section(server_id: Option<i64>) -> Element {
                     let id = e.id;
                     let draft = signal(e.name.clone());
                     let original = e.name.clone();
+                    let al_rename = al_rows.clone();
                     let rename = move || {
                         let new = draft.get().trim().to_string();
                         if new == original {
                             return;
                         }
+                        let al = al_rename.clone();
                         runtime_core::driver::spawn_async(async move {
                             match se::rename_emoji(se::RenameEmojiInput { emoji_id: id, name: new }).await {
                                 Ok(_) => {
                                     error.set(String::new());
-                                    reload(sid, list);
+                                    reload(sid, list, al);
                                 }
                                 Err(e) => error.set(crate::errors::friendly(&e)),
                             }
                         });
                     };
+                    let al_delete = al_rows.clone();
                     let delete = move || {
+                        let al = al_delete.clone();
                         runtime_core::driver::spawn_async(async move {
                             match se::delete_emoji(se::DeleteEmojiInput { emoji_id: id }).await {
-                                Ok(()) => reload(sid, list),
+                                Ok(()) => reload(sid, list, al),
                                 Err(e) => error.set(crate::errors::friendly(&e)),
                             }
                         });

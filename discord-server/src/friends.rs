@@ -342,6 +342,7 @@ pub async fn send_friend_request(
         &crate::server_settings::WsServerMsg::FriendChanged {
             friend_id: result.user_id,
             action: action.to_string(),
+            seq: crate::server_settings::next_frame_seq(),
         },
     );
     Ok(result)
@@ -375,6 +376,7 @@ pub async fn accept_friend_request(
         &crate::server_settings::WsServerMsg::FriendChanged {
             friend_id: friend.user_id,
             action: "accepted".to_string(),
+            seq: crate::server_settings::next_frame_seq(),
         },
     );
     Ok(friend)
@@ -397,6 +399,7 @@ pub async fn decline_or_cancel(input: DeclineOrCancelInput) -> Result<FriendUser
         &crate::server_settings::WsServerMsg::FriendChanged {
             friend_id: friend.user_id,
             action: "removed".to_string(),
+            seq: crate::server_settings::next_frame_seq(),
         },
     );
     Ok(friend)
@@ -418,6 +421,7 @@ pub async fn remove_friend(input: RemoveFriendInput) -> Result<FriendUser, Serve
         &crate::server_settings::WsServerMsg::FriendChanged {
             friend_id: friend.user_id,
             action: "removed".to_string(),
+            seq: crate::server_settings::next_frame_seq(),
         },
     );
     Ok(friend)

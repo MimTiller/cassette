@@ -414,7 +414,9 @@ mod fetch {
             }
             crate::realtime::hub().publish(
                 &crate::realtime::channel_audience(&db, channel_id),
-                &crate::server_settings::WsServerMsg::MessageEmbeds { message_id, channel_id, embeds },
+                &crate::server_settings::WsServerMsg::MessageEmbeds {
+                message_id, channel_id, embeds, seq: crate::server_settings::next_frame_seq(),
+            },
             );
         });
     }

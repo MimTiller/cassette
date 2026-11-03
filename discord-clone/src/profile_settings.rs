@@ -338,24 +338,31 @@ pub fn ProfileSettings() -> Element {
 
     // Upload a finished `data:` URL and show it everywhere: the shared
     // registry is keyed by the REAL username (not the editable display name)
-    // so message rows, member lists and DMs follow it.
+    // so message rows, member lists and DMs follow it. The RPC runs in the
+    // future and every signal write in the spawn_then_in callback, anchored
+    // on the app shell so the write survives this page's own teardown
+    // (create_channel_modal idiom).
     let save_avatar = move |url: String| {
         av_busy.set(true);
         av_error.set(String::new());
-        runtime_core::driver::spawn_async(async move {
-            match crate::auth::set_avatar(Some(url.clone())).await {
-                Ok(_) => {
-                    let name = crate::auth::current_username();
-                    crate::auth::remember_avatar(name.as_str(), Some(url.clone()));
-                    // The persisted session's avatar segment must follow the
-                    // upload so a page refresh restores the new image.
-                    crate::auth::refresh_saved_avatar(Some(url.clone()));
-                    avatar_url.set(url);
+        runtime_core::spawn_then_in(
+            &crate::app::shell_alive(),
+            crate::auth::set_avatar(Some(url.clone())),
+            move |result| {
+                match result {
+                    Ok(_) => {
+                        let name = crate::auth::current_username();
+                        crate::auth::remember_avatar(name.as_str(), Some(url.clone()));
+                        // The persisted session's avatar segment must follow the
+                        // upload so a page refresh restores the new image.
+                        crate::auth::refresh_saved_avatar(Some(url.clone()));
+                        avatar_url.set(url);
+                    }
+                    Err(msg) => av_error.set(msg),
                 }
-                Err(msg) => av_error.set(msg),
-            }
-            av_busy.set(false);
-        });
+                av_busy.set(false);
+            },
+        );
     };
 
     // Change-avatar handler: open the native picker (single image), read the
@@ -372,56 +379,63 @@ pub fn ProfileSettings() -> Element {
         let picking = av_picking;
         busy.set(true);
         err.set(String::new());
-        runtime_core::driver::spawn_async(async move {
-            picking.set(true);
-            let outcome = match FilePicker::new()
-                .pick(PickRequest::media(MediaKind::Images))
-                .await
-            {
-                Ok(outcome) => outcome,
-                Err(e) => {
-                    err.set(format!("file picker: {e}"));
-                    picking.set(false);
-                    busy.set(false);
-                    return;
-                }
-            };
-            picking.set(false);
-            match outcome {
-                PickOutcome::Picked(files) => {
-                    if let Some(file) = files.get(0) {
-                        match file.read_all().await {
-                            // On the web the picture goes through "Position your
-                            // picture" first, which also shrinks it under the cap.
-                            #[cfg(target_arch = "wasm32")]
-                            Ok(bytes) => match accepted_mime(file.mime(), &bytes) {
-                                None => err.set("Pick a PNG, JPEG, WebP or GIF picture".to_string()),
-                                Some(_) if bytes.len() > crate::avatar_crop::MAX_SOURCE_BYTES => {
-                                    err.set("That picture is over 20 MB".to_string())
-                                }
-                                Some(mime) => {
-                                    if let Err(msg) = crate::avatar_crop::open(bytes, mime, save_avatar).await {
-                                        err.set(msg);
-                                    }
-                                }
-                            },
-                            #[cfg(not(target_arch = "wasm32"))]
-                            Ok(bytes) => match validate_and_encode(file.mime(), &bytes) {
-                                Ok(url) => save_avatar(url),
-                                Err(msg) => err.set(msg),
-                            },
-                            Err(e) => err.set(format!("could not read the file: {e}")),
+        picking.set(true);
+        // The pick/read/encode awaits can straddle a teardown, so the future
+        // is IO only and every signal write (picking, the rejection line, the
+        // busy flag) lives in the callback, anchored on the app shell.
+        runtime_core::spawn_then_in(
+            &crate::app::shell_alive(),
+            async move {
+                let outcome = match FilePicker::new()
+                    .pick(PickRequest::media(MediaKind::Images))
+                    .await
+                {
+                    Ok(outcome) => outcome,
+                    Err(e) => return (Some(format!("file picker: {e}")), None),
+                };
+                match outcome {
+                    PickOutcome::Picked(files) => {
+                        if let Some(file) = files.get(0) {
+                            match file.read_all().await {
+                                // On the web the picture goes through "Position your
+                                // picture" first, which also shrinks it under the cap.
+                                #[cfg(target_arch = "wasm32")]
+                                Ok(bytes) => match accepted_mime(file.mime(), &bytes) {
+                                    None => return (Some("Pick a PNG, JPEG, WebP or GIF picture".to_string()), None),
+                                    Some(_) if bytes.len() > crate::avatar_crop::MAX_SOURCE_BYTES =>
+                                        return (Some("That picture is over 20 MB".to_string()), None),
+                                    Some(mime) => match crate::avatar_crop::open(bytes, mime, save_avatar).await {
+                                        Ok(()) => (None, None),
+                                        Err(msg) => (Some(msg), None),
+                                    },
+                                },
+                                #[cfg(not(target_arch = "wasm32"))]
+                                Ok(bytes) => match validate_and_encode(file.mime(), &bytes) {
+                                    Ok(url) => (None, Some(url)),
+                                    Err(msg) => (Some(msg), None),
+                                },
+                                Err(e) => (Some(format!("could not read the file: {e}")), None),
+                            }
+                        } else {
+                            (Some("No file was chosen".to_string()), None)
                         }
-                    } else {
-                        err.set("No file was chosen".to_string());
                     }
+                    // Cancelled (or an unexpected empty outcome): back to
+                    // idle, not an error — dismissing a picker is not a
+                    // failure.
+                    _ => (None, None),
                 }
-                // Cancelled (or an unexpected empty outcome): back to idle,
-                // not an error — dismissing a picker is not a failure.
-                _ => {}
-            }
-            busy.set(false);
-        });
+            },
+            move |(reason, saved)| {
+                picking.set(false);
+                if let Some(msg) = reason {
+                    err.set(msg);
+                } else if let Some(url) = saved {
+                    save_avatar(url);
+                }
+                busy.set(false);
+            },
+        );
     };
     // Remove handler: clear the stored avatar server-side and wipe the
     // registry entry + local signal so the initial circle comes back.

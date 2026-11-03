@@ -135,6 +135,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 reactions,
                 attachments,
                 embeds,
+                seq: _,
             }) = frame
             {
                 crate::embeds::set(*message_id, embeds.clone());
@@ -291,6 +292,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 user_id,
                 emoji,
                 count,
+                seq: _,
             }) = frame
             {
                 let _ = channel_id;
@@ -306,6 +308,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 user_id,
                 emoji,
                 count,
+                seq: _,
             }) = frame
             {
                 let _ = channel_id;
@@ -326,6 +329,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 content,
                 edited_at,
                 mentioned_user_ids,
+                seq: _,
             }) = frame
             {
                 let me = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
@@ -367,6 +371,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             if let Some(discord_server::server_settings::WsServerMsg::MessageDeleted {
                 message_id,
                 channel_id,
+                seq: _,
             }) = frame
             {
                 let channel_id = *channel_id;
@@ -394,7 +399,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 }
             }
             // A server's custom emoji changed: refetch them if it's on screen.
-            if let Some(discord_server::server_settings::WsServerMsg::EmojiChanged { server_id }) = frame {
+            if let Some(discord_server::server_settings::WsServerMsg::EmojiChanged { server_id, seq: _ }) = frame {
                 if crate::mentions::server_id() == Some(*server_id) {
                     crate::custom_emoji::load(*server_id);
                 }
@@ -407,7 +412,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             }
             // The status this user picked, sent on connect and when another
             // of their tabs changes it.
-            if let Some(discord_server::server_settings::WsServerMsg::StatusChoice { status }) = frame {
+            if let Some(discord_server::server_settings::WsServerMsg::StatusChoice { status, seq: _ }) = frame {
                 super::user_panel::set_status(user_status, Status::from_wire(status));
             }
             // A presence change for a user on a shared server: record
@@ -421,6 +426,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             if let Some(discord_server::server_settings::WsServerMsg::Presence {
                 user_id,
                 status,
+                seq: _,
             }) = frame
             {
                 let user_id = *user_id;
@@ -436,6 +442,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             if let Some(discord_server::server_settings::WsServerMsg::Typing {
                 channel_id,
                 user_id,
+                seq: _,
             }) = frame
             {
                 // `frame` is a `&WsServerMsg` borrowed for this one call, so
@@ -583,6 +590,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             if let Some(discord_server::server_settings::WsServerMsg::History {
                 channel_id,
                 has_more,
+                seq: _,
             }) = frame
             {
                 let cid = *channel_id;
