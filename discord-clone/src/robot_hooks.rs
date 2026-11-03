@@ -21,9 +21,23 @@ fn app_icon() -> Result<String, String> {
     Ok(crate::app_icon::current().key().to_string())
 }
 
+/// Re-enter the active server the way a page reload does: fetch its roles and
+/// the signed-in user's permissions, arming the dropdown's permission rows.
+#[runtime_core::robot_fn(name = "cassette.rearm_perms")]
+fn rearm_perms() -> Result<(), String> {
+    match crate::mentions::server_id() {
+        Some(sid) => {
+            crate::mentions::load_roles(sid);
+            Ok(())
+        }
+        None => Err("no active server".to_string()),
+    }
+}
+
 /// Register the functions; called once from `app()`.
 pub(crate) fn register() {
     runtime_vocabulary::robot_fn::register(theme_key::robot());
     runtime_vocabulary::robot_fn::register(jump_target::robot());
     runtime_vocabulary::robot_fn::register(app_icon::robot());
+    runtime_vocabulary::robot_fn::register(rearm_perms::robot());
 }

@@ -613,7 +613,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                 // cluster (mention pill + rename/delete buttons)
                                 // is `chan_actions`, built per row above.
                                 ui! {
-                                    view(style = row_style) {
+                                    view(style = row_style, test_id = "live-channel-row") {
                                         icon(if private { LOCK } else { HASH })
                                             .color(|| theme::live(TEXT_MUTED))
                                             .size(18.0)
@@ -798,7 +798,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                         }),
                     );
                     ui! {
-                        view(style = sidebar_style.clone()) {
+                        view(style = sidebar_style.clone(), test_id = "live-sidebar") {
                             view(style = StyleRules { position: Some(Position::Relative), ..sidebar_header_style.clone() }) {
                                 view(style = move || StyleRules {
                                     flex_direction: Some(FlexDirection::Row),
@@ -917,41 +917,41 @@ fn server_dropdown(
             }
             use discord_server::permissions::Permissions as P;
             let is_owner = crate::mentions::my_rank() == discord_server::permissions::Rank::Owner;
-            // (label, red, close after, action); `None` is a divider.
-            let mut items: Vec<Option<(String, bool, bool, Rc<dyn Fn()>)>> = Vec::new();
+            // (label, test_id, red, close after, action); `None` is a divider.
+            let mut items: Vec<Option<(String, &'static str, bool, bool, Rc<dyn Fn()>)>> = Vec::new();
             if crate::mentions::can(P::CREATE_INVITE) {
-                items.push(Some(("Invite People".to_string(), false, true, invite.clone())));
+                items.push(Some(("Invite People".to_string(), "menu-invite", false, true, invite.clone())));
             }
             if let Some(sid) = server.get() {
                 use discord_server::notification_settings::{NotificationSetting, Scope};
                 let name = servers.get().into_iter().find(|s| s.id == sid).map(|s| s.name).unwrap_or_default();
                 if crate::notif_prefs::muted(Scope::Server, sid) {
-                    items.push(Some(("Unmute Server".to_string(), false, true, Rc::new(move || {
+                    items.push(Some(("Unmute Server".to_string(), "menu-unmute-server", false, true, Rc::new(move || {
                         let s = crate::notif_prefs::get(Scope::Server, sid);
                         crate::notif_prefs::set(NotificationSetting { muted_until: None, ..s });
                     }))));
                 } else {
                     let n = name.clone();
-                    items.push(Some(("Mute Server".to_string(), false, true, Rc::new(move || {
+                    items.push(Some(("Mute Server".to_string(), "menu-mute-server", false, true, Rc::new(move || {
                         crate::notif_menu::open_for(Scope::Server, sid, n.clone())
                     }))));
                 }
-                items.push(Some(("Notification Settings".to_string(), false, true, Rc::new(move || {
+                items.push(Some(("Notification Settings".to_string(), "menu-notification-settings", false, true, Rc::new(move || {
                     crate::notif_menu::open_for(Scope::Server, sid, name.clone())
                 }))));
             }
             if crate::server_settings_panel::any_section() {
-                items.push(Some(("Server Settings".to_string(), false, true, settings.clone())));
+                items.push(Some(("Server Settings".to_string(), "menu-server-settings", false, true, settings.clone())));
             }
             if crate::mentions::can(P::MANAGE_CHANNELS) {
                 let (c1, c2) = (create.clone(), create.clone());
-                items.push(Some(("Create Channel".to_string(), false, true, Rc::new(move || (c1)("text")))));
-                items.push(Some(("Create Category".to_string(), false, true, Rc::new(move || (c2)("category")))));
+                items.push(Some(("Create Channel".to_string(), "menu-create-channel", false, true, Rc::new(move || (c1)("text")))));
+                items.push(Some(("Create Category".to_string(), "menu-create-category", false, true, Rc::new(move || (c2)("category")))));
             }
             if !is_owner {
                 items.push(None);
                 let label = if *confirming { "Click again to leave" } else { "Leave Server" };
-                items.push(Some((label.to_string(), true, *confirming, Rc::new(move || {
+                items.push(Some((label.to_string(), "menu-leave-server", true, *confirming, Rc::new(move || {
                     if !confirm_leave.get() {
                         confirm_leave.set(true);
                         return;
@@ -980,7 +980,7 @@ fn server_dropdown(
                 None => ui! {
                     view(style = StyleRules { height: Some(px(1.0)), margin_top: Some(px(4.0)), margin_bottom: Some(px(4.0)), margin_left: Some(px(8.0)), margin_right: Some(px(8.0)), background: Some(col(BORDER)), ..Default::default() }) {}
                 },
-                Some((label, red, close_after, action)) => {
+                Some((label, test_id, red, close_after, action)) => {
                     let hovered = signal(false);
                     ui! {
                         view(style = move || StyleRules {
@@ -993,7 +993,7 @@ fn server_dropdown(
                             align_items: Some(AlignItems::Center),
                             background: Some(col(if hovered.get() { if red { theme::DANGER_STRONG } else { theme::ACCENT_HOVER } } else { "transparent" })),
                             ..rounded(4.0)
-                        }) {
+                        }, test_id = test_id) {
                             text(style = move || StyleRules {
                                 font_size: Some(px(14.0)),
                                 font_weight: Some(FontWeight::SemiBold),

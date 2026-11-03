@@ -157,7 +157,7 @@ pub fn message_action_bar(
                         align_items: Some(AlignItems::Center),
                         justify_content: Some(JustifyContent::Center),
                         ..rounded(4.0)
-                    }) {
+                    }, test_id = "msg-more") {
                         text(style = StyleRules {
                             font_size: Some(px(16.0)),
                             color: Some(col(theme::INTERACTIVE)),

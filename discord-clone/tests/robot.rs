@@ -16,3 +16,5 @@ mod users;
 mod auth;
 #[path = "robot/multi_user.rs"]
 mod multi_user;
+#[path = "robot/server.rs"]
+mod server;
