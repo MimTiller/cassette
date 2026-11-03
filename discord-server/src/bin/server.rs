@@ -34,12 +34,24 @@ use axum::middleware::Next;
 use axum::response::Response;
 use axum::routing::get;
 
-/// Stamp the TCP peer's IP on every request as `session::PEER_IP_HEADER`,
+/// The reverse proxies whose `X-Forwarded-For` is believed (`TRUSTED_PROXIES`).
+static TRUSTED_PROXIES: std::sync::OnceLock<Vec<IpAddr>> = std::sync::OnceLock::new();
+
+/// Stamp the client's IP on every request as `session::PEER_IP_HEADER`,
 /// replacing any value the client sent, so the API's per-IP throttles key on
-/// an address the client can't choose. (Behind a reverse proxy this would be
-/// the proxy's address; this server is reached directly.)
+/// an address the client can't choose: the TCP peer, or the client a trusted
+/// reverse proxy forwarded.
 async fn tag_peer_ip(ConnectInfo(peer): ConnectInfo<SocketAddr>, mut req: Request, next: Next) -> Response {
-    if let Ok(v) = HeaderValue::from_str(&peer.ip().to_string()) {
+    let forwarded: Vec<&str> = req
+        .headers()
+        .get_all("x-forwarded-for")
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .collect();
+    let forwarded = (!forwarded.is_empty()).then(|| forwarded.join(","));
+    let trusted = TRUSTED_PROXIES.get().map(Vec::as_slice).unwrap_or(&[]);
+    let client = discord_server::session::forwarded_client_ip(peer.ip(), forwarded.as_deref(), trusted);
+    if let Ok(v) = HeaderValue::from_str(&client.to_string()) {
         req.headers_mut().insert(discord_server::session::PEER_IP_HEADER, v);
     }
     next.run(req).await
@@ -184,6 +196,12 @@ async fn main() {
                 .not_found_service(ServeDir::new(&dist).append_index_html_on_directories(true)),
         );
     }
+
+    let trusted = discord_server::session::trusted_proxies_from_env().unwrap_or_else(|e| panic!("{e}"));
+    if !trusted.is_empty() {
+        println!("trusting X-Forwarded-For from {trusted:?}");
+    }
+    let _ = TRUSTED_PROXIES.set(trusted);
 
     // Bind + serve.
     let port: u16 = std::env::var("PORT")

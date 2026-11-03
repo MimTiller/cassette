@@ -125,6 +125,8 @@ All settings are read by the server:
 | `GIPHY_API_KEY` | Enables GIF search. Alternatively, put the key in a `giphy.key` file next to the database. |
 | `DISCORD_ALLOW_USER_ID_HEADER=1` | Accepts the legacy `x-user-id` header. Only for local test tooling; never enable it in production. |
 | `PUBLIC_URL` | The address people use to reach the site, e.g. `https://chat.example.com`. Password reset links start with it. Default: `http://localhost:<PORT>`. |
+| `TRUSTED_PROXIES` | Comma-separated IP addresses of reverse proxies in front of the server, e.g. `127.0.0.1,::1` for Caddy on the same host. Requests from them are attributed to the client named in `X-Forwarded-For`, so per-IP rate limits still apply. Leave unset when the server is reached directly. |
+| `TRUSTED_PROXIES` | Comma-separated IP addresses of reverse proxies in front of the server, e.g. `127.0.0.1,::1` for Caddy on the same host. Requests from them are attributed to the client named in `X-Forwarded-For`, so per-IP rate limits still apply. Leave unset when the server is reached directly. |
 
 The database, session secret, media folder and `giphy.key` are all
 gitignored.

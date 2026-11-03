@@ -20,15 +20,18 @@
 //! the column (a password change) revokes every session of that account, and
 //! a deleted account's tokens stop working. Older `v1` tokens are rejected.
 //!
-//! [`client_ip`] is the connecting peer's address, which the server bin
-//! stamps on every request as [`PEER_IP_HEADER`] (overwriting any copy the
-//! client sent), for per-IP throttling.
+//! [`client_ip`] is the client's address, which the server bin stamps on
+//! every request as [`PEER_IP_HEADER`] (overwriting any copy the client
+//! sent), for per-IP throttling. It is the TCP peer, or, when the peer is a
+//! reverse proxy listed in `TRUSTED_PROXIES`, the address that proxy
+//! forwarded (see [`forwarded_client_ip`]).
 //!
 //! The legacy `x-user-id` header (the old stand-in session) is REJECTED by
 //! default. Set `DISCORD_ALLOW_USER_ID_HEADER=1` to accept it for local
 //! development or test tooling; a request that presents a bearer token never
 //! falls back to the legacy header (a bad token is simply unauthenticated).
 
+use std::net::IpAddr;
 use std::path::Path;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::OnceLock;
@@ -66,10 +69,45 @@ fn current_version(user_id: i64) -> Option<i64> {
     }
 }
 
-/// The connecting peer's IP address (see [`PEER_IP_HEADER`]), or
-/// `"unknown"` outside the server bin (every such request shares one bucket).
+/// The client's IP address (see [`PEER_IP_HEADER`]), or `"unknown"` outside
+/// the server bin (every such request shares one bucket).
 pub fn client_ip() -> String {
     server::use_request_header(PEER_IP_HEADER).unwrap_or_else(|| "unknown".to_string())
+}
+
+/// The client behind a request that reached the server from `peer`. A peer
+/// outside `trusted` is the client. A trusted proxy's request names the
+/// client in `X-Forwarded-For`: each hop appends the address it received
+/// from, so the client is the rightmost entry that isn't itself a trusted
+/// proxy, and anything left of it is whatever the client chose to send.
+/// With no usable entry the peer stands in.
+pub fn forwarded_client_ip(peer: IpAddr, forwarded_for: Option<&str>, trusted: &[IpAddr]) -> IpAddr {
+    if !trusted.contains(&peer) {
+        return peer;
+    }
+    let mut client = peer;
+    for entry in forwarded_for.unwrap_or("").rsplit(',') {
+        match entry.trim().parse::<IpAddr>() {
+            Ok(ip) if trusted.contains(&ip) => client = ip,
+            Ok(ip) => return ip,
+            Err(_) => break,
+        }
+    }
+    client
+}
+
+/// The reverse proxies whose `X-Forwarded-For` is believed: `TRUSTED_PROXIES`
+/// as comma-separated IP addresses (`127.0.0.1,::1` for a proxy on the same
+/// host). Unset or empty trusts none, so a directly reached server can't be
+/// fooled by a client sending the header. `Err` names an entry that isn't an
+/// IP address.
+pub fn trusted_proxies_from_env() -> Result<Vec<IpAddr>, String> {
+    let raw = std::env::var("TRUSTED_PROXIES").unwrap_or_default();
+    raw.split(',')
+        .map(str::trim)
+        .filter(|e| !e.is_empty())
+        .map(|e| e.parse::<IpAddr>().map_err(|_| format!("TRUSTED_PROXIES: {e:?} is not an IP address")))
+        .collect()
 }
 
 /// Test hook: 0 = follow the environment, 1 = allow the legacy header,
@@ -326,6 +364,34 @@ pub fn acting_user() -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
+    use std::net::IpAddr;
+
+    fn ip(s: &str) -> IpAddr {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn untrusted_peer_is_the_client_whatever_it_forwards() {
+        let got = super::forwarded_client_ip(ip("203.0.113.9"), Some("1.1.1.1"), &[ip("127.0.0.1")]);
+        assert_eq!(got, ip("203.0.113.9"));
+    }
+
+    #[test]
+    fn trusted_proxy_forwards_the_rightmost_untrusted_hop() {
+        let trusted = [ip("127.0.0.1"), ip("10.0.0.2")];
+        // The client spoofed 6.6.6.6; the real client 198.51.100.4 passed
+        // through a second trusted proxy 10.0.0.2.
+        let got = super::forwarded_client_ip(ip("127.0.0.1"), Some("6.6.6.6, 198.51.100.4, 10.0.0.2"), &trusted);
+        assert_eq!(got, ip("198.51.100.4"));
+    }
+
+    #[test]
+    fn trusted_proxy_without_a_usable_header_stands_in() {
+        let trusted = [ip("::1")];
+        assert_eq!(super::forwarded_client_ip(ip("::1"), None, &trusted), ip("::1"));
+        assert_eq!(super::forwarded_client_ip(ip("::1"), Some("not-an-ip"), &trusted), ip("::1"));
+    }
+
     use super::*;
 
     #[test]
