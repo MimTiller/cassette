@@ -926,7 +926,7 @@ impl ServerSettings {
         self.db
             .upsert_membership(server_id, user_id, role, Self::now_secs())
             .map_err(|e| format!("failed to add member: {e}"))?;
-        crate::realtime::announce_membership(&self.db, server_id, user_id, true);
+        crate::membership::access_changed(&self.db, server_id, crate::membership::AccessChange::MemberJoined { user_id });
         Ok(role.db_str().to_string())
     }
 
@@ -951,7 +951,7 @@ impl ServerSettings {
         }
         // Tell the server's remaining members a member just left so their
         // live roster (and `MEMBERS — N`) updates without a reload.
-        crate::realtime::announce_membership(&self.db, server_id, user_id, false);
+        crate::membership::access_changed(&self.db, server_id, crate::membership::AccessChange::MemberRemoved { user_id });
         Ok(())
     }
 
@@ -976,7 +976,7 @@ impl ServerSettings {
         if removed == 0 {
             return Err("not a member of this server".into());
         }
-        crate::realtime::announce_membership(&self.db, server_id, caller_id, false);
+        crate::membership::access_changed(&self.db, server_id, crate::membership::AccessChange::MemberLeft { user_id: caller_id });
         Ok(())
     }
 
@@ -1011,7 +1011,7 @@ impl ServerSettings {
             return Err("member not found".into());
         }
         // A ban is a leave too: tell the remaining members the roster shrank.
-        crate::realtime::announce_membership(&self.db, server_id, user_id, false);
+        crate::membership::access_changed(&self.db, server_id, crate::membership::AccessChange::MemberBanned { user_id });
         Ok(())
     }
 

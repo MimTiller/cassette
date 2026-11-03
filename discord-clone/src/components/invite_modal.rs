@@ -102,15 +102,18 @@ pub fn InviteModal(
             1 => Some(now + DAY_SECS),
             _ => None, // "Never" — no expiry
         };
-        runtime_core::driver::spawn_async(async move {
-            match crate::invite::create_invite(sid0, expires_at, None).await {
+        // Anchored on the app shell, where the modal's `created` signals live.
+        runtime_core::spawn_then_in(
+            &crate::app::shell_alive(),
+            async move { crate::invite::create_invite(sid0, expires_at, None).await },
+            move |result| match result {
                 Ok(invite) => {
                     cr.set(Some(invite));
                     cerr.set(String::new());
                 }
                 Err(msg) => cerr.set(msg),
-            }
-        });
+            },
+        );
     };
 
     // --- Error line ---------------------------------------------------------

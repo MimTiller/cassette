@@ -57,36 +57,40 @@ pub fn emoji_section(server_id: Option<i64>) -> Element {
         busy.set(true);
         error.set(String::new());
         let al = al_upload.clone();
-        runtime_core::driver::spawn_async(async move {
-            let picked = FilePicker::new().pick(PickRequest::media(MediaKind::Images)).await;
-            let file = match picked {
-                Ok(PickOutcome::Picked(files)) => files.into_iter().next(),
-                Ok(_) => None,
-                Err(e) => {
-                    error.set(format!("file picker: {e}"));
-                    None
+        // The pick, read, check and upload all happen in the future; the
+        // callback only writes the section's signals. `None` = nothing picked.
+        runtime_core::spawn_then_in(
+            &al.clone(),
+            async move {
+                let file = match FilePicker::new().pick(PickRequest::media(MediaKind::Images)).await {
+                    Ok(PickOutcome::Picked(files)) => files.into_iter().next(),
+                    Ok(_) => None,
+                    Err(e) => return Some(Err(format!("file picker: {e}"))),
+                };
+                let file = file?;
+                let bytes = match file.read_all().await {
+                    Ok(bytes) => bytes,
+                    Err(e) => return Some(Err(format!("could not read the file: {e}"))),
+                };
+                let data_url = match crate::profile_settings::validate_and_encode_small_image(file.mime(), &bytes, "emoji") {
+                    Ok(data_url) => data_url,
+                    Err(msg) => return Some(Err(msg)),
+                };
+                let input = se::UploadEmojiInput { server_id: sid, name: n, data_url };
+                Some(se::upload_emoji(input).await.map(|_| ()).map_err(|e| crate::errors::friendly(&e)))
+            },
+            move |outcome| {
+                match outcome {
+                    Some(Ok(())) => {
+                        name.set(String::new());
+                        reload(sid, list, al);
+                    }
+                    Some(Err(msg)) => error.set(msg),
+                    None => {}
                 }
-            };
-            if let Some(file) = file {
-                match file.read_all().await {
-                    Ok(bytes) => match crate::profile_settings::validate_and_encode_small_image(file.mime(), &bytes, "emoji") {
-                        Ok(data_url) => {
-                            let input = se::UploadEmojiInput { server_id: sid, name: n, data_url };
-                            match se::upload_emoji(input).await {
-                                Ok(_) => {
-                                    name.set(String::new());
-                                    reload(sid, list, al);
-                                }
-                                Err(e) => error.set(crate::errors::friendly(&e)),
-                            }
-                        }
-                        Err(msg) => error.set(msg),
-                    },
-                    Err(e) => error.set(format!("could not read the file: {e}")),
-                }
-            }
-            busy.set(false);
-        });
+                busy.set(false);
+            },
+        );
     };
 
     let al_rows = alive.clone();
@@ -106,25 +110,29 @@ pub fn emoji_section(server_id: Option<i64>) -> Element {
                             return;
                         }
                         let al = al_rename.clone();
-                        runtime_core::driver::spawn_async(async move {
-                            match se::rename_emoji(se::RenameEmojiInput { emoji_id: id, name: new }).await {
+                        runtime_core::spawn_then_in(
+                            &al.clone(),
+                            se::rename_emoji(se::RenameEmojiInput { emoji_id: id, name: new }),
+                            move |result| match result {
                                 Ok(_) => {
                                     error.set(String::new());
                                     reload(sid, list, al);
                                 }
                                 Err(e) => error.set(crate::errors::friendly(&e)),
-                            }
-                        });
+                            },
+                        );
                     };
                     let al_delete = al_rows.clone();
                     let delete = move || {
                         let al = al_delete.clone();
-                        runtime_core::driver::spawn_async(async move {
-                            match se::delete_emoji(se::DeleteEmojiInput { emoji_id: id }).await {
+                        runtime_core::spawn_then_in(
+                            &al.clone(),
+                            se::delete_emoji(se::DeleteEmojiInput { emoji_id: id }),
+                            move |result| match result {
                                 Ok(()) => reload(sid, list, al),
                                 Err(e) => error.set(crate::errors::friendly(&e)),
-                            }
-                        });
+                            },
+                        );
                     };
                     let img = ui! {
                         image(

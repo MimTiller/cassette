@@ -661,7 +661,7 @@ pub async fn set_channel_overwrite(input: SetOverwriteInput) -> Result<Vec<Overw
     let (server_id, list) = PermissionService::new(db.clone())
         .set_overwrite(caller()?, input.channel_id, input.target, input.allow, input.deny)
         .map_err(ServerError::failed)?;
-    crate::server_roles::announce(&db, server_id);
+    crate::membership::access_changed(&db, server_id, crate::membership::AccessChange::ChannelOverridesChanged { channel_id: input.channel_id });
     Ok(list)
 }
 
@@ -672,7 +672,7 @@ pub async fn set_everyone_permissions(input: SetEveryoneInput) -> Result<Permiss
     let perms = PermissionService::new(db.clone())
         .set_everyone(caller()?, input.server_id, input.permissions)
         .map_err(ServerError::failed)?;
-    crate::server_roles::announce(&db, input.server_id);
+    crate::membership::access_changed(&db, input.server_id, crate::membership::AccessChange::EveryoneChanged);
     Ok(perms)
 }
 
