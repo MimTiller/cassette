@@ -497,7 +497,9 @@ pub(crate) fn load_session() -> Option<(String, i64, String, Option<String>)> {
 /// dead session. Fire-and-forget: the client-side `clear_session()` already
 /// dropped the identity keys, so a failed RPC cannot resurrect the shell.
 pub(crate) fn request_logout() {
-    runtime_core::driver::spawn_async(async move {
+    // Detached on purpose: the logout RPC must finish even while the shell
+    // reloads to the login screen, and the body writes no signals.
+    runtime_core::driver::spawn_detached(async move {
         let _ = discord_server::auth::logout().await;
     });
 }
@@ -505,7 +507,10 @@ pub(crate) fn request_logout() {
 /// "Log out of all devices": revoke every session of this account on the
 /// server, drop this device's session, and reload into the login screen.
 pub(crate) fn request_logout_everywhere() {
-    runtime_core::driver::spawn_async(async move {
+    // Detached on purpose: the page reloads to the login screen while this
+    // runs, and after the await it only touches storage (clear_session) and
+    // browser navigation, never signals.
+    runtime_core::driver::spawn_detached(async move {
         if discord_server::auth::logout_everywhere().await.is_ok() {
             clear_session();
             #[cfg(target_arch = "wasm32")]

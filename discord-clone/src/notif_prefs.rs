@@ -37,13 +37,18 @@ fn now_ms() -> i64 {
 
 /// Fetch all of the user's settings.
 pub(crate) fn load() {
-    runtime_core::driver::spawn_async(async move {
-        let input = ns::NotificationSettingsInput { server_id: None };
-        if let Ok(rows) = ns::notification_settings(input).await {
-            ROWS.with(|r| *r.borrow_mut() = rows.into_iter().map(|s| ((s.scope, s.scope_id), s)).collect());
-            bump();
-        }
-    });
+    // The RPC runs in the future; the row table and the revision bump land
+    // in the callback, anchored on the app shell that owns REV.
+    runtime_core::spawn_then_in(
+        &crate::app::shell_alive(),
+        ns::notification_settings(ns::NotificationSettingsInput { server_id: None }),
+        move |result| {
+            if let Ok(rows) = result {
+                ROWS.with(|r| *r.borrow_mut() = rows.into_iter().map(|s| ((s.scope, s.scope_id), s)).collect());
+                bump();
+            }
+        },
+    );
 }
 
 /// The setting for one server or channel (inherit / not muted when unset).
@@ -69,7 +74,11 @@ pub(crate) fn set(s: NotificationSetting) {
         }
     });
     bump();
-    runtime_core::driver::spawn_async(async move {
+    // Detached on purpose: the save RPC's result is never put on screen
+    // (the row was already shown optimistically above); it only reloads
+    // everything on a refusal, and that reload re-anchors through
+    // `load()` itself, so nothing here must run inside this caller's scope.
+    runtime_core::driver::spawn_detached(async move {
         if ns::set_notification_setting(s).await.is_err() {
             load();
         }

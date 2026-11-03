@@ -150,17 +150,22 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                             let (a, b) = (me.clone(), other);
                             let (pa, pb) = if a.position == b.position { (b.position + 1, a.position) } else { (b.position, a.position) };
                             let al = al_swap.clone();
-                            runtime_core::driver::spawn_async(async move {
-                                let first = server_roles::move_role(server_roles::MoveRoleInput { role_id: a.id, position: pa }).await;
-                                let second = match first {
-                                    Ok(_) => server_roles::move_role(server_roles::MoveRoleInput { role_id: b.id, position: pb }).await.map(|_| ()),
-                                    Err(e) => Err(e),
-                                };
-                                if let Err(e) = second {
-                                    error.set(crate::errors::friendly(&e));
-                                }
-                                reload(sid, roles, everyone, al);
-                            });
+                            runtime_core::spawn_then_in(
+                                &al.clone(),
+                                async move {
+                                    let first = server_roles::move_role(server_roles::MoveRoleInput { role_id: a.id, position: pa }).await;
+                                    match first {
+                                        Ok(_) => server_roles::move_role(server_roles::MoveRoleInput { role_id: b.id, position: pb }).await.map(|_| ()),
+                                        Err(e) => Err(e),
+                                    }
+                                },
+                                move |second| {
+                                    if let Err(e) = second {
+                                        error.set(crate::errors::friendly(&e));
+                                    }
+                                    reload(sid, roles, everyone, al);
+                                },
+                            );
                         }
                     };
                     let above = if i > 0 { list.get(i - 1) } else { None };
@@ -220,19 +225,22 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                                 if ev.phase == TouchPhase::Ended && can_edit {
                                     let t = toggle.clone();
                                     let al = al_toggle.clone();
-                                    runtime_core::driver::spawn_async(async move {
-                                        let input = server_roles::UpdateRoleInput {
+                                    runtime_core::spawn_then_in(
+                                        &al.clone(),
+                                        server_roles::update_role(server_roles::UpdateRoleInput {
                                             role_id: t.id,
                                             name: t.name.clone(),
                                             color: t.color.clone(),
                                             mentionable: !t.mentionable,
                                             permissions: None,
-                                        };
-                                        match server_roles::update_role(input).await {
-                                            Ok(_) => reload(sid, roles, everyone, al),
-                                            Err(e) => error.set(crate::errors::friendly(&e)),
-                                        }
-                                    });
+                                        }),
+                                        move |result| {
+                                            match result {
+                                                Ok(_) => reload(sid, roles, everyone, al),
+                                                Err(e) => error.set(crate::errors::friendly(&e)),
+                                            }
+                                        },
+                                    );
                                 }
                                 TouchResponse::CONSUMED
                             })
@@ -242,17 +250,21 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                                 {
                                     icon_button("×", can_edit, move || {
                                         let al = al_del.clone();
-                                        runtime_core::driver::spawn_async(async move {
-                                            match server_roles::delete_role(server_roles::DeleteRoleInput { role_id: id }).await {
-                                                Ok(()) => {
-                                                    if selected.get() == Some(Selected::Role(id)) {
-                                                        selected.set(None);
+                                        runtime_core::spawn_then_in(
+                                            &al.clone(),
+                                            server_roles::delete_role(server_roles::DeleteRoleInput { role_id: id }),
+                                            move |result| {
+                                                match result {
+                                                    Ok(()) => {
+                                                        if selected.get() == Some(Selected::Role(id)) {
+                                                            selected.set(None);
+                                                        }
+                                                        reload(sid, roles, everyone, al);
                                                     }
-                                                    reload(sid, roles, everyone, al);
+                                                    Err(e) => error.set(crate::errors::friendly(&e)),
                                                 }
-                                                Err(e) => error.set(crate::errors::friendly(&e)),
-                                            }
-                                        });
+                                            },
+                                        );
                                     })
                                 }
                             }
@@ -370,29 +382,34 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                 let perms = draft.get();
                 let role = role.clone();
                 let al = al_save.clone();
-                runtime_core::driver::spawn_async(async move {
-                    let result = match role {
-                        Some(r) => server_roles::update_role(server_roles::UpdateRoleInput {
-                            role_id: r.id,
-                            name: r.name,
-                            color: r.color,
-                            mentionable: r.mentionable,
-                            permissions: Some(perms),
-                        })
-                        .await
-                        .map(|_| ()),
-                        None => permissions::set_everyone_permissions(permissions::SetEveryoneInput { server_id: sid, permissions: perms })
+                runtime_core::spawn_then_in(
+                    &al.clone(),
+                    async move {
+                        match role {
+                            Some(r) => server_roles::update_role(server_roles::UpdateRoleInput {
+                                role_id: r.id,
+                                name: r.name,
+                                color: r.color,
+                                mentionable: r.mentionable,
+                                permissions: Some(perms),
+                            })
                             .await
                             .map(|_| ()),
-                    };
-                    match result {
-                        Ok(()) => {
-                            error.set(String::new());
-                            reload(sid, roles, everyone, al);
+                            None => permissions::set_everyone_permissions(permissions::SetEveryoneInput { server_id: sid, permissions: perms })
+                                .await
+                                .map(|_| ()),
                         }
-                        Err(e) => error.set(crate::errors::friendly(&e)),
-                    }
-                });
+                    },
+                    move |result| {
+                        match result {
+                            Ok(()) => {
+                                error.set(String::new());
+                                reload(sid, roles, everyone, al);
+                            }
+                            Err(e) => error.set(crate::errors::friendly(&e)),
+                        }
+                    },
+                );
             });
             let save_el = can_edit.then_some(save);
             ui! {
@@ -499,16 +516,20 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                                 color: color.get(),
                                 mentionable: true,
                             };
-                            runtime_core::driver::spawn_async(async move {
-                                match server_roles::create_role(input).await {
-                                    Ok(_) => {
-                                        name.set(String::new());
-                                        error.set(String::new());
-                                        reload(sid, roles, everyone, al);
+                            runtime_core::spawn_then_in(
+                                &al.clone(),
+                                server_roles::create_role(input),
+                                move |result| {
+                                    match result {
+                                        Ok(_) => {
+                                            name.set(String::new());
+                                            error.set(String::new());
+                                            reload(sid, roles, everyone, al);
+                                        }
+                                        Err(e) => error.set(crate::errors::friendly(&e)),
                                     }
-                                    Err(e) => error.set(crate::errors::friendly(&e)),
-                                }
-                            });
+                                },
+                            );
                         }
                         TouchResponse::CONSUMED
                     })

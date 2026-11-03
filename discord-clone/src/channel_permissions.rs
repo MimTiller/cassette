@@ -60,13 +60,19 @@ pub(crate) fn open_for(channel_id: i64, name: String) {
     s.adding.set(false);
     s.error.set(String::new());
     s.open.set(Some((channel_id, name)));
-    runtime_core::driver::spawn_async(async move {
-        let input = permissions::ChannelOverwritesInput { channel_id };
-        match permissions::channel_overwrites(input).await {
-            Ok(list) => s.overwrites.set(list),
-            Err(e) => s.error.set(crate::errors::friendly(&e)),
-        }
-    });
+    // The dialog's state is app-shell state: the RPC happens in the future,
+    // every write in the callback, anchored on the shell so a torn-down
+    // scope can't land a write on a freed slot.
+    runtime_core::spawn_then_in(
+        &crate::app::shell_alive(),
+        permissions::channel_overwrites(permissions::ChannelOverwritesInput { channel_id }),
+        move |result| {
+            match result {
+                Ok(list) => s.overwrites.set(list),
+                Err(e) => s.error.set(crate::errors::friendly(&e)),
+            }
+        },
+    );
 }
 
 /// `target`'s allow and deny on the open channel.
@@ -82,15 +88,20 @@ async fn put(channel_id: i64, target: Target, allow: Permissions, deny: Permissi
 /// Save one target's overwrite and show the result.
 fn save(channel_id: i64, target: Target, allow: Permissions, deny: Permissions) {
     let s = state();
-    runtime_core::driver::spawn_async(async move {
-        match put(channel_id, target, allow, deny).await {
-            Ok(list) => {
-                s.error.set(String::new());
-                s.overwrites.set(list);
+    // Shell state again: the RPC is the future, the writes its callback.
+    runtime_core::spawn_then_in(
+        &crate::app::shell_alive(),
+        put(channel_id, target, allow, deny),
+        move |result| {
+            match result {
+                Ok(list) => {
+                    s.error.set(String::new());
+                    s.overwrites.set(list);
+                }
+                Err(e) => s.error.set(e),
             }
-            Err(e) => s.error.set(e),
-        }
-    });
+        },
+    );
 }
 
 /// Make the channel private or public. Going private first lets the acting
@@ -105,23 +116,31 @@ fn set_private(channel_id: i64, private: bool) {
         && crate::mentions::my_rank() != Rank::Owner
         && !crate::mentions::can(Permissions::ADMINISTRATOR);
     let (my_allow, my_deny) = find(&list, Target::Member(me));
-    runtime_core::driver::spawn_async(async move {
-        let mut result = Ok(Vec::new());
-        if let_me_in {
-            result = put(channel_id, Target::Member(me), my_allow.union(Permissions::VIEW_CHANNEL), my_deny.minus(Permissions::VIEW_CHANNEL)).await;
-        }
-        if result.is_ok() {
-            let deny = if private { deny.union(Permissions::VIEW_CHANNEL) } else { deny.minus(Permissions::VIEW_CHANNEL) };
-            result = put(channel_id, Target::Everyone, allow.minus(Permissions::VIEW_CHANNEL), deny).await;
-        }
-        match result {
-            Ok(list) => {
-                s.error.set(String::new());
-                s.overwrites.set(list);
+    // Shell state: both RPCs happen in the future and every write in the
+    // callback, anchored on the shell so a torn-down scope drops the writes.
+    runtime_core::spawn_then_in(
+        &crate::app::shell_alive(),
+        async move {
+            let mut result = Ok(Vec::new());
+            if let_me_in {
+                result = put(channel_id, Target::Member(me), my_allow.union(Permissions::VIEW_CHANNEL), my_deny.minus(Permissions::VIEW_CHANNEL)).await;
             }
-            Err(e) => s.error.set(e),
-        }
-    });
+            if result.is_ok() {
+                let deny = if private { deny.union(Permissions::VIEW_CHANNEL) } else { deny.minus(Permissions::VIEW_CHANNEL) };
+                result = put(channel_id, Target::Everyone, allow.minus(Permissions::VIEW_CHANNEL), deny).await;
+            }
+            result
+        },
+        move |result| {
+            match result {
+                Ok(list) => {
+                    s.error.set(String::new());
+                    s.overwrites.set(list);
+                }
+                Err(e) => s.error.set(e),
+            }
+        },
+    );
 }
 
 /// A role's or member's name for the dialog.
