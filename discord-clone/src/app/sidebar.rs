@@ -325,7 +325,10 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                 Rc::new(move || {
                                     unread.borrow_mut().insert(cid, (0, 0));
                                     live_unread_rev.set(live_unread_rev.get() + 1);
-                                    runtime_core::driver::spawn_async(async move {
+                                    // Fire-and-forget: the badge clears above; the
+                                    // server-side read-mark isn't read by the screen.
+                                    // Detached so the RPC finishes after this handler.
+                                    runtime_core::driver::spawn_detached(async move {
                                         let _ = crate::servers::mark_read(cid, 0).await;
                                     });
                                 }),
@@ -334,7 +337,9 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                 "Copy Channel ID".to_string(),
                                 false,
                                 Rc::new(move || {
-                                    runtime_core::driver::spawn_async(async move {
+                                    // Detached: the clipboard write's result is not
+                                    // read by the screen, and the menu closes at once.
+                                    runtime_core::driver::spawn_detached(async move {
                                         let _ = clipboard::set_text(&cid.to_string()).await;
                                     });
                                 }),
