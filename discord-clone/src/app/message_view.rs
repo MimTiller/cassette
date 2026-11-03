@@ -1298,13 +1298,15 @@ pub(super) fn message_row_with_actions(
     // and per-backend (navigator.clipboard on web, UIPasteboard on Apple,
     // ClipboardManager on Android, arboard on Linux) — the same idiom the
     // `InviteLinkDisplay` Copy button uses — so the work is spawned via
-    // `runtime_core::driver::spawn_async` and the menu closes regardless
+    // `runtime_core::driver::spawn_detached` and the menu closes regardless
     // (a failed write is silent, matching the invite-card's no-lie behavior).
     // `body` is an owned clone so the handler is `Fn` across presses.
     let body_owned = body.to_string();
     let on_copy = Rc::new(move || {
         let text = body_owned.clone();
-        runtime_core::driver::spawn_async(async move {
+        // Detached: the clipboard write's result is not read by the screen,
+        // and the overflow menu closes regardless of it.
+        runtime_core::driver::spawn_detached(async move {
             let _ = clipboard::set_text(&text).await;
         });
     });

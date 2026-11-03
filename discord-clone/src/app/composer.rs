@@ -407,39 +407,54 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
         let nextk = attach_next_key;
         busy.set(true);
         err.set(String::new());
-        runtime_core::driver::spawn_async(async move {
-            let outcome = match FilePicker::new()
-                .pick(PickRequest::media(MediaKind::Images).multiple())
-                .await
-            {
-                Ok(outcome) => outcome,
-                Err(e) => {
-                    err.set(format!("file picker: {e}"));
-                    busy.set(false);
-                    return;
-                }
-            };
-            match outcome {
-                PickOutcome::Picked(files) => {
-                    for file in files.iter() {
-                        match file.read_all().await {
-                            Ok(bytes) => stage_attachment(
-                                pending.clone(),
-                                nextk.clone(),
-                                err.clone(),
-                                file.name().to_string(),
-                                file.mime().to_string(),
-                                &bytes,
-                            ),
-                            Err(e) => err.set(format!("could not read the file: {e}")),
+        runtime_core::spawn_then_in(
+            // Anchored on the app shell: the staged-attachment signals live
+            // there, and the '+' handler rebuilds the composer it is inside.
+            &crate::app::shell_alive(),
+            // The picker and each file read await in the future; every signal
+            // write happens in the callback. Per-file results keep their order
+            // so `err` ends up reflecting the last file's outcome, as before.
+            async move {
+                match FilePicker::new()
+                    .pick(PickRequest::media(MediaKind::Images).multiple())
+                    .await
+                {
+                    Err(e) => (Some(format!("file picker: {e}")), Vec::<(String, String, Result<Vec<u8>, String>)>::new()),
+                    Ok(outcome) => {
+                        match outcome {
+                            PickOutcome::Picked(files) => {
+                                let mut staged: Vec<(String, String, Result<Vec<u8>, String>)> = Vec::new();
+                                for file in files.iter() {
+                                    let read = match file.read_all().await {
+                                        Ok(bytes) => Ok(bytes),
+                                        Err(e) => Err(format!("could not read the file: {e}")),
+                                    };
+                                    staged.push((file.name().to_string(), file.mime().to_string(), read));
+                                }
+                                (None, staged)
+                            }
+                            // Cancelled (dismissed picker): back to idle, not an error.
+                            _ => (None, Vec::<(String, String, Result<Vec<u8>, String>)>::new()),
                         }
                     }
                 }
-                // Cancelled (dismissed picker): back to idle, not an error.
-                _ => {}
-            }
-            busy.set(false);
-        });
+            },
+            move |picked| {
+                let (picker_err, staged) = picked;
+                if let Some(msg) = picker_err {
+                    err.set(msg);
+                    busy.set(false);
+                    return;
+                }
+                for (name, mime, read) in staged {
+                    match read {
+                        Ok(bytes) => stage_attachment(pending.clone(), nextk.clone(), err.clone(), name, mime, &bytes),
+                        Err(msg) => err.set(msg),
+                    }
+                }
+                busy.set(false);
+            },
+        );
     };
 
     // Register the robot test hook so an MCP E2E can stage a composer

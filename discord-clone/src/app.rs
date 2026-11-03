@@ -775,95 +775,112 @@ fn app_shell(authed: Signal<bool>) -> Element {
         // to capture its own scroll handle).
         let latbot = live_at_bottom.clone();
         let lhandle = live_scroll_handle.clone();
-        runtime_core::driver::spawn_async(async move {
-            // Fetch directly rather than reading `ls.get()`: `live_servers`
-            // is populated by a SEPARATE spawn_async'd fetch above with no
-            // ordering guarantee relative to this one, so reading the signal
-            // here raced it and (near-)always saw the pre-fetch empty `Vec`,
-            // silently no-op'ing this whole effect. Awaiting our own fetch
-            // makes the decision authoritative regardless of scheduling.
-            let Ok(servers) = crate::servers::list_servers().await else {
-                return;
-            };
-            ls.set(servers.clone());
-            // The saved last view (kind 0 = server+channel, kind 1 = open DM).
-            // A DM-form save carries no server preference: the channel half of
-            // the restore then follows the plain first-server fallback.
-            let saved = crate::auth::load_last_view();
-            let saved_sid = match saved {
-                Some((0, sid, _)) => Some(sid),
-                _ => None
-            };
-            let Some(sid) = saved_sid
-                .filter(|id| servers.iter().any(|s| s.id == *id))
-                .or_else(|| servers.first().map(|s| s.id))
-            else {
-                return; // no live servers: nothing to auto-enter
-            };
-            // Already entered (e.g. a rail tap beat this) — don't clobber it.
-            if als.get().is_some() {
-                return;
-            }
-            // Fetch the unread counts BEFORE selecting the landing channel:
-            // selecting it fires the channel-open effect, which reads the
-            // unread buffer to offer the "N new messages" bar, so the buffer
-            // must already hold the counts when that effect runs.
-            let counts: Vec<crate::servers::UnreadCount> = match crate::servers::unread_counts(sid).await {
-                Ok(c) => c,
-                Err(_) => Vec::new(),
-            };
-            {
-                let buf = lunread.clone();
-                buf.borrow_mut()
-                    .extend(counts.into_iter().map(|c| (c.channel_id, (c.count, c.unread_mentions))));
-                lunread_rev.set(lunread_rev.get() + 1);
-            }
-            lkick.set(None);
-            lbcm.set(None);
-            ltcm.set(None);
-            lmbr_err.set(String::new());
-            lmbrs.set(Vec::new());
-            if let Ok(channels) = crate::servers::list_channels(sid).await {
-                let first = channels
-                    .iter()
-                    .find(|c| c.kind == "text")
-                    .map(|c| c.id);
-                // Prefer the SAVED channel over the first text channel — but
-                // only when it belongs to the server we actually entered and
-                // is a text channel there (a deleted/renamed channel or a
-                // server change makes the saved half stale; stale halves fall
-                // back independently).
-                let saved_cid = match saved {
-                    Some((0, s, c))
-                        if s == sid && channels.iter().any(|ch| ch.kind == "text" && ch.id == c) =>
-                        Some(c),
+        runtime_core::spawn_then_in(
+            // Anchored on the app shell: the restore writes shell-owned
+            // signals (live servers, channel, member roster, unread buffer)
+            // and this block runs while the shell is being built. All fetches
+            // run in the future; the callback does the signal writes in the
+            // same order the old body had.
+            &crate::app::shell_alive(),
+            async move {
+                // Fetch directly rather than reading `ls.get()`: `live_servers`
+                // is populated by a SEPARATE spawn_then_in'd fetch above with no
+                // ordering guarantee relative to this one, so reading the signal
+                // here raced it and (near-)always saw the pre-fetch empty `Vec`,
+                // silently no-op'ing this whole effect. Awaiting our own fetch
+                // makes the decision authoritative regardless of scheduling.
+                let Ok(servers) = crate::servers::list_servers().await else {
+                    return (None, None);
+                };
+                // The saved last view (kind 0 = server+channel, kind 1 = open DM).
+                // A DM-form save carries no server preference: the channel half of
+                // the restore then follows the plain first-server fallback.
+                let saved = crate::auth::load_last_view();
+                let saved_sid = match saved {
+                    Some((0, sid, _)) => Some(sid),
                     _ => None
                 };
-                lch.set(channels);
-                let chosen = saved_cid.or_else(|| first);
-                if let Some(id) = chosen {
-                    alc.set(Some(id));
-                    // Re-arm the live list's scroll state for the restored
-                    // channel — identical to the channel-row select handler
-                    // (start "following the live tail" at the bottom, and
-                    // drop the old pane's captured scroll handle so the
-                    // fresh pane's `on_handle` callback can capture its own).
-                    latbot.set(true);
-                    *lhandle.borrow_mut() = None;
-                    gateway.send(
-                        discord_server::server_settings::WsClientMsg::History {
-                            channel_id: id,
-                            before_id: None,
-                        },
-                    );
+                let Some(sid) = saved_sid
+                    .filter(|id| servers.iter().any(|s| s.id == *id))
+                    .or_else(|| servers.first().map(|s| s.id))
+                else {
+                    return (Some(servers), None); // no live servers: nothing to auto-enter
+                };
+                // Already entered (e.g. a rail tap beat this) — don't clobber it.
+                if als.get().is_some() {
+                    return (Some(servers), None);
                 }
-            }
-            if let Ok(members) = crate::moderation::list_members(sid).await {
-                crate::mentions::members_loaded(sid, &members);
-                lmbrs.set(members);
-            }
-            als.set(Some(sid));
-        });
+                // Fetch the unread counts BEFORE selecting the landing channel:
+                // selecting it fires the channel-open effect, which reads the
+                // unread buffer to offer the "N new messages" bar, so the buffer
+                // must already hold the counts when that effect runs.
+                let counts: Vec<crate::servers::UnreadCount> = match crate::servers::unread_counts(sid).await {
+                    Ok(c) => c,
+                    Err(_) => Vec::new(),
+                };
+                let channels = crate::servers::list_channels(sid).await;
+                let members = crate::moderation::list_members(sid).await;
+                (Some(servers), Some((sid, counts, channels, members, saved)))
+            },
+            move |fetched| {
+                let (servers_opt, payload) = fetched;
+                if let Some(servers) = servers_opt {
+                    ls.set(servers);
+                }
+                let Some((sid, counts, channels, members, saved)) = payload else { return; };
+                {
+                    let buf = lunread.clone();
+                    buf.borrow_mut()
+                        .extend(counts.into_iter().map(|c| (c.channel_id, (c.count, c.unread_mentions))));
+                    lunread_rev.set(lunread_rev.get() + 1);
+                }
+                lkick.set(None);
+                lbcm.set(None);
+                ltcm.set(None);
+                lmbr_err.set(String::new());
+                lmbrs.set(Vec::new());
+                if let Ok(channels) = channels {
+                    let first = channels
+                        .iter()
+                        .find(|c| c.kind == "text")
+                        .map(|c| c.id);
+                    // Prefer the SAVED channel over the first text channel — but
+                    // only when it belongs to the server we actually entered and
+                    // is a text channel there (a deleted/renamed channel or a
+                    // server change makes the saved half stale; stale halves fall
+                    // back independently).
+                    let saved_cid = match saved {
+                        Some((0, s, c))
+                            if s == sid && channels.iter().any(|ch| ch.kind == "text" && ch.id == c) =>
+                            Some(c),
+                        _ => None
+                    };
+                    lch.set(channels);
+                    let chosen = saved_cid.or_else(|| first);
+                    if let Some(id) = chosen {
+                        alc.set(Some(id));
+                        // Re-arm the live list's scroll state for the restored
+                        // channel — identical to the channel-row select handler
+                        // (start "following the live tail" at the bottom, and
+                        // drop the old pane's captured scroll handle so the
+                        // fresh pane's `on_handle` callback can capture its own).
+                        latbot.set(true);
+                        *lhandle.borrow_mut() = None;
+                        gateway.send(
+                            discord_server::server_settings::WsClientMsg::History {
+                                channel_id: id,
+                                before_id: None,
+                            },
+                        );
+                    }
+                }
+                if let Ok(fresh) = members {
+                    crate::mentions::members_loaded(sid, &fresh);
+                    lmbrs.set(fresh);
+                }
+                als.set(Some(sid));
+            },
+        );
     }
 
     // A `History` request sent while the gateway is still connecting is
@@ -945,7 +962,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // point: `live_dm_mode` toggles its own full-screen overlay region, and
     // the mock DM screen is left untouched.
     // `live_dms` holds the fetched conversation list (populated on first open
-    // via `spawn_async` calling `list_dms`); `live_dm_active` the selected DM
+    // via `spawn_then_in` calling `list_dms`); `live_dm_active` the selected DM
     // channel id (None = none); `live_dm_messages`/`live_dm_revision` the
     // fetched history buffer + its rebuild counter (the `revision` bump is the
     // rebuild trigger, the same idiom as `live_messages`/`live_revision`).
@@ -1019,9 +1036,16 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         friends_add_username_entry.set(String::new());
                         friends_add_error_entry.set(String::new());
                         let snap = friends_snap_entry.clone();
-                        runtime_core::driver::spawn_async(
+                        runtime_core::spawn_then_in(
+                            // Anchored on the app shell: the friends snapshot
+                            // is shell-owned state and this handler rebuilds
+                            // the entry panel that owns it.
+                            &crate::app::shell_alive(),
                             async move {
-                                if let Ok(list) = crate::friends::list_friends().await {
+                                Some(crate::friends::list_friends().await)
+                            },
+                            move |fetched| {
+                                if let Some(Ok(list)) = fetched {
                                     snap.set(crate::friends_view::snapshot(list));
                                 }
                             },
@@ -1049,10 +1073,30 @@ fn app_shell(authed: Signal<bool>) -> Element {
             let buf = live_dm_msgs_rc.clone();
             let rev = live_dm_revision.clone();
             let mode = live_dm_mode.clone();
-            runtime_core::driver::spawn_async(
+            runtime_core::spawn_then_in(
+                // Anchored on the app shell: the DM signals (list, active,
+                // history buffer, revision, mode) live there and this handler
+                // can rebuild the Friends panel. start_dm and the history
+                // fetch run in the future; the callback does the writes in the
+                // same order.
+                &crate::app::shell_alive(),
                 async move {
                     let input = discord_server::dms::StartDmInput { user_id: uid };
-                    match discord_server::dms::start_dm(input).await {
+                    let dm = discord_server::dms::start_dm(input).await;
+                    let history = match &dm {
+                        Ok(d) => Some(discord_server::dms::list_dm_messages(
+                            discord_server::dms::ListDmMessagesInput {
+                                channel_id: d.channel_id,
+                                limit: None,
+                            },
+                        ).await),
+                        Err(_) => None,
+                    };
+                    (dm, history)
+                },
+                move |started| {
+                    let (dm, history) = started;
+                    match dm {
                         Ok(dm) => {
                             mode.set(true);
                             // Message closes the Friends panel so the DM
@@ -1068,15 +1112,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             }
                             act.set(Some(dm_id));
                             crate::auth::save_last_view_dm(dm_id);
-                            if let Ok(history) = discord_server::dms::list_dm_messages(
-                                discord_server::dms::ListDmMessagesInput {
-                                    channel_id: dm_id,
-                                    limit: None,
-                                },
-                            ).await {
+                            if let Some(Ok(msgs)) = history {
                                 buf.borrow_mut().clear();
                                 buf.borrow_mut()
-                                    .extend(history.into_iter().map(|msg| (
+                                    .extend(msgs.into_iter().map(|msg| (
                                         msg.author_username,
                                         msg.content,
                                         msg.created_at,
@@ -1107,32 +1146,45 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let act = live_dm_active.clone();
         let buf = live_dm_messages.clone();
         let rev = live_dm_revision.clone();
-        runtime_core::driver::spawn_async(async move {
-            let Some((kind, dm_id, _)) = saved.filter(|(k, _, _)| *k == 1) else { return; };
-            if kind != 1 {
-                return;
-            }
-            let Ok(dms_list) = crate::dms::list_dms().await else { return; };
-            if !dms_list.iter().any(|d| d.channel_id == dm_id) {
-                return; // stale saved DM: keep the default (closed panel)
-            }
-            list.set(dms_list);
-            act.set(Some(dm_id));
-            mode.set(true);
-            // History: identical to the row's `live_dm_row` select handler
-            // (clear + refill the one-conversation buffer, bump the rebuild
-            // counter) — the fetch is the click path's fetch.
-            if let Ok(history) = crate::dms::list_dm_messages(dm_id, None).await {
-                buf.borrow_mut().clear();
-                buf.borrow_mut().extend(history.into_iter().map(|m| (
-                    m.author_username,
-                    m.content,
-                    m.created_at,
-                    m.edited_at,
-                )));
-                rev.set(rev.get() + 1);
-            }
-        });
+        runtime_core::spawn_then_in(
+            // Anchored on the app shell: the restore writes shell-owned DM
+            // signals (list, active, mode, history buffer, revision).
+            &crate::app::shell_alive(),
+            async move {
+                let Some((kind, dm_id, _)) = saved.filter(|(k, _, _)| *k == 1) else { return (None, None); };
+                if kind != 1 {
+                    return (None, None);
+                }
+                let Ok(dms_list) = crate::dms::list_dms().await else { return (None, None); };
+                if !dms_list.iter().any(|d| d.channel_id == dm_id) {
+                    return (None, None); // stale saved DM: keep the default (closed panel)
+                }
+                (Some(dms_list), Some((dm_id, crate::dms::list_dm_messages(dm_id, None).await)))
+            },
+            move |fetched| {
+                let (dms_list, payload) = fetched;
+                if let Some(list_) = dms_list {
+                    list.set(list_);
+                    if let Some((dm_id, history)) = payload {
+                        act.set(Some(dm_id));
+                        mode.set(true);
+                        // History: identical to the row's `live_dm_row` select handler
+                        // (clear + refill the one-conversation buffer, bump the rebuild
+                        // counter) — the fetch is the click path's fetch.
+                        if let Ok(msgs) = history {
+                            buf.borrow_mut().clear();
+                            buf.borrow_mut().extend(msgs.into_iter().map(|m| (
+                                m.author_username,
+                                m.content,
+                                m.created_at,
+                                m.edited_at,
+                            )));
+                            rev.set(rev.get() + 1);
+                        }
+                    }
+                }
+            },
+        );
     }
 
     // Live "Invite People" flow (real backend, live mode only): the `USER_PLUS`

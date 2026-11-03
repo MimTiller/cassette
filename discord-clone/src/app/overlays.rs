@@ -337,17 +337,23 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         let exp = live_invite_expiry.get();
         let code = live_invite_code.clone();
         let err = live_invite_error.clone();
-        runtime_core::driver::spawn_async(async move {
-            let expires_at: Option<i64> = match exp {
-                0 => Some(runtime_shared::time::epoch_millis() / 1000 + 30 * 60),
-                1 => Some(runtime_shared::time::epoch_millis() / 1000 + 24 * 60 * 60),
-                _ => None,
-            };
-            match crate::invite::create_invite(sid, expires_at, None).await {
-                Ok(inv) => code.set(Some(inv.code)),
-                Err(msg) => err.set(msg),
-            }
-        });
+        let expires_at: Option<i64> = match exp {
+            0 => Some(runtime_shared::time::epoch_millis() / 1000 + 30 * 60),
+            1 => Some(runtime_shared::time::epoch_millis() / 1000 + 24 * 60 * 60),
+            _ => None,
+        };
+        runtime_core::spawn_then_in(
+            // Anchored on the app shell: the invite code and error live there,
+            // and this handler rebuilds the overlay it is inside.
+            &crate::app::shell_alive(),
+            crate::invite::create_invite(sid, expires_at, None),
+            move |invited| {
+                match invited {
+                    Ok(inv) => code.set(Some(inv.code)),
+                    Err(msg) => err.set(msg),
+                }
+            },
+        );
     };
     // The content `switch`es on `(code, error)`: with a code it shows the link;
     // otherwise it shows the create form, plus the backend rejection (if the
