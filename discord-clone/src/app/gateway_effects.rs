@@ -497,12 +497,16 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             if let Some(discord_server::server_settings::WsServerMsg::MemberChanged { server_id, .. }) = frame {
                 if active_live_server.get() == Some(*server_id) {
                     let sid = *server_id;
-                    runtime_core::driver::spawn_async(async move {
-                        if let Ok(members) = crate::moderation::list_members(sid).await {
-                            crate::mentions::members_loaded(sid, &members);
-                            live_members.set(members);
-                        }
-                    });
+                    runtime_core::spawn_then_in(
+                        &crate::app::shell_alive(),
+                        crate::moderation::list_members(sid),
+                        move |members| {
+                            if let Ok(members) = members {
+                                crate::mentions::members_loaded(sid, &members);
+                                live_members.set(members);
+                            }
+                        },
+                    );
                 }
             }
             // A server's named roles changed: refetch them (name colours,
@@ -515,16 +519,20 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 // see; refetch them, and leave a channel that just vanished.
                 if active_live_server.get() == Some(*server_id) {
                     let sid = *server_id;
-                    runtime_core::driver::spawn_async(async move {
-                        if let Ok(channels) = crate::servers::list_channels(sid).await {
-                            if let Some(open) = active_live_channel.get() {
-                                if !channels.iter().any(|c| c.id == open) {
-                                    active_live_channel.set(channels.iter().find(|c| c.kind == "text").map(|c| c.id));
+                    runtime_core::spawn_then_in(
+                        &crate::app::shell_alive(),
+                        crate::servers::list_channels(sid),
+                        move |channels| {
+                            if let Ok(channels) = channels {
+                                if let Some(open) = active_live_channel.get() {
+                                    if !channels.iter().any(|c| c.id == open) {
+                                        active_live_channel.set(channels.iter().find(|c| c.kind == "text").map(|c| c.id));
+                                    }
                                 }
+                                live_channels.set(channels);
                             }
-                            live_channels.set(channels);
-                        }
-                    });
+                        },
+                    );
                 }
             }
             if let Some(discord_server::server_settings::WsServerMsg::ProfileChanged {
@@ -537,12 +545,15 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 crate::mentions::names_changed();
                 live_revision.set(live_revision.get() + 1);
                 if let Some(sid) = member_server.get() {
-                    let roster = member_roster.clone();
-                    runtime_core::driver::spawn_async(async move {
-                        if let Ok(fresh) = crate::moderation::list_members(sid).await {
-                            roster.set(fresh);
-                        }
-                    });
+                    runtime_core::spawn_then_in(
+                        &crate::app::shell_alive(),
+                        crate::moderation::list_members(sid),
+                        move |fresh| {
+                            if let Ok(fresh) = fresh {
+                                member_roster.set(fresh);
+                            }
+                        },
+                    );
                 }
             }
             if let Some(discord_server::server_settings::WsServerMsg::MemberChanged {
@@ -552,13 +563,15 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             {
                 let server_id = *server_id;
                 if member_server.get() == Some(server_id) {
-                    let sid = server_id;
-                    let roster = member_roster.clone();
-                    runtime_core::driver::spawn_async(async move {
-                        if let Ok(fresh) = crate::moderation::list_members(sid).await {
-                            roster.set(fresh);
-                        }
-                    });
+                    runtime_core::spawn_then_in(
+                        &crate::app::shell_alive(),
+                        crate::moderation::list_members(server_id),
+                        move |fresh| {
+                            if let Ok(fresh) = fresh {
+                                member_roster.set(fresh);
+                            }
+                        },
+                    );
                 }
             }
             // A friends-list change involving the peer of one of THIS user's
@@ -571,11 +584,12 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             // acting user re-syncs from their RPC return instead (in
             // `friends_view`), so they never wait on this frame.
             if let Some(discord_server::server_settings::WsServerMsg::FriendChanged { .. }) = frame {
-                let snap_sig = friends_snap.clone();
-                runtime_core::driver::spawn_async(
-                    async move {
-                        if let Ok(list) = crate::friends::list_friends().await {
-                            snap_sig.set(crate::friends_view::snapshot(list));
+                runtime_core::spawn_then_in(
+                    &crate::app::shell_alive(),
+                    crate::friends::list_friends(),
+                    move |list| {
+                        if let Ok(list) = list {
+                            friends_snap.set(crate::friends_view::snapshot(list));
                         }
                     },
                 );
@@ -664,7 +678,9 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                     .and_then(|msgs| msgs.last())
                     .map(|m| m.0)
                 {
-                    runtime_core::driver::spawn_async(async move {
+                    // Detached: the mark-read's result isn't read by the screen, so
+                    // the RPC must finish even after the row rebuilds.
+                    runtime_core::driver::spawn_detached(async move {
                         let _ = crate::servers::mark_read(cid, last_id).await;
                     });
                 }
