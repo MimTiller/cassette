@@ -244,6 +244,7 @@ pub async fn set_profile(input: SetProfileInput) -> Result<ProfileFields, Server
             user_id: user,
             username,
             display_name: fields.display_name.clone(),
+            seq: crate::server_settings::next_frame_seq(),
         },
     );
     Ok(fields)

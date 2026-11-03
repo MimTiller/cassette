@@ -176,6 +176,7 @@ pub async fn block_user(input: BlockUserInput) -> Result<BlockedUser, ServerErro
         &crate::server_settings::WsServerMsg::FriendChanged {
             friend_id: blocked.user_id,
             action: "removed".to_string(),
+            seq: crate::server_settings::next_frame_seq(),
         },
     );
     Ok(blocked)
@@ -198,6 +199,7 @@ pub async fn unblock_user(input: BlockUserInput) -> Result<BlockedUser, ServerEr
         &crate::server_settings::WsServerMsg::FriendChanged {
             friend_id: blocked.user_id,
             action: "removed".to_string(),
+            seq: crate::server_settings::next_frame_seq(),
         },
     );
     Ok(blocked)

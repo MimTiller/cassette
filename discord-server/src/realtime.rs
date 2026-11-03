@@ -22,7 +22,7 @@ use tokio::sync::mpsc;
 use crate::db::{Db, Message};
 use crate::permissions::{self, Permissions};
 use crate::rate_limit::RateLimiter;
-use crate::server_settings::WsServerMsg;
+use crate::server_settings::{WsServerMsg, next_frame_seq};
 
 /// Identifies one open socket of a user.
 pub type ConnId = u64;
@@ -190,6 +190,7 @@ pub fn announce_presence(db: &Db, user_id: i64, status: &str) {
         &WsServerMsg::Presence {
             user_id,
             status: status.to_string(),
+            seq: next_frame_seq(),
         },
     );
 }
@@ -229,6 +230,7 @@ pub fn announce_membership(db: &Db, server_id: i64, user_id: i64, joined: bool) 
             server_id,
             user_id,
             joined,
+            seq: next_frame_seq(),
         },
     );
 }
@@ -422,6 +424,7 @@ pub fn post_channel_message(
             attachments: wire_attachments,
             // Cards follow in a `MessageEmbeds` frame once fetched.
             embeds: Vec::new(),
+            seq: next_frame_seq(),
         },
     );
     crate::link_previews::schedule(db, channel_id, message_id, content, perms.contains(Permissions::EMBED_LINKS));
@@ -477,6 +480,7 @@ pub fn edit_channel_message(
             content: content.to_string(),
             edited_at,
             mentioned_user_ids,
+            seq: next_frame_seq(),
         },
     );
     // Links added or removed change the cards.
@@ -502,7 +506,7 @@ pub fn delete_channel_message(db: &Db, user_id: i64, message_id: i64) -> Result<
         .map_err(|e| format!("failed to delete message: {e}"))?;
     hub().publish(
         &channel_audience(db, channel_id),
-        &WsServerMsg::MessageDeleted { message_id, channel_id },
+        &WsServerMsg::MessageDeleted { message_id, channel_id, seq: next_frame_seq() },
     );
     Ok(())
 }
@@ -540,6 +544,7 @@ pub fn add_channel_reaction(
             user_id,
             emoji: emoji.to_string(),
             count,
+            seq: next_frame_seq(),
         },
     );
     Ok((channel_id, count))
@@ -578,6 +583,7 @@ pub fn remove_channel_reaction(
             user_id,
             emoji: emoji.to_string(),
             count,
+            seq: next_frame_seq(),
         },
     );
     Ok((channel_id, count))
@@ -660,7 +666,7 @@ mod tests {
         let (_a2, mut ra2) = h.register(1);
         let (_b, mut rb) = h.register(2);
         let (_c, mut rc) = h.register(3);
-        let msg = WsServerMsg::Error { reason: "x".into() };
+        let msg = WsServerMsg::Error { reason: "x".into(), seq: 1 };
         // Users 1 and 2 (1 listed twice): 2 sockets for user 1 + 1 for user 2.
         assert_eq!(h.publish(&[1, 2, 1], &msg), 3);
         assert!(ra1.try_recv().is_ok() && ra2.try_recv().is_ok() && rb.try_recv().is_ok());
@@ -675,7 +681,7 @@ mod tests {
     async fn hub_drops_events_for_a_full_queue_instead_of_blocking() {
         let h = Hub::default();
         let (_id, mut rx) = h.register(1);
-        let msg = WsServerMsg::Error { reason: "x".into() };
+        let msg = WsServerMsg::Error { reason: "x".into(), seq: 1 };
         for _ in 0..QUEUE_DEPTH {
             assert_eq!(h.publish(&[1], &msg), 1);
         }
@@ -967,6 +973,7 @@ mod tests {
                 content,
                 edited_at,
                 mentioned_user_ids,
+                seq: _,
             } => {
                 assert_eq!(mentioned_user_ids, vec![2]);
                 assert_eq!((message_id, channel_id), (mid, 1));
@@ -1016,6 +1023,7 @@ mod tests {
             WsServerMsg::MessageDeleted {
                 message_id,
                 channel_id,
+                seq: _,
             } => assert_eq!((message_id, channel_id), (mid, 1)),
             other => panic!("expected MessageDeleted, got {other:?}"),
         }
@@ -1249,7 +1257,7 @@ mod tests {
         // instead: Bob's own arrival is announced to Alice (a shared server).
         assert!(
             next_matching(&mut alice, |m| matches!(
-                m, WsServerMsg::Presence { user_id: 2, status } if status == "online"
+                m, WsServerMsg::Presence { user_id: 2, status, .. } if status == "online"
             ))
             .await
             .is_some(),
@@ -1267,13 +1275,13 @@ mod tests {
         // 4. Authorization: a non-member cannot post or read; voice is not text.
         send(&mut dave, &WsClientMsg::Send { channel_id: 1, content: "sneaky".into(), reply_to_message_id: None, attachments: Vec::new() }).await;
         let err = next_matching(&mut dave, |m| matches!(m, WsServerMsg::Error { .. })).await;
-        assert!(matches!(err, Some(WsServerMsg::Error { ref reason }) if reason.contains("not a member")));
+        assert!(matches!(err, Some(WsServerMsg::Error { ref reason, .. }) if reason.contains("not a member")));
         send(&mut dave, &WsClientMsg::History { channel_id: 1, before_id: None }).await;
         let err = next_matching(&mut dave, |m| matches!(m, WsServerMsg::Error { .. })).await;
-        assert!(matches!(err, Some(WsServerMsg::Error { ref reason }) if reason.contains("not a member")));
+        assert!(matches!(err, Some(WsServerMsg::Error { ref reason, .. }) if reason.contains("not a member")));
         send(&mut alice, &WsClientMsg::Send { channel_id: 2, content: "into voice".into(), reply_to_message_id: None, attachments: Vec::new() }).await;
         let err = next_matching(&mut alice, |m| matches!(m, WsServerMsg::Error { .. })).await;
-        assert!(matches!(err, Some(WsServerMsg::Error { ref reason }) if reason.contains("not a text")));
+        assert!(matches!(err, Some(WsServerMsg::Error { ref reason, .. }) if reason.contains("not a text")));
         assert!(hears_nothing(&mut bob, is_msg("sneaky")).await);
         assert_eq!(db.recent_messages(1, 10).len(), 1, "only alice's valid post persisted");
 
@@ -1286,7 +1294,7 @@ mod tests {
         drop(bob);
         assert!(
             next_matching(&mut alice, |m| matches!(
-                m, WsServerMsg::Presence { user_id: 2, status } if status == "offline"
+                m, WsServerMsg::Presence { user_id: 2, status, .. } if status == "offline"
             ))
             .await
             .is_some(),

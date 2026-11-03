@@ -136,7 +136,24 @@ pub enum WsClientMsg {
     SetStatus { status: String },
 }
 
+/// The next frame sequence number. EVERY outbound `WsServerMsg` carries a
+/// unique `seq` so no two frames delivered to one socket are ever equal: the
+/// client watches frames with `switch(move || gateway.incoming().get(), …)`,
+/// and `switch` skips a key equal to the last one, so a frame identical to
+/// the previous frame (e.g. a second `RolesChanged` for the same server)
+/// would be silently dropped and its change never applied. Stamping every
+/// frame from one shared counter fixes that for every variant at once;
+/// older clients ignore the field through `#[serde(default)]`.
+pub fn next_frame_seq() -> u64 {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Outbound frames the server sends.
+///
+/// Every variant carries `seq`: the frame's position in the process-wide
+/// frame stream from [`crate::server_settings::next_frame_seq`], so two
+/// frames for the same socket always compare unequal (see the note there).
 ///
 /// `PartialEq` is required on the client side: the `#[server::channel]`
 /// macro's generated stub calls `server::use_socket::<WsServerMsg, _>`, whose
@@ -194,12 +211,24 @@ pub enum WsServerMsg {
         /// `MessageEmbeds` frame.
         #[serde(default)]
         embeds: Vec<crate::link_previews::Embed>,
+        #[serde(default)]
+        seq: u64,
     },
     /// A message's link preview cards, after they were fetched or after an
     /// edit changed its links (empty = remove them).
-    MessageEmbeds { message_id: i64, channel_id: i64, embeds: Vec<crate::link_previews::Embed> },
+    MessageEmbeds {
+        message_id: i64,
+        channel_id: i64,
+        embeds: Vec<crate::link_previews::Embed>,
+        #[serde(default)]
+        seq: u64,
+    },
     /// A server's custom emoji changed; members refetch them.
-    EmojiChanged { server_id: i64 },
+    EmojiChanged {
+        server_id: i64,
+        #[serde(default)]
+        seq: u64,
+    },
     /// The most recent `Message { new: false }` frames for `History`.
     ///
     /// `has_more` is the client's scrollback-exhausted signal: it is `true`
@@ -210,21 +239,55 @@ pub enum WsServerMsg {
     /// `History { before_id }` page would return anything — the client compares
     /// the marker's `has_more` to decide whether to keep the pill mounted,
     /// rather than re-deriving it from the page's own length.
-    History { channel_id: i64, has_more: bool },
+    History {
+        channel_id: i64,
+        has_more: bool,
+        #[serde(default)]
+        seq: u64,
+    },
     /// A direct message pushed to a participant of the DM (always `new`).
-    DmMessage { message_id: i64, dm_id: i64, author_id: i64, author_username: String, #[serde(default)] author_avatar: Option<String>, content: String, created_at: i64 },
+    DmMessage {
+        message_id: i64,
+        dm_id: i64,
+        author_id: i64,
+        author_username: String,
+        #[serde(default)]
+        author_avatar: Option<String>,
+        content: String,
+        created_at: i64,
+        #[serde(default)]
+        seq: u64,
+    },
     /// A DM's members or name changed (or the DM was created). Sent to its
     /// members, including anyone just removed; clients refetch `list_dms`.
-    DmChanged { dm_id: i64 },
+    DmChanged {
+        dm_id: i64,
+        #[serde(default)]
+        seq: u64,
+    },
     /// A presence status change for a user: 'online' / 'away' / 'offline'.
-    Presence { user_id: i64, status: String },
+    Presence {
+        user_id: i64,
+        status: String,
+        #[serde(default)]
+        seq: u64,
+    },
     /// The user's own picked status ("online" / "idle" / "dnd" /
     /// "invisible"): sent on connect, and to each of their sockets when it
     /// changes.
-    StatusChoice { status: String },
+    StatusChoice {
+        status: String,
+        #[serde(default)]
+        seq: u64,
+    },
     /// A channel member started typing. The client shows this transiently
     /// (a few seconds) and does not need an explicit stop event.
-    Typing { channel_id: i64, user_id: i64 },
+    Typing {
+        channel_id: i64,
+        user_id: i64,
+        #[serde(default)]
+        seq: u64,
+    },
     /// A channel message was edited. The client replaces the stored content
     /// (and its timestamp) for `message_id` with the new values;
     /// `mentioned_user_ids` is the mention list recomputed for the new text.
@@ -235,6 +298,8 @@ pub enum WsServerMsg {
         edited_at: i64,
         #[serde(default)]
         mentioned_user_ids: Vec<i64>,
+        #[serde(default)]
+        seq: u64,
     },
     /// A server's named roles or their holders changed; clients refetch
     /// `server_roles::server_roles`. `seq` differs on every frame: the
@@ -247,17 +312,34 @@ pub enum WsServerMsg {
     },
     /// A channel message was deleted. The client drops its stored entry for
     /// `message_id`.
-    MessageDeleted { message_id: i64, channel_id: i64 },
+    MessageDeleted {
+        message_id: i64,
+        channel_id: i64,
+        #[serde(default)]
+        seq: u64,
+    },
     /// A member joined (`joined: true`) or left (`joined: false`) the server.
     /// Fired by the join (invite redemption) and leave (kick/ban) paths so the
     /// server's *other* members see the roster change live — the client
     /// re-fetches `list_members` for the active server on receipt (the same
     /// re-fetch the local kick path already triggers). No roster data rides on
     /// the frame; the re-fetch supplies it.
-    MemberChanged { server_id: i64, user_id: i64, joined: bool },
+    MemberChanged {
+        server_id: i64,
+        user_id: i64,
+        joined: bool,
+        #[serde(default)]
+        seq: u64,
+    },
     /// A user changed their display name (`None` = show the username).
     /// Sent to everyone who shares a server with them.
-    ProfileChanged { user_id: i64, username: String, display_name: Option<String> },
+    ProfileChanged {
+        user_id: i64,
+        username: String,
+        display_name: Option<String>,
+        #[serde(default)]
+        seq: u64,
+    },
     /// A member added (or removed) an emoji reaction on a channel message.
     /// `count` is the message's total for `emoji` AFTER the operation (0 when
     /// the last reaction was removed), so clients SET the pill's count rather
@@ -270,6 +352,8 @@ pub enum WsServerMsg {
         user_id: i64,
         emoji: String,
         count: u32,
+        #[serde(default)]
+        seq: u64,
     },
     ReactionRemove {
         message_id: i64,
@@ -277,6 +361,8 @@ pub enum WsServerMsg {
         user_id: i64,
         emoji: String,
         count: u32,
+        #[serde(default)]
+        seq: u64,
     },
     /// The friends list changed for the socket's owner: a friend request was
     /// sent / auto-accepted (`action` = 'requested' / 'accepted'), declined or
@@ -284,9 +370,18 @@ pub enum WsServerMsg {
     /// user in the pair. The client re-fetches `list_friends` on receipt (the
     /// same re-fetch pattern as `MemberChanged`) — no relationship data rides
     /// on the frame; the re-fetch supplies it.
-    FriendChanged { friend_id: i64, action: String },
+    FriendChanged {
+        friend_id: i64,
+        action: String,
+        #[serde(default)]
+        seq: u64,
+    },
     /// A gateway error for a specific operation.
-    Error { reason: String },
+    Error {
+        reason: String,
+        #[serde(default)]
+        seq: u64,
+    },
 }
 
 /// How long an idle (no inbound frame) socket may sit before its owner's
@@ -344,7 +439,7 @@ pub async fn message_gateway(
     // socket is authenticated. The client learns its picked status here.
     let mut active = true;
     refresh_presence(&db, user_id, active);
-    let _ = ch.send(WsServerMsg::StatusChoice { status: db.status_choice(user_id) }).await;
+    let _ = ch.send(WsServerMsg::StatusChoice { status: db.status_choice(user_id), seq: next_frame_seq() }).await;
 
     // Only inbound client frames count as activity (events pushed to this
     // socket must not keep an idle user "online").
@@ -407,7 +502,7 @@ pub async fn message_gateway(
                         attachments,
                     )
                 {
-                    let _ = ch.send(WsServerMsg::Error { reason }).await;
+                    let _ = ch.send(WsServerMsg::Error { reason, seq: next_frame_seq() }).await;
                 }
             }
             WsClientMsg::History {
@@ -428,6 +523,7 @@ pub async fn message_gateway(
                         .send(WsServerMsg::History {
                             channel_id,
                             has_more,
+                            seq: next_frame_seq(),
                         })
                         .await;
                     let server_id = db.channel_full(channel_id).map(|c| c.1).unwrap_or(0);
@@ -466,6 +562,7 @@ pub async fn message_gateway(
                                     ))
                                     .collect(),
                                 embeds: crate::link_previews::embeds_for(&db, m.id),
+                                seq: next_frame_seq(),
                                 })
                             .await;
                     }
@@ -474,6 +571,7 @@ pub async fn message_gateway(
                     let _ = ch
                         .send(WsServerMsg::Error {
                             reason: reason.to_string(),
+                            seq: next_frame_seq(),
                         })
                         .await;
                 }
@@ -486,7 +584,7 @@ pub async fn message_gateway(
                 let audience: Vec<i64> = channel_audience(&db, channel_id).into_iter().filter(|&id| id != user_id).collect();
                 hub.publish(
                     &audience,
-                    &WsServerMsg::Typing { channel_id, user_id },
+                    &WsServerMsg::Typing { channel_id, user_id, seq: next_frame_seq() },
                 );
             }
             WsClientMsg::EditMessage {
@@ -498,20 +596,20 @@ pub async fn message_gateway(
                 if let Err(reason) =
                     crate::realtime::edit_channel_message(&db, user_id, message_id, &content)
                 {
-                    let _ = ch.send(WsServerMsg::Error { reason }).await;
+                    let _ = ch.send(WsServerMsg::Error { reason, seq: next_frame_seq() }).await;
                 }
             }
             WsClientMsg::DeleteMessage { message_id } => {
                 if let Err(reason) =
                     crate::realtime::delete_channel_message(&db, user_id, message_id)
                 {
-                    let _ = ch.send(WsServerMsg::Error { reason }).await;
+                    let _ = ch.send(WsServerMsg::Error { reason, seq: next_frame_seq() }).await;
                 }
             }
             WsClientMsg::SetStatus { status } => {
                 if db.set_status_choice(user_id, &status).is_ok() {
                     // The user's other tabs show the new pick too.
-                    hub.publish(&[user_id], &WsServerMsg::StatusChoice { status });
+                    hub.publish(&[user_id], &WsServerMsg::StatusChoice { status, seq: next_frame_seq() });
                     refresh_presence(&db, user_id, active);
                 }
             }
@@ -2519,6 +2617,41 @@ mod tests {
             v.get("Err").is_some(),
             "unauthenticated unread_counts must fail, got {v:?}"
         );
+    }
+
+    #[test]
+    fn seq_default_keeps_old_client_frames_parsing() {
+        // A frame JSON as an older server sent it (no `seq` on the wire)
+        // must still deserialize for this client: `#[serde(default)]` on
+        // every variant's `seq` is what keeps old servers/clients working.
+        let legacy = r#"{"MessageDeleted":{"message_id":4,"channel_id":2}}"#;
+        let parsed = serde_json::from_str::<WsServerMsg>(legacy).unwrap();
+        assert_eq!(parsed, WsServerMsg::MessageDeleted { message_id: 4, channel_id: 2, seq: 0 });
+    }
+
+    #[test]
+    fn stamped_frames_never_compare_equal() {
+        // The client's frame `switch` skips a key equal to the last one, so
+        // two consecutive frames must never be `==`: stamping both from the
+        // shared counter makes them differ even when every payload field is
+        // the same (the second RolesChanged/ProfileChanged for the same
+        // target used to be silently dropped).
+        let first = WsServerMsg::RolesChanged { server_id: 7, seq: next_frame_seq() };
+        let second = WsServerMsg::RolesChanged { server_id: 7, seq: next_frame_seq() };
+        assert_ne!(first, second, "same payload, distinct seq");
+        let profile_a = WsServerMsg::ProfileChanged {
+            user_id: 3,
+            username: "alice".to_string(),
+            display_name: Some("Ali".to_string()),
+            seq: next_frame_seq(),
+        };
+        let profile_b = WsServerMsg::ProfileChanged {
+            user_id: 3,
+            username: "alice".to_string(),
+            display_name: Some("Ali".to_string()),
+            seq: next_frame_seq(),
+        };
+        assert_ne!(profile_a, profile_b, "identical ProfileChanged frames differ by seq");
     }
 
     /// Acquire the e2e serialization guard; hold it for the whole test body.
