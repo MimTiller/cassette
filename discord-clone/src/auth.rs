@@ -29,92 +29,10 @@ pub async fn set_avatar(avatar: Option<String>) -> Result<Option<String>, String
         .map_err(|e| crate::errors::friendly(&e))
 }
 
-/// Authenticate with a username + password and return the account's numeric
-/// id on success, or an error message on failure.
-///
-/// A thin wrapper over the backend `#[server]` fn: it packs the credentials
-/// into [`discord_server::auth::LoginInput`], awaits the RPC stub, and
-/// flattens the result. On success the returned id is recorded in
-/// [`CURRENT_USER_ID`] and the signed session token is stored in
-/// [`CURRENT_TOKEN`]; the client threads the token back as
-/// `Authorization: Bearer <token>` on every backend call. On failure the
-/// `ServerError` (which implements `Display`) is flattened into its message.
-///
-/// # Errors
-/// Returns `Err(message)` for any failure — bad credentials, account
-/// lockout, or a transport/protocol-level `ServerError` (network, codec,
-/// version). The message is user-facing
-/// text from `errors::friendly`.
-pub async fn login(username: &str, password: &str) -> Result<i64, String> {
-    let creds = discord_server::auth::LoginInput {
-        username: username.to_string(),
-        password: password.to_string(),
-    };
-
-    match discord_server::auth::login(creds).await {
-        Ok(result) => {
-            CURRENT_USER_ID
-                .store(result.user_id, std::sync::atomic::Ordering::SeqCst);
-            *CURRENT_TOKEN.lock().unwrap_or_else(|p| p.into_inner()) = result.token.clone();
-            let username = result.username.clone();
-            *CURRENT_USERNAME.lock().unwrap_or_else(|p| p.into_inner()) = username.clone();
-            // Persist the signed session so a page refresh (which wipes these
-            // statics and reloads the WASM module) can restore it without a
-            // re-login — username included, so the profile strip keeps the
-            // real identity after a refresh too. `signup` funnels through
-            // `login`, so one call site covers both. The avatar URL rides
-            // along so a refresh restores the uploaded image without a
-            // second round trip.
-            save_session(&result.token, result.user_id, &username, result.avatar_url.clone());
-            remember_display_name(&username, result.display_name.clone());
-            // Register the author's avatar so every other surface (message
-            // rows, member lists, DMs) resolves it by username.
-            if !username.is_empty() {
-                crate::auth::remember_avatar(
-                    username.as_str(),
-                    result.avatar_url.clone(),
-                );
-            }
-            Ok(result.user_id)
-        }
-        Err(error) => Err(crate::errors::friendly(&error)),
-    }
-}
-
-/// Create a new account with a username + password and return the account's
-/// numeric id on success, or an error message on failure.
-///
-/// A thin wrapper over the backend `#[server]` fn
-/// [`discord_server::auth::signup`]: it packs the credentials into
-/// [`discord_server::auth::SignupInput`], awaits the RPC stub, and flattens
-/// the result. On success it immediately logs the new account in via
-/// [`login`] with the same credentials, so the user lands signed in without
-/// retyping their password (the numeric id is recorded in [`CURRENT_USER_ID`]
-/// and the signed session token in [`CURRENT_TOKEN`]); the id returned by the
-/// login is the value returned here. On a signup failure (e.g. "username
-/// already taken") or a transport `ServerError`, the message is flattened
-/// into `Err`.
-///
-/// # Errors
-/// Returns `Err(message)` for any failure — a duplicate username, or a
-/// transport/protocol-level `ServerError` (network, codec, version). The message is user-facing
-/// text from `errors::friendly`.
-pub async fn signup(username: &str, password: &str) -> Result<i64, String> {
-    let input = discord_server::auth::SignupInput {
-        username: username.to_string(),
-        password: password.to_string(),
-    };
-
-    match discord_server::auth::signup(input).await {
-        Ok(_result) => {
-            // Account created. Log the new account straight in with the same
-            // credentials so the caller lands signed in — this also records
-            // the signed session token in [`CURRENT_TOKEN`].
-            login(username, password).await
-        }
-        Err(error) => Err(crate::errors::friendly(&error)),
-    }
-}
+// Sign-in (`login`), sign-up, password change/reset and logout live in
+// `crate::identity` — the `AuthProvider` seam calls this module's session
+// storage (`save_session`/`load_session`) and writes the process-wide
+// holders below when a provider hands back a signed-in identity.
 
 /// Rename the signed-in account's handle on the backend, then refresh the
 /// process-wide [`CURRENT_USERNAME`] so the profile strip reflects the new
@@ -143,34 +61,6 @@ pub async fn change_username(new_username: &str) -> Result<String, String> {
                 result.username.clone();
             Ok(result.username)
         }
-        Err(error) => Err(crate::errors::friendly(&error)),
-    }
-}
-
-/// Change the signed-in account's password, after the backend verifies the
-/// current one. The current password is never sent anywhere but this call and
-/// is never stored client-side.
-///
-/// Thin wrapper over the backend `#[server]` fn
-/// [`discord_server::auth::change_password`]: it packs the old + new passwords
-/// into [`discord_server::auth::ChangePasswordInput`], awaits the RPC stub,
-/// and flattens the result. The session token is unchanged by a password
-/// change (the token is a signature over the user id, not the password), so
-/// the caller stays signed in.
-///
-/// # Errors
-/// Returns `Err(message)` for any failure — a wrong current password, a blank
-/// new password, being unauthenticated, or a transport-level `ServerError`.
-/// The message is user-facing
-/// text from `errors::friendly`.
-pub async fn change_password(current_password: &str, new_password: &str) -> Result<(), String> {
-    let input = discord_server::auth::ChangePasswordInput {
-        current_password: current_password.to_string(),
-        new_password: new_password.to_string(),
-    };
-
-    match discord_server::auth::change_password(input).await {
-        Ok(_) => Ok(()),
         Err(error) => Err(crate::errors::friendly(&error)),
     }
 }
@@ -368,6 +258,10 @@ const TOKEN_CRED_KEY: &str = "session_token";
 const ID_USER_KEY: &str = "identity.user_id";
 const ID_USERNAME_KEY: &str = "identity.username";
 const ID_AVATAR_KEY: &str = "identity.avatar";
+// Which provider created the session ("password" for the username +
+// password RPCs); an older build's session has no key and restores as the
+// password provider (see `crate::identity::parse_provider_id`).
+const ID_PROVIDER_KEY: &str = "identity.provider";
 
 /// The process-wide storage-SDK handle (`platform_storage(STORE_NS)`) —
 /// `localStorage` prefixed `discord-clone:` on web, the platform's native
@@ -396,7 +290,7 @@ const LEGACY_SESSION_KEY: &str = "discord_session";
 ///   client-side token at all — an identity key in `storage` is the signal
 ///   that a session was started, and any authed backend call validates it.
 /// - the non-secret identity (id, username, avatar) rides the `storage` SDK.
-pub(crate) fn save_session(token: &str, user_id: i64, username: &str, avatar_url: Option<String>) {
+pub(crate) fn save_session(token: &str, user_id: i64, username: &str, avatar_url: Option<String>, provider: &str) {
     if user_id == 0 {
         return;
     }
@@ -409,6 +303,7 @@ pub(crate) fn save_session(token: &str, user_id: i64, username: &str, avatar_url
     let _ = store.set_now(ID_USERNAME_KEY, username);
     let avatar = avatar_url.unwrap_or_default();
     let _ = store.set_now(ID_AVATAR_KEY, &avatar);
+    let _ = store.set_now(ID_PROVIDER_KEY, provider);
     #[cfg(not(target_arch = "wasm32"))]
     {
         // The secret half, native-only: the OS secure store via the
@@ -469,6 +364,11 @@ pub(crate) fn load_session() -> Option<(String, i64, String, Option<String>)> {
     let username = store.get_now(ID_USERNAME_KEY).ok().flatten().unwrap_or_default();
     let avatar = store.get_now(ID_AVATAR_KEY).ok().flatten().unwrap_or_default();
     let avatar = if avatar.is_empty() { None } else { Some(avatar) };
+    // Which provider created this session: read the tag and route the
+    // restored session through it (an older build wrote no tag, which
+    // `remember_provider` maps back to the password provider).
+    let raw_provider = store.get_now(ID_PROVIDER_KEY).ok().flatten().unwrap_or_default();
+    crate::identity::remember_provider(raw_provider);
     // The secret half, read back from where it was written: the OS secure
     // store on native; on web there is no client-side token at all (empty
     // slot) — the httpOnly session cookie authenticates every replay.
@@ -492,30 +392,6 @@ pub(crate) fn load_session() -> Option<(String, i64, String, Option<String>)> {
     Some((token, user_id, username, avatar))
 }
 
-/// Ask the backend to log the session out: it clears the httpOnly `session`
-/// cookie, so a page reload lands on the login screen rather than replaying a
-/// dead session. Fire-and-forget: the client-side `clear_session()` already
-/// dropped the identity keys, so a failed RPC cannot resurrect the shell.
-pub(crate) fn request_logout() {
-    runtime_core::driver::spawn_async(async move {
-        let _ = discord_server::auth::logout().await;
-    });
-}
-
-/// "Log out of all devices": revoke every session of this account on the
-/// server, drop this device's session, and reload into the login screen.
-pub(crate) fn request_logout_everywhere() {
-    runtime_core::driver::spawn_async(async move {
-        if discord_server::auth::logout_everywhere().await.is_ok() {
-            clear_session();
-            #[cfg(target_arch = "wasm32")]
-            if let Some(w) = web_sys::window() {
-                let _ = w.location().reload();
-            }
-        }
-    });
-}
-
 /// Drop the persisted session (logout), so a refresh doesn't restore it. The
 /// web half also relies on the `logout` server fn having cleared the httpOnly
 /// cookie — both halves are needed: keys gone AND cookie gone.
@@ -531,6 +407,7 @@ pub(crate) fn clear_session() {
     let _ = store().remove_now(ID_USER_KEY);
     let _ = store().remove_now(ID_USERNAME_KEY);
     let _ = store().remove_now(ID_AVATAR_KEY);
+    let _ = store().remove_now(ID_PROVIDER_KEY);
     #[cfg(not(target_arch = "wasm32"))]
     {
         let creds = credentials::platform_credentials(CREDS_NS);
@@ -675,19 +552,6 @@ pub(crate) fn load_last_view() -> Option<(i64, i64, i64)> {
     }
     // Shared, tested parser (the pure half of the grammar).
     parse_last_view(&raw)
-}
-
-/// Set a new password with the token from a reset link. Returns the account's
-/// username so the login form can be filled in.
-pub async fn reset_password(token: &str, new_password: &str) -> Result<String, String> {
-    let input = discord_server::password_resets::ResetPasswordInput {
-        token: token.to_string(),
-        new_password: new_password.to_string(),
-    };
-    match discord_server::password_resets::reset_password(input).await {
-        Ok(result) => Ok(result.username),
-        Err(error) => Err(crate::errors::friendly(&error)),
-    }
 }
 
 /// The token from a password reset link (`/?reset=<token>`), if the page was

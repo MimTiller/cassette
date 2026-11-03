@@ -36,7 +36,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
     let on_close: Rc<dyn Fn()> = Rc::new(move || notif_mode.set(false));
     let on_logout: Rc<dyn Fn()> = Rc::new(move || {
         crate::auth::clear_session();
-        crate::auth::request_logout();
+        crate::identity::request_logout();
         *super::SESSION_NOTE.lock().unwrap_or_else(|p| p.into_inner()) = None;
         notif_mode.set(false);
         authed.set(false);
