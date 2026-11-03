@@ -18,12 +18,19 @@ thread_local! {
 
 /// Fetch `server_id`'s emoji, then redraw everything that shows names.
 pub(crate) fn load(server_id: i64) {
-    runtime_core::driver::spawn_async(async move {
-        if let Ok(list) = se::server_emoji(se::ServerEmojiInput { server_id }).await {
-            LIST.with(|l| *l.borrow_mut() = list);
-            crate::mentions::names_changed();
-        }
-    });
+    // The RPC runs in the future; the list write and the names-changed bump
+    // land in the callback, anchored on the app shell so a torn-down screen
+    // drops the writes instead of touching freed slots.
+    runtime_core::spawn_then_in(
+        &crate::app::shell_alive(),
+        se::server_emoji(se::ServerEmojiInput { server_id }),
+        move |result| {
+            if let Ok(list) = result {
+                LIST.with(|l| *l.borrow_mut() = list);
+                crate::mentions::names_changed();
+            }
+        },
+    );
 }
 
 /// The active server's emoji, by name.
