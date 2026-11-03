@@ -162,27 +162,37 @@ pub fn members_loaded(server_id: i64, members: &[discord_server::server_settings
 pub fn load_roles(server_id: i64) {
     crate::notif_prefs::load();
     crate::custom_emoji::load(server_id);
-    runtime_core::driver::spawn_async(async move {
-        let input = server_roles::ServerRolesInput { server_id };
-        if let Ok(snap) = server_roles::server_roles(input).await {
-            with(|c| c.roles = snap);
-            bump();
-        }
-        let input = permissions::MyPermissionsInput { server_id };
-        if let Ok(mine) = permissions::my_permissions(input).await {
-            let current = with(|c| {
-                let current = c.server_id.is_none_or(|s| s == mine.server_id);
-                if current {
-                    c.perms = Some(mine);
-                }
-                current
-            });
-            if current {
-                bump_perms();
+    runtime_core::spawn_then_in(
+        // Anchored on the app shell: the revision signals written below were
+        // installed by app_shell, and this runs from short-lived handlers
+        // (a row tap, a gateway frame) whose own nodes die before the reply.
+        &crate::app::shell_alive(),
+        async move {
+            let snap = server_roles::server_roles(server_roles::ServerRolesInput { server_id }).await;
+            let mine = permissions::my_permissions(permissions::MyPermissionsInput { server_id }).await;
+            (snap, mine)
+        },
+        move |result| {
+            let (snap, mine) = result;
+            if let Ok(snap) = snap {
+                with(|c| c.roles = snap);
                 bump();
             }
-        }
-    });
+            if let Ok(mine) = mine {
+                let current = with(|c| {
+                    let current = c.server_id.is_none_or(|s| s == mine.server_id);
+                    if current {
+                        c.perms = Some(mine);
+                    }
+                    current
+                });
+                if current {
+                    bump_perms();
+                    bump();
+                }
+            }
+        },
+    );
 }
 
 fn bump_perms() {

@@ -53,7 +53,10 @@ pub(super) fn request_live_reaction(
         MessageKey::Live { id } => id,
     };
     picker.set(None);
-    runtime_core::driver::spawn_async(async move {
+    // Fire-and-forget: the pill isn't written here — the server broadcasts a
+    // ReactionAdd/ReactionRemove frame that gateway_incoming_effect applies.
+    // The request must outlive this row's handler, so it stays detached.
+    runtime_core::driver::spawn_detached(async move {
         if remove {
             let _ = crate::reactions::remove_reaction(id, emoji).await;
         } else {

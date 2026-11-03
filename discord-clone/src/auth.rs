@@ -29,92 +29,10 @@ pub async fn set_avatar(avatar: Option<String>) -> Result<Option<String>, String
         .map_err(|e| crate::errors::friendly(&e))
 }
 
-/// Authenticate with a username + password and return the account's numeric
-/// id on success, or an error message on failure.
-///
-/// A thin wrapper over the backend `#[server]` fn: it packs the credentials
-/// into [`discord_server::auth::LoginInput`], awaits the RPC stub, and
-/// flattens the result. On success the returned id is recorded in
-/// [`CURRENT_USER_ID`] and the signed session token is stored in
-/// [`CURRENT_TOKEN`]; the client threads the token back as
-/// `Authorization: Bearer <token>` on every backend call. On failure the
-/// `ServerError` (which implements `Display`) is flattened into its message.
-///
-/// # Errors
-/// Returns `Err(message)` for any failure — bad credentials, account
-/// lockout, or a transport/protocol-level `ServerError` (network, codec,
-/// version). The message is user-facing
-/// text from `errors::friendly`.
-pub async fn login(username: &str, password: &str) -> Result<i64, String> {
-    let creds = discord_server::auth::LoginInput {
-        username: username.to_string(),
-        password: password.to_string(),
-    };
-
-    match discord_server::auth::login(creds).await {
-        Ok(result) => {
-            CURRENT_USER_ID
-                .store(result.user_id, std::sync::atomic::Ordering::SeqCst);
-            *CURRENT_TOKEN.lock().unwrap_or_else(|p| p.into_inner()) = result.token.clone();
-            let username = result.username.clone();
-            *CURRENT_USERNAME.lock().unwrap_or_else(|p| p.into_inner()) = username.clone();
-            // Persist the signed session so a page refresh (which wipes these
-            // statics and reloads the WASM module) can restore it without a
-            // re-login — username included, so the profile strip keeps the
-            // real identity after a refresh too. `signup` funnels through
-            // `login`, so one call site covers both. The avatar URL rides
-            // along so a refresh restores the uploaded image without a
-            // second round trip.
-            save_session(&result.token, result.user_id, &username, result.avatar_url.clone());
-            remember_display_name(&username, result.display_name.clone());
-            // Register the author's avatar so every other surface (message
-            // rows, member lists, DMs) resolves it by username.
-            if !username.is_empty() {
-                crate::auth::remember_avatar(
-                    username.as_str(),
-                    result.avatar_url.clone(),
-                );
-            }
-            Ok(result.user_id)
-        }
-        Err(error) => Err(crate::errors::friendly(&error)),
-    }
-}
-
-/// Create a new account with a username + password and return the account's
-/// numeric id on success, or an error message on failure.
-///
-/// A thin wrapper over the backend `#[server]` fn
-/// [`discord_server::auth::signup`]: it packs the credentials into
-/// [`discord_server::auth::SignupInput`], awaits the RPC stub, and flattens
-/// the result. On success it immediately logs the new account in via
-/// [`login`] with the same credentials, so the user lands signed in without
-/// retyping their password (the numeric id is recorded in [`CURRENT_USER_ID`]
-/// and the signed session token in [`CURRENT_TOKEN`]); the id returned by the
-/// login is the value returned here. On a signup failure (e.g. "username
-/// already taken") or a transport `ServerError`, the message is flattened
-/// into `Err`.
-///
-/// # Errors
-/// Returns `Err(message)` for any failure — a duplicate username, or a
-/// transport/protocol-level `ServerError` (network, codec, version). The message is user-facing
-/// text from `errors::friendly`.
-pub async fn signup(username: &str, password: &str) -> Result<i64, String> {
-    let input = discord_server::auth::SignupInput {
-        username: username.to_string(),
-        password: password.to_string(),
-    };
-
-    match discord_server::auth::signup(input).await {
-        Ok(_result) => {
-            // Account created. Log the new account straight in with the same
-            // credentials so the caller lands signed in — this also records
-            // the signed session token in [`CURRENT_TOKEN`].
-            login(username, password).await
-        }
-        Err(error) => Err(crate::errors::friendly(&error)),
-    }
-}
+// Sign-in (`login`), sign-up, password change/reset and logout live in
+// `crate::identity` — the `AuthProvider` seam calls this module's session
+// storage (`save_session`/`load_session`) and writes the process-wide
+// holders below when a provider hands back a signed-in identity.
 
 /// Rename the signed-in account's handle on the backend, then refresh the
 /// process-wide [`CURRENT_USERNAME`] so the profile strip reflects the new
@@ -147,34 +65,6 @@ pub async fn change_username(new_username: &str) -> Result<String, String> {
     }
 }
 
-/// Change the signed-in account's password, after the backend verifies the
-/// current one. The current password is never sent anywhere but this call and
-/// is never stored client-side.
-///
-/// Thin wrapper over the backend `#[server]` fn
-/// [`discord_server::auth::change_password`]: it packs the old + new passwords
-/// into [`discord_server::auth::ChangePasswordInput`], awaits the RPC stub,
-/// and flattens the result. The session token is unchanged by a password
-/// change (the token is a signature over the user id, not the password), so
-/// the caller stays signed in.
-///
-/// # Errors
-/// Returns `Err(message)` for any failure — a wrong current password, a blank
-/// new password, being unauthenticated, or a transport-level `ServerError`.
-/// The message is user-facing
-/// text from `errors::friendly`.
-pub async fn change_password(current_password: &str, new_password: &str) -> Result<(), String> {
-    let input = discord_server::auth::ChangePasswordInput {
-        current_password: current_password.to_string(),
-        new_password: new_password.to_string(),
-    };
-
-    match discord_server::auth::change_password(input).await {
-        Ok(_) => Ok(()),
-        Err(error) => Err(crate::errors::friendly(&error)),
-    }
-}
-
 /// The signed-in account's numeric id, kept process-wide so it outlives the
 /// login screen (which unmounts the moment `authed` flips). `0` means "not
 /// logged in" — the sentinel the store starts at. It still rides the realtime
@@ -199,6 +89,20 @@ pub(crate) static CURRENT_TOKEN: std::sync::Mutex<String> =
 /// [`load_session`]).
 pub(crate) static CURRENT_USERNAME: std::sync::Mutex<String> =
     std::sync::Mutex::new(String::new());
+
+/// The backend host the current session belongs to — the base URL
+/// `configure_server` pointed the RPC stubs at. The persisted session is a
+/// map keyed by this, and `current_token`/`current_username` (which read the
+/// process-wide holders) answer for the CURRENT host's entry. Today one host
+/// is in play; a future multi-host client holds one entry per host.
+pub(crate) static CURRENT_HOST: std::sync::Mutex<String> =
+    std::sync::Mutex::new(String::new());
+
+/// The backend host in effect (the base URL `configure_server` installed), or
+/// an empty string before startup wired it up.
+pub(crate) fn current_host() -> String {
+    CURRENT_HOST.lock().map(|h| h.clone()).unwrap_or_else(|p| p.into_inner().clone())
+}
 
 /// The current session token, or an empty string when not logged in.
 pub(crate) fn current_token() -> String {
@@ -302,6 +206,10 @@ pub fn configure_server() {
     let base = server::dev_base_url()
         .or_else(page_origin)
         .unwrap_or_else(|| "http://127.0.0.1:3000".into());
+    // The host the session map is keyed by: the persisted session lives
+    // under this base URL's entry, and `current_token`/`current_username`
+    // answer for it.
+    *CURRENT_HOST.lock().unwrap_or_else(|p| p.into_inner()) = base.clone();
     server::configure(
         server::ClientConfig::new(base).with_credentials(server::credentials_from_fn(|| {
             let token = current_token();
@@ -368,6 +276,138 @@ const TOKEN_CRED_KEY: &str = "session_token";
 const ID_USER_KEY: &str = "identity.user_id";
 const ID_USERNAME_KEY: &str = "identity.username";
 const ID_AVATAR_KEY: &str = "identity.avatar";
+// Which provider created the session ("password" for the username +
+// password RPCs); an older build's session has no key and restores as the
+// password provider (see `crate::identity::parse_provider_id`).
+const ID_PROVIDER_KEY: &str = "identity.provider";
+
+// --- host-keyed session map -------------------------------------------------
+//
+// The saved session is a MAP keyed by the backend host it was signed against
+// (the base URL `configure_server` installed), so a client that later
+// connects to several community hosts at once keeps one identity per host.
+// Today exactly one entry exists: the current host's. The keys above are the
+// LEGACY un-namespaced form (one session, no host) and migrate into the map
+// on load, so an account signed in before the restructure restores signed-in
+// rather than being signed out.
+//
+// A host-scoped key is `<field>@<host>` inside the same `discord-clone:`
+// namespace, plus a `session.hosts` line listing which hosts have entries.
+// Hosts contain no `@`, and the list is ':'-free, so the grammar stays a
+// compact tagged line (no JSON parser dep).
+
+/// The storage-SDK key listing the hosts that have session entries.
+const HOSTS_KEY: &str = "session.hosts";
+
+/// Split the host-list value. The separator is `|` (never `:` — a base URL
+/// like `http://127.0.0.1:3000` carries colons; a URL never contains `|`).
+pub(crate) fn parse_host_list(raw: &str) -> Vec<String> {
+    raw.split('|').filter(|h| !h.is_empty()).map(String::from).collect()
+}
+
+/// The host-list value for a set of hosts.
+pub(crate) fn format_host_list(hosts: &[String]) -> String {
+    hosts.join("|")
+}
+
+/// The host-scoped key for an identity field. Hosts contain no `@` and the
+/// field name has a fixed `.` prefix, so `<field>@<host>` never collides with
+/// another key.
+pub(crate) fn host_key(field: &str, host: &str) -> String {
+    format!("{field}@{host}")
+}
+
+/// The map's `HostSession` for `host`, read straight off the storage-SDK
+/// keys (its own credential slot per host, so it lives under
+/// `host_key(TOKEN_CRED_KEY, host)`). `None` when the host has no saved
+/// entry (no identity id) — a legacy un-namespaced session is not in the
+/// map, and `load_session` migrates it in before consulting this.
+pub(crate) fn host_entry(store: std::sync::Arc<dyn storage::Storage>, host: &str) -> Option<HostSession> {
+    if host.is_empty() {
+        return None;
+    }
+    let raw_id = store.get_now(&host_key(ID_USER_KEY, host)).ok().flatten().unwrap_or_default();
+    let user_id = raw_id.trim().parse::<i64>().unwrap_or(0);
+    if user_id == 0 {
+        return None;
+    }
+    let username =
+        store.get_now(&host_key(ID_USERNAME_KEY, host)).ok().flatten().unwrap_or_default();
+    let avatar_raw =
+        store.get_now(&host_key(ID_AVATAR_KEY, host)).ok().flatten().unwrap_or_default();
+    let provider =
+        store.get_now(&host_key(ID_PROVIDER_KEY, host)).ok().flatten().unwrap_or_default();
+    // The secret half from this host's credential slot: on native the OS
+    // secure store holds it; on web there is no client-side token (empty),
+    // the httpOnly session cookie authenticates every replay instead.
+    #[cfg(not(target_arch = "wasm32"))]
+    let token =
+        credentials::platform_credentials(CREDS_NS)
+            .get(&host_key(TOKEN_CRED_KEY, host))
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+    #[cfg(target_arch = "wasm32")]
+    let token = String::new();
+    let avatar_url = if avatar_raw.is_empty() { None } else { Some(avatar_raw) };
+    Some(HostSession { host: host.to_string(), provider, user_id, username, token, avatar_url })
+}
+
+/// Write a `HostSession` into the map under `host` and index the host.
+pub(crate) fn save_host_entry(store: std::sync::Arc<dyn storage::Storage>, entry: HostSession) {
+    let host = entry.host.as_str();
+    if host.is_empty() {
+        return;
+    }
+    let uid_str = entry.user_id.to_string();
+    let avatar = entry.avatar_url.unwrap_or_default();
+    let name = entry.username;
+    let prov = entry.provider;
+    let tok = entry.token;
+    let _ = store.set_now(&host_key(ID_USER_KEY, host), &uid_str);
+    let _ = store.set_now(&host_key(ID_USERNAME_KEY, host), &name);
+    let _ = store.set_now(&host_key(ID_AVATAR_KEY, host), &avatar);
+    let _ = store.set_now(&host_key(ID_PROVIDER_KEY, host), &prov);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = credentials::platform_credentials(CREDS_NS)
+            .set(&host_key(TOKEN_CRED_KEY, host), &tok);
+    }
+    remember_host(host);
+}
+
+/// Add `host` to the persisted host index (no-op if already present).
+pub(crate) fn remember_host(host: &str) {
+    if host.is_empty() {
+        return;
+    }
+    let store = store();
+    let raw = store.get_now(HOSTS_KEY).ok().flatten().unwrap_or_default();
+    let hosts = parse_host_list(&raw);
+    if hosts.iter().any(|h| h == host) {
+        return;
+    }
+    let updated = format_host_list(&hosts);
+    let updated = if updated.is_empty() { host.to_string() } else { format!("{updated}|{host}") };
+    let _ = store.set_now(HOSTS_KEY, &updated);
+}
+
+/// Remove `host` from the persisted host index (no-op if absent).
+pub(crate) fn forget_host(host: &str) {
+    if host.is_empty() {
+        return;
+    }
+    let store = store();
+    let raw = store.get_now(HOSTS_KEY).ok().flatten().unwrap_or_default();
+    let hosts = parse_host_list(&raw);
+    if hosts.iter().all(|h| h != host) {
+        return;
+    }
+    let kept: Vec<String> = hosts.iter().filter(|h| *h != host)
+        .map(|h| h.to_string()).collect();
+    let updated = format_host_list(&kept);
+    let _ = store.set_now(HOSTS_KEY, &updated);
+}
 
 /// The process-wide storage-SDK handle (`platform_storage(STORE_NS)`) —
 /// `localStorage` prefixed `discord-clone:` on web, the platform's native
@@ -396,26 +436,35 @@ const LEGACY_SESSION_KEY: &str = "discord_session";
 ///   client-side token at all — an identity key in `storage` is the signal
 ///   that a session was started, and any authed backend call validates it.
 /// - the non-secret identity (id, username, avatar) rides the `storage` SDK.
-pub(crate) fn save_session(token: &str, user_id: i64, username: &str, avatar_url: Option<String>) {
+pub(crate) fn save_session(token: &str, user_id: i64, username: &str, avatar_url: Option<String>, provider: &str) {
     if user_id == 0 {
         return;
     }
-    let store = store();
-    // Identity first (all targets) — `get_now`/`set_now` are the synchronous
-    // half of the Storage trait; every shipped store answers them. Failures
-    // fold to no-ops: losing persistence must not break the running app.
-    let uid_str = user_id.to_string();
-    let _ = store.set_now(ID_USER_KEY, &uid_str);
-    let _ = store.set_now(ID_USERNAME_KEY, username);
-    let avatar = avatar_url.unwrap_or_default();
-    let _ = store.set_now(ID_AVATAR_KEY, &avatar);
+    // The signed session is one entry in the host-keyed map: the CURRENT
+    // host's slot (the base URL `configure_server` installed). Today that is
+    // the only entry; a multi-host client signs into several hosts and keeps
+    // one `HostSession` per host.
+    let host = current_host();
+    save_host_entry(store(), HostSession {
+        host,
+        provider: provider.to_string(),
+        user_id,
+        username: username.to_string(),
+        token: token.to_string(),
+        avatar_url,
+    });
+    // Sweep the legacy un-namespaced keys: a re-login replaces the single
+    // pre-host session with this host's entry, so the stale copy must not
+    // linger and get re-migrated on the next load.
+    let _ = store().remove_now(ID_USER_KEY);
+    let _ = store().remove_now(ID_USERNAME_KEY);
+    let _ = store().remove_now(ID_AVATAR_KEY);
+    let _ = store().remove_now(ID_PROVIDER_KEY);
     #[cfg(not(target_arch = "wasm32"))]
     {
-        // The secret half, native-only: the OS secure store via the
-        // credentials SDK. On web this block does not exist at all — the
-        // token must never touch localStorage.
-        let creds = credentials::platform_credentials(CREDS_NS);
-        let _ = creds.set(TOKEN_CRED_KEY, token);
+        // The legacy secret slot (native): drop it once the fresh token is
+        // written into this host's slot above.
+        let _ = credentials::platform_credentials(CREDS_NS).remove(TOKEN_CRED_KEY);
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -436,14 +485,44 @@ pub(crate) fn refresh_saved_avatar(avatar_url: Option<String>) {
     if user_id == 0 {
         return;
     }
+    let host = current_host();
+    if host.is_empty() {
+        return;
+    }
     let avatar = avatar_url.unwrap_or_default();
-    let _ = store().set_now(ID_AVATAR_KEY, &avatar);
+    let host_own = current_host();
+    let _ = store().set_now(&host_key(ID_AVATAR_KEY, &host_own), &avatar);
 }
 
-/// A persisted session `(token, user_id, username, avatar_url)`, or `None`
-/// when there is none to restore. On NATIVE the token comes back from the
-/// `credentials` SDK (the OS secure store); on WEB the token slot is always
-/// empty — the httpOnly `session` cookie the browser still carries
+/// A saved session for one backend host: the identity that host certified
+/// this device with. The persisted session is a map of these keyed by `host`
+/// (the base URL `configure_server` installed); today the map holds exactly
+/// the current host's entry. A future multi-host client holds one per host.
+pub(crate) struct HostSession {
+    /// The backend host this entry belongs to (its base URL).
+    pub host: String,
+    /// Which provider created it ("password" today); an older build's entry
+    /// has no tag and restores as the password provider.
+    pub provider: String,
+    /// The account's numeric id on that host.
+    pub user_id: i64,
+    /// The account's username.
+    pub username: String,
+    /// The signed session token (empty on web — the cookie authenticates).
+    pub token: String,
+    /// The account's stored avatar (`None` = the default initial circle).
+    pub avatar_url: Option<String>,
+}
+
+/// A persisted session `(token, user_id, username, avatar_url)` for the
+/// CURRENT host, or `None` when there is none to restore. The persisted
+/// session is a map keyed by host (see [`HostSession`]); this reads the
+/// current host's entry. A session saved before the host-keyed restructure
+/// (a single un-namespaced identity) migrates into the map under the
+/// current host here, so a returning account stays signed in rather than
+/// being signed out. On NATIVE the token comes back from the `credentials`
+/// SDK (the OS secure store) under this host's slot; on WEB the token slot
+/// is always empty — the httpOnly `session` cookie the browser replays
 /// authenticates every request and the WebSocket upgrade after a reload, and
 /// JS can (by design) never read the cookie to put it back in the slot. The
 /// identity keys decide whether a reload restores a signed-in shell. The
@@ -452,78 +531,82 @@ pub(crate) fn refresh_saved_avatar(avatar_url: Option<String>) {
 /// that had none when saved.
 pub(crate) fn load_session() -> Option<(String, i64, String, Option<String>)> {
     let store = store();
-    let raw_id = store.get_now(ID_USER_KEY).ok().flatten().unwrap_or_default();
-    let user_id = raw_id.trim().parse::<i64>().unwrap_or(0);
-    if user_id == 0 {
-        // Nothing to restore — and sweep the pre-migration raw-token keys so
-        // an old session's secret never lingers in localStorage once a fresh
-        // login rewrites through the SDK stores.
-        #[cfg(target_arch = "wasm32")]
-        {
-            if let Some(legacy) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
-                let _ = legacy.remove_item(LEGACY_SESSION_KEY);
-            }
-        }
-        return None;
+    let host = current_host();
+    // Read the current host's entry from the map.
+    if let Some(entry) = host_entry(store.clone(), &host) {
+        // Which provider created this session: route the restored session
+        // back through the provider that created it (an older build wrote no
+        // tag, which `remember_provider` maps back to the password provider).
+        crate::identity::remember_provider(entry.provider);
+        return Some((entry.token, entry.user_id, entry.username, entry.avatar_url));
     }
-    let username = store.get_now(ID_USERNAME_KEY).ok().flatten().unwrap_or_default();
-    let avatar = store.get_now(ID_AVATAR_KEY).ok().flatten().unwrap_or_default();
-    let avatar = if avatar.is_empty() { None } else { Some(avatar) };
-    // The secret half, read back from where it was written: the OS secure
-    // store on native; on web there is no client-side token at all (empty
-    // slot) — the httpOnly session cookie authenticates every replay.
-    #[cfg(not(target_arch = "wasm32"))]
-    let token =
-        credentials::platform_credentials(CREDS_NS)
-            .get(TOKEN_CRED_KEY)
-            .ok()
-            .flatten()
-            .unwrap_or_default();
-    #[cfg(target_arch = "wasm32")]
-    let token = String::new();
+    // Migrate a legacy single saved session (pre-host-restructure) into the
+    // map under the current host, so an existing account restores signed-in.
+    let legacy_id = store.get_now(ID_USER_KEY).ok().flatten().unwrap_or_default();
+    let legacy_uid = legacy_id.trim().parse::<i64>().unwrap_or(0);
+    if legacy_uid != 0 && !host.is_empty() {
+        let legacy_username =
+            store.get_now(ID_USERNAME_KEY).ok().flatten().unwrap_or_default();
+        let legacy_avatar_raw =
+            store.get_now(ID_AVATAR_KEY).ok().flatten().unwrap_or_default();
+        let legacy_provider =
+            store.get_now(ID_PROVIDER_KEY).ok().flatten().unwrap_or_default();
+        // The native secret half rides in the legacy credential slot; web has
+        // no client-side token (the cookie authenticates).
+        #[cfg(not(target_arch = "wasm32"))]
+        let legacy_token =
+            credentials::platform_credentials(CREDS_NS)
+                .get(TOKEN_CRED_KEY)
+                .ok()
+                .flatten()
+                .unwrap_or(String::new());
+        #[cfg(target_arch = "wasm32")]
+        let legacy_token = String::new();
+        let legacy_avatar =
+            if legacy_avatar_raw.is_empty() { None } else { Some(legacy_avatar_raw) };
+        crate::identity::remember_provider(legacy_provider.clone());
+        let entry = HostSession {
+            host: host.to_string(),
+            provider: legacy_provider,
+            user_id: legacy_uid,
+            username: legacy_username,
+            token: legacy_token,
+            avatar_url: legacy_avatar,
+        };
+        // Snapshot the restore tuple before the entry moves into the map.
+        let restored = (entry.token.clone(), entry.user_id, entry.username.clone(), entry.avatar_url.clone());
+        save_host_entry(store.clone(), entry);
+        // Drop the legacy keys so the migrated entry is not re-written (and
+        // can't resurrect after a logout) on the next load.
+        let _ = store.remove_now(ID_USER_KEY);
+        let _ = store.remove_now(ID_USERNAME_KEY);
+        let _ = store.remove_now(ID_AVATAR_KEY);
+        let _ = store.remove_now(ID_PROVIDER_KEY);
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            // The legacy secret slot's token rode into the host's slot above
+            // (via `save_host_entry`); just drop the old slot.
+            let _ = credentials::platform_credentials(CREDS_NS).remove(TOKEN_CRED_KEY);
+        }
+        return Some(restored);
+    }
+    // Nothing to restore — and sweep the pre-migration raw-token keys so an
+    // old session's secret never lingers in localStorage once a fresh login
+    // rewrites through the SDK stores.
     #[cfg(target_arch = "wasm32")]
     {
-        // Drop the pre-migration raw-token key: old sessions require one fresh
-        // login rather than resurrecting a secret out of localStorage.
         if let Some(legacy) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
             let _ = legacy.remove_item(LEGACY_SESSION_KEY);
         }
     }
-    Some((token, user_id, username, avatar))
-}
-
-/// Ask the backend to log the session out: it clears the httpOnly `session`
-/// cookie, so a page reload lands on the login screen rather than replaying a
-/// dead session. Fire-and-forget: the client-side `clear_session()` already
-/// dropped the identity keys, so a failed RPC cannot resurrect the shell.
-pub(crate) fn request_logout() {
-    // Detached on purpose: the logout RPC must finish even while the shell
-    // reloads to the login screen, and the body writes no signals.
-    runtime_core::driver::spawn_detached(async move {
-        let _ = discord_server::auth::logout().await;
-    });
-}
-
-/// "Log out of all devices": revoke every session of this account on the
-/// server, drop this device's session, and reload into the login screen.
-pub(crate) fn request_logout_everywhere() {
-    // Detached on purpose: the page reloads to the login screen while this
-    // runs, and after the await it only touches storage (clear_session) and
-    // browser navigation, never signals.
-    runtime_core::driver::spawn_detached(async move {
-        if discord_server::auth::logout_everywhere().await.is_ok() {
-            clear_session();
-            #[cfg(target_arch = "wasm32")]
-            if let Some(w) = web_sys::window() {
-                let _ = w.location().reload();
-            }
-        }
-    });
+    None
 }
 
 /// Drop the persisted session (logout), so a refresh doesn't restore it. The
 /// web half also relies on the `logout` server fn having cleared the httpOnly
-/// cookie — both halves are needed: keys gone AND cookie gone.
+/// cookie — both halves are needed: keys gone AND cookie gone. Only the
+/// CURRENT host's entry is dropped from the map; a future multi-host client
+/// logging out of one host leaves the others' sessions intact.
 pub(crate) fn clear_session() {
     // Only the SIGNED-IN user's last-view key is dropped — other accounts
     // sharing this browser/origin keep their own last-view so logging A out
@@ -533,13 +616,36 @@ pub(crate) fn clear_session() {
     if uid != 0 {
         let _ = store().remove_now(&format!("last_view.{uid}"));
     }
+    // Drop the current host's map entry and de-index it.
+    let host = current_host();
+    if !host.is_empty() {
+        let _ = store().remove_now(&host_key(ID_USER_KEY, &host));
+        let _ = store().remove_now(&host_key(ID_USERNAME_KEY, &host));
+        let _ = store().remove_now(&host_key(ID_AVATAR_KEY, &host));
+        let _ = store().remove_now(&host_key(ID_PROVIDER_KEY, &host));
+        forget_host(&host);
+    }
+    // Sweep any legacy un-namespaced identity left by a pre-restructure build
+    // that never migrated (a logout before any reload), so it can't restore.
     let _ = store().remove_now(ID_USER_KEY);
     let _ = store().remove_now(ID_USERNAME_KEY);
     let _ = store().remove_now(ID_AVATAR_KEY);
+    let _ = store().remove_now(ID_PROVIDER_KEY);
     #[cfg(not(target_arch = "wasm32"))]
     {
+        // Drop both the current host's secret slot and the legacy slot.
         let creds = credentials::platform_credentials(CREDS_NS);
+        if !host.is_empty() {
+            let _ = creds.remove(&host_key(TOKEN_CRED_KEY, &host));
+        }
         let _ = creds.remove(TOKEN_CRED_KEY);
+    }
+    // Drop the pre-migration raw-token key that lived in localStorage.
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(legacy) = web_sys::window().and_then(|w| w.local_storage().ok().flatten()) {
+            let _ = legacy.remove_item(LEGACY_SESSION_KEY);
+        }
     }
 }
 
@@ -577,6 +683,49 @@ pub(crate) fn parse_last_view(raw: &str) -> Option<(i64, i64, i64)> {
             Some((0, parts[1].parse().ok()?, parts[3].parse().ok()?)),
         2 if tag == "d" => Some((1, parts[1].parse().ok()?, 0)),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod host_session_tests {
+    use crate::auth::host_key;
+    use crate::auth::parse_host_list;
+    use crate::auth::format_host_list;
+    use crate::auth::ID_USER_KEY;
+    use crate::auth::ID_USERNAME_KEY;
+
+    #[test]
+    fn host_scoped_keys_are_unique_per_host() {
+        // The map's keys carry the host so two community servers keep
+        // separate entries inside the same storage namespace.
+        let a = host_key(ID_USER_KEY, "http://127.0.0.1:8085");
+        let b = host_key(ID_USER_KEY, "http://other.host:9000");
+        assert_ne!(a, b);
+        assert!(a.contains("@http://127.0.0.1:8085"));
+        // Same field on the same host round-trips identically.
+        assert_eq!(host_key(ID_USERNAME_KEY, "http://x"), host_key(ID_USERNAME_KEY, "http://x"));
+    }
+
+    #[test]
+    fn the_host_index_survives_colons_in_urls() {
+        // Base URLs carry ':' (scheme and port) — the index separator must not
+        // be ':' or every host would split into fragments.
+        let hosts: Vec<String> = Vec::from([
+            "http://127.0.0.1:8085".to_string(),
+            "https://a.b:1/c".to_string(),
+        ]);
+        assert_eq!(parse_host_list(&format_host_list(&hosts)), hosts);
+        assert!(hosts.iter().all(|h| !h.contains("|")));
+    }
+
+    #[test]
+    fn an_empty_or_bogus_host_index_parses_cleanly() {
+        // Hand-edited localStorage garbage must not crash the restore.
+        let empty: Vec<String> = Vec::new();
+        assert_eq!(parse_host_list(""), empty);
+        assert_eq!(parse_host_list("||"), empty);
+        assert_eq!(parse_host_list("http://a||http://b"),
+            Vec::from(["http://a", "http://b"]));
     }
 }
 
@@ -680,19 +829,6 @@ pub(crate) fn load_last_view() -> Option<(i64, i64, i64)> {
     }
     // Shared, tested parser (the pure half of the grammar).
     parse_last_view(&raw)
-}
-
-/// Set a new password with the token from a reset link. Returns the account's
-/// username so the login form can be filled in.
-pub async fn reset_password(token: &str, new_password: &str) -> Result<String, String> {
-    let input = discord_server::password_resets::ResetPasswordInput {
-        token: token.to_string(),
-        new_password: new_password.to_string(),
-    };
-    match discord_server::password_resets::reset_password(input).await {
-        Ok(result) => Ok(result.username),
-        Err(error) => Err(crate::errors::friendly(&error)),
-    }
 }
 
 /// The token from a password reset link (`/?reset=<token>`), if the page was

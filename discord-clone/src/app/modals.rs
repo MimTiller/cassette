@@ -77,91 +77,112 @@ pub(super) fn build(s: &ShellState) -> ModalsParts {
             let buf = live_unread.clone();
             let c_err = create_error;
             let c_busy = create_busy;
-            runtime_core::driver::spawn_async(async move {
-                // Clear any prior rejection and mark in-flight; the modal's
-                // Create button shows "Creating…" while this runs (the busy
-                // guard also stops a fast double-tap from minting two).
-                c_err.set(String::new());
-                c_busy.set(true);
-                match crate::servers::create_server(&name_owned).await {
-                    Ok(summary) => {
-                        // The backend persisted the server + default channel;
-                        // re-fetch the live server list (the same RPC the rail's
-                        // live section uses) so the new server appears without a
-                        // reload.
-                        if let Ok(list) = crate::servers::list_servers().await {
-                            live_servers.set(list);
+            c_err.set(String::new());
+            c_busy.set(true);
+            runtime_core::spawn_then_in(
+                // Anchored on the app shell: the create modal's busy/error and
+                // the rail/pane signals live there, and this handler rebuilds
+                // the modal it sits in. Create and every follow-up fetch run in
+                // the future; the callback does the signal writes in order.
+                &crate::app::shell_alive(),
+                async move {
+                    let created = crate::servers::create_server(&name_owned).await;
+                    match &created {
+                        Ok(summary) => {
+                            let sid = summary.id;
+                            (created,
+                                Some(crate::servers::list_servers().await),
+                                Some(crate::servers::list_channels(sid).await),
+                                Some(crate::moderation::list_members(sid).await),
+                                Some(crate::servers::unread_counts(sid).await))
                         }
-                        // Auto-enter the new server, mirroring the enter-live
-                        // handler: select it, reset any stale channel/moderation
-                        // state, and pull its channels + roster + unread counts.
-                        active_live_server.set(Some(summary.id));
-                        active_live_channel.set(None);
-                        live_kick_confirm.set(None);
-                        live_member_error.set(String::new());
-                        live_members.set(Vec::new());
-                        let sid = summary.id;
-                        if let Ok(channels) = crate::servers::list_channels(sid).await {
-                            // Auto-select the first text channel (same as the
-                            // enter-live tile handler): the main panes key on
-                            // `active_live_channel`, so a freshly created server
-                            // would otherwise sit on a stale / mock main pane
-                            // until a channel row is tapped.
-                            let first = channels
-                                .iter()
-                                .find(|c| c.kind == "text")
-                                .map(|c| c.id);
-                            live_channels.set(channels);
-                            if let Some(id) = first {
-                                active_live_channel.set(Some(id));
-                                // Persist the landing spot for this account so
-                                // a refresh re-enters the just-created server's
-                                // first channel.
-                                crate::auth::save_last_view_channel(summary.id, id);
-                                // See the enter-live tile handler's identical
-                                // fix: auto-selecting doesn't fetch history on
-                                // its own, so send it explicitly or the fresh
-                                // server sits on an empty pane until a channel
-                                // row is manually re-tapped.
-                                gateway.send(
-                                    discord_server::server_settings::WsClientMsg::History {
-                                        channel_id: id,
-                                        before_id: None,
-                                    },
-                                );
+                        Err(_) => (created, None, None, None, None)
+                    }
+                },
+                move |created_and| {
+                    let (created, server_list, channel_list, member_list, count_list) = created_and;
+                    match created {
+                        Ok(summary) => {
+                            // The backend persisted the server + default
+                            // channel; re-fetch the live server list (the same
+                            // RPC the rail's live section uses) so the new
+                            // server appears without a reload.
+                            if let Some(Ok(list)) = server_list {
+                                live_servers.set(list);
                             }
+                            // Auto-enter the new server, mirroring the enter-
+                            // live handler: select it, reset any stale channel/
+                            // moderation state, and pull its channels + roster
+                            // + unread counts.
+                            active_live_server.set(Some(summary.id));
+                            active_live_channel.set(None);
+                            live_kick_confirm.set(None);
+                            live_member_error.set(String::new());
+                            live_members.set(Vec::new());
+                            if let Some(Ok(channels)) = channel_list {
+                                // Auto-select the first text channel (same as
+                                // the enter-live tile handler): the main panes
+                                // key on `active_live_channel`, so a freshly
+                                // created server would otherwise sit on a
+                                // stale / mock main pane until a channel row
+                                // is tapped.
+                                let first = channels
+                                    .iter()
+                                    .find(|c| c.kind == "text")
+                                    .map(|c| c.id);
+                                live_channels.set(channels);
+                                if let Some(id) = first {
+                                    active_live_channel.set(Some(id));
+                                    // Persist the landing spot for this account
+                                    // so a refresh re-enters the just-created
+                                    // server's first channel.
+                                    crate::auth::save_last_view_channel(summary.id, id);
+                                    // Auto-selecting doesn't fetch history on
+                                    // its own, so send it explicitly or the
+                                    // fresh server sits on an empty pane until
+                                    // a channel row is manually re-tapped.
+                                    gateway.send(
+                                        discord_server::server_settings::WsClientMsg::History {
+                                            channel_id: id,
+                                            before_id: None,
+                                        },
+                                    );
+                                }
+                            }
+                            if let Some(Ok(members)) = Some(member_list).flatten() {
+                                crate::mentions::members_loaded(summary.id, &members);
+                                live_members.set(members);
+                            }
+                            if let Some(Ok(counts)) = count_list {
+                                let rev = live_unread_rev;
+                                buf.borrow_mut()
+                                    .extend(counts.into_iter().map(|c| {
+                                        (c.channel_id, (c.count, c.unread_mentions))
+                                    }));
+                                rev.set(rev.get() + 1);
+                            }
+                            // Success: the server exists and we're auto-entering
+                            // it, so close the modal. (On the error path below
+                            // the modal stays open so the inline message is
+                            // visible and the name field can be corrected and
+                            // resubmitted.)
+                            create_open.set(false);
                         }
-                        if let Ok(members) = crate::moderation::list_members(sid).await {
-                            crate::mentions::members_loaded(sid, &members);
-                            live_members.set(members);
+                        Err(msg) => {
+                            // Surface the backend's own rejection inline in the
+                            // modal (e.g. an empty name -> "server name must not
+                            // be empty"). The modal stays open; the name field
+                            // is still editable so the user can correct it and
+                            // hit Create again. We do NOT close here — closing
+                            // on failure would hide the very message we just
+                            // set.
+                            eprintln!("create_server failed: {msg}");
+                            c_err.set(msg);
                         }
-                        if let Ok(counts) = crate::servers::unread_counts(sid).await {
-                            let rev = live_unread_rev;
-                            buf.borrow_mut()
-                                .extend(counts.into_iter().map(|c| {
-                                    (c.channel_id, (c.count, c.unread_mentions))
-                                }));
-                            rev.set(rev.get() + 1);
-                        }
-                        // Success: the server exists and we're auto-entering
-                        // it, so close the modal. (On the error path below the
-                        // modal stays open so the inline message is visible and
-                        // the name field can be corrected and resubmitted.)
-                        create_open.set(false);
                     }
-                    Err(msg) => {
-                        // Surface the backend's own rejection inline in the
-                        // modal (e.g. an empty name -> "server name must not
-                        // be empty"). The modal stays open; the name field is
-                        // still editable so the user can correct it and hit
-                        // Create again. We do NOT close here — closing on
-                        // failure would hide the very message we just set.
-                        eprintln!("create_server failed: {msg}");
-                        c_err.set(msg);
-                    }
-                }
-                c_busy.set(false);
-            });
+                    c_busy.set(false);
+                },
+            );
         }
     });
     // The create modal's secondary "Have an invite already? Join a Server"

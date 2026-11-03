@@ -388,21 +388,34 @@ pub(super) fn live_member_panel(
                                 let uid = member_id;
                                 let err = error;
                                 let members = members;
-                                runtime_core::driver::spawn_async(async move {
-                                    match crate::moderation::kick_member(sid, uid).await {
-                                        Ok(()) => {
-                                            kick.set(None);
-                                            if let Ok(fresh) = crate::moderation::list_members(sid).await {
-                                                crate::mentions::members_loaded(sid, &fresh);
-                                                members.set(fresh);
+                                runtime_core::spawn_then_in(
+                                    // Anchored on the app shell: the roster
+                                    // re-fetch on success writes the shell's
+                                    // live_members signal, and this handler
+                                    // rebuilds the row it belongs to.
+                                    &crate::app::shell_alive(),
+                                    async move {
+                                        let kicked = crate::moderation::kick_member(sid, uid).await;
+                                        let roster = if kicked.is_ok() { Some(crate::moderation::list_members(sid).await) } else { None };
+                                        (kicked, roster)
+                                    },
+                                    move |kicked_and| {
+                                        let (kicked, roster) = kicked_and;
+                                        match kicked {
+                                            Ok(()) => {
+                                                kick.set(None);
+                                                if let Some(Ok(fresh)) = roster {
+                                                    crate::mentions::members_loaded(sid, &fresh);
+                                                    members.set(fresh);
+                                                }
+                                            }
+                                            Err(msg) => {
+                                                kick.set(None);
+                                                err.set(msg);
                                             }
                                         }
-                                        Err(msg) => {
-                                            kick.set(None);
-                                            err.set(msg);
-                                        }
-                                    }
-                                });
+                                    },
+                                );
                             }
                             TouchResponse::CONSUMED
                         })
@@ -439,21 +452,34 @@ pub(super) fn live_member_panel(
                                 let err = error;
                                 let members = members;
                                 let ban = ban;
-                                runtime_core::driver::spawn_async(async move {
-                                    match crate::moderation::ban_member(sid, uid, None).await {
-                                        Ok(()) => {
-                                            ban.set(None);
-                                            if let Ok(fresh) = crate::moderation::list_members(sid).await {
-                                                crate::mentions::members_loaded(sid, &fresh);
-                                                members.set(fresh);
+                                runtime_core::spawn_then_in(
+                                    // Anchored on the app shell: the roster
+                                    // re-fetch on success writes the shell's
+                                    // live_members signal, and this handler
+                                    // rebuilds the row it belongs to.
+                                    &crate::app::shell_alive(),
+                                    async move {
+                                        let banned = crate::moderation::ban_member(sid, uid, None).await;
+                                        let roster = if banned.is_ok() { Some(crate::moderation::list_members(sid).await) } else { None };
+                                        (banned, roster)
+                                    },
+                                    move |banned_and| {
+                                        let (banned, roster) = banned_and;
+                                        match banned {
+                                            Ok(()) => {
+                                                ban.set(None);
+                                                if let Some(Ok(fresh)) = roster {
+                                                    crate::mentions::members_loaded(sid, &fresh);
+                                                    members.set(fresh);
+                                                }
+                                            }
+                                            Err(msg) => {
+                                                ban.set(None);
+                                                err.set(msg);
                                             }
                                         }
-                                        Err(msg) => {
-                                            ban.set(None);
-                                            err.set(msg);
-                                        }
-                                    }
-                                });
+                                    },
+                                );
                             }
                             TouchResponse::CONSUMED
                         })
@@ -506,17 +532,19 @@ pub(super) fn live_member_panel(
                                 let err = error;
                                 let secs = dur.get();
                                 let timeout = timeout;
-                                runtime_core::driver::spawn_async(async move {
-                                    match crate::moderation::timeout_member(sid, uid, secs).await {
-                                        Ok(()) => {
-                                            timeout.set(None);
-                                        }
-                                        Err(msg) => {
-                                            timeout.set(None);
+                                runtime_core::spawn_then_in(
+                                    // Anchored on the app shell: the handler's
+                                    // own write clears the row's confirm state,
+                                    // rebuilding the node that started it.
+                                    &crate::app::shell_alive(),
+                                    crate::moderation::timeout_member(sid, uid, secs),
+                                    move |timed_out| {
+                                        timeout.set(None);
+                                        if let Err(msg) = timed_out {
                                             err.set(msg);
                                         }
-                                    }
-                                });
+                                    },
+                                );
                             }
                             TouchResponse::CONSUMED
                         })

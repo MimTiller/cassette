@@ -241,7 +241,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                 return;
             }
             msg.set(String::new());
-            runtime_core::spawn_then_in(&alive, async move { crate::auth::change_password(&cur_v, &new_v).await }, move |result| {
+            runtime_core::spawn_then_in(&alive, async move { crate::identity::change_password(&cur_v, &new_v).await }, move |result| {
                 match result {
                     Ok(()) => {
                         msg.set("Password changed.".to_string());
@@ -365,7 +365,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
     let logout_btn = ui! {
         button(
             label = "Log out of all devices".to_string(),
-            on_click = move || crate::auth::request_logout_everywhere(),
+            on_click = move || crate::identity::request_logout_everywhere(),
             test_id = "logout-everywhere",
             style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::DestructiveConfirm)
         )

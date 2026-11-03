@@ -8,6 +8,7 @@ mod data;
 mod style_helpers;
 mod app;
 mod auth;
+mod identity;
 mod servers;
 mod moderation;
 mod invite;
@@ -122,7 +123,7 @@ pub mod emoji_picker;
 pub mod gif_picker;
 
 pub use app::app;
-pub use auth::{login, signup};
+pub use identity::{login, signup};
 
 // SDK-handler registration seam, invoked by the CLI-generated wrappers (web
 // `start_in`/`hydrate_in`, macOS `run_with`, iOS `run_in_view`, terminal

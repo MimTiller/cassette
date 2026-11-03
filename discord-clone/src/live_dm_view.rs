@@ -12,7 +12,7 @@
 //!
 //! Live-mode conventions (mirroring `app.rs`'s `live_servers` /
 //! `live_channels`):
-//! - `live_dms` is a `Signal<Vec<Dm>>` populated via `spawn_async` calling
+//! - `live_dms` is a `Signal<Vec<Dm>>` populated via `spawn_then_in` calling
 //!   the `#[server]` fn, on first open.
 //! - `live_dm_messages` / `live_dm_revision` hold the fetched history for
 //!   the currently-selected DM (the `revision` bump is the rebuild trigger,
@@ -580,9 +580,13 @@ fn live_dm_conversation(
     rev: Signal<u32>,
     picker: Signal<Option<crate::group_dm::Picker>>,
     members_open: Signal<bool>,
-    blocked: Signal<Vec<crate::blocks::BlockedUser>>,
+    blocked: Signal<Vec<crate::blocks::BlockedUser>>
 ) -> Element {
     let renaming = signal(false);
+    // The pane's own scope, for the rename RPC's reply: `renaming.set(false)`
+    // on save rebuilds the pane, so the callback is anchored to this
+    // component, not the handler node the write would tear down.
+    let alive = runtime_core::ScopeAlive::current();
     // Blocked messages the user chose to show, by `created_at`: `LiveDmMsg`
     // carries no message id.
     let revealed: Signal<Vec<i64>> = signal(Vec::new());
@@ -680,12 +684,11 @@ fn live_dm_conversation(
                     return;
                 }
                 text_read.set(String::new());
-                runtime_core::driver::spawn_async(async move {
-                    // The server pushes a `DmMessage` frame to every participant
-                    // (the sender included); `dm_incoming_effect` appends it to
-                    // `msgs` and bumps `rev`, rebuilding the list. On RPC failure
-                    // (e.g. not a participant) the message simply never appears —
-                    // no optimistic append, mirroring the channel composer.
+                // Detached: the DM send's result isn't read here — the server
+                // echoes a DmMessage frame that dm_incoming_effect appends.
+                // The RPC must outlive this Enter handler (which clears `text`,
+                // rebuilding the composer strip).
+                runtime_core::driver::spawn_detached(async move {
                     let _ = dms::send_dm_message(cid, body).await;
                 });
             };
@@ -724,7 +727,11 @@ fn live_dm_conversation(
                                 None => return,
                             };
                             let body = discord_server::gifs::gif_message(&gif);
-                            runtime_core::driver::spawn_async(async move {
+                            // Detached: the send's result isn't read — the server
+                            // echoes a DmMessage frame that dm_incoming_effect
+                            // appends. It must outlive this callback, which closes
+                            // the picker (rebuilding the pane) before the RPC ends.
+                            runtime_core::driver::spawn_detached(async move {
                                 let _ = dms::send_dm_message(cid, body).await;
                             });
                         });
@@ -811,15 +818,21 @@ fn live_dm_conversation(
                 ..Default::default()
             };
             let title_el = if is_group && renaming.get() {
+                let al_save = alive.clone();
                 let save = move |ev: &KeyEvent| match ev.key.as_str() {
                     "Enter" => {
                         let name = rename_text.get();
-                        runtime_core::driver::spawn_async(async move {
-                            let input = discord_server::dms::RenameGroupDmInput { dm_id: cid, name };
-                            if discord_server::dms::rename_group_dm(input).await.is_ok() {
-                                renaming.set(false);
-                            }
-                        });
+                        runtime_core::spawn_then_in(
+                            &al_save.clone(),
+                            discord_server::dms::rename_group_dm(
+                                discord_server::dms::RenameGroupDmInput { dm_id: cid, name },
+                            ),
+                            move |result| {
+                                if result.is_ok() {
+                                    renaming.set(false);
+                                }
+                            },
+                        );
                         KeyOutcome::PreventDefault
                     }
                     "Escape" => {

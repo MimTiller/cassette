@@ -170,24 +170,36 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                             let cnt_p = pinned_count;
                             open_p.set(true);
                             err_p.set(String::new());
-                            runtime_core::driver::spawn_async(async move {
-                                match crate::pins::list_pinned(pin_live).await {
-                                    Ok(list) => {
-                                        msgs_p.set(list);
-                                        rev_p.set(rev_p.get() + 1);
+                            runtime_core::spawn_then_in(
+                                // Anchored on the app shell: the pin panel's
+                                // list, badge and error live there, and opening
+                                // the panel rebuilds the header node.
+                                &crate::app::shell_alive(),
+                                async move {
+                                    (crate::pins::list_pinned(pin_live).await,
+                                     crate::pins::pinned_count(pin_live).await)
+                                },
+                                move |pinned| {
+                                    let (list, count) = pinned;
+                                    match list {
+                                        Ok(list) => {
+                                            msgs_p.set(list);
+                                            rev_p.set(rev_p.get() + 1);
+                                        }
+                                        Err(e) => {
+                                            err_p.set(e);
+                                            rev_p.set(rev_p.get() + 1);
+                                        }
                                     }
-                                    Err(e) => {
-                                        err_p.set(e);
-                                        rev_p.set(rev_p.get() + 1);
+                                    // Refresh the badge count in the same round
+                                    // trip (the backend also returns it on Unpin,
+                                    // but on open we pull it once so the badge is
+                                    // fresh).
+                                    if let Ok(c) = count {
+                                        cnt_p.set(c);
                                     }
-                                }
-                                // Refresh the badge count in the same round trip
-                                // (the backend also returns it on Unpin, but on
-                                // open we pull it once so the badge is fresh).
-                                if let Ok(c) = crate::pins::pinned_count(pin_live).await {
-                                    cnt_p.set(c);
-                                }
-                            });
+                                },
+                            );
                             TouchResponse::CONSUMED
                         })
                         // Real pin count badge (replaces the static mock `3`).
@@ -634,7 +646,10 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         .on_touch(move |ev| {
                             if ev.phase == TouchPhase::Ended {
                                 unread_bar_sig.set(None);
-                                runtime_core::driver::spawn_async(async move {
+                                // Detached: the mark-read's result isn't read by the
+                                // screen (the badge above already cleared), so the RPC
+                                // must outlive this row's handler.
+                                runtime_core::driver::spawn_detached(async move {
                                     let _ = crate::servers::mark_read(cid, last_id).await;
                                 });
                             }
@@ -751,21 +766,35 @@ impl RowCtx {
         let (pin_msgs, pin_cnt, pin_rev, pin_err) = (self.pinned_messages, self.pinned_count, self.pinned_revision, self.pinned_error);
         let pin_vis = self.pin_visible;
         let on_pin = Rc::new(move || {
-            runtime_core::driver::spawn_async(async move {
-                match crate::pins::pin_message(mid).await {
-                    Ok(res) => {
-                        // Show the "Message pinned!" toast for a moment.
-                        pin_vis.set(true);
-                        runtime_core::after_ms_detached(4_500, move || pin_vis.set(false));
-                        pin_cnt.set(res.pinned_count);
-                        if let Ok(list) = crate::pins::list_pinned(res.channel_id).await {
-                            pin_msgs.set(list);
+            runtime_core::spawn_then_in(
+                // Anchored on the app shell: the pin toast, badge, list and
+                // revision live there, and this row's handler rebuilds.
+                &crate::app::shell_alive(),
+                async move {
+                    let res = crate::pins::pin_message(mid).await;
+                    let list = match &res {
+                        Ok(r) => Some(crate::pins::list_pinned(r.channel_id.clone()).await),
+                        Err(_) => None,
+                    };
+                    (res, list)
+                },
+                move |pinned| {
+                    let (res, list) = pinned;
+                    match res {
+                        Ok(res) => {
+                            // Show the "Message pinned!" toast for a moment.
+                            pin_vis.set(true);
+                            runtime_core::after_ms_detached(4_500, move || pin_vis.set(false));
+                            pin_cnt.set(res.pinned_count);
+                            if let Some(Ok(rows)) = list {
+                                pin_msgs.set(rows);
+                            }
                         }
+                        Err(e) => pin_err.set(e),
                     }
-                    Err(e) => pin_err.set(e),
-                }
-                pin_rev.set(pin_rev.get() + 1);
-            });
+                    pin_rev.set(pin_rev.get() + 1);
+                },
+            );
         });
         let row = live_edit_row(
             m.id,

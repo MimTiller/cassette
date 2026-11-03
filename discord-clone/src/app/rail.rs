@@ -156,14 +156,24 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                         if let Some(dm_id) = live_dm_active.get() {
                             crate::auth::save_last_view_dm(dm_id);
                         }
-                        runtime_core::driver::spawn_async(async move {
-                            if let Ok(dms) = crate::dms::list_dms().await {
-                                dm_list.set(dms);
-                            }
-                            if let Ok(f) = crate::friends::list_friends().await {
-                                friends.set(crate::friends_view::snapshot(f));
-                            }
-                        });
+                        // Anchored on the app shell: the DM list and friends
+                        // snapshot live there, and this handler toggles the
+                        // overlay whose rebuild would drop its own node.
+                        runtime_core::spawn_then_in(
+                            &crate::app::shell_alive(),
+                            async move {
+                                (crate::dms::list_dms().await, crate::friends::list_friends().await)
+                            },
+                            move |dms_and_friends| {
+                                let (dms, friends_list) = dms_and_friends;
+                                if let Ok(dms) = dms {
+                                    dm_list.set(dms);
+                                }
+                                if let Ok(f) = friends_list {
+                                    friends.set(crate::friends_view::snapshot(f));
+                                }
+                            },
+                        );
                     }
                 }
                 TouchResponse::CONSUMED
