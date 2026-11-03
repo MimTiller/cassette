@@ -306,6 +306,10 @@ pub fn friends_screen(
             let on_msg = on_message.clone();
 
             // Build one row (with its actions) for a snapshot entry.
+            // The row handlers' RPCs run in spawn_then_in futures anchored on
+            // the app shell: the calls happen in the future and every signal
+            // write lands in the callback, so a rebuilt or dismissed row
+            // scope drops the writes instead of touching freed slots.
             let row_el =
                 move |row: &FriendRow| -> Element {
                     let (tag, id, name, avatar) = row.clone();
@@ -317,9 +321,11 @@ pub fn friends_screen(
                                     let s = snap.clone();
                                     let uid = id;
                                     move || {
-                                        runtime_core::driver::spawn_async(
-                                            async move {
-                                                if let Ok(list) = crate::friends::accept_friend_request(uid).await {
+                                        runtime_core::spawn_then_in(
+                                            &crate::app::shell_alive(),
+                                            crate::friends::accept_friend_request(uid),
+                                            move |result| {
+                                                if let Ok(list) = result {
                                                     s.set(snapshot(list));
                                                 }
                                             },
@@ -330,9 +336,11 @@ pub fn friends_screen(
                                     let s = snap.clone();
                                     let uid = id;
                                     move || {
-                                        runtime_core::driver::spawn_async(
-                                            async move {
-                                                if let Ok(list) = crate::friends::decline_or_cancel(uid).await {
+                                        runtime_core::spawn_then_in(
+                                            &crate::app::shell_alive(),
+                                            crate::friends::decline_or_cancel(uid),
+                                            move |result| {
+                                                if let Ok(list) = result {
                                                     s.set(snapshot(list));
                                                 }
                                             },
@@ -350,9 +358,11 @@ pub fn friends_screen(
                                     let s = snap.clone();
                                     let uid = id;
                                     move || {
-                                        runtime_core::driver::spawn_async(
-                                            async move {
-                                                if let Ok(list) = crate::friends::decline_or_cancel(uid).await {
+                                        runtime_core::spawn_then_in(
+                                            &crate::app::shell_alive(),
+                                            crate::friends::decline_or_cancel(uid),
+                                            move |result| {
+                                                if let Ok(list) = result {
                                                     s.set(snapshot(list));
                                                 }
                                             },
@@ -374,9 +384,11 @@ pub fn friends_screen(
                                     let s = snap.clone();
                                     let uid = id;
                                     move || {
-                                        runtime_core::driver::spawn_async(
-                                            async move {
-                                                if let Ok(list) = crate::friends::remove_friend(uid).await {
+                                        runtime_core::spawn_then_in(
+                                            &crate::app::shell_alive(),
+                                            crate::friends::remove_friend(uid),
+                                            move |result| {
+                                                if let Ok(list) = result {
                                                     s.set(snapshot(list));
                                                 }
                                             },
@@ -403,9 +415,11 @@ pub fn friends_screen(
                         if raw.is_empty() {
                             return;
                         }
-                        runtime_core::driver::spawn_async(
-                            async move {
-                                match crate::friends::send_friend_request(raw).await {
+                        runtime_core::spawn_then_in(
+                            &crate::app::shell_alive(),
+                            crate::friends::send_friend_request(raw),
+                            move |result| {
+                                match result {
                                     Ok(list) => {
                                         err_sig.set(String::new());
                                         s.set(snapshot(list));
