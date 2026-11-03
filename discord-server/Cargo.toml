@@ -65,23 +65,23 @@ sidecar = ["dep:dev-server"]
 # target needs — `backend-web` + the wasm-bindgen glue on wasm, a native
 # shell otherwise — so this manifest names no backend directly and `cargo
 # build` alone produces a runnable artifact.
-idealyst = { version = "=4.0.0", registry = "idealyst" }
+idealyst = { version = "=4.1.0", registry = "idealyst" }
 # The author surface. `runtime-core` is the crate this project aliases to
 # `runtime_core` at its root (see src/lib.rs). `runtime-vocabulary` is
 # needed because the `ui!` emission spells absolute
 # `::runtime_vocabulary::glue::…` paths, and `runtime-scene` because
 # `register_scene_extensions` is generic over the scene `Registry` host.
-runtime-core = { version = "=3.2.0", registry = "idealyst" }
-runtime-vocabulary = { version = "=4.1.0", registry = "idealyst" }
+runtime-core = { version = "=3.3.0", registry = "idealyst" }
+runtime-vocabulary = { version = "=4.7.0", registry = "idealyst" }
 runtime-scene = { version = "=1.11.0", registry = "idealyst" }
 # Server-functions SDK. The `#[server]` attribute macro + the client RPC
 # transport live here; enabling its `server` feature (via the `server`
 # feature above) compiles the server-side router + handler registration.
-server = { version = "=4.0.0", registry = "idealyst" }
+server = { version = "=4.0.3", registry = "idealyst" }
 # Recorder backend for the runtime-server sidecar wrapper. Optional —
 # pulled in only by the `sidecar` feature (host-side sidecar build);
 # never compiled for device/web targets.
-dev-server = { version = "=5.0.0", registry = "idealyst", optional = true }
+dev-server = { version = "=6.0.0", registry = "idealyst", optional = true }
 
 # Wire types are shared between the server and the wasm client, so serde is
 # a normal (non-optional) dependency — the client build needs it too.

@@ -39,14 +39,14 @@ sidecar = ["dep:dev-server"]
 # the target needs — `backend-web` + the wasm-bindgen glue on wasm, a
 # native shell otherwise — so this manifest names no backend directly
 # and `cargo build` alone produces a runnable artifact.
-idealyst = { version = "=4.0.0", registry = "idealyst" }
+idealyst = { version = "=4.1.0", registry = "idealyst" }
 # The author surface. `runtime-core` is the crate this project aliases
 # to `runtime_core` at its root (see src/lib.rs). `runtime-vocabulary` is
 # needed because the `ui!` emission spells absolute
 # `::runtime_vocabulary::glue::…` paths, and `runtime-scene` because
 # `register_scene_extensions` is generic over the scene `Registry` host.
-runtime-core = { version = "=3.2.0", registry = "idealyst" }
-runtime-vocabulary = { version = "=4.1.0", registry = "idealyst" }
+runtime-core = { version = "=3.3.0", registry = "idealyst" }
+runtime-vocabulary = { version = "=4.7.0", registry = "idealyst" }
 runtime-scene = { version = "=1.11.0", registry = "idealyst" }
 # The zero-cost Lucide icon pack — each `pub const IconData` referenced lands
 # in the binary (LTO drops the rest); used via `runtime_core::icon(…)`.
@@ -55,11 +55,11 @@ icons-lucide = { version = "=3.0.0", registry = "idealyst" }
 # / `local_offset_minutes` — the web backend installs a `js Date`-backed source
 # during bootstrap). Not re-exported at the `runtime_core` root, so the crate
 # is depended on directly.
-runtime-shared = { version = "=3.2.0", registry = "idealyst" }
+runtime-shared = { version = "=3.8.0", registry = "idealyst" }
 # Recorder backend for the runtime-server sidecar wrapper. Optional —
 # pulled in only by the `sidecar` feature (host-side sidecar build);
 # never compiled for device/web targets.
-dev-server = { version = "=5.0.0", registry = "idealyst", optional = true }
+dev-server = { version = "=6.0.0", registry = "idealyst", optional = true }
 # The backend half of the full-stack pair. We depend on it with DEFAULT
 # features (no `server`), so its `#[server]` fns — e.g. `auth::login` — compile
 # here as typed RPC *stubs* that POST over the `server` SDK's transport. That
@@ -72,7 +72,7 @@ discord-server = { path = "../discord-server", default-features = false }
 # URL) and attach the signed-in user id as the `x-user-id` header via
 # `server::credentials_from_fn`. `discord-server` also pulls it in transitively
 # for its codegen'd stubs; the direct dep is for the `configure` call site.
-server = { version = "=4.0.0", registry = "idealyst" }
+server = { version = "=4.0.3", registry = "idealyst" }
 # Cross-platform clipboard SDK (the `InviteLinkDisplay` Copy button writes the
 # shareable link to the system clipboard). Per-backend: `navigator.clipboard`
 # on wasm, UIPasteboard/NSPasteboard on Apple, ClipboardManager on Android,
@@ -92,7 +92,7 @@ markdown = { version = "=4.0.0", registry = "idealyst" }
 # no scene handler — so `register_scene_extensions` gains nothing from it.
 # Its default `drop` feature pulls runtime-core/runtime-shared, which resolve
 # to the identical crate instances (same path root as the other SDK deps).
-file-picker = { version = "=3.0.1", registry = "idealyst" }
+file-picker = { version = "=3.0.2", registry = "idealyst" }
 # The plaintext storage SDK: non-secret client state (the signed-in
 # account's identity and per-user last-view spot, the notification level,
 # the accent color) persists through `platform_storage` — `localStorage`
