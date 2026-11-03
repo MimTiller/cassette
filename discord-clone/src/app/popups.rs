@@ -78,7 +78,7 @@ pub(super) struct PopupsParts {
 pub(super) fn build(s: &ShellState) -> PopupsParts {
     let ShellState {
         cc_open, create_open, dc_open, emoji_open, gif_open, invite_mode,
-        join_open, live_chan_menu, live_invite_mode, live_member_menu, moderation_mode, msg_menu, notif_mode,
+        join_open, live_chan_menu, live_invite_mode, live_member_menu, msg_menu, notif_mode,
         picker, pinned_panel_open, profile_mode, rc_open, server_menu_open, shortcuts_mode, ss_open,
         status_menu, user_popup, ..
     } = s.clone();
@@ -110,7 +110,6 @@ pub(super) fn build(s: &ShellState) -> PopupsParts {
         flag(invite_mode),
         flag(live_invite_mode),
         flag(shortcuts_mode),
-        flag(moderation_mode),
         flag(profile_mode),
         flag(notif_mode),
         opt(crate::channel_permissions::open_signal()),

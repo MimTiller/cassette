@@ -147,12 +147,25 @@ pub(super) fn live_member_panel(
     // the re-fetch the mutation callbacks below trigger on success — so a
     // local snapshot is always current here.
     let roster = members.get();
-    // Snapshot the live presence map the same way. The caller's `switch` key
-    // also folds in `live_presence_rev`, so a `Presence` frame forces a
-    // rebuild and this snapshot picks up the new status. A member absent from
-    // the map (e.g. just after the roster loads, before any frame arrived) is
-    // rendered as a grey "offline" dot below.
-    let presence: HashMap<i64, String> = presence.borrow().clone();
+    // Snapshot the live presence map the same way. Seed it from the roster's
+    // own `presence` (the backend's stored shown-status per member) so a client
+    // that connected — or a member who joined — after someone else came online
+    // still dots them: `Presence` frames fire only on status CHANGES, so a
+    // socket registered later would otherwise never learn the already-set
+    // status. Frame entries then overlay the seed (they are the fresher
+    // live values). A member absent from both reads as grey offline below.
+    let presence: HashMap<i64, String> = {
+        let mut seeded: HashMap<i64, String> = HashMap::new();
+        for m in roster.iter() {
+            if let Some(p) = m.presence.as_ref() {
+                seeded.insert(m.user_id, p.clone());
+            }
+        }
+        for (uid, status) in presence.borrow().clone() {
+            seeded.insert(uid, status);
+        }
+        seeded
+    };
     // The signed-in user's own numeric id — their own row is marked "(you)" and
     // the rest is left to the backend's permission checks (no client-side
     // pre-computation). `CURRENT_USER_ID` is `0` when signed out, which can't

@@ -76,7 +76,6 @@ pub(super) struct ShellState {
     pub(super) live_unread_rev: Signal<u32>,
     pub(super) load_busy: Signal<bool>,
     pub(super) member_panel_width: Signal<f32>,
-    pub(super) moderation_mode: Signal<bool>,
     pub(super) muted: Signal<bool>,
     pub(super) notif_level: Signal<u32>,
     pub(super) notif_mode: Signal<bool>,

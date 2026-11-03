@@ -8,7 +8,8 @@ use super::*;
 /// The bottom-left user profile section, as Discord has it: a single row —
 /// avatar (with status dot) and name/status on the left, and the mic-mute,
 /// deafen, and settings-gear icon buttons on the right. Identity comes from
-/// the data model's `USER` constant; the live presence status comes from the
+/// the signed-in account (`crate::auth::current_username`); the live presence
+/// status comes from the
 /// `user_status` signal, so the strip can show Idle / DND without touching
 /// the data.
 ///
@@ -20,8 +21,8 @@ use super::*;
 ///
 /// While the user is in a voice channel, the name + status line becomes a
 /// voice-connection line: a green "Voice Connected" (Discord's actual text),
-/// the channel name beneath it, and a **Leave** button that disconnects.
-/// The whole strip is wrapped in a `switch` keyed on `(status, voice_name?)`
+/// and a **Leave** button that disconnects.
+/// The whole strip is wrapped in a `switch` keyed on `(status, joined_voice?)`
 /// so any of those changes re-renders the strip (the key is value-deduped,
 /// like every other `switch` here).
 pub(super) fn user_panel(
@@ -35,14 +36,12 @@ pub(super) fn user_panel(
     gateway: server::UseSocket<discord_server::server_settings::WsServerMsg, discord_server::server_settings::WsClientMsg>,
 ) -> Element {
     switch(
-        move || (user_status.get(), voice_name_for(joined_voice.get())),
-        move |(status, voice_name): &(Status, Option<String>)| {
-            let user = USER;
+        move || (user_status.get(), joined_voice.get()),
+        move |(status, joined): &(Status, Option<(u32, u32)>)| {
             // Real signed-in identity: when genuinely logged in (not guest), the
             // backend's username was stored in `CURRENT_USERNAME` at login and
             // outlives this screen. Guest mode leaves it empty, so the strip
-            // falls back to the mock `USER` identity ("Nova") there. The
-            // shown name follows display-name changes (see `shown`, below).
+            // shows no name and a theme-tinted avatar chip.
             let real_name = crate::auth::current_username();
             let username = signal(real_name.clone());
             // When the signed-in account has an uploaded avatar (shared
@@ -53,9 +52,9 @@ pub(super) fn user_panel(
             let display_name = if !real_name.is_empty() {
                 crate::auth::shown_name(&real_name)
             } else {
-                user.name.to_string()
+                String::new()
             };
-            let voice_name = voice_name.clone();
+            let voice_connected = joined.is_some();
             let panel_style = StyleRules {
                 // The status menu floats above the panel.
                 position: Some(Position::Relative),
@@ -81,7 +80,7 @@ pub(super) fn user_panel(
                 position: Some(Position::Relative),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
-                background: Some(col(user.color)),
+                background: Some(col(theme::ACCENT)),
                 // Fixed 32px circle: never squeeze it when the row is tight.
                 flex_shrink: Some(grow(0.0)),
                 ..rounded(16.0)
@@ -117,26 +116,17 @@ pub(super) fn user_panel(
             // In a voice channel? Replace the name/status pair with the
             // Discord-style connection line: green "Voice Connected" + the
             // channel name, and a Leave button.
-            let second_line = match voice_name {
-                Some(ref channel) => {
-                    let vc_style = StyleRules {
-                        font_size: Some(px(10.0)),
-                        font_weight: Some(FontWeight::SemiBold),
-                        color: Some(col(theme::SUCCESS)),
-                        ..Default::default()
-                    };
-                    let ch_style = StyleRules {
-                        font_size: Some(px(11.0)),
-                        color: Some(col(TEXT_MUTED)),
-                        overflow: Some(Overflow::Hidden),
-                        ..Default::default()
-                    };
-                    ui! {
-                        text(style = vc_style) { "Voice Connected".to_string() }
-                        text(style = ch_style) { channel.clone() }
-                    }
+            let second_line = if voice_connected {
+                let vc_style = StyleRules {
+                    font_size: Some(px(10.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    color: Some(col(theme::SUCCESS)),
+                    ..Default::default()
+                };
+                ui! {
+                    text(style = vc_style) { "Voice Connected".to_string() }
                 }
-                None => {
+            } else {
                     let status_style = StyleRules {
                         font_size: Some(px(12.0)),
                         color: Some(col(TEXT_MUTED)),
@@ -146,50 +136,48 @@ pub(super) fn user_panel(
                     ui! {
                         text(style = status_style) { status }
                     }
-                }
-            };
+                };
 
             // The Leave button only exists while connected. Built as a
             // view + on_touch — the app's standard click pattern (the
             // runtime's `button` helper takes a fixed `label` prop, which
             // doesn't fit a styled pill; a view gives full style control).
-            let leave_btn = match voice_name {
-                Some(_) => {
-                    let leave_style = StyleRules {
-                        height: Some(px(24.0)),
-                        padding_left: Some(px(6.0)),
-                        padding_right: Some(px(6.0)),
-                        background: Some(col(BG_SIDEBAR)),
-                        color: Some(col(TEXT)),
-                        align_items: Some(AlignItems::Center),
-                        justify_content: Some(JustifyContent::Center),
-                        font_size: Some(px(11.0)),
-                        font_weight: Some(FontWeight::SemiBold),
-                        flex_shrink: Some(grow(0.0)),
-                        ..rounded(6.0)
-                    };
-                    // `None` clears the join; the sidebar `switch` key
-                    // includes `joined_voice`, so the voice rows rebuild too.
-                    let leave = joined_voice.clone();
-                    let leave_text_style = StyleRules {
-                        color: Some(col(TEXT)),
-                        font_size: Some(px(11.0)),
-                        font_weight: Some(FontWeight::SemiBold),
-                        ..Default::default()
-                    };
-                    Some(ui! {
-                        view(style = leave_style) {
-                            text(style = leave_text_style) { "Leave".to_string() }
+            let leave_btn = if voice_connected {
+                let leave_style = StyleRules {
+                    height: Some(px(24.0)),
+                    padding_left: Some(px(6.0)),
+                    padding_right: Some(px(6.0)),
+                    background: Some(col(BG_SIDEBAR)),
+                    color: Some(col(TEXT)),
+                    align_items: Some(AlignItems::Center),
+                    justify_content: Some(JustifyContent::Center),
+                    font_size: Some(px(11.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    flex_shrink: Some(grow(0.0)),
+                    ..rounded(6.0)
+                };
+                // `None` clears the join; the sidebar `switch` key
+                // includes `joined_voice`, so the voice rows rebuild too.
+                let leave = joined_voice.clone();
+                let leave_text_style = StyleRules {
+                    color: Some(col(TEXT)),
+                    font_size: Some(px(11.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    ..Default::default()
+                };
+                Some(ui! {
+                    view(style = leave_style) {
+                        text(style = leave_text_style) { "Leave".to_string() }
+                    }
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            leave.set(None);
                         }
-                        .on_touch(move |ev| {
-                            if ev.phase == TouchPhase::Ended {
-                                leave.set(None);
-                            }
-                            TouchResponse::CONSUMED
-                        })
+                        TouchResponse::CONSUMED
                     })
-                }
-                None => None,
+                })
+            } else {
+                None
             };
 
             // Click the avatar to open the status menu. The touch target is
@@ -483,15 +471,4 @@ fn status_menu_row(
             TouchResponse::CONSUMED
         })
     }
-}
-
-/// The name of the voice channel the user is currently joined to, resolved
-/// from the `(server_id, voice_id)` pair in `joined_voice`. Used to build the
-/// `user_panel` switch key (value-deduped — `String` compares by content, so
-/// two joins of the same channel on different servers would be equal, which
-/// is exactly the "same visible state, no rebuild" behavior we want).
-pub(super) fn voice_name_for(joined: Option<(u32, u32)>) -> Option<String> {
-    let (server_id, voice_id) = joined?;
-    let server = SERVERS.iter().find(|s| s.id == server_id)?;
-    Some(server.find_voice_channel(voice_id)?.name.to_string())
 }

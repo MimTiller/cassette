@@ -27,8 +27,8 @@ pub(super) fn build(s: &ShellState) -> MemberListParts {
     // is `Some`, set the moment a live channel is opened) render the real
     // `live_member_panel` backed by the gateway-fed `live_members` roster +
     // `live_presence` map; otherwise every signed-in account with no live
-    // server renders an empty roster (the mock `USER`/roster, which would
-    // leak demo identities like "Nova", is gone). The key folds in every
+    // server renders an empty roster (demo identities like "Nova" must
+    // never leak in). The key folds in every
     // signal the live panel reads — roster, error, kick-confirm, and the
     // presence revision — so any of those changes (e.g. a `Presence` frame
     // arriving) rebuilds the panel and the dots update.
@@ -101,7 +101,7 @@ pub(super) fn build(s: &ShellState) -> MemberListParts {
                 );
             }
             // Signed-in account, no live server yet -> an empty member panel
-            // (never the mock `USER`/roster, which would leak demo identities
+            // (an empty panel, never demo identities like "Nova" in the
             // like "Nova" into the onboarding state).
             return ui! {
                 view(style = StyleRules {

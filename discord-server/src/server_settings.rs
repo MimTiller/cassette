@@ -1140,6 +1140,7 @@ impl ServerSettings {
                 username,
                 role,
                 avatar_url: self.db.user_avatar(user_id),
+                presence: self.db.presence(user_id),
             })
             .collect())
     }
@@ -1668,6 +1669,12 @@ pub struct MemberInfo {
     pub role: String,
     #[serde(default)]
     pub avatar_url: Option<String>,
+    /// What others currently see: 'online' / 'away' / 'dnd' / 'offline'. The
+    /// member panel seeds a row's dot from this so a client that connected
+    /// after the member came online (or reloaded) still shows them online;
+    /// `Presence` frames then override it live.
+    #[serde(default)]
+    pub presence: Option<String>,
 }
 
 /// Confirmation that a channel was marked read: the channel and the message id
@@ -2033,6 +2040,25 @@ mod tests {
         // The row for alice carries her username, not an empty placeholder.
         let alice = members.iter().find(|m| m.user_id == 2).unwrap();
         assert_eq!(alice.username, "alice");
+    }
+
+    /// The roster carries each member's stored presence so a client that
+    /// connected after they came online still dots them online; members
+    /// never seen by the gateway read as offline (the DB default).
+    #[test]
+    fn member_list_carries_presence() {
+        let (_dir, db) = setup_db_with_channels();
+        let svc = ServerSettings::new(db.clone());
+        db.lock().unwrap().execute(
+            "UPDATE users SET presence_status = 'online' WHERE id = 2",
+            (),
+        ).unwrap();
+
+        let members = svc.list_members(2, 1).unwrap();
+        let by_id = members.iter().find(|m| m.user_id == 2).unwrap();
+        assert_eq!(by_id.presence, Some("online".to_string()));
+        let other = members.iter().find(|m| m.user_id == 3).unwrap();
+        assert_eq!(other.presence, Some("offline".to_string()));
     }
 
     #[test]

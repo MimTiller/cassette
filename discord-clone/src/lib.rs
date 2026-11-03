@@ -72,14 +72,10 @@ mod load_earlier_button;
 mod translate_toggle;
 #[path = "components/message_action_bar.rs"]
 mod message_action_bar;
-#[path = "components/transfer_ownership_confirm.rs"]
-mod transfer_ownership_confirm;
 #[path = "components/avatar_chip.rs"]
 mod avatar_chip;
 #[path = "components/link_embed_preview.rs"]
 mod link_embed_preview;
-#[path = "components/member_role_list.rs"]
-mod member_role_list;
 #[path = "components/timeout_duration_picker.rs"]
 mod timeout_duration_picker;
 #[path = "components/send_failed_indicator.rs"]
@@ -90,8 +86,6 @@ mod pin_confirm_toast;
 mod pinned_messages_panel;
 #[path = "components/notification_toast.rs"]
 mod notification_toast;
-#[path = "components/ban_reason_input.rs"]
-mod ban_reason_input;
 #[path = "components/invite_expiry_selector.rs"]
 mod invite_expiry_selector;
 #[path = "components/reply_preview_bar.rs"]
@@ -100,14 +94,6 @@ mod reply_preview_bar;
 mod reply_reference_strip;
 #[path = "components/server_icon_upload_placeholder.rs"]
 mod server_icon_upload_placeholder;
-#[path = "components/kick_confirm_dialog.rs"]
-mod kick_confirm_dialog;
-#[path = "components/ban_list_row.rs"]
-mod ban_list_row;
-#[path = "components/blocked_user_row.rs"]
-mod blocked_user_row;
-#[path = "components/delete_message_confirm.rs"]
-mod delete_message_confirm;
 #[path = "components/spoiler_tag.rs"]
 mod spoiler_tag;
 #[path = "components/invite_link_display.rs"]

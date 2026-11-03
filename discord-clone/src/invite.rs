@@ -1,30 +1,7 @@
-//! Invite-code helpers for the invite flow (mock/stub: no backend calls yet).
+//! Invite-code helpers for the invite flow.
 //!
-//! A code is 8 characters from an unambiguous alphabet (no 0/O/1/I). Codes are
-//! deterministic per server id so the UI can show a stable mock invite link.
-
-const ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-/// Length of every invite code.
-pub const INVITE_CODE_LEN: usize = 8;
-
-/// Deterministic mock invite code for a server id.
-pub fn generate_invite_code(server_id: u32) -> String {
-    let mut x = (server_id as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xD1B5_4A32_D192_ED03;
-    let mut out = String::with_capacity(INVITE_CODE_LEN);
-    for _ in 0..INVITE_CODE_LEN {
-        x ^= x >> 33;
-        x = x.wrapping_mul(0xFF51_AFD7_ED55_8CCD);
-        x ^= x >> 29;
-        out.push(ALPHABET[(x % ALPHABET.len() as u64) as usize] as char);
-    }
-    out
-}
-
-/// The shareable link for a code.
-pub fn invite_link(code: &str) -> String {
-    format!("https://discord.gg/{code}")
-}
+//! Codes are minted on the real backend via `create_invite`; this file only
+//! parses what users paste and names the RPC stubs.
 
 /// Create a real invite for `server_id` with the given `expires_at` (UTC epoch
 /// seconds, `None` = never expires) and `max_uses` (redemption cap, `None` =
@@ -83,13 +60,5 @@ mod tests {
         assert_eq!(code_from_input("discord.gg/qcyftbyg"), "qcyftbyg");
         assert_eq!(code_from_input("https://chat.example.com/invite/qcyftbyg/?ref=x"), "qcyftbyg");
         assert_eq!(code_from_input(""), "");
-    }
-
-    #[test]
-    fn generated_codes_are_valid_and_stable() {
-        let a = generate_invite_code(1);
-        assert_eq!(a.len(), INVITE_CODE_LEN);
-        assert_eq!(a, generate_invite_code(1));
-        assert_ne!(a, generate_invite_code(2));
     }
 }

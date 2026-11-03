@@ -246,6 +246,7 @@ mod dm_find_tests {
             display_name: None,
             role: "member".to_string(),
             avatar_url: None,
+            presence: None,
         }
     }
 
