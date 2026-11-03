@@ -106,8 +106,6 @@ mod kick_confirm_dialog;
 mod ban_list_row;
 #[path = "components/blocked_user_row.rs"]
 mod blocked_user_row;
-#[path = "components/delete_message_confirm.rs"]
-mod delete_message_confirm;
 #[path = "components/spoiler_tag.rs"]
 mod spoiler_tag;
 #[path = "components/invite_link_display.rs"]

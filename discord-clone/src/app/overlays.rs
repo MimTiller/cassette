@@ -340,8 +340,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         BlockedUserRow()
         text(style = section_label_style.clone()) { "Kick a member".to_string() }
         KickConfirmDialog()
-        text(style = section_label_style.clone()) { "Delete a message".to_string() }
-        DeleteMessageConfirm()
+
         text(style = section_label_style.clone()) { "Transfer ownership".to_string() }
         TransferOwnershipConfirm()
     };

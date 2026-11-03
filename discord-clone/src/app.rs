@@ -82,7 +82,6 @@ use crate::invite_expiry_selector::InviteExpirySelector;
 use crate::slash_command_dropdown::SlashCommandDropdown;
 use crate::emoji_picker::EmojiPicker;
 use crate::kick_confirm_dialog::KickConfirmDialog;
-use crate::delete_message_confirm::DeleteMessageConfirm;
 use crate::transfer_ownership_confirm::TransferOwnershipConfirm;
 use crate::invite_modal::InviteModal;
 
