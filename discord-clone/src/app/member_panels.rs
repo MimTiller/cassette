@@ -295,9 +295,15 @@ pub(super) fn live_member_panel(
             _ => true,
         };
         // Live presence dot for this row: the shared status→colour map.
-        let presence_color = crate::avatar_chip::presence_status_role(
-            presence.get(&member_id).map(|s| s.as_str()).unwrap_or("offline")
-        );
+        let status = presence.get(&member_id).map(|s| s.as_str()).unwrap_or("offline");
+        let presence_color = crate::avatar_chip::presence_status_role(status);
+        // Names the shown status for the robot suite (`member-presence-dnd`, ...).
+        let presence_test_id: &'static str = match status {
+            "online" => "member-presence-online",
+            "away" | "idle" => "member-presence-away",
+            "dnd" | "do_not_disturb" => "member-presence-dnd",
+            _ => "member-presence-offline",
+        };
         // The row's avatar: the shared `avatar_chip` helper — uploaded image
         // when the client registry has one, else the letter chip — in a
         // `Position::Relative` wrapper carrying the presence dot absolutely at
@@ -337,7 +343,7 @@ pub(super) fn live_member_panel(
                 // registry has one, otherwise the letter chip, with the
                 // presence dot overlaid at its bottom-right corner (ring in
                 // the panel bg color), like the mock member row / user panel.
-                view(style = avatar_wrap_style.clone()) {
+                view(style = avatar_wrap_style.clone(), test_id = presence_test_id) {
                     { chip }
                     { dot }
                 }

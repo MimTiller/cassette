@@ -450,7 +450,7 @@ fn mention_pill(seg: discord_server::server_roles::MentionSeg) -> Element {
     let text_style = crate::styles::MentionPillText().color(fg);
     match user {
         Some(id) => ui! {
-            view(style = style) { text(style = text_style) { label } }
+            view(style = style, test_id = "mention-pill") { text(style = text_style) { label } }
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
                     let p = ev.window_position;
@@ -459,7 +459,7 @@ fn mention_pill(seg: discord_server::server_roles::MentionSeg) -> Element {
                 TouchResponse::CONSUMED
             })
         },
-        None => ui! { view(style = style) { text(style = text_style) { label } } },
+        None => ui! { view(style = style, test_id = "mention-pill") { text(style = text_style) { label } } },
     }
 }
 

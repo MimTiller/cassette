@@ -178,3 +178,14 @@ targets   = ["web"]
 # serves the staged dist/web via WEB_DIST; see discord-server/src/bin/server.rs).
 server_manifest = "../discord-server/Cargo.toml"
 server_bin      = "server"
+
+[dev-dependencies]
+# The robot E2E suite in tests/robot.rs, run by `idealyst test --web`.
+robot-test = { version = "=1.14.0", registry = "idealyst" }
+# More browsers for multi-user tests (tests/robot/users.rs): a relay each,
+# driven over DevTools; direct server calls for setup.
+robot-relay = { version = "=2.0.0", registry = "idealyst" }
+serde_json = "1"
+tempfile = "3"
+tungstenite = "0.24"
+ureq = { version = "2", features = ["json"] }

@@ -7,6 +7,7 @@
 mod data;
 mod style_helpers;
 mod app;
+mod robot_hooks;
 mod auth;
 mod servers;
 mod moderation;
