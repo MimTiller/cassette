@@ -56,14 +56,9 @@ use crate::server_settings_panel::ServerSettingsPanel;
 use runtime_shared::time::local_offset_minutes;
 
 use crate::data::Status;
-use crate::ban_list_row::BanListRow;
+
 use crate::timeout_duration_picker::TimeoutDurationPicker;
-use crate::member_role_list::MemberRoleList;
 use crate::verified_badge::VerifiedBadge;
-use crate::ban_reason_input::BanReasonInput;
-
-use crate::blocked_user_row::BlockedUserRow;
-
 use crate::send_failed_indicator::SendFailedIndicator;
 use crate::jump_to_bottom_button::JumpToBottomButton;
 use crate::load_earlier_button::load_earlier_button;
@@ -81,8 +76,6 @@ use crate::invite_link_display::InviteLinkDisplay;
 use crate::invite_expiry_selector::InviteExpirySelector;
 use crate::slash_command_dropdown::SlashCommandDropdown;
 use crate::emoji_picker::EmojiPicker;
-use crate::kick_confirm_dialog::KickConfirmDialog;
-use crate::transfer_ownership_confirm::TransferOwnershipConfirm;
 use crate::invite_modal::InviteModal;
 
 // Helpers split out of this file (see src/app/).
@@ -1142,21 +1135,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
         });
     }
 
-    // Server Moderation panel: a gavel icon in the channel header opens it as
-    // a full-screen overlay (the same toggle idiom as `profile_mode` — built
-    // once, shown/hidden by this signal, a "Done" pill flips it back off).
-    // Mock-only: renders the eight unwired moderation components with hardcoded
-    // rows; no backend call.
-    let moderation_mode: Signal<bool> = signal(false);
-
     // Live "Invite People" flow (real backend, live mode only): the `USER_PLUS`
     // action in the live channel header opens this overlay, which mints a real
     // invite via `invite::create_invite` against `active_live_server` and shows
     // the resulting code in `InviteLinkDisplay` (whose Copy button now writes
     // the link to the system clipboard). `live_invite_code` holds the freshly
     // minted code (None until created); `live_invite_error` carries a backend
-    // rejection message. Built once here, painted last (same idiom as
-    // `moderation_region`), inert outside live mode (no header action to open
+    // rejection message. Built once here, painted last (full-screen overlay
+    // idiom), inert outside live mode (no header action to open
     // it, and `active_live_server` is None when a mock server is active).
     let live_invite_mode: Signal<bool> = signal(false);
     let live_invite_code: Signal<Option<String>> = signal(None);
@@ -1352,7 +1338,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
         live_unread_rev: live_unread_rev.clone(),
         load_busy: load_busy.clone(),
         member_panel_width: member_panel_width.clone(),
-        moderation_mode: moderation_mode.clone(),
         muted: muted.clone(),
         notif_level: notif_level.clone(),
         notif_mode: notif_mode.clone(),
@@ -1420,7 +1405,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         overflow: Some(Overflow::Hidden),
         ..Default::default()
     };
-    let overlays::OverlaysParts { profile_region, notif_region, shortcuts_region, live_dm_region, moderation_region, live_invite_region } = overlays::build(&s);
+    let overlays::OverlaysParts { profile_region, notif_region, shortcuts_region, live_dm_region, live_invite_region } = overlays::build(&s);
 
     // --- "jump to bottom" scroll tracking ---------------------------------
     // The floating "Jump to bottom" pill only appears while the reader has
@@ -1655,7 +1640,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
             cc_el
             rc_el
             dc_el
-            moderation_region
             ss_el
             invite_el
             channel_perms_el
@@ -1672,12 +1656,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // nothing while hidden.
             crate::pin_confirm_toast::pin_confirm_toast(pin_visible)
             // "Invite People" (LIVE / backend): full-screen, same paint-last
-            // idiom as `moderation_region`. Reached only from the live channel
+            // full-screen overlay idiom. Reached only from the live channel
             // header's invite action; inert outside live mode (no entry point +
             // `active_live_server` is None on a mock server).
             live_invite_region
             // "Pinned messages" panel (LIVE / backend): full-screen, paint-last
-            // (same idiom as `moderation_region` / `live_invite_region`).
+            // (same idiom as `live_invite_region`).
             // `pinned_panel_open` is set by the live header's pin icon; the
             // panel lists the channel's real pinned rows (each with an Unpin
             // button) and collapses to zero size while closed.

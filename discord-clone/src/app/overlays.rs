@@ -9,13 +9,12 @@ pub(super) struct OverlaysParts {
     pub(super) notif_region: Element,
     pub(super) shortcuts_region: Element,
     pub(super) live_dm_region: Element,
-    pub(super) moderation_region: Element,
     pub(super) live_invite_region: Element,
 }
 
 pub(super) fn build(s: &ShellState) -> OverlaysParts {
-    let ShellState { active_live_server, active_server, authed, blocked_users,
-        friends_add_error, friends_add_username, friends_entry, friends_open, friends_snap, friends_tab, gateway, live_dm_active, live_dm_messages, live_dm_mode, live_dm_new_id, live_dm_revision, live_dms, live_invite_code, live_invite_error, live_invite_mode, live_members, live_presence, live_presence_rev, live_revision, moderation_mode, notif_level, notif_mode, on_dm_message, profile_mode, shortcuts_mode, .. } = s.clone();
+    let ShellState { active_live_server, authed, blocked_users,
+        friends_add_error, friends_add_username, friends_entry, friends_open, friends_snap, friends_tab, gateway, live_dm_active, live_dm_messages, live_dm_mode, live_dm_new_id, live_dm_revision, live_dms, live_invite_code, live_invite_error, live_invite_mode, live_members, live_presence, live_presence_rev, live_revision, notif_level, notif_mode, on_dm_message, profile_mode, shortcuts_mode, .. } = s.clone();
 
     // User Settings: one full-window screen (see `settings_suite`), shown
     // while `notif_mode` is on. "Profile" (`profile_mode`) opens it at the
@@ -240,126 +239,14 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
     };
 
 
-    // Server Moderation panel (mock): the same full-screen overlay idiom as the
-    // Profile Settings overlay above — built once, shown/hidden by
-    // `moderation_mode`, closed by the "Done" pill in its header. The content
-    // stacks the eight moderation components, each with a section label; every
-    // row is hardcoded mock data, no backend call.
-    let moderation_close = moderation_mode.clone();
     let section_label_style = section_label();
-    let moderation_header = ui! {
-        view(style = StyleRules {
-            flex_direction: Some(FlexDirection::Row),
-            align_items: Some(AlignItems::Center),
-            justify_content: Some(JustifyContent::SpaceBetween),
-            padding_top: Some(px(16.0)),
-            padding_bottom: Some(px(16.0)),
-            padding_left: Some(px(16.0)),
-            padding_right: Some(px(16.0)),
-            ..Default::default()
-        }) {
-            text(style = StyleRules {
-                font_size: Some(px(18.0)),
-                font_weight: Some(FontWeight::Bold),
-                color: Some(col(TEXT)),
-                ..Default::default()
-            }) { "Server Moderation".to_string() }
-            view(style = StyleRules {
-                height: Some(px(26.0)),
-                padding_left: Some(px(12.0)),
-                padding_right: Some(px(12.0)),
-                background: Some(col(BG_SIDEBAR)),
-                align_items: Some(AlignItems::Center),
-                justify_content: Some(JustifyContent::Center),
-                ..rounded(6.0)
-            }) {
-                text(style = StyleRules {
-                    color: Some(col(TEXT)),
-                    font_size: Some(px(12.0)),
-                    font_weight: Some(FontWeight::SemiBold),
-                    ..Default::default()
-                }) { "Done".to_string() }
-            }
-            .on_touch(move |ev| {
-                if ev.phase == TouchPhase::Ended {
-                    moderation_close.set(false);
-                }
-                TouchResponse::CONSUMED
-            })
-        }
-    };
-    let moderation_open_chk = moderation_mode.clone();
-    let moderation_wrap = move || StyleRules {
-        position: Some(Position::Absolute),
-        left: Some(px(0.0)),
-        top: Some(px(0.0)),
-        width: Some(if moderation_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        height: Some(if moderation_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        background: Some(col(theme::OVERLAY)),
-        flex_direction: Some(FlexDirection::Column),
-        overflow: Some(Overflow::Hidden),
-        ..Default::default()
-    };
-    // "Invite People" panel (mock, local only): generate a code via
-    // `invite::generate_invite_code`, build its link via `invite::invite_link`,
-    // render both through `InviteLinkDisplay`, with the `InviteExpirySelector`
-    // alongside. Sits at the top of the Server Moderation panel. No backend.
-    let invite_code = crate::invite::generate_invite_code(active_server.get());
-    let invite_url = crate::invite::invite_link(&invite_code);
-    let invite_expiry = signal(0usize);
-    // The picker's chosen duration (seconds) — local to this graveyard demo.
-    let timeout_duration = signal(60i64);
-    let invite_panel = ui! {
-        text(style = section_label_style.clone()) { "Invite People".to_string() }
-        // `InviteLinkDisplay` formats `discord.gg/{code}` internally, so it
-        // takes the raw code; the full shareable URL from `invite_link` is
-        // shown on its own line below.
-        InviteLinkDisplay(code = invite_code.clone())
-        text(style = StyleRules {
-            font_size: Some(px(13.0)),
-            color: Some(col(TEXT_MUTED)),
-            padding_left: Some(px(16.0)),
-            padding_right: Some(px(16.0)),
-            ..Default::default()
-        }) { invite_url }
-        InviteExpirySelector(value = invite_expiry)
-    };
-    let moderation_el = ui! {
-        invite_panel
-        text(style = section_label_style.clone()) { "Banned members".to_string() }
-        BanListRow()
-        BanListRow()
-        BanReasonInput()
-        text(style = section_label_style.clone()) { "Timeout duration".to_string() }
-        TimeoutDurationPicker(duration = timeout_duration)
-        text(style = section_label_style.clone()) { "Member roles".to_string() }
-        MemberRoleList()
-        MemberRoleList()
-        text(style = section_label_style.clone()) { "Blocked users".to_string() }
-        BlockedUserRow()
-        BlockedUserRow()
-        text(style = section_label_style.clone()) { "Kick a member".to_string() }
-        KickConfirmDialog()
-
-        text(style = section_label_style.clone()) { "Transfer ownership".to_string() }
-        TransferOwnershipConfirm()
-    };
-    let moderation_region = ui! {
-        view(style = moderation_wrap) {
-            moderation_header
-            view(style = StyleRules { flex_grow: Some(grow(1.0)), background: Some(col(BG_MAIN)), overflow: Some(Overflow::Hidden), ..Default::default() }) {
-                scroll_view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) { moderation_el }
-            }
-        }
-    };
 
     // Member profile overlay removed — the mock member profile panel is gone
     // (live profile cards come from user_popups instead).
 
     // --- Live "Invite People" overlay (real backend) ----------------------
-    // The live channel header's `USER_PLUS` action opens this. Unlike the mock
-    // invite panel above (which only generates a deterministic code), this
-    // mints a REAL invite via `invite::create_invite` against `active_live_server`
+    // The live channel header's `USER_PLUS` action opens this: it mints a
+    // REAL invite via `invite::create_invite` against `active_live_server`
     // (the only context with a real backend `server_id`) and shows the resulting
     // code in `InviteLinkDisplay`, whose Copy button now writes the link to the
     // system clipboard. `live_invite_expiry` is the expiry the user picked
@@ -527,5 +414,5 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         }
     };
 
-    OverlaysParts { profile_region, notif_region, shortcuts_region, live_dm_region, moderation_region, live_invite_region }
+    OverlaysParts { profile_region, notif_region, shortcuts_region, live_dm_region, live_invite_region }
 }

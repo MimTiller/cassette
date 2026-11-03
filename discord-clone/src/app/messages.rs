@@ -63,13 +63,10 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     // capturing it here is cheap; the arm re-runs whenever
     // `active_live_channel` (in the key) changes. `None` falls through to the
     // mock header below, byte-for-byte unchanged.
-    // (the mock moderation panel this copy drove was removed with the mock
-    // data, so `moderation_mode` isn't read here anymore)
     // Live-mode invite entry: the `USER_PLUS` action in the live header flips
     // this (a clone of `live_invite_mode`, declared above). The live header arm
     // is the only place a real backend `server_id` (`active_live_server`) is
-    // in scope, so the invite flow lives here — the mock moderation panel has
-    // no real server to mint against.
+    // in scope, so the invite flow lives here.
     let live_invite_open = live_invite_mode.clone();
     // Opening a search result: switch to its channel the way the sidebar
     // does, then let `jump` page back until the message is loaded.
