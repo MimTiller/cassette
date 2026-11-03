@@ -130,6 +130,12 @@ async fn main() {
         return;
     }
 
+    // No socket survives a restart, and the disconnect path that marks users
+    // offline never ran for the old process, so clear the stored presence the
+    // member roster reports. (After the reset-link branch: that runs beside a
+    // live server.)
+    db.clear_presence().unwrap_or_else(|e| panic!("failed to reset presence: {e}"));
+
     // Session signing secret: DISCORD_SESSION_SECRET, else a 0600 file next to
     // the database (so tokens survive a restart).
     let mut secret_path = db_path.clone().into_os_string();

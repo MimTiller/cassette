@@ -247,6 +247,14 @@ impl Db {
         .ok()
     }
 
+    /// Mark every user 'offline'. Run at startup, when no socket is open yet.
+    pub fn clear_presence(&self) -> Result<usize, rusqlite::Error> {
+        self.lock()?.execute(
+            "UPDATE users SET presence_status = 'offline' WHERE presence_status != 'offline'",
+            (),
+        )
+    }
+
     /// Set the user's presence status. `Ok(true)` when the value changed
     /// (callers use that to decide whether to broadcast an update),
     /// `Ok(false)` when it was already the given status. `Err` only on a
