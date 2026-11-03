@@ -338,24 +338,31 @@ pub fn ProfileSettings() -> Element {
 
     // Upload a finished `data:` URL and show it everywhere: the shared
     // registry is keyed by the REAL username (not the editable display name)
-    // so message rows, member lists and DMs follow it.
+    // so message rows, member lists and DMs follow it. The RPC runs in the
+    // future and every signal write in the spawn_then_in callback, anchored
+    // on the app shell so the write survives this page's own teardown
+    // (create_channel_modal idiom).
     let save_avatar = move |url: String| {
         av_busy.set(true);
         av_error.set(String::new());
-        runtime_core::driver::spawn_async(async move {
-            match crate::auth::set_avatar(Some(url.clone())).await {
-                Ok(_) => {
-                    let name = crate::auth::current_username();
-                    crate::auth::remember_avatar(name.as_str(), Some(url.clone()));
-                    // The persisted session's avatar segment must follow the
-                    // upload so a page refresh restores the new image.
-                    crate::auth::refresh_saved_avatar(Some(url.clone()));
-                    avatar_url.set(url);
+        runtime_core::spawn_then_in(
+            &crate::app::shell_alive(),
+            crate::auth::set_avatar(Some(url.clone())),
+            move |result| {
+                match result {
+                    Ok(_) => {
+                        let name = crate::auth::current_username();
+                        crate::auth::remember_avatar(name.as_str(), Some(url.clone()));
+                        // The persisted session's avatar segment must follow the
+                        // upload so a page refresh restores the new image.
+                        crate::auth::refresh_saved_avatar(Some(url.clone()));
+                        avatar_url.set(url);
+                    }
+                    Err(msg) => av_error.set(msg),
                 }
-                Err(msg) => av_error.set(msg),
-            }
-            av_busy.set(false);
-        });
+                av_busy.set(false);
+            },
+        );
     };
 
     // Change-avatar handler: open the native picker (single image), read the
