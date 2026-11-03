@@ -23,8 +23,9 @@
 //!   captured across the `when` boundary);
 //! - the Change-avatar / Remove pills are `view {…}.on_touch(|ev| …)` chains
 //!   with the `TouchPhase::Ended` guard — the app's standard click pattern;
-//! - the picker → RPC round trip runs in `runtime_core::driver::spawn_async`,
-//!   with `av_busy` + `av_error` signals keying the labels reactively (the
+//! - the picker → RPC round trip runs in `runtime_core::spawn_then_in`,
+//!   anchored on the app shell, with `av_busy` + `av_error` signals keying
+//!   the labels reactively (the
 //!   `ServerSettingsPanel` triple, minus the paste input).
 
 use crate::theme;
@@ -448,18 +449,25 @@ pub fn ProfileSettings() -> Element {
         let av = avatar_url;
         busy.set(true);
         err.set(String::new());
-        runtime_core::driver::spawn_async(async move {
-            match crate::auth::set_avatar(None).await {
-                Ok(_) => {
-                    let name = crate::auth::current_username();
-                    crate::auth::remember_avatar(name.as_str(), None);
-                    crate::auth::refresh_saved_avatar(None);
-                    av.set(String::new());
+        // The RPC goes in the future and every signal write in the callback,
+        // anchored on the app shell so the write survives this page's own
+        // teardown (same idiom as save_avatar).
+        runtime_core::spawn_then_in(
+            &crate::app::shell_alive(),
+            crate::auth::set_avatar(None),
+            move |result| {
+                match result {
+                    Ok(_) => {
+                        let name = crate::auth::current_username();
+                        crate::auth::remember_avatar(name.as_str(), None);
+                        crate::auth::refresh_saved_avatar(None);
+                        av.set(String::new());
+                    }
+                    Err(msg) => err.set(msg),
                 }
-                Err(msg) => err.set(msg),
-            }
-            busy.set(false);
-        });
+                busy.set(false);
+            },
+        );
     };
 
     ui! {
@@ -591,19 +599,25 @@ pub(crate) fn register_avatar_upload_hook(
             }
             busy.set(true);
             err.set(String::new());
-            runtime_core::driver::spawn_async(async move {
-                let url_for_save = url.clone();
-                match crate::auth::set_avatar(Some(url)).await {
-                    Ok(_) => {
-                        let name = crate::auth::current_username();
-                        crate::auth::remember_avatar(name.as_str(), Some(url_for_save.clone()));
-                        crate::auth::refresh_saved_avatar(Some(url_for_save.clone()));
-                        avatar_url.set(url_for_save);
+            // The RPC runs in the future and every write (the registry
+            // updates, the signal sets, the busy flag) lives in the
+            // spawn_then_in callback, anchored on the app shell.
+            runtime_core::spawn_then_in(
+                &crate::app::shell_alive(),
+                crate::auth::set_avatar(Some(url.clone())),
+                move |result| {
+                    match result {
+                        Ok(_) => {
+                            let name = crate::auth::current_username();
+                            crate::auth::remember_avatar(name.as_str(), Some(url.clone()));
+                            crate::auth::refresh_saved_avatar(Some(url.clone()));
+                            avatar_url.set(url);
+                        }
+                        Err(msg) => err.set(msg),
                     }
-                    Err(msg) => err.set(msg),
-                }
-                busy.set(false);
-            });
+                    busy.set(false);
+                },
+            );
             let reply = RobotReply::Ready(robot_json::Value::Null);
             Ok(reply)
         },
