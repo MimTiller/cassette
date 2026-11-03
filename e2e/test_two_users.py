@@ -81,6 +81,28 @@ async def main():
                                 timeout=15, why="A receives B's reply live")
         a.check("A sees B's reply without reloading", seen_a2)
         await a.shot("duo7-a-sees-reply.png")
+
+        # Presence: both users are online, so each side's member panel must
+        # show ONLINE — 2 with no stale offline row. B registered after A
+        # came online, and Presence frames only fire on changes, so the
+        # roster itself must carry presence for B to see A online.
+        both_b = await b.until(b.painted("ONLINE — 2", xmin=b.W * 0.55),
+                               timeout=10, why="B's member panel shows both online")
+        b.check("B's member list shows A online", bool(both_b))
+        both_a = await a.until(a.painted("ONLINE — 2", xmin=a.W * 0.55),
+                               timeout=10, why="A's member panel shows both online")
+        a.check("A's member list shows B online", bool(both_a))
+        await b.shot("duo8-both-online.png")
+
+        # B reloads keeps cookies: its fresh page re-registers a socket but
+        # gets no new Presence frames (A's status never changed), so A must
+        # come back online purely from the roster seed.
+        await b.reload_page()
+        await a.cdp("Page.bringToFront")
+        settled_b = await b.until(b.painted("ONLINE — 2", xmin=b.W * 0.55),
+                                  timeout=15, why="B's panel settles both online")
+        b.check("B shows both online after reloading", bool(settled_b))
+        await b.shot("duo9-after-b-reload.png")
     except (MissingElement, WaitTimeout, CDPTimeout, CDPError) as e:
         print(f"  !! test aborted: {e}")
     finally:
