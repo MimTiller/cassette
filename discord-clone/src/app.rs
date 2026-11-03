@@ -55,7 +55,7 @@ use crate::server_settings_panel::ServerSettingsPanel;
 
 use runtime_shared::time::local_offset_minutes;
 
-use crate::data::{SERVERS, Status, USER};
+use crate::data::Status;
 use crate::ban_list_row::BanListRow;
 use crate::timeout_duration_picker::TimeoutDurationPicker;
 use crate::member_role_list::MemberRoleList;
@@ -394,10 +394,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
     crate::avatar_crop::install();
     // [Feature 16] `active_server`/`active_channel` are the *mock* selection
     // signals: every pane renders live (backend) content now, so these keep a
-    // `SERVERS[0]` default that no real user path ever displays (see each
+    // `0` default that no real user path ever displays (see each
     // pane's live/empty-state gate below).
-    let active_server: Signal<u32> = signal(SERVERS[0].id);
-    let active_channel: Signal<u32> = signal(SERVERS[0].first_text_channel().id);
+    let active_server: Signal<u32> = signal(0);
+    let active_channel: Signal<u32> = signal(0);
     // Resizable column widths (CSS pixels), driven by the thin drag handles
     // between the channel sidebar / main view and the main view / member list.
     // Both start at 240px; the handles
@@ -438,9 +438,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // in a voice channel. Drives the voice-row membership lists AND the
     // profile strip's voice-connection bar.
     let joined_voice: Signal<Option<(u32, u32)>> = signal(None);
-    // The signed-in user's live presence status. A signal (not the `USER`
-    // constant) because the profile strip can change it; the member panel
-    // renders the user under this status, so a change regroups them there too.
+    // The signed-in user's live presence status, as a signal because the
+    // profile strip can change it; the member panel renders the user under
+    // this status, so a change regroups them there too.
     let user_status: Signal<Status> = signal(Status::Online);
     // The status menu the user panel's avatar opens.
     let status_menu: Signal<bool> = signal(false);
@@ -558,14 +558,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // The live sidebar header's server dropdown.
     let server_menu_open: Signal<bool> = signal(false);
     crate::blocks::load(blocked_users, live_revision);
-    {
-        let s = active_server.get();
-        if let Some(server) = SERVERS.iter().find(|x| x.id == s) {
-            for cat in server.categories {
-                collapsed.borrow_mut().entry(cat.id).or_insert_with(|| signal(false));
-            }
-        }
-    }
     // Live (backend) servers the signed-in user belongs to, fetched once from
     // the `#[server]` RPC after `configure_server()` has pointed the stubs at
     // a base URL. Rendered as its own section below the mock rows; see the

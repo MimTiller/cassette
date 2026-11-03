@@ -192,7 +192,7 @@ pub(crate) static CURRENT_TOKEN: std::sync::Mutex<String> =
 
 /// The signed-in account's username, kept process-wide so it outlives the
 /// login screen. The profile strip reads it to label the signed-in identity
-/// with the real name (instead of the mock `USER.name` "you" placeholder).
+/// with the real name (the strip's own name).
 /// Empty means "not logged in" (guest mode) — the sentinel the holder starts
 /// at. Written by [`login`] (which signup also routes through), and restored
 /// from the persisted session on a page refresh (see [`save_session`] /
@@ -206,8 +206,7 @@ pub(crate) fn current_token() -> String {
 }
 
 /// The signed-in account's username, or an empty string when not logged in
-/// (guest mode). The profile strip falls back to the mock `USER` identity for
-/// an empty value.
+/// (guest mode). The profile strip shows no name for an empty value.
 pub(crate) fn current_username() -> String {
     CURRENT_USERNAME.lock().map(|u| u.clone()).unwrap_or_default()
 }
