@@ -56,30 +56,36 @@ impl Db {
 
     /// Create a user and return the new id. Returns `Err` on a duplicate
     /// username (the `UNIQUE` constraint), which the endpoint maps to a
-    /// domain error.
+    /// domain error. Sign-in credentials live on `credentials` rows
+    /// (see [`credentials`] queries in the sibling module), not on this row.
     #[cfg(feature = "server")]
-    pub fn insert_user(&self, username: &str, password_hash: &str) -> Result<i64, rusqlite::Error> {
+    pub fn insert_user(&self, username: &str) -> Result<i64, rusqlite::Error> {
         // `users.created_at` is NOT NULL (UTC epoch millis, the schema
         // convention) — the data layer stamps it so app-layer callers
         // (signup) don't have to.
         let created_at = now_epoch_ms();
         let c = self.lock()?;
         c.execute(
-            "INSERT INTO users (username, password_hash, created_at) VALUES (?1, ?2, ?3)",
-            rusqlite::params![username, password_hash, created_at],
+            "INSERT INTO users (username, created_at) VALUES (?1, ?2)",
+            rusqlite::params![username, created_at],
         )?;
         Ok(c.last_insert_rowid())
     }
 
     /// Fetch a user's id, username, and password hash by username (case-insensitive,
-    /// matching the `UNIQUE` collation of the `users` table).
+    /// matching the `UNIQUE` collation of the `users` table). The hash comes
+    /// from the account's password credential (`credentials` join); accounts
+    /// with no password credential return an empty hash.
     #[cfg(feature = "server")]
     pub fn user_by_username_creds(&self, username: &str) -> Option<(i64, String, String)> {
         let c = self.lock().ok()?;
         c.query_row(
-            "SELECT id, username, COALESCE(password_hash, '') FROM users WHERE username = ?1 COLLATE NOCASE",
+            "SELECT u.id, u.username, COALESCE(cr.secret, '')
+             FROM users u, credentials cr
+             WHERE u.username = ?1 COLLATE NOCASE
+               AND cr.user_id = u.id AND cr.kind = 'password'",
             rusqlite::params![username],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)),
         )
         .ok()
     }
@@ -106,20 +112,6 @@ impl Db {
         .ok()
     }
 
-    /// The stored password hash for user `id`, or `None` if there is no such
-    /// row. Used by the change-password flow to verify the current password
-    /// before replacing it (the hash is the PBKDF2 form from
-    /// [`hash_password`]).
-    pub fn password_hash_for_id(&self, user_id: i64) -> Option<String> {
-        let c = self.lock().ok()?;
-        c.query_row(
-            "SELECT COALESCE(password_hash, '') FROM users WHERE id = ?1",
-            rusqlite::params![user_id],
-            |r| r.get::<_, String>(0),
-        )
-        .ok()
-    }
-
     /// The account's current session-token version, or `None` when there is
     /// no such account (a deleted account's tokens stop verifying).
     pub fn token_version(&self, user_id: i64) -> Option<i64> {
@@ -138,20 +130,6 @@ impl Db {
         c.execute(
             "UPDATE users SET token_version = token_version + 1 WHERE id = ?1",
             rusqlite::params![user_id],
-        )
-    }
-
-    /// Replace the stored password hash for user `id`. Returns the number of
-    /// rows updated (1 on success, 0 if there is no such row).
-    pub fn set_password_hash(
-        &self,
-        user_id: i64,
-        password_hash: &str,
-    ) -> Result<usize, rusqlite::Error> {
-        let c = self.lock()?;
-        c.execute(
-            "UPDATE users SET password_hash = ?2 WHERE id = ?1",
-            rusqlite::params![user_id, password_hash],
         )
     }
 

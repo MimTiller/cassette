@@ -17,6 +17,7 @@ use rusqlite::Connection;
 
 mod password;
 mod users;
+mod credentials;
 mod servers;
 mod channels;
 mod messages;
