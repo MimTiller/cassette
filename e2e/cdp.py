@@ -634,7 +634,8 @@ class Session:
             await self.click(*sw)
         else:
             print("  (no swatch row found for role colour)")
-        if not await self.click_text("Create", ymin=self.H * 0.3):
+        # The Create button sits beside the name input, near the top of the section.
+        if not await self.click_text("Create", ymin=self.H * 0.1):
             raise MissingElement("role Create button not painted")
         await asyncio.sleep(1.5)
 

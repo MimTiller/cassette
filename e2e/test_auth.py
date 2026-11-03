@@ -14,7 +14,7 @@ from cdp import Session, MissingElement, WaitTimeout, CDPTimeout, CDPError
 
 TIMEOUT = 220
 
-BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8086"
+BASE = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8080"
 SHOTS = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
 
 
