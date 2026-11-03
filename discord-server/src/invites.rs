@@ -331,7 +331,7 @@ impl InviteService {
 
         // Tell the server's other members a member just joined so their live
         // roster (and `MEMBERS — N`) updates without a reload.
-        crate::realtime::announce_membership(&self.db, server_id, user_id, true);
+        crate::membership::access_changed(&self.db, server_id, crate::membership::AccessChange::MemberJoined { user_id });
 
         Ok(RedeemResult {
             server_id,

@@ -87,6 +87,8 @@ pub mod media;
 #[cfg(feature = "server")]
 pub mod realtime;
 #[cfg(feature = "server")]
+pub mod membership;
+#[cfg(feature = "server")]
 pub mod rate_limit;
 #[cfg(feature = "server")]
 pub mod session;

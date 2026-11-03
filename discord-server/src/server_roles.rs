@@ -523,9 +523,10 @@ fn db_from_state() -> Result<Db, ServerError> {
 }
 
 /// Tell the server's connected members to refetch its roles, and with them
-/// their permissions and the channels they can see.
+/// their permissions and the channels they can see. Called only through
+/// [`crate::membership::access_changed`].
 #[cfg(feature = "server")]
-pub fn announce(db: &Db, server_id: i64) {
+pub(crate) fn announce(db: &Db, server_id: i64) {
     crate::realtime::hub().publish(
         &crate::realtime::server_audience(db, server_id),
         &crate::server_settings::WsServerMsg::RolesChanged {
@@ -551,7 +552,7 @@ pub async fn create_role(input: CreateRoleInput) -> Result<CustomRole, ServerErr
     let role = RoleService::new(db.clone())
         .create(caller, input.server_id, &input.name, &input.color, input.mentionable)
         .map_err(ServerError::failed)?;
-    announce(&db, role.server_id);
+    crate::membership::access_changed(&db, role.server_id, crate::membership::AccessChange::RoleEdited { role_id: role.id });
     Ok(role)
 }
 
@@ -564,7 +565,7 @@ pub async fn update_role(input: UpdateRoleInput) -> Result<CustomRole, ServerErr
     let role = RoleService::new(db.clone())
         .update(caller, input.role_id, &input.name, &input.color, input.mentionable, input.permissions)
         .map_err(ServerError::failed)?;
-    announce(&db, role.server_id);
+    crate::membership::access_changed(&db, role.server_id, crate::membership::AccessChange::RoleEdited { role_id: role.id });
     Ok(role)
 }
 
@@ -576,7 +577,7 @@ pub async fn move_role(input: MoveRoleInput) -> Result<CustomRole, ServerError> 
     let role = RoleService::new(db.clone())
         .move_to(caller, input.role_id, input.position)
         .map_err(ServerError::failed)?;
-    announce(&db, role.server_id);
+    crate::membership::access_changed(&db, role.server_id, crate::membership::AccessChange::RoleEdited { role_id: role.id });
     Ok(role)
 }
 
@@ -586,7 +587,7 @@ pub async fn delete_role(input: DeleteRoleInput) -> Result<(), ServerError> {
     let db = db_from_state()?;
     let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
     let server_id = RoleService::new(db.clone()).delete(caller, input.role_id).map_err(ServerError::failed)?;
-    announce(&db, server_id);
+    crate::membership::access_changed(&db, server_id, crate::membership::AccessChange::RoleDeleted { role_id: input.role_id });
     Ok(())
 }
 
@@ -598,7 +599,7 @@ pub async fn assign_role(input: AssignRoleInput) -> Result<(), ServerError> {
     let server_id = RoleService::new(db.clone())
         .assign(caller, input.role_id, input.user_id, input.assigned)
         .map_err(ServerError::failed)?;
-    announce(&db, server_id);
+    crate::membership::access_changed(&db, server_id, crate::membership::AccessChange::RolesChanged { user_id: input.user_id });
     Ok(())
 }
 
