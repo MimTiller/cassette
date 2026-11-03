@@ -7,3 +7,4 @@ media/
 giphy.key
 e2e/out/
 __pycache__/
+scripts_tmp/
