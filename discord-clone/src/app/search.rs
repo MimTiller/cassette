@@ -28,9 +28,12 @@ pub(super) fn search_box(server: Signal<Option<i64>>, server_name: String, on_ju
     let results: Signal<Option<SearchResults>> = signal(None);
     let busy = signal(false);
     let error = signal(String::new());
-
+    // The search box's scope, so the search RPC's reply lands even after the
+    // busy flag rebuilds the box: `run` takes a token, cloned where each
+    // handler is built.
+    let alive = runtime_core::ScopeAlive::current();
     // Run the query; `offset > 0` appends the next page.
-    let run = move |offset: i64| {
+    let run = move |offset: i64, al: runtime_core::ScopeAlive| {
         let Some(server_id) = server.get() else { return };
         let text = query.get();
         if text.trim().is_empty() {
@@ -40,26 +43,33 @@ pub(super) fn search_box(server: Signal<Option<i64>>, server_name: String, on_ju
         busy.set(true);
         error.set(String::new());
         let input = SearchInput { server_id, query: text, tz_offset_minutes: tz_offset_minutes(), offset };
-        runtime_core::driver::spawn_async(async move {
-            match discord_server::search::search_messages(input).await {
-                Ok(mut page) => {
-                    if offset > 0 {
-                        if let Some(prev) = results.get() {
-                            let mut hits = prev.hits;
-                            hits.extend(page.hits);
-                            page.hits = hits;
+        runtime_core::spawn_then_in(
+            &al,
+            discord_server::search::search_messages(input),
+            move |found| {
+                match found {
+                    Ok(mut page) => {
+                        if offset > 0 {
+                            if let Some(prev) = results.get() {
+                                let mut hits = prev.hits;
+                                hits.extend(page.hits);
+                                page.hits = hits;
+                            }
                         }
+                        results.set(Some(page));
                     }
-                    results.set(Some(page));
+                    Err(e) => error.set(crate::errors::friendly(&e)),
                 }
-                Err(e) => error.set(crate::errors::friendly(&e)),
-            }
-            busy.set(false);
-        });
+                busy.set(false);
+            },
+        );
     };
+    // Handlers built in the component body clone the scope token so `run`
+    // keeps the box's own scope as its anchor.
+    let al_key = alive.clone();
     let on_key = move |ev: &KeyEvent| match ev.key.as_str() {
         "Enter" => {
-            run(0);
+            run(0, al_key.clone());
             KeyOutcome::PreventDefault
         }
         "Escape" => {
@@ -72,6 +82,9 @@ pub(super) fn search_box(server: Signal<Option<i64>>, server_name: String, on_ju
     let dropdown = switch(
         move || (results.get(), busy.get(), error.get()),
         move |(found, searching, err): &(Option<SearchResults>, bool, String)| {
+            // Fresh copy of the box's scope token per render, for the "Load
+            // more" handler's RPC reply.
+            let al_more = alive.clone();
             if found.is_none() && !*searching && err.is_empty() {
                 return ui! { view(style = StyleRules { width: Some(px(0.0)), height: Some(px(0.0)), ..Default::default() }) {} };
             }
@@ -151,7 +164,7 @@ pub(super) fn search_box(server: Signal<Option<i64>>, server_name: String, on_ju
                     }
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended && !busy.get() {
-                            run(next);
+                            run(next, al_more.clone());
                         }
                         TouchResponse::CONSUMED
                     })

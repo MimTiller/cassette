@@ -51,12 +51,18 @@ impl UserPopupCtx {
         }
         let profile = self.profile;
         let server_id = self.server.get();
-        runtime_core::driver::spawn_async(async move {
-            let input = GetUserProfileInput { user_id, server_id };
-            if let Ok(p) = discord_server::profiles::get_user_profile(input).await {
-                profile.set(Some(p));
-            }
-        });
+        let input = GetUserProfileInput { user_id, server_id };
+        runtime_core::spawn_then_in(
+            // Anchored on the app shell: the profile signal lives there, and
+            // a popup that closes tears down the node that started this fetch.
+            &crate::app::shell_alive(),
+            discord_server::profiles::get_user_profile(input),
+            move |result| {
+                if let Ok(p) = result {
+                    profile.set(Some(p));
+                }
+            },
+        );
     }
 
     /// A press handler for a user's avatar or name: a primary click opens the
@@ -401,14 +407,21 @@ fn role_chips(user_id: i64, in_server: bool, label: StyleRules) -> Element {
             }
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended && manage {
-                    runtime_core::driver::spawn_async(async move {
-                        let input = discord_server::server_roles::AssignRoleInput { role_id, user_id, assigned: add };
-                        if discord_server::server_roles::assign_role(input).await.is_ok() {
-                            if let Some(sid) = crate::mentions::server_id() {
-                                crate::mentions::load_roles(sid);
+                    runtime_core::spawn_then_in(
+                        // Anchored on the app shell: the success path refetches
+                        // roles into shared state via mentions::load_roles.
+                        &crate::app::shell_alive(),
+                        discord_server::server_roles::assign_role(
+                            discord_server::server_roles::AssignRoleInput { role_id, user_id, assigned: add },
+                        ),
+                        move |result| {
+                            if result.is_ok() {
+                                if let Some(sid) = crate::mentions::server_id() {
+                                    crate::mentions::load_roles(sid);
+                                }
                             }
-                        }
-                    });
+                        },
+                    );
                 }
                 TouchResponse::CONSUMED
             })
@@ -432,15 +445,22 @@ fn role_chips(user_id: i64, in_server: bool, label: StyleRules) -> Element {
 /// and menu show the new relationship.
 fn friend_action(relationship: &str, user_id: i64, username: String, ctx: UserPopupCtx) {
     let relationship = relationship.to_string();
-    runtime_core::driver::spawn_async(async move {
-        let _ = match relationship.as_str() {
-            "none" => crate::friends::send_friend_request(username).await,
-            "incoming" => crate::friends::accept_friend_request(user_id).await,
-            "outgoing" => crate::friends::decline_or_cancel(user_id).await,
-            _ => crate::friends::remove_friend(user_id).await,
-        };
-        ctx.refresh(user_id);
-    });
+    runtime_core::spawn_then_in(
+        // Anchored on the app shell: the follow-up refresh writes the shell's
+        // profile signal, and this fires from the popup that closes over it.
+        &crate::app::shell_alive(),
+        async move {
+            match relationship.as_str() {
+                "none" => crate::friends::send_friend_request(username).await,
+                "incoming" => crate::friends::accept_friend_request(user_id).await,
+                "outgoing" => crate::friends::decline_or_cancel(user_id).await,
+                _ => crate::friends::remove_friend(user_id).await,
+            }
+        },
+        // The friends RPC's own result isn't read (the profile card carries
+        // the new relationship); only the profile refresh matters.
+        move |_| ctx.refresh(user_id),
+    );
 }
 
 fn block_action(block: bool, user_id: i64, ctx: UserPopupCtx) {
@@ -528,7 +548,9 @@ fn user_menu(
     }
     items.push(None);
     items.push(Some(("Copy User ID".to_string(), false, Rc::new(move || {
-        runtime_core::driver::spawn_async(async move {
+        // Detached: the clipboard write's result isn't read by the screen;
+        // the menu closes at once via `close()` below.
+        runtime_core::driver::spawn_detached(async move {
             let _ = clipboard::set_text(&user_id.to_string()).await;
         });
         close();
