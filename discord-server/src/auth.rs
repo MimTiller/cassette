@@ -131,26 +131,22 @@ impl AuthService {
     }
 
     /// Create a new account for `username` with the plaintext `password`.
-    ///
-    /// The password is hashed (salted PBKDF2-HMAC-SHA256) and the row is
-    /// inserted. Returns the new user id.
+    /// Signup is password-only today and goes through the same provider
+    /// module login uses ([`crate::identity::PasswordProvider`]'s account
+    /// registration); the password is hashed (salted PBKDF2-HMAC-SHA256)
+    /// and the row inserted. Returns the new user id.
     ///
     /// # Errors
     /// - `username '…' is already taken` — another account already claims the
     ///   handle (the `users.username` `UNIQUE` constraint fired).
     /// - `failed to create user: …` — any other persistence failure.
     pub fn signup(&self, username: &str, password: &str) -> Result<SignupResult, String> {
-        let hash = hash_password(password);
-        match self.db.insert_user(username, &hash) {
-            Ok(id) => Ok(SignupResult {
-                user_id: id,
-                username: username.to_string(),
-            }),
-            Err(e) if e.to_string().contains("UNIQUE") => {
-                Err(format!("username '{username}' is already taken"))
-            }
-            Err(e) => Err(format!("failed to create user: {e}")),
-        }
+        let user_id = PasswordProvider::new(self.db.clone())
+            .register_account(username, password)?;
+        Ok(SignupResult {
+            user_id,
+            username: username.to_string(),
+        })
     }
 
     /// Rename the account `user_id` to `new_username`. The handle must be
@@ -259,13 +255,21 @@ fn login_limiters() -> [&'static crate::rate_limit::RateLimiter; 2] {
 
 // ── login ───────────────────────────────────────────────────────────────────
 
-/// The per-account login-failure policy: after `LOGIN_MAX_FAILURES` wrong
-/// passwords, the account is locked for `LOGIN_LOCKOUT_SECS`. Server-only —
-/// the wire types below are shared with the client build.
+// The credential check itself lives behind the identity-provider seam
+// ([`crate::identity`]): login asks the provider chosen by
+// [`crate::identity::login_provider`] — the only implementation today,
+// [`crate::identity::PasswordProvider`] — then maps the verified identity to
+// the local account and issues the session token exactly as before. The
+// lockout policy numbers live with the provider that enforces them.
 #[cfg(feature = "server")]
-const LOGIN_MAX_FAILURES: i64 = 5;
-#[cfg(feature = "server")]
-const LOGIN_LOCKOUT_SECS: i64 = 300;
+use crate::identity::{
+    IdentityProvider,
+    login_provider,
+    PasswordProvider,
+    Credentials,
+    LOGIN_MAX_FAILURES,
+    LOGIN_LOCKOUT_SECS,
+};
 
 /// The wire input for [`login`].
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -307,60 +311,31 @@ pub struct LoginResult {
 
 #[cfg(feature = "server")]
 impl AuthService {
-    /// Authenticate `username` / `password` against the stored PBKDF2 hash.
-    ///
-    /// Per-account lockout: once `LOGIN_MAX_FAILURES` failures are recorded
-    /// within the trailing `LOGIN_LOCKOUT_SECS` window, every further attempt
-    /// is rejected until the window slides past the oldest recorded failure —
-    /// regardless of whether the password is right. A wrong password records
-    /// one failure; a successful login clears the account's failure log.
+    /// Authenticate `username` / `password` by asking the identity provider
+    /// ([`crate::identity::login_provider`] picks it) for a verified
+    /// [`crate::identity::VerifiedIdentity`], then mapping that identity to
+    /// the local account and issuing the session token. The credential
+    /// policy — per-account lockout, uniform "invalid username or password",
+    /// failure recording/clearing, hash upgrades — lives in the provider.
     ///
     /// # Errors
-    /// - `too many failed login attempts — account locked for N seconds` —
-    ///   the per-account lockout window is open.
-    /// - `invalid username or password` — no such account, or the password
-    ///   does not verify. Both cases are reported identically (and both
-    ///   record a failure when the account exists) so the endpoint never
-    ///   leaks which usernames are registered.
+    /// - provider errors pass through: `too many failed login attempts —
+    ///   account locked for N seconds` and `invalid username or password`.
     pub fn login(&self, username: &str, password: &str) -> Result<LoginResult, String> {
-        let Some((user_id, stored_username, stored_hash)) = self.db.user_by_username_creds(username) else {
-            // Take as long as a real check, so timing doesn't reveal which
-            // usernames exist.
-            crate::db::burn_password_check(password);
-            return Err("invalid username or password".to_string());
-        };
-
-        // Lockout is checked BEFORE the password is verified: a locked
-        // account rejects everything, even the right password, so probing
-        // during the window is useless.
-        let failures = self.db.login_failures(user_id, LOGIN_LOCKOUT_SECS);
-        if failures >= LOGIN_MAX_FAILURES {
-            let retry_after = self.retry_after_secs(user_id);
-            return Err(format!(
-                "too many failed login attempts — account locked for {retry_after} seconds"
-            ));
-        }
-
-        if !crate::db::verify_password(&stored_hash, password) {
-            self.db
-                .record_login_failure(user_id)
-                .map_err(|e| format!("failed to record login failure: {e}"))?;
-            return Err("invalid username or password".to_string());
-        }
-
-        // Success: clear the failure log so the next brute-force burst
-        // starts from a clean slate (the floor resets).
-        self.db
-            .clear_login_failures(user_id)
-            .map_err(|e| format!("failed to clear login failures: {e}"))?;
-        // Upgrade a hash made with fewer iterations than new ones use.
-        if crate::db::password_needs_rehash(&stored_hash) {
-            let _ = self.db.set_password_hash(user_id, &hash_password(password));
-        }
+        let identity = login_provider(self.db.clone())
+            .authenticate(Credentials {
+                username: username.to_string(),
+                password: password.to_string(),
+            })?;
+        // The password provider's subject is the local user id; an external
+        // IdP's would be resolved by a different mapping once one plugs in.
+        let user_id = identity.subject
+            .parse::<i64>()
+            .map_err(|_| "failed to map identity to a local account")?;
         Ok(LoginResult {
             user_id,
             token: crate::session::issue_token(user_id),
-            username: stored_username,
+            username: identity.suggested_username,
             display_name: self.db.user_display_name(user_id),
             avatar_url: self.db.user_avatar(user_id),
             blocked_ids: self.db.blocked_ids_for_user(user_id),
@@ -418,30 +393,6 @@ impl AuthService {
                 .map_err(|e| format!("failed to clear avatar: {e}"))?;
         }
         Ok(AvatarResult { user_id, avatar_url: self.db.user_avatar(user_id) })
-    }
-
-    /// Seconds until the account's lockout window slides past its oldest
-    /// recorded failure (i.e. the failure count drops back under the
-    /// threshold). Used only in the lockout error message.
-    fn retry_after_secs(&self, user_id: i64) -> u64 {
-        let oldest: Option<i64> = self
-            .db
-            .lock()
-            .ok()
-            .and_then(|c| {
-                c.query_row(
-                    "SELECT MIN(at) FROM login_failures WHERE user_id = ?1",
-                    rusqlite::params![user_id],
-                    |r| r.get::<_, i64>(0),
-                )
-                .ok()
-            });
-        let Some(oldest) = oldest else { return 1 };
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
-        (oldest + LOGIN_LOCKOUT_SECS - now).max(1).unsigned_abs()
     }
 }
 
