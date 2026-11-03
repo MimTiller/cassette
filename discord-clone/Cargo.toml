@@ -33,6 +33,10 @@ crate-type = ["rlib"]
 # wrapper (`idealyst dev`). Pulls `dev-server` so the recorder-side
 # registration seams compile.
 sidecar = ["dep:dev-server"]
+# `dev-session`: never enabled; declared so Cargo.lock records the crates
+# `idealyst dev` pulls in through these features, instead of cargo resolving
+# them from the registry on every dev build.
+dev-session = ["idealyst/hot-reload", "idealyst/hydrate", "idealyst/robot", "idealyst/ui-overlay", "runtime-core/dev"]
 
 [dependencies]
 # The platform surface, used by `src/main.rs` only. It carries whatever
