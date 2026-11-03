@@ -752,10 +752,14 @@ impl RowCtx {
         let key = MessageKey::Live { id: m.id };
         let mid = m.id;
         let (pin_msgs, pin_cnt, pin_rev, pin_err) = (self.pinned_messages, self.pinned_count, self.pinned_revision, self.pinned_error);
+        let pin_vis = self.pin_visible;
         let on_pin = Rc::new(move || {
             runtime_core::driver::spawn_async(async move {
                 match crate::pins::pin_message(mid).await {
                     Ok(res) => {
+                        // Show the "Message pinned!" toast for a moment.
+                        pin_vis.set(true);
+                        runtime_core::after_ms_detached(4_500, move || pin_vis.set(false));
                         pin_cnt.set(res.pinned_count);
                         if let Ok(list) = crate::pins::list_pinned(res.channel_id).await {
                             pin_msgs.set(list);

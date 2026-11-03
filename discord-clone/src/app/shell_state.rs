@@ -172,6 +172,17 @@ pub(super) fn enter_live_server(
             (channels, members, counts)
         },
         move |(channels, members, counts)| {
+            // Unread counts land BEFORE the first channel is auto-selected:
+            // selecting the channel fires the channel-open effect, which reads
+            // this buffer to offer the "N new messages" bar, so the buffer
+            // must already hold the counts at that point.
+            if let Some(counts) = counts {
+                buf.borrow_mut()
+                    .extend(counts.into_iter().map(|c| {
+                        (c.channel_id, (c.count, c.unread_mentions))
+                    }));
+                rev.set(rev.get() + 1);
+            }
             if let Some(channels) = channels {
                 let first = channels
                     .iter()
@@ -195,13 +206,6 @@ pub(super) fn enter_live_server(
             if let Some(members) = members {
                 crate::mentions::members_loaded(sid, &members);
                 lmem.set(members);
-            }
-            if let Some(counts) = counts {
-                buf.borrow_mut()
-                    .extend(counts.into_iter().map(|c| {
-                        (c.channel_id, (c.count, c.unread_mentions))
-                    }));
-                rev.set(rev.get() + 1);
             }
         },
     );

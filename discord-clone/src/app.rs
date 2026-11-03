@@ -820,6 +820,20 @@ fn app_shell(authed: Signal<bool>) -> Element {
             if als.get().is_some() {
                 return;
             }
+            // Fetch the unread counts BEFORE selecting the landing channel:
+            // selecting it fires the channel-open effect, which reads the
+            // unread buffer to offer the "N new messages" bar, so the buffer
+            // must already hold the counts when that effect runs.
+            let counts: Vec<crate::servers::UnreadCount> = match crate::servers::unread_counts(sid).await {
+                Ok(c) => c,
+                Err(_) => Vec::new(),
+            };
+            {
+                let buf = lunread.clone();
+                buf.borrow_mut()
+                    .extend(counts.into_iter().map(|c| (c.channel_id, (c.count, c.unread_mentions))));
+                lunread_rev.set(lunread_rev.get() + 1);
+            }
             lkick.set(None);
             lbcm.set(None);
             ltcm.set(None);
@@ -863,12 +877,6 @@ fn app_shell(authed: Signal<bool>) -> Element {
             if let Ok(members) = crate::moderation::list_members(sid).await {
                 crate::mentions::members_loaded(sid, &members);
                 lmbrs.set(members);
-            }
-            if let Ok(counts) = crate::servers::unread_counts(sid).await {
-                let buf = lunread.clone();
-                buf.borrow_mut()
-                    .extend(counts.into_iter().map(|c| (c.channel_id, (c.count, c.unread_mentions))));
-                lunread_rev.set(lunread_rev.get() + 1);
             }
             als.set(Some(sid));
         });

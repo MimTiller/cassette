@@ -116,8 +116,7 @@ async def main():
         pinned = menu_ok and await a.click_text("Pin message", xmin=300)
         toast = pinned and await a.until(
             a.painted("Message pinned!"), timeout=8, why="pin toast")
-        a.known_bug("pin: the pin toast confirms", bool(toast),
-                    why="Pin message row in the menu")
+        a.check("pin: the pin toast confirms", bool(toast))
         badge_pos = await a.text_pos("\U0001f4cc", xmin=a.W * 0.2,
                                      xmax=a.W * 0.9, ymin=0, ymax=140)
         a.check("the channel header shows a pin badge", bool(badge_pos))

@@ -70,8 +70,7 @@ async def main():
         race_ok = await a.until(
             "(() => [...document.querySelectorAll('*')].some(e => e.children.length === 0 && /\\d+ new messages/.test(e.textContent.trim())))()",
             timeout=8, why="unread bar in the channel the server opened on")
-        a.known_bug("the channel a server opens on shows its new-messages bar", race_ok,
-                    why="the channel opens before unread_counts returns, so the count is 0")
+        a.check("the channel a server opens on shows its new-messages bar", race_ok)
         # Opening a channel once the counts are in: #lobby has 12 unread.
         await asyncio.sleep(1.5)
         await a.click_text("lobby", xmin=72, xmax=312)
