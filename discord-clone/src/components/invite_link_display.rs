@@ -49,20 +49,23 @@ pub fn InviteLinkDisplay(code: String) -> Element {
     // `Copy`: write the link to the system clipboard for real, then reveal the
     // `Copied!` line. The clipboard SDK (`clipboard::set_text`) is async and
     // per-backend (navigator.clipboard on web, UIPasteboard on Apple,
-    // ClipboardManager on Android, arboard on Linux), so the work is spawned
-    // via `runtime_core::driver::spawn_async` (the same idiom the channel /
-    // join / invite modals use) and the confirmation flips only on success —
-    // a failed write (no clipboard available) shows nothing rather than a lie.
-    // `copied` is `Copy`, so it's moved into the async block as a plain handle;
-    // `text` is an owned `String` (the link) moved with it.
-    let on_copy = move || {
-        let text = link.get();
-        let copied = copied;
-        runtime_core::spawn_then(async move { clipboard::set_text(&text).await }, move |result| {
-            if result.is_ok() {
-                copied.set(true);
-            }
-        });
+    // ClipboardManager on Android, arboard on Linux), so the call runs in the
+    // `spawn_then_in` future and the confirmation flips only on success in the
+    // callback — a failed write (no clipboard available) shows nothing rather
+    // than a lie. The callback is anchored on this component's scope so a reply
+    // landing after the card unmounted is dropped, not written to freed signals.
+    let alive = runtime_core::ScopeAlive::current();
+    let on_copy = {
+        let alive = alive.clone();
+        let copied = copied.clone();
+        move || {
+            let text = link.get();
+            runtime_core::spawn_then_in(&alive, async move { clipboard::set_text(&text).await }, move |result| {
+                if result.is_ok() {
+                    copied.set(true);
+                }
+            });
+        }
     };
 
     ui! {
