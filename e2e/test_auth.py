@@ -32,7 +32,7 @@ async def main():
         # 1. sign up with a fresh random account
         await s.signup(user, pw)
         s.check("sign-up signs the fresh account in",
-                await s.visible("USER SETTINGS", xmax=s.W * 0.2))
+                await s.visible("Online"))
         s.check("the user panel shows the new account",
                 await s.visible(user, ymin=s.H * 0.8))
         await s.shot("auth2-signed-up.png")
@@ -43,13 +43,13 @@ async def main():
                 await s.visible("Log Out", xmax=s.W * 0.2))
         await s.log_out()
         signed_out = (await s.visible("Welcome back!")
-                      and not await s.visible("USER SETTINGS", xmax=s.W * 0.2))
+                      and not await s.visible("Online"))
         s.check("sign-out lands back on the login screen", signed_out)
         await s.shot("auth3-signed-out.png")
 
         # 3. sign in again with the same credentials
         await s.login(user, pw)
-        signed_in = await s.visible("USER SETTINGS", xmax=s.W * 0.2)
+        signed_in = await s.visible("Online")
         s.check("sign-in again restores the signed-in shell", signed_in)
         await s.shot("auth4-signed-in-again.png")
 

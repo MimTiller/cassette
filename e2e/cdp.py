@@ -609,13 +609,13 @@ class Session:
     async def settings_section(self, label, xmax_frac=0.3):
         """Click a sidebar row; verify the section's own panel paints.
 
-        Both settings dialogs (server and user) put their sidebar rows at
-        x ~ 290-380: click inside that band, then look for the label
-        re-painting in the main content panel to the right of it.
+        Both settings dialogs (server and user) put their sidebar rows left
+        of x = 260: click there, then look for the label re-painting in the
+        main content panel to the right of it.
         """
-        if not await self.click_text(label, xmin=290, xmax=380):
+        if not await self.click_text(label, xmax=260):
             return False
-        return await self.until(self.painted(label, xmin=380,
+        return await self.until(self.painted(label, xmin=260,
                                              xmax=int(self.W * 0.9)),
                                 timeout=8, why=f"section '{label}' panel")
 
