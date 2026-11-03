@@ -47,15 +47,22 @@ fn dot(color: &str, size: f32) -> Element {
 }
 
 /// Reload the list, @everyone's permissions and the app's role colours
-/// after a change.
-fn reload(server_id: i64, roles: Signal<Vec<CustomRole>>, everyone: Signal<Permissions>) {
-    runtime_core::driver::spawn_async(async move {
-        if let Ok(snap) = server_roles::server_roles(server_roles::ServerRolesInput { server_id }).await {
-            roles.set(snap.roles);
-            everyone.set(snap.everyone_permissions);
-        }
-        crate::mentions::load_roles(server_id);
-    });
+/// after a change. The reply lands in the caller's signals, so the fetch
+/// runs in `spawn_then_in`'s future and every write in its callback,
+/// anchored on the caller's scope: if that is torn down mid-flight the
+/// callback is simply dropped.
+fn reload(server_id: i64, roles: Signal<Vec<CustomRole>>, everyone: Signal<Permissions>, alive: runtime_core::ScopeAlive) {
+    runtime_core::spawn_then_in(
+        &alive,
+        server_roles::server_roles(server_roles::ServerRolesInput { server_id }),
+        move |result| {
+            if let Ok(snap) = result {
+                roles.set(snap.roles);
+                everyone.set(snap.everyone_permissions);
+            }
+            crate::mentions::load_roles(server_id);
+        },
+    );
 }
 
 /// Whether the signed-in user may edit a role at `position`: the owner may
@@ -101,7 +108,12 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
     let selected: Signal<Option<Selected>> = signal(None);
     // The permissions being edited, and whose they are.
     let draft: Signal<Permissions> = signal(Permissions::NONE);
-    reload(sid, roles, everyone);
+    // Replies to these signals belong to this section's scope: tasks anchor
+    // on it, and if it is torn down mid-flight the callback is simply dropped.
+    // Handlers built per row take their own copy (ScopeAlive is Clone, not
+    // Copy).
+    let alive = runtime_core::ScopeAlive::current();
+    reload(sid, roles, everyone, alive.clone());
 
     let small = |c: &'static str| StyleRules { font_size: Some(px(12.0)), color: Some(col(c)), ..Default::default() };
     let select = move |which: Selected, current: Permissions| {
@@ -112,6 +124,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
             selected.set(Some(which));
         }
     };
+    let al_list = alive.clone();
     let list = switch(
         move || (roles.get(), everyone.get(), selected.get()),
         move |(list, everyone_perms, sel): &(Vec<CustomRole>, Permissions, Option<Selected>)| {
@@ -125,15 +138,18 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                     let can_edit = manage && editable(r.position);
                     let name_color = if r.color.is_empty() { col(theme::TEXT_NORMAL) } else { theme::fixed(&r.color) };
                     let mention_label = if r.mentionable { "@ anyone" } else { "@ mods only" };
+                    let al_row = al_list.clone();
                     // Swapping with the neighbour above (`up`) or below: each
                     // takes the other's position.
                     let swap = |other: Option<&CustomRole>| {
                         let other = other.cloned();
                         let me = role.clone();
+                        let al_swap = al_row.clone();
                         move || {
                             let Some(other) = other.clone() else { return };
                             let (a, b) = (me.clone(), other);
                             let (pa, pb) = if a.position == b.position { (b.position + 1, a.position) } else { (b.position, a.position) };
+                            let al = al_swap.clone();
                             runtime_core::driver::spawn_async(async move {
                                 let first = server_roles::move_role(server_roles::MoveRoleInput { role_id: a.id, position: pa }).await;
                                 let second = match first {
@@ -143,7 +159,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                                 if let Err(e) = second {
                                     error.set(crate::errors::friendly(&e));
                                 }
-                                reload(sid, roles, everyone);
+                                reload(sid, roles, everyone, al);
                             });
                         }
                     };
@@ -155,6 +171,11 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                     let down = swap(below);
                     let perms = r.permissions;
                     let id = r.id;
+                    // Each row handler owns its own copy of the row token
+                    // (ScopeAlive is Clone, not Copy, and the row's controls
+                    // are rebuilt on every render).
+                    let al_toggle = al_row.clone();
+                    let al_del = al_row.clone();
                     ui! {
                         view(style = StyleRules {
                             flex_direction: Some(FlexDirection::Row),
@@ -198,6 +219,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                             .on_touch(move |ev| {
                                 if ev.phase == TouchPhase::Ended && can_edit {
                                     let t = toggle.clone();
+                                    let al = al_toggle.clone();
                                     runtime_core::driver::spawn_async(async move {
                                         let input = server_roles::UpdateRoleInput {
                                             role_id: t.id,
@@ -207,7 +229,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                                             permissions: None,
                                         };
                                         match server_roles::update_role(input).await {
-                                            Ok(_) => reload(sid, roles, everyone),
+                                            Ok(_) => reload(sid, roles, everyone, al),
                                             Err(e) => error.set(crate::errors::friendly(&e)),
                                         }
                                     });
@@ -219,13 +241,14 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                                 { icon_button("▼", down_ok, down) }
                                 {
                                     icon_button("×", can_edit, move || {
+                                        let al = al_del.clone();
                                         runtime_core::driver::spawn_async(async move {
                                             match server_roles::delete_role(server_roles::DeleteRoleInput { role_id: id }).await {
                                                 Ok(()) => {
                                                     if selected.get() == Some(Selected::Role(id)) {
                                                         selected.set(None);
                                                     }
-                                                    reload(sid, roles, everyone);
+                                                    reload(sid, roles, everyone, al);
                                                 }
                                                 Err(e) => error.set(crate::errors::friendly(&e)),
                                             }
@@ -270,6 +293,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
         },
     );
 
+    let al_editor = alive.clone();
     // The selected entry's permissions: one switch per flag, then Save.
     let editor = switch(
         move || (selected.get(), draft.get(), roles.get()),
@@ -341,9 +365,11 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                 "Only roles below your highest role can be edited.".to_string()
             };
             let note_el = (!note.is_empty()).then(|| ui! { text(style = small(theme::TEXT_MUTED)) { note } });
+            let al_save = al_editor.clone();
             let save = crate::controls::button_view("Save Changes", crate::controls::ButtonKind::Primary, move || {
                 let perms = draft.get();
                 let role = role.clone();
+                let al = al_save.clone();
                 runtime_core::driver::spawn_async(async move {
                     let result = match role {
                         Some(r) => server_roles::update_role(server_roles::UpdateRoleInput {
@@ -362,7 +388,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                     match result {
                         Ok(()) => {
                             error.set(String::new());
-                            reload(sid, roles, everyone);
+                            reload(sid, roles, everyone, al);
                         }
                         Err(e) => error.set(crate::errors::friendly(&e)),
                     }
@@ -408,6 +434,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
     );
 
     let create: Element = if manage {
+        let al_create = alive.clone();
         let swatches: Vec<Element> = COLORS
             .iter()
             .map(|c| {
@@ -465,6 +492,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                     }
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
+                            let al = al_create.clone();
                             let input = server_roles::CreateRoleInput {
                                 server_id: sid,
                                 name: name.get(),
@@ -476,7 +504,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                                     Ok(_) => {
                                         name.set(String::new());
                                         error.set(String::new());
-                                        reload(sid, roles, everyone);
+                                        reload(sid, roles, everyone, al);
                                     }
                                     Err(e) => error.set(crate::errors::friendly(&e)),
                                 }
