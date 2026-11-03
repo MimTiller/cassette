@@ -103,6 +103,11 @@ mod popups;
 mod sidebar;
 mod messages;
 mod jump;
+
+/// The message a jump is highlighting, for the robot suite's hooks.
+pub(crate) fn jump_target() -> Option<i64> {
+    jump::target()
+}
 mod search;
 mod composer;
 mod member_list;
@@ -261,6 +266,7 @@ static RESTORED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::
 static SESSION_NOTE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 pub fn app() -> Element {
+    crate::robot_hooks::register();
     // The colour theme (tokens for every role), with the saved accent.
     crate::theme::install(crate::notify::load_theme(), crate::notify::load_accent());
     crate::app_icon::show(crate::app_icon::current());
