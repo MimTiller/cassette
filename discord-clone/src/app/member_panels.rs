@@ -356,7 +356,7 @@ pub(super) fn live_member_panel(
                     flex_shrink: Some(grow(0.0)),
                     overflow: Some(Overflow::Hidden),
                     ..Default::default()
-                }) {
+                }, test_id = "member-row-name") {
                     if is_self {
                         text(style = name_style_self_branch) {
                             format!("{} (you)", crate::auth::shown_name(&member.username))

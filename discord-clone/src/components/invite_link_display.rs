@@ -96,6 +96,7 @@ pub fn InviteLinkDisplay(code: String) -> Element {
             // always the real invite link.
             text_input(
                 value = link,
+                test_id = "invite-code-field",
                 style = StyleRules {
                     height: Some(px(40.0)),
                     font_size: Some(px(15.0)),

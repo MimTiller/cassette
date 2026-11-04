@@ -104,7 +104,9 @@ mod sidebar;
 mod messages;
 mod jump;
 
-/// The message a jump is highlighting, for the robot suite's hooks.
+/// The message a jump is highlighting, for the robot suite's hooks (only a
+/// robot build calls it, see `robot_hooks`).
+#[allow(dead_code)]
 pub(crate) fn jump_target() -> Option<i64> {
     jump::target()
 }
@@ -1616,7 +1618,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         flex_grow: Some(grow(1.0)),
                         scrollbar: Some(runtime_core::ScrollbarVisibility::Hidden),
                         ..Default::default()
-                    }) {
+                    }, test_id = "msg-scroll") {
                         view(style = StyleRules {
                             flex_direction: Some(FlexDirection::Column),
                             ..Default::default()

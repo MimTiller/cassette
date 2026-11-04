@@ -270,7 +270,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
             padding_right: Some(px(16.0)),
             background: Some(col(BG_MAIN)),
             ..Default::default()
-        }) {
+        }, test_id = "live-invite-open") {
             text(style = StyleRules {
                 font_size: Some(px(18.0)),
                 font_weight: Some(FontWeight::Bold),
@@ -285,7 +285,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
                 ..rounded(6.0)
-            }) {
+            }, test_id = "invite-done") {
                 text(style = StyleRules {
                     color: Some(col(TEXT)),
                     font_size: Some(px(12.0)),
@@ -393,6 +393,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
                     button(
                         label = "Create invite".to_string(),
                         on_click = live_invite_create,
+                        test_id = "live-invite-create",
                         style = StyleRules {
                             height: Some(px(40.0)),
                             margin_top: Some(px(16.0)),

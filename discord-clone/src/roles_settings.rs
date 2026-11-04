@@ -94,6 +94,310 @@ fn icon_button(glyph: &'static str, enabled: bool, on_tap: impl Fn() + 'static) 
     }
 }
 
+/// Robot anchors for the role list and its swatches: the colour dots by index
+/// (the suite picks one and checks the created role's colour), and the
+/// create-role name input.
+pub fn swatch_id(color: &'static str) -> &'static str {
+    match color {
+        "" => "role-swatch-none",
+        "#1abc9c" => "role-swatch-teal",
+        "#2ecc71" => "role-swatch-green",
+        "#3498db" => "role-swatch-blue",
+        "#9b59b6" => "role-swatch-purple",
+        "#e91e63" => "role-swatch-pink",
+        "#f1c40f" => "role-swatch-yellow",
+        "#e67e22" => "role-swatch-orange",
+        "#e74c3c" => "role-swatch-red",
+        "#95a5a6" => "role-swatch-grey",
+        "#607d8b" => "role-swatch-slate",
+        _ => "role-swatch-other",
+    }
+}
+
+/// The section's state every list row reaches into.
+#[derive(Clone)]
+struct RolesCx {
+    sid: i64,
+    manage: bool,
+    roles: Signal<Vec<CustomRole>>,
+    everyone: Signal<Permissions>,
+    selected: Signal<Option<Selected>>,
+    draft: Signal<Permissions>,
+    error: Signal<String>,
+    /// Replies anchor on the section's scope: dropped if it is torn down.
+    alive: runtime_core::ScopeAlive,
+}
+
+fn small(c: &'static str) -> StyleRules {
+    StyleRules { font_size: Some(px(12.0)), color: Some(col(c)), ..Default::default() }
+}
+
+/// Open `which`'s permissions in the editor with `current` as the draft, or
+/// close the editor when `which` is already open.
+fn select(selected: Signal<Option<Selected>>, draft: Signal<Permissions>, which: Selected, current: Permissions) {
+    if selected.get() == Some(which) {
+        selected.set(None);
+    } else {
+        draft.set(current);
+        selected.set(Some(which));
+    }
+}
+
+/// One custom role: its colour and name (tap to open its permissions), who may
+/// @mention it, and for managers the move and delete buttons. `i` is its place
+/// in `list`; the arrows swap it with the neighbour above or below.
+fn role_row(cx: &RolesCx, list: &[CustomRole], i: usize, sel: Option<Selected>) -> Element {
+    let (sid, manage, roles, everyone, selected, draft, error) =
+        (cx.sid, cx.manage, cx.roles, cx.everyone, cx.selected, cx.draft, cx.error);
+    let r = &list[i];
+    let role = r.clone();
+    let toggle = role.clone();
+    let can_edit = manage && editable(r.position);
+    let name_color = if r.color.is_empty() { col(theme::TEXT_NORMAL) } else { theme::fixed(&r.color) };
+    let mention_label = if r.mentionable { "@ anyone" } else { "@ mods only" };
+    let al_row = cx.alive.clone();
+    // Swapping with the neighbour above (`up`) or below: each takes the
+    // other's position.
+    let swap = |other: Option<&CustomRole>| {
+        let other = other.cloned();
+        let me = role.clone();
+        let al_swap = al_row.clone();
+        move || {
+            let Some(other) = other.clone() else { return };
+            let (a, b) = (me.clone(), other);
+            let (pa, pb) = if a.position == b.position { (b.position + 1, a.position) } else { (b.position, a.position) };
+            let al = al_swap.clone();
+            runtime_core::spawn_then_in(
+                &al.clone(),
+                async move {
+                    let first = server_roles::move_role(server_roles::MoveRoleInput { role_id: a.id, position: pa }).await;
+                    match first {
+                        Ok(_) => server_roles::move_role(server_roles::MoveRoleInput { role_id: b.id, position: pb }).await.map(|_| ()),
+                        Err(e) => Err(e),
+                    }
+                },
+                move |second| {
+                    if let Err(e) = second {
+                        error.set(crate::errors::friendly(&e));
+                    }
+                    reload(sid, roles, everyone, al);
+                },
+            );
+        }
+    };
+    let above = if i > 0 { list.get(i - 1) } else { None };
+    let below = list.get(i + 1);
+    let up_ok = can_edit && above.is_some_and(|a| editable(a.position));
+    let down_ok = can_edit && below.is_some();
+    let up = swap(above);
+    let down = swap(below);
+    let perms = r.permissions;
+    let id = r.id;
+    // Each handler owns its own copy of the token (ScopeAlive is Clone, not
+    // Copy).
+    let al_toggle = al_row.clone();
+    let al_del = al_row.clone();
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            gap: Some(px(8.0)),
+            height: Some(px(34.0)),
+            padding_left: Some(px(6.0)),
+            padding_right: Some(px(4.0)),
+            background: Some(crate::style_helpers::selected_fill(sel == Some(Selected::Role(id)), false)),
+            ..radius(4.0)
+        }) {
+            { dot(&r.color, 12.0) }
+            view(style = StyleRules {
+                flex_grow: Some(Tokenized::Literal(1.0)),
+                ..Default::default()
+            }) {
+                text(style = StyleRules {
+                    font_size: Some(px(14.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    color: Some(name_color),
+                    ..Default::default()
+                }) { r.name.clone() }
+            }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    select(selected, draft, Selected::Role(id), perms);
+                }
+                TouchResponse::CONSUMED
+            })
+            view(style = StyleRules {
+                height: Some(px(22.0)),
+                padding_left: Some(px(8.0)),
+                padding_right: Some(px(8.0)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                background: Some(col(theme::BG_TERTIARY)),
+                ..radius(4.0)
+            }) {
+                text(style = small(theme::TEXT_MUTED)) { mention_label.to_string() }
+            }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended && can_edit {
+                    let t = toggle.clone();
+                    let al = al_toggle.clone();
+                    runtime_core::spawn_then_in(
+                        &al.clone(),
+                        server_roles::update_role(server_roles::UpdateRoleInput {
+                            role_id: t.id,
+                            name: t.name.clone(),
+                            color: t.color.clone(),
+                            mentionable: !t.mentionable,
+                            permissions: None,
+                        }),
+                        move |result| {
+                            match result {
+                                Ok(_) => reload(sid, roles, everyone, al),
+                                Err(e) => error.set(crate::errors::friendly(&e)),
+                            }
+                        },
+                    );
+                }
+                TouchResponse::CONSUMED
+            })
+            if manage {
+                { icon_button("▲", up_ok, up) }
+                { icon_button("▼", down_ok, down) }
+                {
+                    icon_button("×", can_edit, move || {
+                        let al = al_del.clone();
+                        runtime_core::spawn_then_in(
+                            &al.clone(),
+                            server_roles::delete_role(server_roles::DeleteRoleInput { role_id: id }),
+                            move |result| {
+                                match result {
+                                    Ok(()) => {
+                                        if selected.get() == Some(Selected::Role(id)) {
+                                            selected.set(None);
+                                        }
+                                        reload(sid, roles, everyone, al);
+                                    }
+                                    Err(e) => error.set(crate::errors::friendly(&e)),
+                                }
+                            },
+                        );
+                    })
+                }
+            }
+        }
+    }
+}
+
+/// @everyone, pinned under the roles: permissions only.
+fn everyone_row(cx: &RolesCx, sel: Option<Selected>, everyone_perms: Permissions) -> Element {
+    let (selected, draft) = (cx.selected, cx.draft);
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            gap: Some(px(8.0)),
+            height: Some(px(34.0)),
+            padding_left: Some(px(6.0)),
+            background: Some(crate::style_helpers::selected_fill(sel == Some(Selected::Everyone), false)),
+            ..radius(4.0)
+        }) {
+            { dot("", 12.0) }
+            text(style = StyleRules {
+                font_size: Some(px(14.0)),
+                font_weight: Some(FontWeight::SemiBold),
+                color: Some(col(theme::TEXT_NORMAL)),
+                flex_grow: Some(Tokenized::Literal(1.0)),
+                ..Default::default()
+            }) { "@everyone".to_string() }
+            text(style = small(theme::TEXT_MUTED)) { "every member".to_string() }
+        }
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                select(selected, draft, Selected::Everyone, everyone_perms);
+            }
+            TouchResponse::CONSUMED
+        })
+    }
+}
+
+/// One permission in the editor: its name and description, and a switch that
+/// flips it in the draft.
+fn permission_row(flag: Permissions, label: &'static str, about: &'static str, on: bool, can_edit: bool, draft: Signal<Permissions>) -> Element {
+    let warn = if flag == Permissions::ADMINISTRATOR {
+        "This grants every permission and overrides channel settings. Give it only to people you trust."
+    } else {
+        ""
+    };
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Column),
+            padding_top: Some(px(8.0)),
+            padding_bottom: Some(px(8.0)),
+            gap: Some(px(2.0)),
+            ..Default::default()
+        }) {
+            view(style = StyleRules {
+                flex_direction: Some(FlexDirection::Row),
+                align_items: Some(AlignItems::Center),
+                gap: Some(px(12.0)),
+                ..Default::default()
+            }) {
+                view(style = StyleRules {
+                    flex_direction: Some(FlexDirection::Column),
+                    flex_grow: Some(Tokenized::Literal(1.0)),
+                    flex_shrink: Some(Tokenized::Literal(1.0)),
+                    ..Default::default()
+                }) {
+                    text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_NORMAL)), ..Default::default() }) { label.to_string() }
+                    text(style = small(theme::TEXT_MUTED)) { about.to_string() }
+                }
+                {
+                    crate::controls::toggle(on, can_edit, move || {
+                        let now = draft.get();
+                        draft.set(if now.contains(flag) { now.minus(flag) } else { now.union(flag) });
+                    })
+                }
+            }
+            if !warn.is_empty() {
+                text(style = small(theme::WARNING)) { warn.to_string() }
+            }
+        }
+    }
+}
+
+/// One colour preset for a new role, ringed while it is the picked one.
+fn swatch(c: &'static str, color: Signal<String>) -> Element {
+    ui! {
+        view(style = move || {
+            let on = color.get() == c;
+            let ring = col(if on { theme::TEXT_STRONG } else { theme::BG_SECONDARY });
+            StyleRules {
+                width: Some(px(22.0)),
+                height: Some(px(22.0)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                border_top_width: Some(Tokenized::Literal(2.0)),
+                border_right_width: Some(Tokenized::Literal(2.0)),
+                border_bottom_width: Some(Tokenized::Literal(2.0)),
+                border_left_width: Some(Tokenized::Literal(2.0)),
+                border_top_color: Some(ring.clone()),
+                border_right_color: Some(ring.clone()),
+                border_bottom_color: Some(ring.clone()),
+                border_left_color: Some(ring),
+                ..radius(11.0)
+            }
+        }, test_id = swatch_id(c)) {
+            { dot(c, 14.0) }
+        }
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                color.set(c.to_string());
+            }
+            TouchResponse::CONSUMED
+        })
+    }
+}
+
 pub fn roles_section(server_id: Option<i64>) -> Element {
     let Some(sid) = server_id else {
         return ui! { view {} };
@@ -115,193 +419,20 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
     let alive = runtime_core::ScopeAlive::current();
     reload(sid, roles, everyone, alive.clone());
 
-    let small = |c: &'static str| StyleRules { font_size: Some(px(12.0)), color: Some(col(c)), ..Default::default() };
-    let select = move |which: Selected, current: Permissions| {
-        if selected.get() == Some(which) {
-            selected.set(None);
-        } else {
-            draft.set(current);
-            selected.set(Some(which));
-        }
-    };
-    let al_list = alive.clone();
+    let cx = RolesCx { sid, manage, roles, everyone, selected, draft, error, alive: alive.clone() };
     let list = switch(
         move || (roles.get(), everyone.get(), selected.get()),
         move |(list, everyone_perms, sel): &(Vec<CustomRole>, Permissions, Option<Selected>)| {
-            let row_bg = |on: bool| Some(crate::style_helpers::selected_fill(on, false));
-            let mut rows: Vec<Element> = list
-                .iter()
-                .enumerate()
-                .map(|(i, r)| {
-                    let role = r.clone();
-                    let toggle = role.clone();
-                    let can_edit = manage && editable(r.position);
-                    let name_color = if r.color.is_empty() { col(theme::TEXT_NORMAL) } else { theme::fixed(&r.color) };
-                    let mention_label = if r.mentionable { "@ anyone" } else { "@ mods only" };
-                    let al_row = al_list.clone();
-                    // Swapping with the neighbour above (`up`) or below: each
-                    // takes the other's position.
-                    let swap = |other: Option<&CustomRole>| {
-                        let other = other.cloned();
-                        let me = role.clone();
-                        let al_swap = al_row.clone();
-                        move || {
-                            let Some(other) = other.clone() else { return };
-                            let (a, b) = (me.clone(), other);
-                            let (pa, pb) = if a.position == b.position { (b.position + 1, a.position) } else { (b.position, a.position) };
-                            let al = al_swap.clone();
-                            runtime_core::spawn_then_in(
-                                &al.clone(),
-                                async move {
-                                    let first = server_roles::move_role(server_roles::MoveRoleInput { role_id: a.id, position: pa }).await;
-                                    match first {
-                                        Ok(_) => server_roles::move_role(server_roles::MoveRoleInput { role_id: b.id, position: pb }).await.map(|_| ()),
-                                        Err(e) => Err(e),
-                                    }
-                                },
-                                move |second| {
-                                    if let Err(e) = second {
-                                        error.set(crate::errors::friendly(&e));
-                                    }
-                                    reload(sid, roles, everyone, al);
-                                },
-                            );
-                        }
-                    };
-                    let above = if i > 0 { list.get(i - 1) } else { None };
-                    let below = list.get(i + 1);
-                    let up_ok = can_edit && above.is_some_and(|a| editable(a.position));
-                    let down_ok = can_edit && below.is_some();
-                    let up = swap(above);
-                    let down = swap(below);
-                    let perms = r.permissions;
-                    let id = r.id;
-                    // Each row handler owns its own copy of the row token
-                    // (ScopeAlive is Clone, not Copy, and the row's controls
-                    // are rebuilt on every render).
-                    let al_toggle = al_row.clone();
-                    let al_del = al_row.clone();
-                    ui! {
-                        view(style = StyleRules {
-                            flex_direction: Some(FlexDirection::Row),
-                            align_items: Some(AlignItems::Center),
-                            gap: Some(px(8.0)),
-                            height: Some(px(34.0)),
-                            padding_left: Some(px(6.0)),
-                            padding_right: Some(px(4.0)),
-                            background: row_bg(*sel == Some(Selected::Role(id))),
-                            ..radius(4.0)
-                        }) {
-                            { dot(&r.color, 12.0) }
-                            view(style = StyleRules {
-                                flex_grow: Some(Tokenized::Literal(1.0)),
-                                ..Default::default()
-                            }) {
-                                text(style = StyleRules {
-                                    font_size: Some(px(14.0)),
-                                    font_weight: Some(FontWeight::SemiBold),
-                                    color: Some(name_color),
-                                    ..Default::default()
-                                }) { r.name.clone() }
-                            }
-                            .on_touch(move |ev| {
-                                if ev.phase == TouchPhase::Ended {
-                                    select(Selected::Role(id), perms);
-                                }
-                                TouchResponse::CONSUMED
-                            })
-                            view(style = StyleRules {
-                                height: Some(px(22.0)),
-                                padding_left: Some(px(8.0)),
-                                padding_right: Some(px(8.0)),
-                                align_items: Some(AlignItems::Center),
-                                justify_content: Some(JustifyContent::Center),
-                                background: Some(col(theme::BG_TERTIARY)),
-                                ..radius(4.0)
-                            }) {
-                                text(style = small(theme::TEXT_MUTED)) { mention_label.to_string() }
-                            }
-                            .on_touch(move |ev| {
-                                if ev.phase == TouchPhase::Ended && can_edit {
-                                    let t = toggle.clone();
-                                    let al = al_toggle.clone();
-                                    runtime_core::spawn_then_in(
-                                        &al.clone(),
-                                        server_roles::update_role(server_roles::UpdateRoleInput {
-                                            role_id: t.id,
-                                            name: t.name.clone(),
-                                            color: t.color.clone(),
-                                            mentionable: !t.mentionable,
-                                            permissions: None,
-                                        }),
-                                        move |result| {
-                                            match result {
-                                                Ok(_) => reload(sid, roles, everyone, al),
-                                                Err(e) => error.set(crate::errors::friendly(&e)),
-                                            }
-                                        },
-                                    );
-                                }
-                                TouchResponse::CONSUMED
-                            })
-                            if manage {
-                                { icon_button("▲", up_ok, up) }
-                                { icon_button("▼", down_ok, down) }
-                                {
-                                    icon_button("×", can_edit, move || {
-                                        let al = al_del.clone();
-                                        runtime_core::spawn_then_in(
-                                            &al.clone(),
-                                            server_roles::delete_role(server_roles::DeleteRoleInput { role_id: id }),
-                                            move |result| {
-                                                match result {
-                                                    Ok(()) => {
-                                                        if selected.get() == Some(Selected::Role(id)) {
-                                                            selected.set(None);
-                                                        }
-                                                        reload(sid, roles, everyone, al);
-                                                    }
-                                                    Err(e) => error.set(crate::errors::friendly(&e)),
-                                                }
-                                            },
-                                        );
-                                    })
-                                }
-                            }
-                        }
+            let (everyone_perms, sel) = (*everyone_perms, *sel);
+            let cx = cx.clone();
+            ui! {
+                view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(2.0)), ..Default::default() }) {
+                    for (i, r) in list.iter().enumerate(), key = r.id {
+                        { role_row(&cx, list, i, sel) }
                     }
-                })
-                .collect();
-            // @everyone, pinned at the bottom: permissions only.
-            let everyone_perms = *everyone_perms;
-            rows.push(ui! {
-                view(style = StyleRules {
-                    flex_direction: Some(FlexDirection::Row),
-                    align_items: Some(AlignItems::Center),
-                    gap: Some(px(8.0)),
-                    height: Some(px(34.0)),
-                    padding_left: Some(px(6.0)),
-                    background: row_bg(*sel == Some(Selected::Everyone)),
-                    ..radius(4.0)
-                }) {
-                    { dot("", 12.0) }
-                    text(style = StyleRules {
-                        font_size: Some(px(14.0)),
-                        font_weight: Some(FontWeight::SemiBold),
-                        color: Some(col(theme::TEXT_NORMAL)),
-                        flex_grow: Some(Tokenized::Literal(1.0)),
-                        ..Default::default()
-                    }) { "@everyone".to_string() }
-                    text(style = small(theme::TEXT_MUTED)) { "every member".to_string() }
+                    { everyone_row(&cx, sel, everyone_perms) }
                 }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        select(Selected::Everyone, everyone_perms);
-                    }
-                    TouchResponse::CONSUMED
-                })
-            });
-            ui! { view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(2.0)), ..Default::default() }) { rows } }
+            }
         },
     );
 
@@ -321,53 +452,11 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                 },
             };
             let perms = *perms;
-            let rows: Vec<Element> = Permissions::FLAGS
+            // @everyone can't be made an administrator.
+            let flags: Vec<(Permissions, &'static str, &'static str)> = Permissions::FLAGS
                 .iter()
-                // @everyone can't be made an administrator.
+                .copied()
                 .filter(|(flag, ..)| !(sel == Selected::Everyone && *flag == Permissions::ADMINISTRATOR))
-                .map(|&(flag, label, about)| {
-                    let on = perms.contains(flag);
-                    let warn = if flag == Permissions::ADMINISTRATOR {
-                        "This grants every permission and overrides channel settings. Give it only to people you trust."
-                    } else {
-                        ""
-                    };
-                    ui! {
-                        view(style = StyleRules {
-                            flex_direction: Some(FlexDirection::Column),
-                            padding_top: Some(px(8.0)),
-                            padding_bottom: Some(px(8.0)),
-                            gap: Some(px(2.0)),
-                            ..Default::default()
-                        }) {
-                            view(style = StyleRules {
-                                flex_direction: Some(FlexDirection::Row),
-                                align_items: Some(AlignItems::Center),
-                                gap: Some(px(12.0)),
-                                ..Default::default()
-                            }) {
-                                view(style = StyleRules {
-                                    flex_direction: Some(FlexDirection::Column),
-                                    flex_grow: Some(Tokenized::Literal(1.0)),
-                                    flex_shrink: Some(Tokenized::Literal(1.0)),
-                                    ..Default::default()
-                                }) {
-                                    text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_NORMAL)), ..Default::default() }) { label.to_string() }
-                                    text(style = small(theme::TEXT_MUTED)) { about.to_string() }
-                                }
-                                {
-                                    crate::controls::toggle(on, can_edit, move || {
-                                        let now = draft.get();
-                                        draft.set(if now.contains(flag) { now.minus(flag) } else { now.union(flag) });
-                                    })
-                                }
-                            }
-                            if !warn.is_empty() {
-                                text(style = small(theme::WARNING)) { warn.to_string() }
-                            }
-                        }
-                    }
-                })
                 .collect();
             let note = if can_edit {
                 String::new()
@@ -444,7 +533,9 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                     if let Some(n) = note_el {
                         n
                     }
-                    { rows }
+                    for f in flags.iter(), key = f.0.0 {
+                        { permission_row(f.0, f.1, f.2, perms.contains(f.0), can_edit, draft) }
+                    }
                 }
             }
         },
@@ -452,41 +543,6 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
 
     let create: Element = if manage {
         let al_create = alive.clone();
-        let swatches: Vec<Element> = COLORS
-            .iter()
-            .map(|c| {
-                let c: &'static str = c;
-                ui! {
-                    view(style = move || {
-                        let on = color.get() == c;
-                        let ring = col(if on { theme::TEXT_STRONG } else { theme::BG_SECONDARY });
-                        StyleRules {
-                            width: Some(px(22.0)),
-                            height: Some(px(22.0)),
-                            align_items: Some(AlignItems::Center),
-                            justify_content: Some(JustifyContent::Center),
-                            border_top_width: Some(Tokenized::Literal(2.0)),
-                            border_right_width: Some(Tokenized::Literal(2.0)),
-                            border_bottom_width: Some(Tokenized::Literal(2.0)),
-                            border_left_width: Some(Tokenized::Literal(2.0)),
-                            border_top_color: Some(ring.clone()),
-                            border_right_color: Some(ring.clone()),
-                            border_bottom_color: Some(ring.clone()),
-                            border_left_color: Some(ring),
-                            ..radius(11.0)
-                        }
-                    }) {
-                        { dot(c, 14.0) }
-                    }
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            color.set(c.to_string());
-                        }
-                        TouchResponse::CONSUMED
-                    })
-                }
-            })
-            .collect();
         ui! {
             view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(8.0)), margin_bottom: Some(px(8.0)), ..Default::default() }) {
                 view(style = StyleRules { flex_direction: Some(FlexDirection::Row), gap: Some(px(8.0)), ..Default::default() }) {
@@ -495,7 +551,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                        flex_shrink: Some(Tokenized::Literal(1.0)),
                        min_width: Some(px(0.0)),
                        ..crate::style_helpers::text_field_style()
-                    })
+                    }, test_id = "role-create-name-input")
                     view(style = StyleRules {
                         height: Some(px(34.0)),
                         padding_left: Some(px(14.0)),
@@ -534,7 +590,11 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                         TouchResponse::CONSUMED
                     })
                 }
-                view(style = StyleRules { flex_direction: Some(FlexDirection::Row), flex_wrap: Some(FlexWrap::Wrap), gap: Some(px(6.0)), ..Default::default() }) { swatches }
+                view(style = StyleRules { flex_direction: Some(FlexDirection::Row), flex_wrap: Some(FlexWrap::Wrap), gap: Some(px(6.0)), ..Default::default() }) {
+                    for c in COLORS.iter(), key = *c {
+                        { swatch(c, color) }
+                    }
+                }
             }
         }
     } else {
