@@ -48,6 +48,26 @@ pub(super) fn attachment_box(size: Option<(u32, u32)>, max_w: f32, max_h: f32) -
 /// size comes from the server because a reactive style fed from the image's
 /// `on_load` natural size never took effect in the live app (the node
 /// rendered 0x0).
+/// One attachment cell: the image sized from the server's pixel size.
+pub(super) fn attachment_cell(a: &discord_server::server_settings::MessageAttachment, max_w: f32, max_h: f32) -> Element {
+    let data = crate::auth::media_url(a.url.clone());
+    let name = a.filename.clone();
+    let (w, h) = attachment_box(a.width.zip(a.height), mobile::media_max_width(max_w), max_h);
+    ui! {
+        image(
+            src = data,
+            alt = name,
+            style = StyleRules {
+                width: Some(px(w)),
+                height: Some(px(h)),
+                flex_shrink: Some(grow(0.0)),
+                object_fit: Some(ObjectFit::Contain),
+                ..rounded(8.0)
+            },
+        )
+    }
+}
+
 pub(super) fn attachment_row(atts: &[discord_server::server_settings::MessageAttachment], col_w: f32) -> Element {
     // `col_w` (the live chat column) replaces the fixed 520px single-image cap
     // so a lone image ends on the text column's right edge instead of leaving
@@ -58,24 +78,6 @@ pub(super) fn attachment_row(atts: &[discord_server::server_settings::MessageAtt
     } else {
         (col_w, ATTACHMENT_MAX_H)
     };
-    let cells: Vec<Element> = atts.iter().map(|a| {
-        let data = crate::auth::media_url(a.url.clone());
-        let name = a.filename.clone();
-        let (w, h) = attachment_box(a.width.zip(a.height), mobile::media_max_width(max_w), max_h);
-        ui! {
-            image(
-                src = data,
-                alt = name,
-                style = StyleRules {
-                    width: Some(px(w)),
-                    height: Some(px(h)),
-                    flex_shrink: Some(grow(0.0)),
-                    object_fit: Some(ObjectFit::Contain),
-                    ..rounded(8.0)
-                },
-            )
-        }
-    }).collect();
     ui! {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Row),
@@ -87,118 +89,122 @@ pub(super) fn attachment_row(atts: &[discord_server::server_settings::MessageAtt
             padding_left: Some(px(66.0)),
             padding_right: Some(px(16.0)),
             ..Default::default()
-        }) { cells }
+        }) {
+            for a in atts.iter(), key = a.id {
+                { attachment_cell(a, max_w, max_h) }
+            }
+        }
     }
 }
 
 /// Link preview cards under a message, lined up with its text: an accent
 /// bar, the site name, the title (opens the link), up to three lines of
 /// description and the image.
-pub(super) fn embed_cards(embeds: &[discord_server::link_previews::Embed], col_w: f32) -> Element {
-    let cards: Vec<Element> = embeds
-        .iter()
-        .map(|e| {
-            let site_el = e.site_name.clone().map(|s| {
-                ui! {
-                    text(style = StyleRules {
-                        font_size: Some(px(12.0)),
-                        color: Some(col(crate::theme::TEXT_MUTED)),
-                        ..Default::default()
-                    }) { s }
+/// One link preview card: the site name, title (opens the link), description
+/// lines and the image.
+pub(super) fn embed_card(e: &discord_server::link_previews::Embed, col_w: f32) -> Element {
+    let site_el = e.site_name.clone().map(|s| {
+        ui! {
+            text(style = StyleRules {
+                font_size: Some(px(12.0)),
+                color: Some(col(crate::theme::TEXT_MUTED)),
+                ..Default::default()
+            }) { s }
+        }
+    });
+    let title_el = e.title.clone().map(|t| {
+        let url = e.url.clone();
+        ui! {
+            view {
+                text(style = StyleRules {
+                    font_size: Some(px(15.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    color: Some(col(crate::theme::TEXT_LINK)),
+                    ..Default::default()
+                }) { t }
+            }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    crate::embeds::open(&url);
                 }
-            });
-            let title_el = e.title.clone().map(|t| {
-                let url = e.url.clone();
-                ui! {
-                    view {
-                        text(style = StyleRules {
-                            font_size: Some(px(15.0)),
-                            font_weight: Some(FontWeight::SemiBold),
-                            color: Some(col(crate::theme::TEXT_LINK)),
-                            ..Default::default()
-                        }) { t }
-                    }
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            crate::embeds::open(&url);
-                        }
-                        TouchResponse::CONSUMED
-                    })
-                }
-            });
-            let desc_el = e.description.clone().map(|d| {
-                ui! {
-                    text(style = StyleRules {
-                        font_size: Some(px(14.0)),
-                        line_height: Some(runtime_core::Tokenized::Literal(1.3)),
-                        color: Some(col(crate::theme::TEXT_NORMAL)),
-                        max_height: Some(px(55.0)),
-                        overflow: Some(Overflow::Hidden),
-                        ..Default::default()
-                    }) { d }
-                }
-            });
-            let image_el = e.image.clone().map(|src| {
-                let (w, h) = attachment_box(e.image_size, mobile::media_max_width(400.0), 300.0);
-                ui! {
-                    image(
-                        src = crate::auth::media_url(src),
-                        alt = "",
-                        style = StyleRules {
-                            width: Some(px(w)),
-                            height: Some(px(h)),
-                            margin_top: Some(px(6.0)),
-                            object_fit: Some(ObjectFit::Contain),
-                            ..rounded(4.0)
-                        },
-                    )
-                }
-            });
-            ui! {
-                view(style = StyleRules {
-                    flex_direction: Some(FlexDirection::Row),
-                    // The card spans the chat column (`col_w`), not a fixed
-                    // 432px cap, so previews sit on the same right edge as
-                    // the rows above and the column shows no dead strip.
-                    width: Some(px(col_w)),
-                    background: Some(col(crate::theme::BG_SECONDARY)),
-                    overflow: Some(Overflow::Hidden),
+                TouchResponse::CONSUMED
+            })
+        }
+    });
+    let desc_el = e.description.clone().map(|d| {
+        ui! {
+            text(style = StyleRules {
+                font_size: Some(px(14.0)),
+                line_height: Some(runtime_core::Tokenized::Literal(1.3)),
+                color: Some(col(crate::theme::TEXT_NORMAL)),
+                max_height: Some(px(55.0)),
+                overflow: Some(Overflow::Hidden),
+                ..Default::default()
+            }) { d }
+        }
+    });
+    let image_el = e.image.clone().map(|src| {
+        let (w, h) = attachment_box(e.image_size, mobile::media_max_width(400.0), 300.0);
+        ui! {
+            image(
+                src = crate::auth::media_url(src),
+                alt = "",
+                style = StyleRules {
+                    width: Some(px(w)),
+                    height: Some(px(h)),
+                    margin_top: Some(px(6.0)),
+                    object_fit: Some(ObjectFit::Contain),
                     ..rounded(4.0)
-                }) {
-                    view(style = StyleRules {
-                        width: Some(px(4.0)),
-                        flex_shrink: Some(grow(0.0)),
-                        background: Some(col(crate::theme::ACCENT)),
-                        ..Default::default()
-                    }) {}
-                    view(style = StyleRules {
-                        flex_direction: Some(FlexDirection::Column),
-                        gap: Some(px(4.0)),
-                        padding_top: Some(px(10.0)),
-                        padding_bottom: Some(px(12.0)),
-                        padding_left: Some(px(12.0)),
-                        padding_right: Some(px(12.0)),
-                        flex_shrink: Some(grow(1.0)),
-                        min_width: Some(px(0.0)),
-                        ..Default::default()
-                    }) {
-                        if let Some(el) = site_el {
-                            el
-                        }
-                        if let Some(el) = title_el {
-                            el
-                        }
-                        if let Some(el) = desc_el {
-                            el
-                        }
-                        if let Some(el) = image_el {
-                            el
-                        }
-                    }
+                },
+            )
+        }
+    });
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            // The card spans the chat column (`col_w`), not a fixed
+            // 432px cap, so previews sit on the same right edge as
+            // the rows above and the column shows no dead strip.
+            width: Some(px(col_w)),
+            background: Some(col(crate::theme::BG_SECONDARY)),
+            overflow: Some(Overflow::Hidden),
+            ..rounded(4.0)
+        }) {
+            view(style = StyleRules {
+                width: Some(px(4.0)),
+                flex_shrink: Some(grow(0.0)),
+                background: Some(col(crate::theme::ACCENT)),
+                ..Default::default()
+            }) {}
+            view(style = StyleRules {
+                flex_direction: Some(FlexDirection::Column),
+                gap: Some(px(4.0)),
+                padding_top: Some(px(10.0)),
+                padding_bottom: Some(px(12.0)),
+                padding_left: Some(px(12.0)),
+                padding_right: Some(px(12.0)),
+                flex_shrink: Some(grow(1.0)),
+                min_width: Some(px(0.0)),
+                ..Default::default()
+            }) {
+                if let Some(el) = site_el {
+                    el
+                }
+                if let Some(el) = title_el {
+                    el
+                }
+                if let Some(el) = desc_el {
+                    el
+                }
+                if let Some(el) = image_el {
+                    el
                 }
             }
-        })
-        .collect();
+        }
+    }
+}
+
+pub(super) fn embed_cards(embeds: &[discord_server::link_previews::Embed], col_w: f32) -> Element {
     ui! {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Column),
@@ -209,7 +215,11 @@ pub(super) fn embed_cards(embeds: &[discord_server::link_previews::Embed], col_w
             padding_left: Some(px(66.0)),
             padding_right: Some(px(16.0)),
             ..Default::default()
-        }) { cards }
+        }) {
+            for e in embeds.iter(), key = e.url.clone() {
+                { embed_card(e, col_w) }
+            }
+        }
     }
 }
 
@@ -471,6 +481,35 @@ pub(super) fn mention_highlight(row: Element) -> Element {
     }
 }
 
+/// One inline piece of a plain (non-Markdown) message body, built as data
+/// outside the macro so the body's flow children assemble as a keyed loop.
+pub enum BodyPiece {
+    Spoiler(String),
+    CustomEmoji(i64, String),
+    Text(bool, String),
+    Mention(discord_server::server_roles::MentionSeg),
+}
+
+/// One inline piece rendered inside the body's flow view.
+pub(super) fn message_body_piece(piece: &BodyPiece, emoji_size: crate::styles::BodyTextSize, custom_px: f32) -> Element {
+    match piece {
+        BodyPiece::Spoiler(inner) => ui! {
+            view(style = StyleRules {
+                margin_left: Some(px(2.0)),
+                margin_right: Some(px(2.0)),
+                ..Default::default()
+            }) {
+                { crate::spoiler_tag::SpoilerTag(inner.to_string().into()) }
+            }
+        },
+        BodyPiece::CustomEmoji(id, name) => crate::custom_emoji::emoji_view(*id, name.as_str(), custom_px),
+        BodyPiece::Text(is_emoji, t) => ui! {
+            text(style = crate::styles::BodyText().size(if *is_emoji { emoji_size } else { crate::styles::BodyTextSize::Text })) { t.clone() }
+        },
+        BodyPiece::Mention(seg) => mention_pill(seg.clone()),
+    }
+}
+
 pub(super) fn message_body(body: &str) -> Element {
     // A body that is just a Giphy media link (a GIF sent from the picker, or
     // a pasted one) shows as the animated image, sized from the link's
@@ -563,50 +602,35 @@ pub(super) fn message_body(body: &str) -> Element {
     let jumbo = if custom == 0 { is_emoji_only(body) } else { custom <= 27 && (rest.trim().is_empty() || is_emoji_only(&rest)) };
     let emoji_size = if jumbo { crate::styles::BodyTextSize::EmojiOnly } else { crate::styles::BodyTextSize::Emoji };
     let custom_px = if jumbo { 48.0 } else { 22.0 };
-    let runs_el: Vec<Element> = runs
+    let pieces: Vec<BodyPiece> = runs
         .iter()
-        .flat_map(|(is_spoiler, text)| -> Vec<Element> {
+        .flat_map(|(is_spoiler, text)| -> Vec<BodyPiece> {
             if *is_spoiler {
-                // The click-to-reveal spoiler. The generated component fn takes
-                // a `Reactive<String>` `text` prop; `String: Into<Reactive<String>>`
-                // (the `From<T> for Reactive<T>` impl), so `…into()` bakes a
-                // static prop. (The `text = …` named-prop form only parses
-                // inside `ui!`; here we call the fn directly, positionally.)
-                vec![ui! {
-                    view(style = StyleRules {
-                        margin_left: Some(px(2.0)),
-                        margin_right: Some(px(2.0)),
-                        ..Default::default()
-                    }) {
-                        { crate::spoiler_tag::SpoilerTag(text.to_string().into()) }
-                    }
-                }]
+                // The click-to-reveal spoiler.
+                vec![BodyPiece::Spoiler(text.to_string())]
             } else {
                 // Plain run: inline text nodes in the same flow as the
                 // spoilers, so the row stays on one visual line when it fits.
-                // Emoji pieces get the bigger size.
                 // Emoji pieces get the bigger size; mentions become pills.
                 crate::mentions::segments(text)
                     .into_iter()
-                    .flat_map(|seg| -> Vec<Element> {
+                    .flat_map(|seg| -> Vec<BodyPiece> {
                         match seg {
                             discord_server::server_roles::MentionSeg::Text(t) => crate::custom_emoji::split(&t)
                                 .into_iter()
-                                .flat_map(|piece| -> Vec<Element> {
+                                .flat_map(|piece| -> Vec<BodyPiece> {
                                     match piece {
                                         crate::custom_emoji::Piece::Emoji { id, name } => {
-                                            vec![crate::custom_emoji::emoji_view(id, &name, custom_px)]
+                                            vec![BodyPiece::CustomEmoji(id, name)]
                                         }
                                         crate::custom_emoji::Piece::Text(t) => emoji_runs(&t)
                                             .into_iter()
-                                            .map(|(is_emoji, piece)| ui! {
-                                                text(style = crate::styles::BodyText().size(if is_emoji { emoji_size } else { crate::styles::BodyTextSize::Text })) { piece }
-                                            })
+                                            .map(|(is_emoji, piece)| BodyPiece::Text(is_emoji, piece))
                                             .collect(),
                                     }
                                 })
                                 .collect(),
-                            mention => vec![mention_pill(mention)],
+                            mention => vec![BodyPiece::Mention(mention)],
                         }
                     })
                     .collect()
@@ -615,7 +639,14 @@ pub(super) fn message_body(body: &str) -> Element {
         .collect();
 
     ui! {
-        view(style = crate::styles::MessageBodyFlow()) { runs_el }
+        view(style = crate::styles::MessageBodyFlow()) {
+            // Inline pieces have no stable id and the list is rebuilt wholesale
+            // on every body change, so position is the only key; the pieces
+            // carry no per-row state that could jump to a wrong row.
+            for (i, piece) in pieces.iter().enumerate(), key = i {
+                { message_body_piece(piece, emoji_size, custom_px) }
+            }
+        }
     }
 }
 
