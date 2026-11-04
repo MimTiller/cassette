@@ -95,7 +95,7 @@ pub fn pinned_messages_panel(
                         align_items: Some(AlignItems::Center),
                         gap: Some(px(8.0)),
                         ..Default::default()
-                    }) {
+                    }, test_id = "pins-panel-title") {
                         icon(PIN).color(|| theme::live(theme::DANGER)).size(18.0)
                         text(style = StyleRules {
                             font_size: Some(px(18.0)),
@@ -126,7 +126,7 @@ pub fn pinned_messages_panel(
                         border_bottom_color: Some(col(theme::TEXT_MUTED)),
                         border_left_color: Some(col(theme::TEXT_MUTED)),
                         ..rounded(6.0)
-                    }) {
+                    }, test_id = "pins-panel-close") {
                         text(style = StyleRules {
                             font_size: Some(px(14.0)),
                             color: Some(col(theme::TEXT_MUTED)),

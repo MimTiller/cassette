@@ -156,7 +156,7 @@ pub(super) fn reaction_area(
         let will_remove = *reacted;
         let reacted = if *reacted { crate::styles::ReactionPillReacted::On } else { crate::styles::ReactionPillReacted::Off };
         ui! {
-            view(style = crate::styles::ReactionPill().reacted(reacted)) {
+            view(style = crate::styles::ReactionPill().reacted(reacted), test_id = "reaction-pill") {
                 { face }
                 text(style = crate::styles::ReactionCount()) { cnt.to_string() }
             }

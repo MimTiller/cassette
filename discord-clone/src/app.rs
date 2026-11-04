@@ -1547,8 +1547,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     let passes: &[i32] = if switched || forced { &[30, 300] } else { &[30] };
                     for &ms in passes {
                         let scroll = scroll.clone();
+                        let away_t = away.clone();
                         runtime_core::after_ms_detached(ms, move || {
-                            scroll.with(|h| h.scroll_to(0.0, 1_000_000.0));
+                            // Re-read the flag when the pass FIRES: a reader who
+                            // scrolled up into history while the pass was queued
+                            // must stay put, so a stale pass is a no-op.
+                            if !away_t.get() {
+                                scroll.with(|h| h.scroll_to(0.0, 1_000_000.0));
+                            }
                         });
                     }
                 }
