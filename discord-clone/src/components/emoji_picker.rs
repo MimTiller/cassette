@@ -390,63 +390,11 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
     // Each tab: highlight when it is the current section; tap scrolls its
     // header to the top. The current section is derived from the scroll offset
     // (see `on_scroll`), so the highlight tracks scrolling AND tab taps.
-    let rail = {
-        let rail_items: Vec<Element> = (0..10)
-            .map(|i| {
-                let icon_glyph = RAIL_ICONS[i].to_string();
-                let current_r = current.clone();
-                let query_r = query.clone();
-                let sections_r = sections.clone();
-                let scroll_r = scroll_ref;
-                ui! {
-                    view(style = move || {
-                        // Highlight: the tab is active when NOT searching and
-                        // its index equals the section currently at the top.
-                        let searching = !query_r.get().trim().is_empty();
-                        let on = !searching && current_r.get() == i;
-                        StyleRules {
-                            flex_direction: Some(FlexDirection::Column),
-                            align_items: Some(AlignItems::Center),
-                            justify_content: Some(JustifyContent::Center),
-                            width: Some(px(44.0)),
-                            height: Some(px(44.0)),
-                            background: Some(if on { col(theme::BG_TERTIARY) } else { col(theme::BG_SECONDARY) }),
-                            ..rounded(8.0)
-                        }
-                    }) {
-                        text(style = StyleRules {
-                            font_size: Some(px(18.0)),
-                            ..Default::default()
-                        }) { move || icon_glyph.clone() }
-                    }
-                    .on_touch({
-                        let current_t = current.clone();
-                        let query_t = query.clone();
-                        let sections_t = sections_r.clone();
-                        let scroll_t = scroll_r;
-                        move |ev| {
-                            if ev.phase == TouchPhase::Ended {
-                                // Rail is a category driver; ignore it while
-                                // searching (the grid is flattened then).
-                                if !query_t.peek().trim().is_empty() {
-                                    return TouchResponse::CONSUMED;
-                                }
-                                // Jump to this tab's section header + highlight it.
-                                let secs = sections_t.peek();
-                                if let Some(target) = rail_to_section(i, &secs) {
-                                    current_t.set(i);
-                                    let off = scroll_offset_for(&secs, target);
-                                    scroll_t.get().map(|h| h.scroll_to(0.0, off));
-                                }
-                            }
-                            TouchResponse::CONSUMED
-                        }
-                    })
-                }
-            })
-            .collect();
-        rail_items
-    };
+    // Rail handles for the keyed tab loop inside the card below.
+    let rail_current = current.clone();
+    let rail_query = query.clone();
+    let rail_sections = sections.clone();
+    let rail_scroll = scroll_ref;
 
     // --- scroll-synced rail highlight: scroll Y -> current section -> tab ---
     let scroll_sync = {
@@ -567,7 +515,50 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
                         gap: Some(px(2.0)),
                         align_items: Some(AlignItems::Center),
                         ..Default::default()
-                    }) { rail }
+                    }) {
+                        // The 10 category tabs: a static list that never
+                        // reorders, so the tab index is the key; each tab
+                        // keeps its own hover/press state.
+                        for (i, icon_glyph_s) in RAIL_ICONS.iter().enumerate(), key = i {
+                            view(style = move || {
+                                // Highlight: the tab is active when NOT searching and
+                                // its index equals the section currently at the top.
+                                let searching = !rail_query.get().trim().is_empty();
+                                let on = !searching && rail_current.get() == i;
+                                StyleRules {
+                                    flex_direction: Some(FlexDirection::Column),
+                                    align_items: Some(AlignItems::Center),
+                                    justify_content: Some(JustifyContent::Center),
+                                    width: Some(px(44.0)),
+                                    height: Some(px(44.0)),
+                                    background: Some(if on { col(theme::BG_TERTIARY) } else { col(theme::BG_SECONDARY) }),
+                                    ..rounded(8.0)
+                                }
+                            }) {
+                                text(style = StyleRules {
+                                    font_size: Some(px(18.0)),
+                                    ..Default::default()
+                                }) { move || icon_glyph_s.to_string() }
+                            }
+                            .on_touch(move |ev| {
+                                if ev.phase == TouchPhase::Ended {
+                                    // Rail is a category driver; ignore it while
+                                    // searching (the grid is flattened then).
+                                    if !rail_query.peek().trim().is_empty() {
+                                        return TouchResponse::CONSUMED;
+                                    }
+                                    // Jump to this tab's section header + highlight it.
+                                    let secs = rail_sections.peek();
+                                    if let Some(target) = rail_to_section(i, &secs) {
+                                        rail_current.set(i);
+                                        let off = scroll_offset_for(&secs, target);
+                                        rail_scroll.get().map(|h| h.scroll_to(0.0, off));
+                                    }
+                                }
+                                TouchResponse::CONSUMED
+                            })
+                        }
+                    }
                 }
 
                 // Right: the scrollable emoji grid with sticky headers.
