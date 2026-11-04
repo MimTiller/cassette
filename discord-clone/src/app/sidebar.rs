@@ -619,7 +619,13 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                             .size(18.0)
                                         text(style = label_style) { name }
                                         if muted {
-                                            icon(BELL_OFF).color(|| theme::live(theme::TEXT_FAINT)).size(14.0)
+                                            // The robot reads a channel's live
+                                            // mute through this bell: the dim
+                                            // label colour it pairs with is
+                                            // not a value the bridge can see.
+                                            view(test_id = "muted-bell-icon") {
+                                                icon(BELL_OFF).color(|| theme::live(theme::TEXT_FAINT)).size(14.0)
+                                            }
                                         }
                                         { actions }
                                         { unread_pill }

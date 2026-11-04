@@ -620,7 +620,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         z_index: Some(5),
                         ..Default::default()
                     }) {
-                        view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {
+                        view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }, test_id = "unread-bar-jump") {
                             text(style = StyleRules {
                                 font_size: Some(px(13.0)),
                                 font_weight: Some(FontWeight::SemiBold),
