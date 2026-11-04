@@ -28,6 +28,78 @@ fn input_style() -> StyleRules {
     }
 }
 
+/// One emoji row: the image, a rename draft field, and Rename/Delete buttons.
+fn emoji_row(
+    e: ServerEmoji,
+    sid: i64,
+    list: Signal<Vec<ServerEmoji>>,
+    error: Signal<String>,
+) -> Element {
+    let id = e.id;
+    let draft = signal(e.name.clone());
+    let original = e.name.clone();
+    let al_rows = runtime_core::ScopeAlive::current();
+    let al_rename = al_rows.clone();
+    let rename = move || {
+        let new = draft.get().trim().to_string();
+        if new == original {
+            return;
+        }
+        let al = al_rename.clone();
+        runtime_core::spawn_then_in(
+            &al.clone(),
+            se::rename_emoji(se::RenameEmojiInput { emoji_id: id, name: new }),
+            move |result| match result {
+                Ok(_) => {
+                    error.set(String::new());
+                    reload(sid, list, al);
+                }
+                Err(err) => error.set(crate::errors::friendly(&err)),
+            },
+        );
+    };
+    let al_delete = al_rows.clone();
+    let delete = move || {
+        let al = al_delete.clone();
+        runtime_core::spawn_then_in(
+            &al.clone(),
+            se::delete_emoji(se::DeleteEmojiInput { emoji_id: id }),
+            move |result| match result {
+                Ok(()) => reload(sid, list, al),
+                Err(err) => error.set(crate::errors::friendly(&err)),
+            },
+        );
+    };
+    let img = ui! {
+        image(
+            src = crate::auth::media_url(e.image.clone()),
+            alt = format!(":{}:", e.name),
+            style = StyleRules {
+                width: Some(px(32.0)),
+                height: Some(px(32.0)),
+                flex_shrink: Some(Tokenized::Literal(0.0)),
+                object_fit: Some(ObjectFit::Contain),
+                ..Default::default()
+            },
+        )
+    };
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            gap: Some(px(10.0)),
+            padding_top: Some(px(4.0)),
+            padding_bottom: Some(px(4.0)),
+            ..Default::default()
+        }) {
+            { img }
+            { text_field(draft, "name", input_style()) }
+            { button_view("Rename", ButtonKind::Secondary, rename) }
+            { button_view("Delete", ButtonKind::Secondary, delete) }
+        }
+    }
+}
+
 pub fn emoji_section(server_id: Option<i64>) -> Element {
     let Some(sid) = server_id else {
         return ui! { view {} };
@@ -93,77 +165,9 @@ pub fn emoji_section(server_id: Option<i64>) -> Element {
         );
     };
 
-    let al_rows = alive.clone();
     let rows = switch(
         move || list.get(),
         move |items: &Vec<ServerEmoji>| {
-            let rows: Vec<Element> = items
-                .iter()
-                .map(|e| {
-                    let id = e.id;
-                    let draft = signal(e.name.clone());
-                    let original = e.name.clone();
-                    let al_rename = al_rows.clone();
-                    let rename = move || {
-                        let new = draft.get().trim().to_string();
-                        if new == original {
-                            return;
-                        }
-                        let al = al_rename.clone();
-                        runtime_core::spawn_then_in(
-                            &al.clone(),
-                            se::rename_emoji(se::RenameEmojiInput { emoji_id: id, name: new }),
-                            move |result| match result {
-                                Ok(_) => {
-                                    error.set(String::new());
-                                    reload(sid, list, al);
-                                }
-                                Err(e) => error.set(crate::errors::friendly(&e)),
-                            },
-                        );
-                    };
-                    let al_delete = al_rows.clone();
-                    let delete = move || {
-                        let al = al_delete.clone();
-                        runtime_core::spawn_then_in(
-                            &al.clone(),
-                            se::delete_emoji(se::DeleteEmojiInput { emoji_id: id }),
-                            move |result| match result {
-                                Ok(()) => reload(sid, list, al),
-                                Err(e) => error.set(crate::errors::friendly(&e)),
-                            },
-                        );
-                    };
-                    let img = ui! {
-                        image(
-                            src = crate::auth::media_url(e.image.clone()),
-                            alt = format!(":{}:", e.name),
-                            style = StyleRules {
-                                width: Some(px(32.0)),
-                                height: Some(px(32.0)),
-                                flex_shrink: Some(Tokenized::Literal(0.0)),
-                                object_fit: Some(ObjectFit::Contain),
-                                ..Default::default()
-                            },
-                        )
-                    };
-                    ui! {
-                        view(style = StyleRules {
-                            flex_direction: Some(FlexDirection::Row),
-                            align_items: Some(AlignItems::Center),
-                            gap: Some(px(10.0)),
-                            padding_top: Some(px(4.0)),
-                            padding_bottom: Some(px(4.0)),
-                            ..Default::default()
-                        }) {
-                            { img }
-                            { text_field(draft, "name", input_style()) }
-                            { button_view("Rename", ButtonKind::Secondary, rename) }
-                            { button_view("Delete", ButtonKind::Secondary, delete) }
-                        }
-                    }
-                })
-                .collect();
             let count = format!("{} of {MAX_PER_SERVER} used", items.len());
             ui! {
                 view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) {
@@ -174,7 +178,9 @@ pub fn emoji_section(server_id: Option<i64>) -> Element {
                         margin_bottom: Some(px(4.0)),
                         ..Default::default()
                     }) { count }
-                    { rows }
+                    for e in items.iter(), key = e.id {
+                        { emoji_row(e.clone(), sid, list, error) }
+                    }
                 }
             }
         },
