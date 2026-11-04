@@ -20,6 +20,51 @@ fn tz_offset_minutes() -> i64 {
     0
 }
 
+/// One result row in the search dropdown: channel + timestamp meta, author,
+/// body excerpt, and a click that jumps to the message and closes the dropdown.
+fn search_result_row(hit: &discord_server::search::SearchHit, on_jump: Rc<dyn Fn(i64, i64)>, results: Signal<Option<SearchResults>>) -> Element {
+    let jump = on_jump.clone();
+    let (cid, mid) = (hit.channel_id, hit.message_id);
+    let author = hit.author_display_name.clone().unwrap_or_else(|| hit.author_username.clone());
+    let mut body = crate::reply_reference_strip::excerpt_text(&hit.content);
+    if body.chars().count() > 300 {
+        body = body.chars().take(300).collect::<String>() + "…";
+    }
+    if body.is_empty() && hit.attachment_count > 0 {
+        body = "(attachment)".to_string();
+    }
+    let meta = format!("#{}  ·  {}", hit.channel_name, super::time_fmt::format_full_when(hit.created_at / 1000));
+    let muted12 = StyleRules { font_size: Some(px(12.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() };
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Column),
+            gap: Some(px(4.0)),
+            background: Some(col(theme::BG_PRIMARY)),
+            padding_top: Some(px(10.0)),
+            padding_bottom: Some(px(10.0)),
+            padding_left: Some(px(12.0)),
+            padding_right: Some(px(12.0)),
+            ..rounded(6.0)
+        }) {
+            text(style = muted12) { meta }
+            text(style = StyleRules {
+                font_size: Some(px(14.0)),
+                font_weight: Some(FontWeight::SemiBold),
+                color: Some(col(theme::TEXT_STRONG)),
+                ..Default::default()
+            }) { author }
+            text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_NORMAL)), ..Default::default() }) { body }
+        }
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                jump(cid, mid);
+                results.set(None);
+            }
+            TouchResponse::CONSUMED
+        })
+    }
+}
+
 /// The search box for the server in `server`. `on_jump(channel_id,
 /// message_id)` opens a result.
 pub(super) fn search_box(server: Signal<Option<i64>>, server_name: String, on_jump: Rc<dyn Fn(i64, i64)>) -> Element {
@@ -89,50 +134,7 @@ pub(super) fn search_box(server: Signal<Option<i64>>, server_name: String, on_ju
                 }
             };
             let muted = |size: f32| StyleRules { font_size: Some(px(size)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() };
-            let rows: Vec<Element> = hits
-                .iter()
-                .map(|hit| {
-                    let jump = on_jump.clone();
-                    let (cid, mid) = (hit.channel_id, hit.message_id);
-                    let author = hit.author_display_name.clone().unwrap_or_else(|| hit.author_username.clone());
-                    let mut body = crate::reply_reference_strip::excerpt_text(&hit.content);
-                    if body.chars().count() > 300 {
-                        body = body.chars().take(300).collect::<String>() + "…";
-                    }
-                    if body.is_empty() && hit.attachment_count > 0 {
-                        body = "(attachment)".to_string();
-                    }
-                    let meta = format!("#{}  ·  {}", hit.channel_name, super::time_fmt::format_full_when(hit.created_at / 1000));
-                    ui! {
-                        view(style = StyleRules {
-                            flex_direction: Some(FlexDirection::Column),
-                            gap: Some(px(4.0)),
-                            background: Some(col(theme::BG_PRIMARY)),
-                            padding_top: Some(px(10.0)),
-                            padding_bottom: Some(px(10.0)),
-                            padding_left: Some(px(12.0)),
-                            padding_right: Some(px(12.0)),
-                            ..rounded(6.0)
-                        }) {
-                            text(style = muted(12.0)) { meta }
-                            text(style = StyleRules {
-                                font_size: Some(px(14.0)),
-                                font_weight: Some(FontWeight::SemiBold),
-                                color: Some(col(theme::TEXT_STRONG)),
-                                ..Default::default()
-                            }) { author }
-                            text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_NORMAL)), ..Default::default() }) { body }
-                        }
-                        .on_touch(move |ev| {
-                            if ev.phase == TouchPhase::Ended {
-                                jump(cid, mid);
-                                results.set(None);
-                            }
-                            TouchResponse::CONSUMED
-                        })
-                    }
-                })
-                .collect();
+            let jump_fn = on_jump.clone();
             let tips = (found.is_some() && hits.is_empty()).then(|| {
                 ui! { text(style = muted(12.0)) { FILTER_TIPS.to_string() } }
             });
@@ -207,7 +209,9 @@ pub(super) fn search_box(server: Signal<Option<i64>>, server_name: String, on_ju
                             padding_bottom: Some(px(12.0)),
                             ..Default::default()
                         }) {
-                            { rows }
+                            for hit in hits.iter(), key = hit.message_id {
+                                { search_result_row(hit, jump_fn.clone(), results.clone()) }
+                            }
                             if let Some(el) = tips {
                                 el
                             }
