@@ -559,7 +559,7 @@ pub fn ServerSettingsPanel(
     )];
     for (i, label) in SECTIONS.iter().enumerate() {
         // Only the sections the user may use are listed.
-        let row = crate::settings_suite::nav_row(label, false, section, i, None);
+        let row = crate::settings_suite::nav_row(label, false, crate::settings_suite::nav_id(label), section, i, None);
         nav.push(ui! {
             view(style = move || StyleRules {
                 flex_direction: Some(FlexDirection::Column),

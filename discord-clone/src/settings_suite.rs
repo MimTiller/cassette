@@ -56,6 +56,22 @@ const SECTIONS: [(&str, &str); 5] = [
 /// The Profile section's index, for openers that land on it.
 pub const SECTION_PROFILE: usize = 1;
 
+/// The sidebar row's robot anchor for a section label.
+pub(crate) fn nav_id(label: &str) -> &'static str {
+    match label {
+        "My Account" => "settings-nav-my-account",
+        "Profile" => "settings-nav-profile",
+        "Appearance" => "settings-nav-appearance",
+        "Notifications" => "settings-nav-notifications",
+        "Keybinds" => "settings-nav-keybinds",
+        "Log Out" => "settings-nav-log-out",
+        "Overview" => "settings-nav-overview",
+        "Roles" => "settings-nav-roles",
+        "Members" => "settings-nav-members",
+        _ => "settings-nav-other",
+    }
+}
+
 /// Build one radio-style option row (the `notification_settings` shape): a dot
 /// glyph (filled when `selected == idx`) and the label; pressing it sets
 /// `selected` to `idx`, deselecting the others.
@@ -459,6 +475,11 @@ fn accent_swatch(
 /// shown in that theme, whatever is active) and its name; the active one
 /// has an accent outline.
 fn theme_card(name: theme::ThemeName, active: Signal<theme::ThemeName>, on_pick: Rc<dyn Fn(theme::ThemeName)>) -> Element {
+    let test_id: &'static str = match name {
+        theme::ThemeName::Dark => "theme-card-dark",
+        theme::ThemeName::Light => "theme-card-light",
+        theme::ThemeName::Purple => "theme-card-purple",
+    };
     let bar = |w: f32, c: &str| ui! {
         view(style = StyleRules {
             width: Some(px(w)),
@@ -498,7 +519,7 @@ fn theme_card(name: theme::ThemeName, active: Signal<theme::ThemeName>, on_pick:
             align_items: Some(AlignItems::Center),
             gap: Some(px(8.0)),
             ..Default::default()
-        }) {
+        }, test_id = test_id) {
             view(style = move || {
                 let on = active.get() == name;
                 let w = runtime_core::Tokenized::Literal(2.0);
@@ -535,6 +556,13 @@ fn theme_card(name: theme::ThemeName, active: Signal<theme::ThemeName>, on_pick:
 /// One app icon choice: the cassette and its name; the active one has an
 /// accent outline.
 fn icon_card(icon: crate::app_icon::AppIcon, active: Signal<crate::app_icon::AppIcon>) -> Element {
+    let test_id: &'static str = match icon {
+        crate::app_icon::AppIcon::Sunset => "icon-card-sunset",
+        crate::app_icon::AppIcon::Memphis => "icon-card-memphis",
+        crate::app_icon::AppIcon::Miami => "icon-card-miami",
+        crate::app_icon::AppIcon::Bubblegum => "icon-card-bubblegum",
+        crate::app_icon::AppIcon::Classic => "icon-card-classic",
+    };
     let img = ui! {
         image(
             src = icon.data_url(),
@@ -552,7 +580,7 @@ fn icon_card(icon: crate::app_icon::AppIcon, active: Signal<crate::app_icon::App
             align_items: Some(AlignItems::Center),
             gap: Some(px(6.0)),
             ..Default::default()
-        }) {
+        }, test_id = test_id) {
             view(style = move || {
                 let on = active.get() == icon;
                 let w = runtime_core::Tokenized::Literal(2.0);
@@ -712,10 +740,10 @@ pub fn UserSettings(
             let group = group.to_string();
             nav.push(nav_heading(move || group.clone(), i == 0));
         }
-        nav.push(nav_row(label, false, active, i, None));
+        nav.push(nav_row(label, false, nav_id(label), active, i, None));
     }
     nav.push(nav_divider());
-    nav.push(nav_row("Log Out", true, active, usize::MAX, on_logout));
+    nav.push(nav_row("Log Out", true, nav_id("Log Out"), active, usize::MAX, on_logout));
     settings_layout(nav, panel, on_close)
 }
 
@@ -884,8 +912,8 @@ pub(crate) fn settings_layout(nav: Vec<Element>, panel: Element, close: Option<R
 
 /// One sidebar row: a section (selects `index`), or with `danger` the Log
 /// Out row (runs `action`). Hover lightens it; the selected section is
-/// filled.
-pub(crate) fn nav_row(label: &str, danger: bool, active: Signal<usize>, index: usize, action: Option<Rc<dyn Fn()>>) -> Element {
+/// filled. `test_id` names the row for the robot suite ("" = no id).
+pub(crate) fn nav_row(label: &str, danger: bool, test_id: &'static str, active: Signal<usize>, index: usize, action: Option<Rc<dyn Fn()>>) -> Element {
     let hovered = signal(false);
     let label = label.to_string();
     ui! {
@@ -900,7 +928,7 @@ pub(crate) fn nav_row(label: &str, danger: bool, active: Signal<usize>, index: u
                 background: Some(crate::style_helpers::selected_fill(on, hovered.get())),
                 ..rounded(4.0)
             }
-        }) {
+        }, test_id = test_id) {
             text(style = move || {
                 let on = active.get() == index;
                 StyleRules {

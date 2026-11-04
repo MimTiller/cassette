@@ -1003,10 +1003,10 @@ pub(crate) fn message_row(
             let press2 = press.clone();
             (
                 ui! { view { { avatar_chip } }.on_touch(move |ev| (press)(ev)) },
-                ui! { view { text(style = crate::styles::AuthorName().color(name_color)) { crate::auth::shown_name(author) } }.on_touch(move |ev| (press2)(ev)) },
+                ui! { view(test_id = "msg-author-name") { text(style = crate::styles::AuthorName().color(name_color)) { crate::auth::shown_name(author) } }.on_touch(move |ev| (press2)(ev)) },
             )
         }
-        None => (avatar_chip, ui! { text(style = crate::styles::AuthorName().color(name_color)) { crate::auth::shown_name(author) } }),
+        None => (avatar_chip, ui! { view(test_id = "msg-author-name") { text(style = crate::styles::AuthorName().color(name_color)) { crate::auth::shown_name(author) } } }),
     };
     ui! {
         view(style = crate::styles::MessageRowBox()) {

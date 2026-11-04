@@ -18,3 +18,7 @@ mod auth;
 mod multi_user;
 #[path = "robot/server.rs"]
 mod server;
+#[path = "robot/settings.rs"]
+mod settings;
+#[path = "robot/profile_status.rs"]
+mod profile_status;
