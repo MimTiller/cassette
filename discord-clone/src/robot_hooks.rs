@@ -45,6 +45,55 @@ fn name_color(username: String) -> Result<String, String> {
     Ok(crate::mentions::name_color(username.as_str()).unwrap_or_default())
 }
 
+/// The runs the markdown SDK's renderer paints for `body`, one line per run
+/// as `text~flags` (e.g. `boldword~bold`, `codeword~code`, plain runs bare):
+/// the SDK builds its semantic DOM outside the robot registry, so the suite
+/// reads the parse this way instead of hunting text nodes it cannot see.
+/// The walk mirrors the SDK's own pulldown-cmark state machine
+/// (`markdown::parse`) with the same option flags.
+#[runtime_core::robot_fn(name = "cassette.md_runs")]
+fn md_runs(body: String) -> Result<Vec<String>, String> {
+    use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
+    let mut opts = Options::empty();
+    opts.insert(Options::ENABLE_STRIKETHROUGH);
+    opts.insert(Options::ENABLE_TABLES);
+    opts.insert(Options::ENABLE_TASKLISTS);
+    let mut out: Vec<String> = Vec::new();
+    let mut bold: usize = 0;
+    let mut italic: usize = 0;
+    let mut strike: usize = 0;
+    for ev in Parser::new_ext(body.as_str(), opts) {
+        match ev {
+            Event::Start(Tag::Strong) => bold += 1,
+            Event::End(TagEnd::Strong) => bold = bold.saturating_sub(1),
+            Event::Start(Tag::Emphasis) => italic += 1,
+            Event::End(TagEnd::Emphasis) => italic = italic.saturating_sub(1),
+            Event::Start(Tag::Strikethrough) => strike += 1,
+            Event::End(TagEnd::Strikethrough) => strike = strike.saturating_sub(1),
+            Event::Text(t) => out.push(run(&t, bold, italic, strike, false)),
+            Event::Code(t) => out.push(run(&t, bold, italic, strike, true)),
+            Event::SoftBreak => out.push(run(" ", bold, italic, strike, false)),
+            Event::HardBreak => out.push(run("\n", bold, italic, strike, false)),
+            _ => {},
+        }
+    }
+    Ok(out)
+}
+
+/// One run line: the text plus its flags joined after `~` (no suffix for a
+/// plain run).
+fn run(t: &str, bold: usize, italic: usize, strike: usize, code: bool) -> String {
+    let mut flags: Vec<String> = Vec::new();
+    if bold > 0 { flags.push("bold".to_string()) }
+    if italic > 0 { flags.push("italic".to_string()) }
+    if strike > 0 { flags.push("strike".to_string()) }
+    if code { flags.push("code".to_string()) }
+    match flags.is_empty() {
+        true => t.to_string(),
+        false => t.to_string() + "~" + &flags.join("+"),
+    }
+}
+
 /// Re-enter the active server the way a page reload does: fetch its roles and
 /// the signed-in user's permissions, arming the dropdown's permission rows.
 #[runtime_core::robot_fn(name = "cassette.rearm_perms")]
@@ -58,6 +107,15 @@ fn rearm_perms() -> Result<(), String> {
     }
 }
 
+/// Open a user's context menu (Profile, Mention, Message, friend and block
+/// actions) the way a right-click on their name does: the robot has no
+/// secondary press, so the suite calls this instead of right-clicking.
+#[runtime_core::robot_fn(name = "cassette.open_user_menu")]
+fn open_user_menu(user_id: i64) -> Result<(), String> {
+    crate::mentions::open_user_menu(user_id, 200.0, 200.0);
+    Ok(())
+}
+
 /// Register the functions; called once from `app()`.
 pub(crate) fn register() {
     runtime_vocabulary::robot_fn::register(theme_key::robot());
@@ -66,4 +124,6 @@ pub(crate) fn register() {
     runtime_vocabulary::robot_fn::register(role_named_color::robot());
     runtime_vocabulary::robot_fn::register(name_color::robot());
     runtime_vocabulary::robot_fn::register(rearm_perms::robot());
+    runtime_vocabulary::robot_fn::register(open_user_menu::robot());
+    runtime_vocabulary::robot_fn::register(md_runs::robot());
 }

@@ -577,7 +577,7 @@ fn user_menu(
                     align_items: Some(AlignItems::Center),
                     background: Some(col(if hovered.get() { if red { theme::DANGER_STRONG } else { theme::ACCENT_HOVER } } else { "transparent" })),
                     ..rounded(4.0)
-                }) {
+                }, test_id = "user-menu-action") {
                     text(style = move || StyleRules {
                         font_size: Some(px(14.0)),
                         font_weight: Some(FontWeight::SemiBold),

@@ -90,6 +90,12 @@ clipboard = { version = "=3.0.0", registry = "idealyst" }
 # deps so its `runtime-scene`/`runtime-shared`/`runtime-vocabulary` deps
 # resolve to the identical crate instances this crate already uses.
 markdown = { version = "=4.0.0", registry = "idealyst" }
+# The markdown SDK's own CommonMark backend, kept as a direct dep so the
+# robot hook can re-walk a message body the SDK cannot hand back
+# (MarkdownBound.doc and the SDK's parse module are private). Same pin
+# (and default-features off) as the SDK's declaration, so both share one
+# instance.
+pulldown-cmark = { version = "=0.12.2", default-features = false }
 # The file-picker SDK: "Change avatar" opens the platform's native file-open
 # UI (web: `showOpenFilePicker()` / `<input type=file>` fallback) so the user
 # uploads a real image instead of pasting a data URL. Imperative API only —

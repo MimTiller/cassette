@@ -51,7 +51,7 @@ fn picker_row(
             padding_right: Some(px(8.0)),
             background: Some(crate::style_helpers::selected_fill(on, false)),
             ..rounded(4.0)
-        }) {
+        }, test_id = "picker-friend") {
             { crate::avatar_chip::avatar_chip(username.as_str(), theme::ACCENT, 28.0) }
             text(style = StyleRules {
                 flex_grow: Some(grow(1.0)),
@@ -280,6 +280,7 @@ pub(crate) fn picker_dialog(
                             font_size: Some(px(14.0)),
                             ..crate::style_helpers::text_field_style()
                         },
+                        test_id = "picker-group-name",
                     )
                 }
             });

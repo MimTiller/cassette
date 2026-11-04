@@ -189,7 +189,7 @@ fn reaction_pill(emoji: &str, count: u32, reacted_by_me: bool, key: MessageKey, 
     let will_remove = reacted_by_me;
     let reacted = if reacted_by_me { crate::styles::ReactionPillReacted::On } else { crate::styles::ReactionPillReacted::Off };
     ui! {
-        view(style = crate::styles::ReactionPill().reacted(reacted)) {
+        view(style = crate::styles::ReactionPill().reacted(reacted), test_id = "reaction-pill") {
             { face }
             text(style = crate::styles::ReactionCount()) { cnt.to_string() }
         }

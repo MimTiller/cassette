@@ -203,7 +203,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
                 ..rounded(6.0)
-            }) {
+            }, test_id = "dm-done-pill") {
                 text(style = StyleRules {
                     color: Some(col(TEXT)),
                     font_size: Some(px(12.0)),

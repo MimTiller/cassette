@@ -418,7 +418,7 @@ fn live_dm_row(
     // block (it outlives the `on_touch` `Fn` closure — a plain capture would
     // be a move out of the closure, E0507).
     ui! {
-        view(style = row_style) {
+        view(style = row_style, test_id = "live-dm-row") {
             { avatar_chip }
             view(style = StyleRules {
                 flex_direction: Some(FlexDirection::Column),

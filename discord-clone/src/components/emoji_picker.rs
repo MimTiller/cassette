@@ -244,7 +244,7 @@ fn emoji_cell(
     let hover_glyph = glyph.to_string();
     let touch_glyph = glyph.to_string();
     ui! {
-        view(style = cell_style()) {
+        view(style = cell_style(), test_id = "emoji-cell") {
             text(style = StyleRules {
                 font_size: Some(px(22.0)),
                 ..Default::default()

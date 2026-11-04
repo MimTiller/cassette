@@ -26,3 +26,5 @@ mod profile_status;
 mod two_users;
 #[path = "robot/messages.rs"]
 mod messages;
+#[path = "robot/dms_friends.rs"]
+mod dms_friends;
