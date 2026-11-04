@@ -22,3 +22,5 @@ mod server;
 mod settings;
 #[path = "robot/profile_status.rs"]
 mod profile_status;
+#[path = "robot/two_users.rs"]
+mod two_users;

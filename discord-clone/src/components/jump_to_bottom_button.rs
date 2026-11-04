@@ -71,7 +71,7 @@ pub fn JumpToBottomButton(visible: Signal<bool>, on_jump: Rc<dyn Fn()>) -> Eleme
                 font_size: Some(px(12.0)),
                 font_weight: Some(FontWeight::SemiBold),
                 ..rounded(16.0)
-            }) {
+            }, test_id = "jump-to-bottom") {
                 text(style = StyleRules {
                     font_size: Some(px(14.0)),
                     color: Some(col(theme::TEXT_STRONG)),
