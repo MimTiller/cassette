@@ -98,7 +98,7 @@ audio comes last, after everything else.
 
 ## Testing in a browser
 
-The end-to-end browser suite lives in `e2e/` (see `e2e/README.md`): `python3 e2e/run.py http://127.0.0.1:<port>`.
+The end-to-end browser suite is the Rust robot suite in `discord-clone/tests/robot/` (see `e2e/README.md`): `idealyst test --web discord-clone`, or `sh /root/bin/robot-test [filter]` from the worktree root on this host.
 
 Start a dev server from the **repo root**, with the crate as an argument:
 
