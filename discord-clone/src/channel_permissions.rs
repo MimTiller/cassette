@@ -176,6 +176,43 @@ fn heading(label: &str) -> Element {
     }
 }
 
+/// A row in the "who can access" list: the name and an × that removes the
+/// target from the allowed set.
+fn access_row(channel_id: i64, list: &[Overwrite], t: Target) -> Element {
+    let (a, d) = find(list, t);
+    let label = target_name(t);
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            height: Some(px(32.0)),
+            ..Default::default()
+        }) {
+            text(style = StyleRules {
+                font_size: Some(px(14.0)),
+                color: Some(col(theme::TEXT_NORMAL)),
+                flex_grow: Some(Tokenized::Literal(1.0)),
+                ..Default::default()
+            }) { label }
+            view(style = StyleRules {
+                width: Some(px(24.0)),
+                height: Some(px(24.0)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                ..Default::default()
+            }) {
+                text(style = StyleRules { font_size: Some(px(16.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { "×".to_string() }
+            }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    save(channel_id, t, a.minus(Permissions::VIEW_CHANNEL), d);
+                }
+                TouchResponse::CONSUMED
+            })
+        }
+    }
+}
+
 /// A small tappable pill; `on` fills it with the accent.
 fn chip(label: String, on: bool, on_tap: impl Fn() + 'static) -> Element {
     ui! {
@@ -322,43 +359,6 @@ pub(crate) fn dialog() -> Element {
                 .filter(|o| o.target != Target::Everyone && o.allow.contains(Permissions::VIEW_CHANNEL))
                 .map(|o| o.target)
                 .collect();
-            let access_rows: Vec<Element> = access
-                .iter()
-                .map(|&t| {
-                    let (a, d) = find(list, t);
-                    let label = target_name(t);
-                    ui! {
-                        view(style = StyleRules {
-                            flex_direction: Some(FlexDirection::Row),
-                            align_items: Some(AlignItems::Center),
-                            height: Some(px(32.0)),
-                            ..Default::default()
-                        }) {
-                            text(style = StyleRules {
-                                font_size: Some(px(14.0)),
-                                color: Some(col(theme::TEXT_NORMAL)),
-                                flex_grow: Some(Tokenized::Literal(1.0)),
-                                ..Default::default()
-                            }) { label }
-                            view(style = StyleRules {
-                                width: Some(px(24.0)),
-                                height: Some(px(24.0)),
-                                align_items: Some(AlignItems::Center),
-                                justify_content: Some(JustifyContent::Center),
-                                ..Default::default()
-                            }) {
-                                text(style = StyleRules { font_size: Some(px(16.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { "×".to_string() }
-                            }
-                            .on_touch(move |ev| {
-                                if ev.phase == TouchPhase::Ended {
-                                    save(cid, t, a.minus(Permissions::VIEW_CHANNEL), d);
-                                }
-                                TouchResponse::CONSUMED
-                            })
-                        }
-                    }
-                })
-                .collect();
             let access_el = if private {
                 let picker: Vec<Element> = if adding {
                     let roles = crate::mentions::roles().roles.into_iter().map(|r| Target::Role(r.id));
@@ -380,7 +380,9 @@ pub(crate) fn dialog() -> Element {
                 ui! {
                     view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) {
                         { heading("WHO CAN ACCESS THIS CHANNEL") }
-                        { access_rows }
+                        for t in access.iter(), key = target_name(*t) {
+                            { access_row(cid, list, *t) }
+                        }
                         view(style = StyleRules {
                             flex_direction: Some(FlexDirection::Row),
                             flex_wrap: Some(FlexWrap::Wrap),
