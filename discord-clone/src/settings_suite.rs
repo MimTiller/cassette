@@ -178,6 +178,42 @@ fn notifications_tab(selected: Signal<u32>) -> Element {
     }
 }
 
+/// One row of the blocked-users list: the user's chip and name, and an
+/// Unblock button that removes them from the blocked set.
+fn blocked_row(b: &crate::blocks::BlockedUser, blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signal<u32>) -> Element {
+    let user_id = b.user_id;
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            gap: Some(px(10.0)),
+            padding_top: Some(px(6.0)),
+            padding_bottom: Some(px(6.0)),
+            ..Default::default()
+        }) {
+            { crate::avatar_chip::avatar_chip(b.username.as_str(), theme::ACCENT, 28.0) }
+            text(style = StyleRules { flex_grow: Some(runtime_core::Tokenized::Literal(1.0)), font_size: Some(px(14.0)), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { b.username.clone() }
+            view(style = StyleRules {
+                height: Some(px(28.0)),
+                padding_left: Some(px(12.0)),
+                padding_right: Some(px(12.0)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                background: Some(col(theme::BUTTON_SECONDARY)),
+                ..rounded(4.0)
+            }) {
+                text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { "Unblock".to_string() }
+            }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    crate::blocks::set_blocked(user_id, false, blocked, live_rev, || {});
+                }
+                TouchResponse::CONSUMED
+            })
+        }
+    }
+}
+
 /// The **Account** tab: change display name (handle) and password, both against
 /// the real auth backend. Local field signals + a shared message line
 /// (error red / success green) surface the backend's result inline.
@@ -287,40 +323,13 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                     }
                 };
             }
-            let rows: Vec<Element> = list.iter().map(|b| {
-                let user_id = b.user_id;
-                ui! {
-                    view(style = StyleRules {
-                        flex_direction: Some(FlexDirection::Row),
-                        align_items: Some(AlignItems::Center),
-                        gap: Some(px(10.0)),
-                        padding_top: Some(px(6.0)),
-                        padding_bottom: Some(px(6.0)),
-                        ..Default::default()
-                    }) {
-                        { crate::avatar_chip::avatar_chip(b.username.as_str(), theme::ACCENT, 28.0) }
-                        text(style = StyleRules { flex_grow: Some(runtime_core::Tokenized::Literal(1.0)), font_size: Some(px(14.0)), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { b.username.clone() }
-                        view(style = StyleRules {
-                            height: Some(px(28.0)),
-                            padding_left: Some(px(12.0)),
-                            padding_right: Some(px(12.0)),
-                            align_items: Some(AlignItems::Center),
-                            justify_content: Some(JustifyContent::Center),
-                            background: Some(col(theme::BUTTON_SECONDARY)),
-                            ..rounded(4.0)
-                        }) {
-                            text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { "Unblock".to_string() }
-                        }
-                        .on_touch(move |ev| {
-                            if ev.phase == TouchPhase::Ended {
-                                crate::blocks::set_blocked(user_id, false, blocked, live_rev, || {});
-                            }
-                            TouchResponse::CONSUMED
-                        })
+            ui! {
+                view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) {
+                    for b in list.iter(), key = b.user_id {
+                        { blocked_row(b, blocked, live_rev) }
                     }
                 }
-            }).collect();
-            ui! { view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) { rows } }
+            }
         },
     );
 
