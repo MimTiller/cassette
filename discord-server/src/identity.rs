@@ -86,7 +86,8 @@ impl PasswordProvider {
     }
 
     /// Create a new account for the password scheme: the plaintext is hashed
-    /// (never stored) and the row inserted. Returns the new user id.
+    /// (never stored), the user row inserted, and the hash written to the
+    /// account's `kind = 'password'` credential. Returns the new user id.
     ///
     /// # Errors
     /// - `username '…' is already taken` — the `users.username` `UNIQUE`
@@ -94,8 +95,11 @@ impl PasswordProvider {
     /// - `failed to create user: …` — any other persistence failure.
     pub fn register_account(&self, username: &str, password: &str) -> Result<i64, String> {
         let hash = hash_password(password);
-        match self.db.insert_user(username, &hash) {
-            Ok(id) => Ok(id),
+        match self.db.insert_user(username) {
+            Ok(user_id) => match self.db.set_password_hash(user_id, &hash) {
+                Ok(_) => Ok(user_id),
+                Err(e) => Err(format!("failed to create user: {e}")),
+            },
             Err(e) if e.to_string().contains("UNIQUE") => {
                 Err(format!("username '{username}' is already taken"))
             }

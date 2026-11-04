@@ -208,67 +208,16 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                 color: Some(col(TEXT_CHANNEL)),
                 ..Default::default()
             };
-            let rows: Vec<Element> = servers.iter().map(|s| {
-                let initial = s.name.chars().next().unwrap_or('?').to_string();
-                // Per-tile owned copies: the tile's on_touch lambda moves
-                // these into itself, so each tile needs its own Rc/struct
-                // copy rather than sharing the captured outer binding.
-                let tile_shell = shell.clone();
-                let tile_unread = rail_unread.clone();
-                // The uploaded icon fills the 48px tile with the tile's own
-                // rounding; servers without one keep the initial letter.
-                let face = match s.icon_url.clone().filter(|u| !u.is_empty()) {
-                    Some(url) => ui! {
-                        image(
-                            src = crate::auth::media_url(url),
-                            alt = s.name.clone(),
-                            style = StyleRules {
-                                width: Some(px(48.0)),
-                                height: Some(px(48.0)),
-                                flex_shrink: Some(grow(0.0)),
-                                object_fit: Some(ObjectFit::Cover),
-                                ..rounded(16.0)
-                            },
-                        )
-                    },
-                    None => ui! { text(style = initial_style.clone()) { initial } },
-                };
-                let sid = s.id;
-                let active_live = active_live_server.clone();
-                let base = row_style.clone();
-                ui! {
-                    view(style = base.clone()) {
-                        // The active-server pill on the far-left rail edge — the
-                        // sole selection signal (the row is `Position::Relative`,
-                        // 48px centered in the 72px rail, so left: -12 is flush).
-                        view(style = move || StyleRules {
-                            position: Some(Position::Absolute),
-                            left: Some(px(-12.0)),
-                            top: Some(px(14.0)),
-                            width: Some(px(4.0)),
-                            height: Some(px(20.0)),
-                            background: Some(col(PILL)),
-                            opacity: Some(Tokenized::Literal(if active_live.get() == Some(sid) {
-                                1.0
-                            } else {
-                                0.0
-                            })),
-                            ..rounded(2.0)
-                        }) {}
-                        { face }
-                    }
-                    // Enter live mode: select this real server and pull its
-                    // channels/roster/unread via the shared enter-live helper
-                    // (same one the Create and Join modals call). The rail
-                    // displays unread from `rail_unread`.
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            enter_live_server(tile_shell.clone(), sid, tile_unread.clone())
-                        }
-                        TouchResponse::CONSUMED
-                    })
+            // The generated keyed loop body moves its captures on each
+            // iteration, so hoist owned copies to sit outside it.
+            let shell_c = shell.clone();
+            let unread_c = rail_unread.clone();
+            let active_c = active_live_server.clone();
+            let rows_keyed = ui! {
+                for s in servers.iter(), key = s.id {
+                    { rail_server_tile(s, row_style.clone(), initial_style.clone(), shell_c.clone(), unread_c.clone(), active_c.clone()) }
                 }
-            }).collect();
+            };
             ui! {
                 view(style = StyleRules {
                     flex_direction: Some(FlexDirection::Column),
@@ -276,7 +225,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                     gap: Some(px(10.0)),
                     ..Default::default()
                 }) {
-                    rows
+                    rows_keyed
                 }
             }
         },
@@ -337,4 +286,70 @@ pub(super) fn build(s: &ShellState) -> RailParts {
     };
 
     RailParts { rail_style, rail_top, rail_list }
+}
+
+/// One server tile on the rail: its icon (or initial letter) and the active-
+/// server selection pill, with a tap that enters live mode for this server.
+/// Keyed by the server id in the caller's loop, so the pill and the tap
+/// handler stay on the right tile when the server list changes.
+fn rail_server_tile(
+    s: &discord_server::servers::ServerSummary,
+    base: StyleRules,
+    initial_style: StyleRules,
+    shell: ShellState,
+    unread_buf: Rc<RefCell<HashMap<i64, (i64, i64)>>>,
+    active_live: Signal<Option<i64>>,
+) -> Element {
+    let initial = s.name.chars().next().unwrap_or('?').to_string();
+    // The uploaded icon fills the 48px tile with the tile's own
+    // rounding; servers without one keep the initial letter.
+    let face = match s.icon_url.clone().filter(|u| !u.is_empty()) {
+        Some(url) => ui! {
+            image(
+                src = crate::auth::media_url(url),
+                alt = s.name.clone(),
+                style = StyleRules {
+                    width: Some(px(48.0)),
+                    height: Some(px(48.0)),
+                    flex_shrink: Some(grow(0.0)),
+                    object_fit: Some(ObjectFit::Cover),
+                    ..rounded(16.0)
+                },
+            )
+        },
+        None => ui! { text(style = initial_style.clone()) { initial } },
+    };
+    let sid = s.id;
+    ui! {
+        view(style = base.clone()) {
+            // The active-server pill on the far-left rail edge — the
+            // sole selection signal (the row is `Position::Relative`,
+            // 48px centered in the 72px rail, so left: -12 is flush).
+            view(style = move || StyleRules {
+                position: Some(Position::Absolute),
+                left: Some(px(-12.0)),
+                top: Some(px(14.0)),
+                width: Some(px(4.0)),
+                height: Some(px(20.0)),
+                background: Some(col(PILL)),
+                opacity: Some(Tokenized::Literal(if active_live.get() == Some(sid) {
+                    1.0
+                } else {
+                    0.0
+                })),
+                ..rounded(2.0)
+            }) {}
+            { face }
+        }
+        // Enter live mode: select this real server and pull its
+        // channels/roster/unread via the shared enter-live helper
+        // (same one the Create and Join modals call). The rail
+        // displays unread from `rail_unread`.
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                enter_live_server(shell.clone(), sid, unread_buf.clone())
+            }
+            TouchResponse::CONSUMED
+        })
+    }
 }

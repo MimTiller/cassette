@@ -126,60 +126,15 @@ pub(super) fn reaction_area(
     reactions: Rc<RefCell<ReactionMap>>,
     picker: Signal<Option<MessageKey>>,
 ) -> Element {
-    // Current pills for this message (a clone — the borrow is released before
-    // this call returns, so the list `switch` body can borrow again freely).
-    let list: Vec<Reaction> = reactions.borrow().get(&key).cloned().unwrap_or_default();
-
     // One pill per current reaction (`styles::ReactionPill`, tinted when the
     // signed-in user reacted). A tap toggles it through the server; the pill
     // map then updates from the server's echo frames.
-    let pills: Vec<Element> = list.iter().map(|(emoji, count, reacted)| {
-        let em = emoji.to_string();
-        let em_close = em.clone();
-        // A custom emoji's chip shows its image.
-        let face = match crate::custom_emoji::token_emoji(&em) {
-            Some(e) => ui! {
-                image(
-                    src = crate::auth::media_url(e.image.clone()),
-                    alt = format!(":{}:", e.name),
-                    style = StyleRules {
-                        width: Some(px(18.0)),
-                        height: Some(px(18.0)),
-                        object_fit: Some(ObjectFit::Contain),
-                        ..Default::default()
-                    },
-                )
-            },
-            None => ui! { text(style = crate::styles::ReactionEmoji()) { em.clone() } },
-        };
-        let cnt = *count;
-        let will_remove = *reacted;
-        let reacted = if *reacted { crate::styles::ReactionPillReacted::On } else { crate::styles::ReactionPillReacted::Off };
-        ui! {
-            view(style = crate::styles::ReactionPill().reacted(reacted)) {
-                { face }
-                text(style = crate::styles::ReactionCount()) { cnt.to_string() }
-            }
-            .on_touch(move |ev| {
-                // LIVE row: route the tap through the backend RPC — `request_live_reaction`
-                // persists the row and broadcasts a count frame that updates the pill map
-                // (for THIS client via its own echo AND every other connected member). No
-                // optimistic mutation; the echo is the single source of truth, so a cold
-                // reload and a live sync converge identically. (The mock session-local
-                // toggle was deleted with guest mode.)
-                if ev.phase == TouchPhase::Ended {
-                    request_live_reaction(key, em_close.clone(), will_remove, picker)
-                }
-                TouchResponse::CONSUMED
-            })
-        }
-    }).collect();
+    let list: Vec<Reaction> = reactions.borrow().get(&key).cloned().unwrap_or_default();
+    // Discord shows the add-reaction button only next to existing pills.
+    if list.is_empty() {
+        return ui! { view(style = StyleRules { ..Default::default() }) {} };
+    }
 
-    // The always-visible "add reaction" button: a small circular glyph target
-    // (a `view` + icon, the composer icon-button shape) whose `.on_touch` opens
-    // the picker for this message, keyed by the row's `MessageKey`.
-    // Only for someone who may add reactions here; existing pills still
-    // toggle (taking a reaction back needs no permission).
     let add = picker;
     let add_key = key;
     let add_button = crate::mentions::can_here(discord_server::permissions::Permissions::ADD_REACTIONS).then(|| ui! {
@@ -195,24 +150,58 @@ pub(super) fn reaction_area(
         })
     });
 
-    // Discord shows the add-reaction button only next to existing pills: with
-    // no reactions the strip is an empty zero-size view (takes no height), so
-    // unreacted messages sit closer together.
-    if pills.is_empty() {
-        return ui! { view(style = StyleRules { ..Default::default() }) {} };
-    }
-
-    // The strip: pills left, spacer, add button right. `padding_left` of 66
-    // aligns it with the message body (row padding 16 + avatar 40 + gap 10) so
-    // the pills sit under the text, Discord-style.
     ui! {
         view(style = crate::styles::ReactionStrip()) {
-            pills
+            for (emoji, count, reacted) in list.iter(), key = emoji.to_string() {
+                { reaction_pill(emoji, *count, *reacted, key, picker) }
+            }
             view(style = crate::styles::Spacer()) {}
             if let Some(button) = add_button {
                 button
             }
         }
+    }
+}
+
+/// One reaction pill: the glyph (or custom-emoji chip), the count, tinted
+/// when the signed-in user reacted, and a tap that toggles the current user's
+/// reaction through the server. Keyed by the emoji glyph in the caller's loop:
+/// pills appear and disappear as reactions change.
+fn reaction_pill(emoji: &str, count: u32, reacted_by_me: bool, key: MessageKey, picker: Signal<Option<MessageKey>>) -> Element {
+    let em = emoji.to_string();
+    let em_close = em.clone();
+    let face = match crate::custom_emoji::token_emoji(&em) {
+        Some(e) => ui! {
+            image(
+                src = crate::auth::media_url(e.image.clone()),
+                alt = format!(":{}:", e.name),
+                style = StyleRules {
+                    width: Some(px(18.0)),
+                    height: Some(px(18.0)),
+                    object_fit: Some(ObjectFit::Contain),
+                    ..Default::default()
+                },
+            )
+        },
+        None => ui! { text(style = crate::styles::ReactionEmoji()) { em.clone() } },
+    };
+    let cnt = count;
+    let will_remove = reacted_by_me;
+    let reacted = if reacted_by_me { crate::styles::ReactionPillReacted::On } else { crate::styles::ReactionPillReacted::Off };
+    ui! {
+        view(style = crate::styles::ReactionPill().reacted(reacted)) {
+            { face }
+            text(style = crate::styles::ReactionCount()) { cnt.to_string() }
+        }
+        .on_touch(move |ev| {
+            // LIVE row: route the tap through the backend RPC so the pill
+            // updates from the server's echo frame rather than an optimistic
+            // local mutation.
+            if ev.phase == TouchPhase::Ended {
+                request_live_reaction(key, em_close.clone(), will_remove, picker)
+            }
+            TouchResponse::CONSUMED
+        })
     }
 }
 

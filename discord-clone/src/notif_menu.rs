@@ -119,28 +119,7 @@ pub(crate) fn dialog() -> Element {
             let save = move |s: NotificationSetting| crate::notif_prefs::set(s);
             let muted = crate::notif_prefs::muted(scope, id);
 
-            let mut mute_rows: Vec<Element> = Vec::new();
-            if muted {
-                let note = mute_note(current.muted_until.unwrap_or(MUTED_UNTIL_TURNED_OFF));
-                mute_rows.push(ui! {
-                    text(style = StyleRules {
-                        font_size: Some(px(13.0)),
-                        color: Some(col(theme::TEXT_MUTED)),
-                        padding_left: Some(px(10.0)),
-                        ..Default::default()
-                    }) { note }
-                });
-                mute_rows.push(option_row("Unmute".to_string(), false, move || {
-                    save(NotificationSetting { muted_until: None, ..current });
-                }));
-            } else {
-                for (label, ms) in MUTES {
-                    mute_rows.push(option_row(label.to_string(), false, move || {
-                        let until = if ms == 0 { MUTED_UNTIL_TURNED_OFF } else { runtime_shared::time::epoch_millis() + ms };
-                        save(NotificationSetting { muted_until: Some(until), ..current });
-                    }));
-                }
-            }
+            let note = mute_note(current.muted_until.unwrap_or(MUTED_UNTIL_TURNED_OFF));
             let default_label = match scope {
                 Scope::Server => "Use my default (User Settings)",
                 Scope::Channel => "Use the server's setting",
@@ -151,14 +130,6 @@ pub(crate) fn dialog() -> Element {
                 ("Nothing", Some(Level::Nothing)),
                 (default_label, None),
             ];
-            let level_rows: Vec<Element> = levels
-                .into_iter()
-                .map(|(label, level)| {
-                    option_row(label.to_string(), current.level == level, move || {
-                        save(NotificationSetting { level, ..current });
-                    })
-                })
-                .collect();
             let title = match scope {
                 Scope::Server => name,
                 Scope::Channel => format!("#{name}"),
@@ -209,9 +180,32 @@ pub(crate) fn dialog() -> Element {
                         })
                     }
                     { heading(mute_heading) }
-                    { mute_rows }
+                    if muted {
+                        text(style = StyleRules {
+                            font_size: Some(px(13.0)),
+                            color: Some(col(theme::TEXT_MUTED)),
+                            padding_left: Some(px(10.0)),
+                            ..Default::default()
+                        }) { note }
+                        { option_row("Unmute".to_string(), false, move || {
+                            save(NotificationSetting { muted_until: None, ..current });
+                        }) }
+                    } else {
+                        // The mute menu is a static list that never reorders,
+                        // so the label is the key.
+                        for (label, ms) in MUTES, key = label {
+                            { option_row(label.to_string(), false, move || {
+                                let until = if ms == 0 { MUTED_UNTIL_TURNED_OFF } else { runtime_shared::time::epoch_millis() + ms };
+                                save(NotificationSetting { muted_until: Some(until), ..current });
+                            }) }
+                        }
+                    }
                     { heading("NOTIFY ME ABOUT") }
-                    { level_rows }
+                    for (label, level) in levels, key = label {
+                        { option_row(label.to_string(), current.level == level, move || {
+                            save(NotificationSetting { level, ..current });
+                        }) }
+                    }
                 }
             }
         },

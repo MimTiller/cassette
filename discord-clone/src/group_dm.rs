@@ -28,6 +28,71 @@ fn grow(v: f32) -> runtime_core::Tokenized<f32> {
     runtime_core::Tokenized::Literal(v)
 }
 
+/// One row in the friend picker: avatar chip, name, a check box when selected.
+/// Keyed on the friend's user id so the checkbox/selection state stays with
+/// the friend when the candidate list changes.
+fn picker_row(
+    id: i64,
+    username: String,
+    on: bool,
+    room: usize,
+    selected: Signal<Vec<i64>>,
+) -> Element {
+    let shown = crate::auth::shown_name(&username);
+    let check_bg = if on { theme::ACCENT } else { "transparent" };
+    let mark = if on { "✓" } else { "" }.to_string();
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            gap: Some(px(10.0)),
+            height: Some(px(40.0)),
+            padding_left: Some(px(8.0)),
+            padding_right: Some(px(8.0)),
+            background: Some(crate::style_helpers::selected_fill(on, false)),
+            ..rounded(4.0)
+        }) {
+            { crate::avatar_chip::avatar_chip(username.as_str(), theme::ACCENT, 28.0) }
+            text(style = StyleRules {
+                flex_grow: Some(grow(1.0)),
+                font_size: Some(px(15.0)),
+                color: Some(col(theme::TEXT_STRONG)),
+                ..Default::default()
+            }) { shown }
+            view(style = StyleRules {
+                width: Some(px(20.0)),
+                height: Some(px(20.0)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                background: Some(col(check_bg)),
+                border_top_width: Some(runtime_core::Tokenized::Literal(2.0)),
+                border_right_width: Some(runtime_core::Tokenized::Literal(2.0)),
+                border_bottom_width: Some(runtime_core::Tokenized::Literal(2.0)),
+                border_left_width: Some(runtime_core::Tokenized::Literal(2.0)),
+                border_top_color: Some(col(theme::INTERACTIVE)),
+                border_right_color: Some(col(theme::INTERACTIVE)),
+                border_bottom_color: Some(col(theme::INTERACTIVE)),
+                border_left_color: Some(col(theme::INTERACTIVE)),
+                ..rounded(4.0)
+            }) {
+                text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(theme::TEXT_ON_ACCENT)), ..Default::default() }) { mark }
+            }
+        }
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                let mut now = selected.get();
+                if let Some(i) = now.iter().position(|x| *x == id) {
+                    now.remove(i);
+                } else if room > 0 {
+                    now.push(id);
+                }
+                selected.set(now);
+            }
+            TouchResponse::CONSUMED
+        })
+    }
+}
+
 /// The signed-in user's id.
 fn me() -> i64 {
     crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst)
@@ -142,70 +207,11 @@ pub(crate) fn picker_dialog(
             }
             let room = discord_server::dms::MAX_GROUP_MEMBERS.saturating_sub(existing.len().max(1) + chosen.len());
             let candidates: Vec<(i64, String)> = friend_list.iter().filter(|(id, _)| !existing.contains(id)).cloned().collect();
-            let rows: Vec<Element> = candidates
-                .into_iter()
-                .map(|(id, username)| {
-                    let on = chosen.contains(&id);
-                    let shown = crate::auth::shown_name(&username);
-                    let check_bg = if on { theme::ACCENT } else { "transparent" };
-                    let mark = if on { "✓" } else { "" }.to_string();
-                    ui! {
-                        view(style = StyleRules {
-                            flex_direction: Some(FlexDirection::Row),
-                            align_items: Some(AlignItems::Center),
-                            gap: Some(px(10.0)),
-                            height: Some(px(40.0)),
-                            padding_left: Some(px(8.0)),
-                            padding_right: Some(px(8.0)),
-                            background: Some(crate::style_helpers::selected_fill(on, false)),
-                            ..rounded(4.0)
-                        }) {
-                            { crate::avatar_chip::avatar_chip(username.as_str(), theme::ACCENT, 28.0) }
-                            text(style = StyleRules {
-                                flex_grow: Some(grow(1.0)),
-                                font_size: Some(px(15.0)),
-                                color: Some(col(theme::TEXT_STRONG)),
-                                ..Default::default()
-                            }) { shown }
-                            view(style = StyleRules {
-                                width: Some(px(20.0)),
-                                height: Some(px(20.0)),
-                                align_items: Some(AlignItems::Center),
-                                justify_content: Some(JustifyContent::Center),
-                                background: Some(col(check_bg)),
-                                border_top_width: Some(runtime_core::Tokenized::Literal(2.0)),
-                                border_right_width: Some(runtime_core::Tokenized::Literal(2.0)),
-                                border_bottom_width: Some(runtime_core::Tokenized::Literal(2.0)),
-                                border_left_width: Some(runtime_core::Tokenized::Literal(2.0)),
-                                border_top_color: Some(col(theme::INTERACTIVE)),
-                                border_right_color: Some(col(theme::INTERACTIVE)),
-                                border_bottom_color: Some(col(theme::INTERACTIVE)),
-                                border_left_color: Some(col(theme::INTERACTIVE)),
-                                ..rounded(4.0)
-                            }) {
-                                text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(theme::TEXT_ON_ACCENT)), ..Default::default() }) { mark }
-                            }
-                        }
-                        .on_touch(move |ev| {
-                            if ev.phase == TouchPhase::Ended {
-                                let mut now = selected.get();
-                                if let Some(i) = now.iter().position(|x| *x == id) {
-                                    now.remove(i);
-                                } else if room > 0 {
-                                    now.push(id);
-                                }
-                                selected.set(now);
-                            }
-                            TouchResponse::CONSUMED
-                        })
-                    }
-                })
-                .collect();
             let (title, action) = match mode {
                 Picker::NewGroup => ("Select Friends", if chosen.len() == 1 { "Open DM" } else { "Create Group DM" }),
                 Picker::AddTo(_) => ("Add Friends to Group", "Add"),
             };
-            let hint = if rows.is_empty() {
+            let hint = if candidates.is_empty() {
                 "No friends left to add.".to_string()
             } else {
                 format!("You can add {room} more {}.", if room == 1 { "friend" } else { "friends" })
@@ -314,7 +320,9 @@ pub(crate) fn picker_dialog(
                         text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { hint }
                         scroll_view(style = StyleRules { flex_shrink: Some(grow(1.0)), max_height: Some(px(320.0)), ..Default::default() }) {
                             view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(2.0)), ..Default::default() }) {
-                                { rows }
+                                for c in candidates.iter(), key = c.0 {
+                                    { picker_row(c.0, c.1.clone(), chosen.contains(&c.0), room, selected.clone()) }
+                                }
                             }
                         }
                         if let Some(el) = name_el {
@@ -339,6 +347,65 @@ pub(crate) fn picker_dialog(
     )
 }
 
+/// One row in the members panel: avatar chip, name, owner crown, and a
+/// remove button for the owner. Keyed on the member's user id.
+fn member_row(
+    p: &discord_server::dms::DmParticipant,
+    dm_id: i64,
+    owner: Option<i64>,
+    me: i64,
+    error: Signal<String>,
+) -> Element {
+    let uid = p.user_id;
+    let username = p.username.clone();
+    let shown = crate::auth::shown_name(&username);
+    let crown = (owner == Some(uid)).then(|| ui! { icon(CROWN).color(|| theme::live(theme::WARNING)).size(14.0) });
+    let remove = (owner == Some(me) && uid != me).then(|| {
+        ui! {
+            view(style = StyleRules { padding_left: Some(px(4.0)), padding_right: Some(px(4.0)), ..Default::default() }) {
+                icon(X).color(|| theme::live(theme::TEXT_MUTED)).size(14.0)
+            }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    let input = discord_server::dms::GroupDmMemberInput { dm_id, user_id: uid };
+                    runtime_core::spawn_then(discord_server::dms::remove_group_dm_member(input), move |result| {
+                        if let Err(e) = result {
+                            error.set(crate::errors::friendly(&e));
+                        }
+                    });
+                }
+                TouchResponse::CONSUMED
+            })
+        }
+    });
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            gap: Some(px(8.0)),
+            height: Some(px(40.0)),
+            padding_left: Some(px(8.0)),
+            padding_right: Some(px(8.0)),
+            ..Default::default()
+        }) {
+            { crate::avatar_chip::avatar_chip(username.as_str(), theme::ACCENT, 28.0) }
+            text(style = StyleRules {
+                flex_grow: Some(grow(1.0)),
+                min_width: Some(px(0.0)),
+                font_size: Some(px(14.0)),
+                color: Some(col(theme::TEXT_NORMAL)),
+                ..Default::default()
+            }) { shown }
+            if let Some(el) = crown {
+                el
+            }
+            if let Some(el) = remove {
+                el
+            }
+        }
+    }
+}
+
 /// The members panel of group `dm`: everyone in it (the owner marked), a
 /// remove button on each for the owner, and Leave Group.
 pub(crate) fn members_panel(dm: &Dm) -> Element {
@@ -346,61 +413,6 @@ pub(crate) fn members_panel(dm: &Dm) -> Element {
     let dm_id = dm.channel_id;
     let owner = dm.owner_id;
     let error = signal(String::new());
-    let rows: Vec<Element> = dm
-        .participants
-        .iter()
-        .map(|p| {
-            let uid = p.user_id;
-            let username = p.username.clone();
-            let shown = crate::auth::shown_name(&username);
-            let crown = (owner == Some(uid)).then(|| ui! { icon(CROWN).color(|| theme::live(theme::WARNING)).size(14.0) });
-            let remove = (owner == Some(me) && uid != me).then(|| {
-                ui! {
-                    view(style = StyleRules { padding_left: Some(px(4.0)), padding_right: Some(px(4.0)), ..Default::default() }) {
-                        icon(X).color(|| theme::live(theme::TEXT_MUTED)).size(14.0)
-                    }
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            let input = discord_server::dms::GroupDmMemberInput { dm_id, user_id: uid };
-                            runtime_core::spawn_then(discord_server::dms::remove_group_dm_member(input), move |result| {
-                                if let Err(e) = result {
-                                    error.set(crate::errors::friendly(&e));
-                                }
-                            });
-                        }
-                        TouchResponse::CONSUMED
-                    })
-                }
-            });
-            ui! {
-                view(style = StyleRules {
-                    flex_direction: Some(FlexDirection::Row),
-                    align_items: Some(AlignItems::Center),
-                    gap: Some(px(8.0)),
-                    height: Some(px(40.0)),
-                    padding_left: Some(px(8.0)),
-                    padding_right: Some(px(8.0)),
-                    ..Default::default()
-                }) {
-                    { crate::avatar_chip::avatar_chip(username.as_str(), theme::ACCENT, 28.0) }
-                    text(style = StyleRules {
-                        flex_grow: Some(grow(1.0)),
-                        min_width: Some(px(0.0)),
-                        font_size: Some(px(14.0)),
-                        color: Some(col(theme::TEXT_NORMAL)),
-                        ..Default::default()
-                    }) { shown }
-                    if let Some(el) = crown {
-                        el
-                    }
-                    if let Some(el) = remove {
-                        el
-                    }
-                }
-            }
-        })
-        .collect();
-    let count = format!("MEMBERS — {}", dm.participants.len());
     ui! {
         view(style = StyleRules {
             width: Some(px(240.0)),
@@ -420,8 +432,10 @@ pub(crate) fn members_panel(dm: &Dm) -> Element {
                 font_weight: Some(FontWeight::SemiBold),
                 color: Some(col(theme::TEXT_MUTED)),
                 ..Default::default()
-            }) { count }
-            { rows }
+            }) { format!("MEMBERS — {}", dm.participants.len()) }
+            for p in dm.participants.iter(), key = p.user_id {
+                { member_row(p, dm_id, owner, me, error.clone()) }
+            }
             if !error.get().is_empty() {
                 text(style = StyleRules { font_size: Some(px(12.0)), color: Some(col(theme::DANGER)), padding_left: Some(px(8.0)), ..Default::default() }) {
                     move || error.get()

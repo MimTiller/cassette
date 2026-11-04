@@ -139,6 +139,49 @@ fn dm_matches(candidates: &[(i64, String)], query: &str, limit: usize) -> Vec<(i
 /// friends and members of the open server, and tapping a match opens (or
 /// starts) the DM with them and clears the box.
 ///
+/// One search result row: avatar chip, name, and a tap that opens that
+/// person's DM.
+fn live_dm_result_row(
+    user_id: i64,
+    name: String,
+    live_dms: Signal<Vec<Dm>>,
+    active: Signal<Option<i64>>,
+    msgs: Rc<RefCell<Vec<LiveDmMsg>>>,
+    rev: Signal<u32>,
+    query: Signal<String>,
+    friends_open: Signal<bool>,
+) -> Element {
+    ui! {
+        view(style = StyleRules {
+            height: Some(px(34.0)),
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            gap: Some(px(8.0)),
+            padding_left: Some(px(6.0)),
+            padding_right: Some(px(6.0)),
+            ..rounded(4.0)
+        }, test_id = "live-dm-find-result") {
+            { crate::avatar_chip::avatar_chip(name.as_str(), theme::ACCENT, 24.0) }
+            text(style = StyleRules {
+                font_size: Some(px(14.0)),
+                color: Some(col(theme::TEXT_STRONG)),
+                ..Default::default()
+            }) { crate::auth::shown_name(&name) }
+        }
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                open_dm_with(user_id, live_dms, active, msgs.clone(), rev);
+                // Starting a DM from search means the user wanted
+                // the conversation, so the Friends panel (if open)
+                // closes and the DM takes the main area.
+                friends_open.set(false);
+                query.set(String::new());
+            }
+            TouchResponse::CONSUMED
+        })
+    }
+}
+
 /// `query` is owned in `app_shell` scope (not here) so the draft survives a
 /// list rebuild: when a DM starts, `live_dms` changes and the list `switch`
 /// re-runs its arm, re-creating this row.
@@ -177,44 +220,19 @@ fn live_dm_find_row(
                     }) { "No friends or members match".to_string() }
                 };
             }
-            let rows: Vec<Element> = found.into_iter().map(|(user_id, name)| {
-                let (dms_sig, act, m, r, fo) = (live_dms, active, msgs.clone(), rev, friends_open.clone());
-                ui! {
-                    view(style = StyleRules {
-                        height: Some(px(34.0)),
-                        flex_direction: Some(FlexDirection::Row),
-                        align_items: Some(AlignItems::Center),
-                        gap: Some(px(8.0)),
-                        padding_left: Some(px(6.0)),
-                        padding_right: Some(px(6.0)),
-                        ..rounded(4.0)
-                    }, test_id = "live-dm-find-result") {
-                        { crate::avatar_chip::avatar_chip(name.as_str(), theme::ACCENT, 24.0) }
-                        text(style = StyleRules {
-                            font_size: Some(px(14.0)),
-                            color: Some(col(theme::TEXT_STRONG)),
-                            ..Default::default()
-                        }) { crate::auth::shown_name(&name) }
-                    }
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            open_dm_with(user_id, dms_sig, act, m.clone(), r);
-                            // Starting a DM from search means the user wanted
-                            // the conversation, so the Friends panel (if open)
-                            // closes and the DM takes the main area.
-                            fo.set(false);
-                            query.set(String::new());
-                        }
-                        TouchResponse::CONSUMED
-                    })
-                }
-            }).collect();
+            let msgs_h = Rc::clone(&msgs);
             ui! {
                 view(style = StyleRules {
                     flex_direction: Some(FlexDirection::Column),
                     padding_top: Some(px(4.0)),
                     ..Default::default()
-                }) { rows }
+                }) {
+                    // Keyed on user_id so a per-row DM handler stays on its own
+                    // person when the search results change.
+                    for (user_id, name) in found, key = user_id {
+                        { live_dm_result_row(user_id, name.clone(), live_dms, active, msgs_h.clone(), rev, query, friends_open) }
+                    }
+                }
             }
         },
     );

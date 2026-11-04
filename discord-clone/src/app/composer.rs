@@ -5,6 +5,83 @@ use crate::theme;
 use super::*;
 use crate::gif_picker::{GifPicker, gif_button};
 
+/// One staged-attachment chip on the composer strip: the thumbnail and an
+/// ✕ that unstages just this entry. Keyed by the staged entry's id.
+fn attachment_chip_cell(k: i64, filename: String, url: String, rm: runtime_core::Signal<Vec<(i64, String, String, String)>>) -> Element {
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            gap: Some(px(6.0)),
+            ..Default::default()
+        }) {
+            crate::profile_settings::attachment_thumbnail(signal(crate::auth::media_url(url.clone())).into(), filename.clone(), 56.0)
+            view(style = StyleRules {
+                width: Some(px(16.0)),
+                height: Some(px(16.0)),
+                align_items: Some(AlignItems::Center),
+                justify_content: Some(JustifyContent::Center),
+                ..rounded(8.0)
+            }) {
+                text(style = StyleRules {
+                    font_size: Some(px(12.0)),
+                    color: Some(col(TEXT_MUTED)),
+                    ..Default::default()
+                }) { "✕".to_string() }
+            }
+            .on_touch(move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    let mut staged = rm.get();
+                    staged.retain(|(entry_key, _, _, _)| *entry_key != k);
+                    rm.set(staged);
+                }
+                TouchResponse::CONSUMED
+            })
+        }
+    }
+}
+
+/// One row in the @mention autocomplete dropdown: the name, an optional
+/// completion hint, highlighted when `hi` matches, and a touch that applies
+/// the suggestion. Keyed by username in the caller's loop: the dropdown
+/// reorders as the query narrows.
+fn suggestion_row(i: i64, name: String, hi: i64, apply_touch: Rc<dyn Fn(&str)>) -> Element {
+    let on = i == hi;
+    let hint = crate::mentions::completion_hint(name.as_str());
+    let n = name.clone();
+    ui! {
+        view(style = StyleRules {
+            height: Some(px(34.0)),
+            padding_left: Some(px(14.0)),
+            padding_right: Some(px(14.0)),
+            background: Some(col(if on { BG_ACTIVE } else { "transparent" })),
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            ..Default::default()
+        }) {
+            text(style = StyleRules {
+                font_size: Some(px(14.0)),
+                color: Some(col(if on { TEXT } else { TEXT_CHANNEL })),
+                ..Default::default()
+            }) { format!("@{}", name) }
+            view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
+            if let Some(h) = hint {
+                text(style = StyleRules {
+                    font_size: Some(px(12.0)),
+                    color: Some(col(TEXT_MUTED)),
+                    ..Default::default()
+                }) { h.to_string() }
+            }
+        }
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Ended {
+                (apply_touch)(n.as_str());
+            }
+            TouchResponse::CONSUMED
+        })
+    }
+}
+
 pub(super) struct ComposerParts {
     pub(super) composer_area: Element,
 }
@@ -296,10 +373,10 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
     // showing only when there is an active query with matching members.
     let ac_render = ac.clone();
     let ac_hi_r = ac_hi.clone();
-    let apply_touch = apply.clone();
     let ac_el = switch(
         move || suggestions.get(),
         move |list: &Vec<String>| {
+            let apply_touch = apply.clone();
             let q = ac_render.borrow().0.clone();
             let hi = ac_hi_r.get();
             if q.is_empty() {
@@ -307,52 +384,6 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                     view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
                 };
             }
-            let rows: Vec<Element> = list
-                .iter()
-                .enumerate()
-                .map(|(i, name)| {
-                    let on = (i as i64) == hi;
-                    let hint = crate::mentions::completion_hint(name);
-                    let n = name.clone();
-                    // Fresh per-row clone: `apply_touch` is an `Rc`, not `Copy`,
-                    // and this `.map()` runs once per suggestion row, so each
-                    // row's `move` closure below needs its own handle (the
-                    // same rule documented in components/connection_quality_
-                    // indicator.rs for its per-bar StyleRules).
-                    let apply_touch = apply_touch.clone();
-                    ui! {
-                        view(style = StyleRules {
-                            height: Some(px(34.0)),
-                            padding_left: Some(px(14.0)),
-                            padding_right: Some(px(14.0)),
-                            background: Some(col(if on { BG_ACTIVE } else { "transparent" })),
-                            flex_direction: Some(FlexDirection::Row),
-                            align_items: Some(AlignItems::Center),
-                            ..Default::default()
-                        }) {
-                            text(style = StyleRules {
-                                font_size: Some(px(14.0)),
-                                color: Some(col(if on { TEXT } else { TEXT_CHANNEL })),
-                                ..Default::default()
-                            }) { format!("@{}", name) }
-                            view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
-                            if let Some(h) = hint {
-                                text(style = StyleRules {
-                                    font_size: Some(px(12.0)),
-                                    color: Some(col(TEXT_MUTED)),
-                                    ..Default::default()
-                                }) { h.to_string() }
-                            }
-                        }
-                        .on_touch(move |ev| {
-                            if ev.phase == TouchPhase::Ended {
-                                (apply_touch)(n.as_str());
-                            }
-                            TouchResponse::CONSUMED
-                        })
-                    }
-                })
-                .collect();
             ui! {
                 view(style = StyleRules {
                     position: Some(Position::Absolute),
@@ -367,7 +398,13 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                     scroll_view(style = StyleRules {
                         flex_grow: Some(grow(1.0)),
                         ..Default::default()
-                    }) { rows }
+                    }) {
+                        // Keyed on the suggestion username: the list reorders
+                        // as the query narrows, so rows must track names.
+                        for (i, name) in list.iter().enumerate(), key = name.clone() {
+                            { suggestion_row(i as i64, name.clone(), hi, apply_touch.clone()) }
+                        }
+                    }
                 }
             }
         },
@@ -475,41 +512,6 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                     view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
                 };
             }
-            let cells: Vec<Element> = list.iter().map(|(key, filename, _mime, url)| {
-                let k = *key;
-                let rm = strip_pending;
-                ui! {
-                    view(style = StyleRules {
-                        flex_direction: Some(FlexDirection::Row),
-                        align_items: Some(AlignItems::Center),
-                        gap: Some(px(6.0)),
-                        ..Default::default()
-                    }) {
-                        crate::profile_settings::attachment_thumbnail(signal(crate::auth::media_url(url.clone())).into(), filename.clone(), 56.0)
-                        view(style = StyleRules {
-                            width: Some(px(16.0)),
-                            height: Some(px(16.0)),
-                            align_items: Some(AlignItems::Center),
-                            justify_content: Some(JustifyContent::Center),
-                            ..rounded(8.0)
-                        }) {
-                            text(style = StyleRules {
-                                font_size: Some(px(12.0)),
-                                color: Some(col(TEXT_MUTED)),
-                                ..Default::default()
-                            }) { "✕".to_string() }
-                        }
-                        .on_touch(move |ev| {
-                            if ev.phase == TouchPhase::Ended {
-                                let mut staged = rm.get();
-                                staged.retain(|(entry_key, _, _, _)| *entry_key != k);
-                                rm.set(staged);
-                            }
-                            TouchResponse::CONSUMED
-                        })
-                    }
-                }
-            }).collect();
             ui! {
                 view(style = StyleRules {
                     flex_direction: Some(FlexDirection::Column),
@@ -519,7 +521,11 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                     margin_right: Some(px(16.0)),
                     gap: Some(px(8.0)),
                     ..Default::default()
-                }) { cells }
+                }) {
+                    for (entry, filename, _mime, url) in list.iter(), key = (*entry).clone() {
+                        { attachment_chip_cell(*entry, filename.clone(), url.clone(), strip_pending.clone()) }
+                    }
+                }
             }
         },
     );

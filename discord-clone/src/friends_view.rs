@@ -157,6 +157,34 @@ fn friend_avatar_chip(name: &str, avatar: Option<String>) -> Element {
     }
 }
 
+/// One tab pill (Online / All / Pending / Add Friend) in the friends
+/// header row: a tap sets `active_tab` to this pill's tab. Keyed by the tab
+/// value in the caller's loop so a tap's state stays on the right pill.
+fn friends_tab_pill(label: String, tab: u8, id_str: &'static str, active_tab: Signal<u8>) -> Element {
+    let set_tab = {
+        let t = active_tab.clone();
+        let v = tab;
+        move |ev: &TouchEvent| {
+            if ev.phase == TouchPhase::Ended {
+                t.set(v);
+            }
+            TouchResponse::CONSUMED
+        }
+    };
+    ui! {
+        view(style = pill_style(), test_id = id_str) {
+            text(
+                style = StyleRules {
+                    font_size: Some(px(12.0)),
+                    font_weight: Some(FontWeight::SemiBold),
+                    ..Default::default()
+                },
+            ) { label }
+        }
+        .on_touch(set_tab)
+    }
+}
+
 /// A small action button whose click runs `click` (keyed `test_id` by label so
 /// the Robot tools can target it; the friend it acts on is the button's row).
 fn friend_action(label: &str, id: i64, click: Rc<dyn Fn()>) -> Element {
@@ -241,53 +269,15 @@ pub fn friends_screen(
     // --- tab pills (built once; a tap sets active_tab) ----------------------
     // One inline header row: the container's `flex_direction: Row` (below, in
     // the assembled ui!) places the four pills side by side — stacked full-
-    // width bars was the Column-default bug.
+    // width bars was the Column-default bug. Keyed by the tab value (its own
+    // stable id, so a tap's hover stays on the right pill).
     let tab_read = active_tab.clone();
-    let pills: Vec<Element> = {
-        let mut out: Vec<Element> = Vec::new();
-        for (label, tab) in [
-            ("Online".to_string(), 0u8),
-            ("All".to_string(), 1u8),
-            ("Pending".to_string(), 2u8),
-            ("Add Friend".to_string(), 3u8),
-        ].into_iter() {
-            let id_str = match tab {
-                0u8 =>
-                    "friends-tab-online",
-                1u8 =>
-                    "friends-tab-all",
-                2u8 =>
-                    "friends-tab-pending",
-                _ =>
-                    "friends-tab-add",
-            };
-            let set_tab = {
-                let t = tab_read.clone();
-                let v = tab;
-                move |ev: &TouchEvent| {
-                    if ev.phase == TouchPhase::Ended {
-                        t.set(v);
-                    }
-                    TouchResponse::CONSUMED
-                }
-            };
-            out.push(
-                ui! {
-                    view(style = pill_style(), test_id = id_str) {
-                        text(
-                            style = StyleRules {
-                                font_size: Some(px(12.0)),
-                                font_weight: Some(FontWeight::SemiBold),
-                                ..Default::default()
-                            },
-                        ) { label }
-                    }
-                    .on_touch(set_tab)
-                }
-            );
-        }
-        out
-    };
+    let tab_pills: Vec<(String, u8, &str)> = [
+        ("Online".to_string(), 0u8, "friends-tab-online"),
+        ("All".to_string(), 1u8, "friends-tab-all"),
+        ("Pending".to_string(), 2u8, "friends-tab-pending"),
+        ("Add Friend".to_string(), 3u8, "friends-tab-add"),
+    ].into_iter().collect();
 
     // --- body: one switch over (tab, snapshot, error, presence_rev) ---------
     // Presence is read at build time; presence_rev in the key re-renders the
@@ -614,7 +604,11 @@ pub fn friends_screen(
                 padding_left: Some(px(16.0)),
                 padding_right: Some(px(16.0)),
                 ..Default::default()
-            }) { pills }
+            }) {
+                for (label, tab, id_str) in tab_pills.iter(), key = *tab {
+                    { friends_tab_pill(label.clone(), *tab, *id_str, tab_read) }
+                }
+            }
             { body }
         }
     }
