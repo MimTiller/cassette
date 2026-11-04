@@ -54,6 +54,15 @@ fn rearm_perms() -> Result<(), String> {
     }
 }
 
+/// Open a user's context menu (Profile, Mention, Message, friend and block
+/// actions) the way a right-click on their name does: the robot has no
+/// secondary press, so the suite calls this instead of right-clicking.
+#[runtime_core::robot_fn(name = "cassette.open_user_menu")]
+fn open_user_menu(user_id: i64) -> Result<(), String> {
+    crate::mentions::open_user_menu(user_id, 200.0, 200.0);
+    Ok(())
+}
+
 /// Register the functions; called once from `app()`.
 pub(crate) fn register() {
     runtime_vocabulary::robot_fn::register(theme_key::robot());
@@ -62,4 +71,5 @@ pub(crate) fn register() {
     runtime_vocabulary::robot_fn::register(role_named_color::robot());
     runtime_vocabulary::robot_fn::register(name_color::robot());
     runtime_vocabulary::robot_fn::register(rearm_perms::robot());
+    runtime_vocabulary::robot_fn::register(open_user_menu::robot());
 }
