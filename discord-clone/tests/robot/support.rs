@@ -109,11 +109,20 @@ pub fn sign_out(app: &mut App) {
 }
 
 /// Start a test on the login screen: close whatever an earlier test left
-/// open and sign its account out.
+/// open and sign its account out. Escape closes dialogs and menus; the
+/// full-screen overlays (Direct Messages, invite, profile) close only through
+/// their Done pill, and while one is up it covers the user panel's gear, so a
+/// test that failed on one would otherwise fail every test after it.
 pub fn signed_out(app: &mut App) {
     app.set_timeout(WAIT);
     for _ in 0..3 {
         app.press_key("Escape");
+    }
+    for _ in 0..3 {
+        if !app.label("Done").is_visible() {
+            break;
+        }
+        app.label("Done").click();
     }
     if app.text("Online").is_visible() {
         sign_out(app);

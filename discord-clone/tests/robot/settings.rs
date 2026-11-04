@@ -111,12 +111,12 @@ fn switching_the_theme_recolours_the_app(app: &mut App) {
     shot(app, "settings8-appearance");
 
     app.test_id("theme-card-light").click();
-    let after = robot_string(app.call_function("cassette.theme", json!({})));
-    known_bug(
-        "picking a theme recolours the app",
-        after != before,
-        "theme key before/after: {before}/{after}",
-    );
+    let mut after = String::new();
+    let changed = crate::support::eventually(10, || {
+        after = robot_string(app.call_function("cassette.theme", json!({})));
+        after != before
+    });
+    assert!(changed, "picking a theme should change the theme (before {before}, after {after})");
     shot(app, "settings9-theme-switched");
 }
 

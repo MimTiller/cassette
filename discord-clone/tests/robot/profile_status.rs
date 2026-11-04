@@ -16,7 +16,7 @@
 
 use robot_test::{json, robot_test, App, Value};
 
-use crate::support::{Account, fresh_name, known_bug, sign_in_as, sign_out, signed_out};
+use crate::support::{Account, fresh_name, sign_in_as, sign_out, signed_out};
 use crate::support::WAIT;
 use crate::users::open_browser;
 
@@ -80,14 +80,13 @@ fn about_me_and_name_seen_from_the_others_card(app: &mut App) {
 
     // B (already watching) opens A's card from B's member rail: the card
     // shows the new display name and the about-me.
-    other.app.test_id("member-row-name").click();
+    // Every member row carries `member-row-name`, so take A by the new display
+    // name it now shows (a bare test_id would pick the last row mounted).
+    other.app.text(&disp).click();
     other.app.text("Member since").assert_visible();
     other.app.text(&disp).assert_visible();
-    known_bug(
-        "the card shows A's about-me text",
-        other.app.text(&about).is_visible(),
-        "about field saved above",
-    );
+    // The card shows A's about-me text.
+    other.app.text(&about).assert_visible();
     shot(&mut other.app, "profile4-b-card");
     other.app.press_key("Escape");
     app.press_key("Escape");
@@ -110,11 +109,8 @@ fn do_not_disturb_reaches_the_other_user_as_red(app: &mut App) {
     // A opens the status menu from the user panel's avatar and picks DND.
     app.test_id("user-panel-avatar").click();
     app.test_id("status-menu").assert_visible();
-    known_bug(
-        "the avatar popup is the status menu",
-        app.test_id("status-row-dnd").is_visible(),
-        "the four status rows with dots",
-    );
+    // The avatar popup is the status menu, with a row per status.
+    app.test_id("status-row-dnd").assert_visible();
     app.test_id("status-row-dnd").click();
 
     // A's own member rail row now shows the dnd dot.
@@ -148,19 +144,16 @@ fn the_appearance_picker_offers_cassette_icons(app: &mut App) {
     let before = robot_string(app.call_function("cassette.app_icon", json!({})));
 
     app.test_id("settings-nav-appearance").click();
-    known_bug(
-        "the Appearance section offers a cassette icon picker",
-        app.test_id("icon-card-miami").is_visible(),
-        "a card per icon look in the picker",
-    );
+    // The Appearance section offers a card per cassette icon.
+    app.test_id("icon-card-miami").assert_visible();
     app.test_id("icon-card-miami").click();
 
-    let after = robot_string(app.call_function("cassette.app_icon", json!({})));
-    known_bug(
-        "picking a cassette changes the app icon",
-        after == "miami" && before != "miami",
-        &format!("app icon key before/after: {before}/{after}"),
-    );
+    let mut after = String::new();
+    let changed = crate::support::eventually(10, || {
+        after = robot_string(app.call_function("cassette.app_icon", json!({})));
+        after == "miami"
+    });
+    assert!(changed && before != "miami", "picking a cassette should change the app icon (before {before}, after {after})");
     shot(app, "prof4-icon");
 }
 
