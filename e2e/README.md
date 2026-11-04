@@ -27,7 +27,7 @@ The wrapper runs `idealyst test --web discord-clone` with:
   `robot_fn`s and `test_id`s the suite needs are missing.
 
 The run prints ok/FAIL lines, one `[KNOWN]` line per still-broken check, and
-`[shot] label: path` per screenshot. A full run costs ~40 s.
+`[shot] label: path` per screenshot. A full run costs ~4 minutes; one module, ~30 s.
 
 ## Writing a test
 
