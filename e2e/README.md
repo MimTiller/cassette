@@ -1,66 +1,60 @@
-"""e2e browser suite for Cassette (the discord-clone app).
+# Cassette E2E tests: the Rust robot suite
 
-How it works
-- Each test_*.py is standalone: run it as
-    /usr/bin/python3 test_NAME.py http://127.0.0.1:8085 out
-  it prints one `check`/`known_bug` line per assertion and ends with a
-  `RESULTS {...}` JSON line that run.py parses.
-- run.py runs every test_*.py in sorted order and reports ok/KNOWN/FAIL per
-  test; a check that the test itself marked known_bug prints KNOWN and does
-  not fail the suite.
-- All tests drive the shared test browser over CDP (127.0.0.1:9341) and
-  close every tab they open (finally blocks + run.py closes strays).
-- cdp.py is the toolkit: Session (open/close tabs), paint checks (visible/
-  painted/text_pos — only text actually painted on screen passes), clicking
-  (click_text/click_starts/center), typing (type_ph_start/input helpers),
-  waiting (wait_for/until), seeding (signup/login/send_message) and the
-  check/known_bug accounting.
-- srv_helper.py: POST /_srv/<fn> with a JSON array body + Bearer token, for
-  seeding server data (accounts, roles, emoji) that the UI cannot script
-  directly. UI assertions still look at what the browser paints.
-- Screenshots land in /tmp/cassette-e2e, outside the repo: the dev server
-  watches the repo, so writing there reloads the app mid-test. Run a test by
-  hand with `python3 -B`. ISSUES.md logs every glaring app
-  problem found while running the suite — do not fix app code from here.
+The end-to-end suite lives in `discord-clone/tests/robot/` (registered in
+`discord-clone/tests/robot.rs`). It drives the running app through the
+idealyst robot bridge — `test_id`s and visible labels — against the run's
+own isolated server and database. Python suites are retired: `e2e/deferred/`
+holds the two tests (search, permissions) whose areas are being redesigned
+before porting.
 
-Tests
-- test_auth      signup/login/logout round trip
-- test_server    create server/channels, rename/delete, roles, members panel
-- test_settings  user settings sections + server settings sections render
-- test_two_users two tabs, live messages both ways, presence
-- test_messages  reply, reaction add/remove, pin + pins panel, Markdown,
-                 long-message wrap, jump-to-bottom, typing indicator
-- test_dms_friends friend request/accept, live DMs, group DM (3 people),
-                   block hides the other user's messages
-- test_search    search finds the hit, clicking jumps and highlights
-- test_permissions no edit controls without Manage Channels, private
-                   channel hidden until role allowed, Send Messages denied
-                   shows the composer no-permission bar
-- test_notifications mute from channel right-click dims it, Only @mentions
-                   stops toasts, 12+ unread shows the new-messages bar
-- test_profile_status display name/about-me visible on the other user's
-                   card, DND red dot cross-user, tab icon picker
-Not written yet: test_emoji_gifs (custom emoji, pickers close with Escape),
-test_phone (390x844 layout), test_ui_sweep (every menu/dialog, overlap checks).
+## Running it
 
-Things that bite when writing a test
-- Work out selectors with the idealyst MCP server (AGENTS.md, "Driving the
-  app") before writing any; test_ids are only visible there, not in the DOM.
-- The page carries hidden demo components with the same texts as real
-  controls; only painted text counts (painted/text_pos), and bound x/y to the
-  column you mean: rail 0-72, channel list 72-312, chat from 312. "general"
-  also matches the "# general" channel header.
-- Direct Messages is a full-screen overlay opened by the chat-bubble icon at
-  the top of the rail (click (36, 36)); its list column is x 0-240.
-- The server name in the sidebar header opens the server menu: press Escape
-  after clicking it.
-- `until()` needs a JS boolean: wrap element expressions as "!!" + expr, and
-  use painted(...) (a JS string), not visible(...) (a coroutine).
-- Emoji are two UTF-16 units in JS; match them by text, not length === 1.
-- Give a freshly logged-in tab a few seconds before typing: frames sent
-  before its gateway socket is up are dropped.
-- Session.shot brings the tab to the front first; a background tab never
-  answers Page.captureScreenshot.
+From this worktree's root:
 
-Timeouts: a test may set `TIMEOUT = N` at top level (seconds) for run.py.
-"""
+```sh
+sh /root/bin/robot-test            # the whole suite
+sh /root/bin/robot-test server::   # one module (filter = <module>::)
+```
+
+The wrapper runs `idealyst test --web discord-clone` with:
+- `--env DISCORD_DB=<throwaway .db>` — the run gets a fresh database, so
+  tests never see each other's state or the staging server's.
+- `IDEALYST_CHROME=/root/bin/chrome-robot` — a headless-Chrome wrapper this
+  host needs (`--no-sandbox`); `users::open_browser` launches extra
+  browsers with the same variable.
+- It first deletes the isolated target's `idealyst-hotpatch` dirs, because a
+  hot patch can leave the test session running a stale build whose
+  `robot_fn`s and `test_id`s the suite needs are missing.
+
+The run prints ok/FAIL lines, one `[KNOWN]` line per still-broken check, and
+`[shot] label: path` per screenshot. A full run costs ~40 s.
+
+## Writing a test
+
+- One module per area: `tests/robot/<area>.rs`, appended to the module list
+  in `tests/robot.rs`. Mark each test `#[robot_test]`.
+- Shared steps live in `tests/robot/support.rs`: `Account::new(prefix)`
+  (fresh account through the server), `fresh_name`, `sign_up`/`sign_in_as`,
+  `signed_out` (start every test with it), `eventually`, `WAIT`, and
+  `known_bug` — a check that fails for a bug in `e2e/ISSUES.md`.
+- Direct server calls for setup the UI cannot script: `Account.call("create_server", ...)`
+  against `/_srv/<fn>` on `IDEALYST_TEST_PORT`.
+- App elements must carry a `test_id` for the robot to act on; add one in
+  `discord-clone/src` where nothing identifies the control, and expose
+  computed state as a read-only `#[runtime_core::robot_fn]` in
+  `discord-clone/src/robot_hooks.rs` (register it in that file's
+  `register()` — forgetting silently blanks the hook).
+- Keep tests independent: fresh accounts/server/channel per test via
+  `Account::new(prefix)` / `fresh_name(prefix)` so test_ids never collide.
+
+## Multi-user tests
+
+`idealyst test` drives one browser; a second user gets a second real browser
+through `crate::users::open_browser(label)` (`tests/robot/users.rs`), which
+returns a `Browser` with its own full driver (`second.app`). The robot relay
+routes to the newest tab that dials it, so the extra browser starts its own
+relay and, over the DevTools protocol before the page loads, wraps the page's
+`WebSocket` to dial that relay instead of the run's. Screenshots from an
+extra browser land in `/root/.idealyst/screenshots/cassette-<label>-*.png`.
+End tests that leave a picked status (Idle/DND) with an explicit `sign_out`
+so the next test's `signed_out` can still find the login screen.
