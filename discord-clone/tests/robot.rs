@@ -24,3 +24,5 @@ mod settings;
 mod profile_status;
 #[path = "robot/two_users.rs"]
 mod two_users;
+#[path = "robot/messages.rs"]
+mod messages;
