@@ -2,6 +2,10 @@
 //! for state no element shows: the colour theme, the message a search result
 //! jumped to, and the chosen app icon. They are read-only, and like all robot
 //! functions they do nothing outside an `idealyst dev` / `idealyst test` build.
+//!
+//! Outside a robot build `register` compiles to nothing, so rustc sees the
+//! functions (and `crate::app::jump_target`) as unused there; they are not.
+#![allow(dead_code)]
 
 /// The active colour theme's key (`"dark"`, `"ash"`, ...).
 #[runtime_core::robot_fn(name = "cassette.theme")]

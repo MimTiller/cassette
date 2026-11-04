@@ -104,7 +104,9 @@ mod sidebar;
 mod messages;
 mod jump;
 
-/// The message a jump is highlighting, for the robot suite's hooks.
+/// The message a jump is highlighting, for the robot suite's hooks (only a
+/// robot build calls it, see `robot_hooks`).
+#[allow(dead_code)]
 pub(crate) fn jump_target() -> Option<i64> {
     jump::target()
 }
