@@ -25,9 +25,45 @@ fn app_icon() -> Result<String, String> {
     Ok(crate::app_icon::current().key().to_string())
 }
 
+/// The colour the active server's named role of this name is drawn in, as
+/// stored in the role snapshot ("" when no such role).
+#[runtime_core::robot_fn(name = "cassette.role_named")]
+fn role_named_color(name: String) -> Result<String, String> {
+    let color = crate::mentions::roles()
+        .roles
+        .into_iter()
+        .find(|r| r.name == name)
+        .map(|r| r.color.clone())
+        .unwrap_or_default();
+    Ok(color)
+}
+
+/// The colour `username`'s name is drawn in, from their highest held role
+/// ("" when they hold no coloured role).
+#[runtime_core::robot_fn(name = "cassette.name_color")]
+fn name_color(username: String) -> Result<String, String> {
+    Ok(crate::mentions::name_color(username.as_str()).unwrap_or_default())
+}
+
+/// Re-enter the active server the way a page reload does: fetch its roles and
+/// the signed-in user's permissions, arming the dropdown's permission rows.
+#[runtime_core::robot_fn(name = "cassette.rearm_perms")]
+fn rearm_perms() -> Result<(), String> {
+    match crate::mentions::server_id() {
+        Some(sid) => {
+            crate::mentions::load_roles(sid);
+            Ok(())
+        }
+        None => Err("no active server".to_string()),
+    }
+}
+
 /// Register the functions; called once from `app()`.
 pub(crate) fn register() {
     runtime_vocabulary::robot_fn::register(theme_key::robot());
     runtime_vocabulary::robot_fn::register(jump_target::robot());
     runtime_vocabulary::robot_fn::register(app_icon::robot());
+    runtime_vocabulary::robot_fn::register(role_named_color::robot());
+    runtime_vocabulary::robot_fn::register(name_color::robot());
+    runtime_vocabulary::robot_fn::register(rearm_perms::robot());
 }

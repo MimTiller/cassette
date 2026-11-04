@@ -241,16 +241,22 @@ pub fn JoinServerModal(
                 let close_c = ui! { crate::controls::modal_close_button(move || close.set(false)) };
                 let join_label = if busy.get() { "Joining…" } else { "Join" };
                 let join_fn = on_join.clone();
-                // The button is inlined as a `view` tag (not a `{ splat }`) so
-                // that `text_input(...)` is followed by a *call*, not a block —
-                // a `call { … }` would attach the block as the `text_input`'s
-                // (non-existent) children.
+                // The input carries `on_change` so typing reaches `code`
+                // (`value =` alone only fills the box), and is built in its own
+                // `ui!` so the sibling splat below cannot parse as its children.
+                let code_input = ui! {
+                    text_input(
+                        value = code,
+                        on_change = move |v: String| code.set(v),
+                        placeholder = "Invite code",
+                        test_id = "join-server-code-input",
+                        style = input_style.clone(),
+                    )
+                };
                 ui! {
                     view(style = card_style.clone()) {
                         text(style = title_style.clone()) { "Join a Server".to_string() }
-                        // Two-way: `text_input(value = …)` alone only fills
-                        // the box, so typing never reached `code`.
-                        { crate::controls::text_field(code, "Invite code", input_style.clone()) }
+                        { code_input }
                         { close_c }
                         view(style = StyleRules {
                             margin_top: Some(px(8.0)),

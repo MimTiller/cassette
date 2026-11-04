@@ -1003,10 +1003,10 @@ pub(crate) fn message_row(
             let press2 = press.clone();
             (
                 ui! { view { { avatar_chip } }.on_touch(move |ev| (press)(ev)) },
-                ui! { view { text(style = crate::styles::AuthorName().color(name_color)) { crate::auth::shown_name(author) } }.on_touch(move |ev| (press2)(ev)) },
+                ui! { view(test_id = "msg-author-name") { text(style = crate::styles::AuthorName().color(name_color)) { crate::auth::shown_name(author) } }.on_touch(move |ev| (press2)(ev)) },
             )
         }
-        None => (avatar_chip, ui! { text(style = crate::styles::AuthorName().color(name_color)) { crate::auth::shown_name(author) } }),
+        None => (avatar_chip, ui! { view(test_id = "msg-author-name") { text(style = crate::styles::AuthorName().color(name_color)) { crate::auth::shown_name(author) } } }),
     };
     ui! {
         view(style = crate::styles::MessageRowBox()) {
@@ -1087,7 +1087,7 @@ pub(super) fn message_overflow_menu(
             // end, then the menu closes. (The earlier `MoreMenuAction` enum
             // hard-coded the two shared actions; Edit/Delete arrived after, so
             // the row now takes its handler directly.)
-            let menu_row = |label: &'static str, action: Rc<dyn Fn()>, open: super::popups::MenuHandle| -> Element {
+            let menu_row = |label: &'static str, test_id: &'static str, action: Rc<dyn Fn()>, open: super::popups::MenuHandle| -> Element {
                 let row_style = StyleRules {
                     padding_top: Some(px(8.0)),
                     padding_bottom: Some(px(8.0)),
@@ -1111,7 +1111,7 @@ pub(super) fn message_overflow_menu(
                     TouchResponse::CONSUMED
                 };
                 ui! {
-                    view(style = row_style) {
+                    view(style = row_style, test_id = test_id) {
                         text(style = label_style) { label.to_string() }
                     }
                     .on_touch(touch)
@@ -1130,10 +1130,10 @@ pub(super) fn message_overflow_menu(
                     overflow: Some(Overflow::Hidden),
                     ..crate::style_helpers::popover_panel()
                 }) {
-                    { menu_row("Copy text", on_copy.clone(), open) }
+                    { menu_row("Copy text", "menu-copy-text", on_copy.clone(), open) }
                     {
                         if crate::mentions::can_here(discord_server::permissions::Permissions::MANAGE_MESSAGES) {
-                            menu_row("Pin message", pin.clone(), open)
+                            menu_row("Pin message", "menu-pin-message", pin.clone(), open)
                         } else {
                             ui! {
                                 view(style = StyleRules {
@@ -1144,14 +1144,14 @@ pub(super) fn message_overflow_menu(
                             }
                         }
                     }
-                    { menu_row("Translate message", translate, open) }
+                    { menu_row("Translate message", "menu-translate-message", translate, open) }
                     // Owner-only entries: present only when the caller supplied
                     // handlers (live rows the current user owns). Each renders a
                     // zero-size placeholder otherwise so the branch still yields
                     // an `Element` for the `ui!` child slot.
                     {
                         if let Some(edit) = edit {
-                            menu_row("Edit", edit, open)
+                            menu_row("Edit", "menu-edit-message", edit, open)
                         } else {
                             ui! {
                                 view(style = StyleRules {
@@ -1164,7 +1164,7 @@ pub(super) fn message_overflow_menu(
                     }
                     {
                         if let Some(delete) = delete {
-                            menu_row("Delete", delete, open)
+                            menu_row("Delete", "menu-delete-message", delete, open)
                         } else {
                             ui! {
                                 view(style = StyleRules {
@@ -1330,7 +1330,7 @@ pub(super) fn message_row_with_actions(
             position: Some(Position::Relative),
             flex_direction: Some(FlexDirection::Column),
             ..Default::default()
-        }) {
+        }, test_id = "msg-row") {
             { base }
             { bar }
             { menu }

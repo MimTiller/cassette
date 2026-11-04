@@ -16,3 +16,13 @@ mod users;
 mod auth;
 #[path = "robot/multi_user.rs"]
 mod multi_user;
+#[path = "robot/server.rs"]
+mod server;
+#[path = "robot/settings.rs"]
+mod settings;
+#[path = "robot/profile_status.rs"]
+mod profile_status;
+#[path = "robot/two_users.rs"]
+mod two_users;
+#[path = "robot/messages.rs"]
+mod messages;

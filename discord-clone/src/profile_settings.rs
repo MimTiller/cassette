@@ -557,10 +557,26 @@ pub fn ProfileSettings() -> Element {
                 }) { move || av_error.get().clone() }
             }
             { crate::settings_suite::settings_card("Display name".to_string(), vec![
-                ui! { crate::controls::text_field(display_name, &username, input_style.clone()) }
+                ui! {
+                    text_input(
+                        value = display_name,
+                        on_change = move |v: String| display_name.set(v),
+                        placeholder = username.to_string(),
+                        style = input_style.clone(),
+                        test_id = "profile-display-name",
+                    )
+                }
             ]) }
             { crate::settings_suite::settings_card("About me".to_string(), vec![
-                ui! { crate::controls::text_field(about, "A line about yourself", input_style.clone()) }
+                ui! {
+                    text_input(
+                        value = about,
+                        on_change = move |v: String| about.set(v),
+                        placeholder = "A line about yourself",
+                        style = input_style.clone(),
+                        test_id = "profile-about",
+                    )
+                }
             ]) }
             { let save_profile_btn = crate::controls::button_view_live("profile-save", ButtonKind::Primary, {
                 let profile_busy = profile_busy.clone();

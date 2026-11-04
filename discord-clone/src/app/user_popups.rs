@@ -382,6 +382,8 @@ fn role_chips(user_id: i64, in_server: bool, label: StyleRules) -> Element {
         let role_id = r.id;
         let fill = if r.color.is_empty() { col(theme::TEXT_MUTED) } else { theme::fixed(&r.color) };
         let text = if add { format!("+ {}", r.name) } else if manage { format!("{}  ×", r.name) } else { r.name.clone() };
+        // The "+ role" chip the robot suite presses to hand the role out.
+        let test_id: &'static str = if add { "card-role-give" } else { "card-role-hold" };
         ui! {
             view(style = StyleRules {
                 flex_direction: Some(FlexDirection::Row),
@@ -392,7 +394,7 @@ fn role_chips(user_id: i64, in_server: bool, label: StyleRules) -> Element {
                 padding_right: Some(px(8.0)),
                 background: Some(col(if add { theme::BG_USER_PANEL } else { theme::BG_TERTIARY })),
                 ..rounded(4.0)
-            }) {
+            }, test_id = test_id) {
                 view(style = StyleRules {
                     width: Some(px(10.0)),
                     height: Some(px(10.0)),

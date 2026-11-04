@@ -195,7 +195,7 @@ pub(super) fn user_panel(
                         position: Some(Position::Relative),
                         flex_shrink: Some(grow(0.0)),
                         ..rounded(16.0)
-                    }) {
+                    }, test_id = "user-panel-avatar") {
                         { dot }
                         image(
                             src = crate::auth::media_url(url.clone()),
@@ -218,7 +218,7 @@ pub(super) fn user_panel(
                 }
             } else {
                 ui! {
-                    view(style = avatar_style) {
+                    view(style = avatar_style, test_id = "user-panel-avatar") {
                         text(style = initial_style) { initial }
                         { dot }
                     }
@@ -360,7 +360,13 @@ fn status_menu_view(
             let current = user_status.peek();
             let row = |st: Status| {
                 let gateway = gateway.clone();
-                status_menu_row(st.name(), Some(st.color()), st.hint(), st == current, move || {
+                let test_id: &'static str = match st {
+                    Status::Online => "status-row-online",
+                    Status::Idle => "status-row-idle",
+                    Status::Dnd => "status-row-dnd",
+                    Status::Invisible => "status-row-invisible",
+                };
+                status_menu_row(st.name(), Some(st.color()), st.hint(), st == current, test_id, move || {
                     open.set(false);
                     set_status(user_status, st);
                     gateway.send(discord_server::server_settings::WsClientMsg::SetStatus {
@@ -394,7 +400,7 @@ fn status_menu_view(
                         ..Default::default()
                     }) {}
                     {
-                        status_menu_row("Edit Profile", None, None, false, move || {
+                        status_menu_row("Edit Profile", None, None, false, "status-row-edit-profile", move || {
                             open.set(false);
                             profile_mode.set(true);
                         })
@@ -406,12 +412,14 @@ fn status_menu_view(
 }
 
 /// One row of the status menu: an optional status dot, the label, and an
-/// optional hint line beneath it. `selected` marks the current status.
+/// optional hint line beneath it. `selected` marks the current status;
+/// `test_id` names the row for the robot suite.
 fn status_menu_row(
     label: &'static str,
     dot: Option<&'static str>,
     hint: Option<&'static str>,
     selected: bool,
+    test_id: &'static str,
     on_pick: impl Fn() + 'static,
 ) -> Element {
     let dot_el = dot.map(|c| {
@@ -445,7 +453,7 @@ fn status_menu_row(
             padding_right: Some(px(8.0)),
             background: selected.then(|| col(theme::BG_SELECTED)),
             ..rounded(4.0)
-        }) {
+        }, test_id = test_id) {
             if let Some(d) = dot_el {
                 d
             }

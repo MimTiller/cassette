@@ -94,6 +94,26 @@ fn icon_button(glyph: &'static str, enabled: bool, on_tap: impl Fn() + 'static) 
     }
 }
 
+/// Robot anchors for the role list and its swatches: the colour dots by index
+/// (the suite picks one and checks the created role's colour), and the
+/// create-role name input.
+pub fn swatch_id(color: &'static str) -> &'static str {
+    match color {
+        "" => "role-swatch-none",
+        "#1abc9c" => "role-swatch-teal",
+        "#2ecc71" => "role-swatch-green",
+        "#3498db" => "role-swatch-blue",
+        "#9b59b6" => "role-swatch-purple",
+        "#e91e63" => "role-swatch-pink",
+        "#f1c40f" => "role-swatch-yellow",
+        "#e67e22" => "role-swatch-orange",
+        "#e74c3c" => "role-swatch-red",
+        "#95a5a6" => "role-swatch-grey",
+        "#607d8b" => "role-swatch-slate",
+        _ => "role-swatch-other",
+    }
+}
+
 /// The section's state every list row reaches into.
 #[derive(Clone)]
 struct RolesCx {
@@ -366,7 +386,7 @@ fn swatch(c: &'static str, color: Signal<String>) -> Element {
                 border_left_color: Some(ring),
                 ..radius(11.0)
             }
-        }) {
+        }, test_id = swatch_id(c)) {
             { dot(c, 14.0) }
         }
         .on_touch(move |ev| {
@@ -531,7 +551,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                        flex_shrink: Some(Tokenized::Literal(1.0)),
                        min_width: Some(px(0.0)),
                        ..crate::style_helpers::text_field_style()
-                    })
+                    }, test_id = "role-create-name-input")
                     view(style = StyleRules {
                         height: Some(px(34.0)),
                         padding_left: Some(px(14.0)),
