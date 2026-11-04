@@ -310,6 +310,13 @@ pub enum WsServerMsg {
         #[serde(default)]
         seq: u64,
     },
+    /// A server was renamed or its icon set/cleared; its members refetch the
+    /// server list so the rail and sidebar show the new name/icon live.
+    ServerSettingsChanged {
+        server_id: i64,
+        #[serde(default)]
+        seq: u64,
+    },
     /// A channel message was deleted. The client drops its stored entry for
     /// `message_id`.
     MessageDeleted {
@@ -1270,9 +1277,22 @@ impl ServerSettings {
 pub async fn rename_server(input: RenameServerInput) -> Result<ServerSettingsResult, ServerError> {
     let db = db_from_state()?;
     let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
-    ServerSettings::new(db)
+    // The server's members, captured before `db` moves into the service.
+    // Renaming changes no membership, so this is the post-change audience too.
+    let audience = crate::realtime::server_audience(&db, input.server_id);
+    let result = ServerSettings::new(db)
         .rename(caller, input.server_id, &input.new_name)
-        .map_err(ServerError::failed)
+        .map_err(ServerError::failed)?;
+    // Members on other sockets refetch the server list so the new name
+    // reaches their rail and sidebar live.
+    crate::realtime::hub().publish(
+        &audience,
+        &WsServerMsg::ServerSettingsChanged {
+            server_id: input.server_id,
+            seq: next_frame_seq(),
+        },
+    );
+    Ok(result)
 }
 
 /// Set (or clear) a server's icon. Owner or admin may call.
@@ -1282,9 +1302,22 @@ pub async fn rename_server(input: RenameServerInput) -> Result<ServerSettingsRes
 pub async fn set_server_icon(input: SetServerIconInput) -> Result<ServerSettingsResult, ServerError> {
     let db = db_from_state()?;
     let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
-    ServerSettings::new(db)
+    // The server's members, captured before `db` moves into the service.
+    // Setting an icon changes no membership, so this is the post-change audience too.
+    let audience = crate::realtime::server_audience(&db, input.server_id);
+    let result = ServerSettings::new(db)
         .set_icon(caller, input.server_id, input.icon.as_deref())
-        .map_err(ServerError::failed)
+        .map_err(ServerError::failed)?;
+    // Members on other sockets refetch the server list so the new icon
+    // reaches their rail live.
+    crate::realtime::hub().publish(
+        &audience,
+        &WsServerMsg::ServerSettingsChanged {
+            server_id: input.server_id,
+            seq: next_frame_seq(),
+        },
+    );
+    Ok(result)
 }
 
 /// Transfer server ownership to another member. Only the current owner may call.
