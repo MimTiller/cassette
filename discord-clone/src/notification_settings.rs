@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! `notification_settings` -- a self-contained notification-level picker for the
 //! Discord clone: three radio-style rows, "All messages", "Mentions only" and
 //! "Nothing". Exactly one is selected at a time (selecting one deselects the

@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! `typing_indicator` -- a self-contained "<name> is typing..." line for the
 //! Discord clone. It renders one hardcoded local name (default "miri") as a
 //! small muted text row under the message list. Static text only (no
