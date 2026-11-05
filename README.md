@@ -19,6 +19,29 @@ types and talk through plain Rust function calls, which means there's no
 REST API for the two sides to drift apart on. Anything live, like new
 messages, typing and who's online, comes in over a WebSocket.
 
+<p align="center">
+  <img src="docs/screenshot.png" width="900" alt="Cassette's main chat view: a server called Late Night Coders with its channel list, a conversation in #general with role-coloured names, an @mention, reactions and inline code, and the member list showing who's online">
+</p>
+
+## Where it's heading
+
+Cassette is being renamed **RWND** ([rwnd.chat](https://rwnd.chat)), and it's
+becoming the front end for [idea-chat](https://github.com/IdealystIO/idea-chat),
+a chat and calling backend built on the same idealyst framework.
+
+- **idea-chat brings the backend**: accounts, spaces, channels and messages,
+  one live connection that keeps every client in step, and voice and video
+  calls that are end-to-end encrypted, so the relay forwards media it can't
+  read. Messages are expected to be end-to-end encrypted too.
+- **RWND brings the app people use**: the screens, the settings, the theming
+  and the robot test suite. Over time its screens move from this repo's own
+  server onto idea-chat's API.
+- **The standalone version stays available.** This repo still ships its own
+  server today, and that's what the instructions below run. The state before
+  the move is tagged
+  [`standalone-server-2026-11-05`](../../tree/standalone-server-2026-11-05),
+  for anyone who wants a self-contained server and SQLite file.
+
 ## What's on the tape
 
 **Talking**
@@ -167,7 +190,13 @@ The token format, revocation and the exact throttling limits are in
 ```bash
 cd discord-server && cargo test --features server   # data layer, permissions, gateway round-trip
 cd discord-clone && cargo test                      # client logic
+idealyst test --web discord-clone                   # end-to-end robot suite in a real browser
 ```
+
+The robot suite (`discord-clone/tests/robot/`) drives the app the way a person
+does, with several real browsers signed in as different people for anything
+involving more than one user. [`e2e/README.md`](e2e/README.md) explains how to
+run it.
 
 ## License
 
