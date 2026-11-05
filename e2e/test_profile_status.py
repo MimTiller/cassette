@@ -92,14 +92,12 @@ async def main():
             about_seen = shown and await b.visible(about)
             a_card = bool(card_open and shown)
             b.check("the card shows A's new display name", a_card)
-            b.known_bug("the card shows A's about-me text", bool(about_seen),
-                        why="about field saved above")
+            b.check("the card shows A's about-me text", bool(about_seen))
             await b.shot("prof1-card.png")
             await b.escape()
         else:
             b.check("the card shows A's new display name", False)
-            b.known_bug("the card shows A's about-me text", False,
-                        why="name not found in B's view")
+            b.check("the card shows A's about-me text", False)
 
         # --- status: A sets Do Not Disturb; B (already connected) sees red ---
         cir = await avatar_pos(a)
