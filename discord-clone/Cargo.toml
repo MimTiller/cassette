@@ -165,7 +165,7 @@ web-sys = { version = "0.3.99", features = [
 # Idealyst project config. The CLI reads this on `idealyst build`,
 # `idealyst run`, `idealyst dev`, etc.
 [package.metadata.idealyst.app]
-name      = "Discord Clone"
+name      = "RWND"
 bundle_id = "ai.truday.idealyst.discord_clone"
 version   = "0.0.1"
 # Platforms `idealyst dev` and `idealyst build` fan out across when

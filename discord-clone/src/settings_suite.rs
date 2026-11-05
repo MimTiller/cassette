@@ -579,7 +579,7 @@ fn icon_card(icon: crate::app_icon::AppIcon, active: Signal<crate::app_icon::App
     let img = ui! {
         image(
             src = icon.data_url(),
-            alt = format!("{} cassette", icon.label()),
+            alt = format!("{} app icon", icon.label()),
             style = StyleRules {
                 width: Some(px(56.0)),
                 height: Some(px(56.0)),
@@ -687,7 +687,7 @@ fn appearance_tab(accent: Signal<String>) -> Element {
                     font_size: Some(px(12.0)),
                     color: Some(col(theme::TEXT_MUTED)),
                     ..Default::default()
-                }) { "The cassette in your browser tab.".to_string() } },
+                }) { "The app icon in your browser tab.".to_string() } },
                 ui! { view(style = StyleRules {
                     flex_direction: Some(FlexDirection::Row),
                     flex_wrap: Some(runtime_core::FlexWrap::Wrap),

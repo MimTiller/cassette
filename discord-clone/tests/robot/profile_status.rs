@@ -134,7 +134,7 @@ fn do_not_disturb_reaches_the_other_user_as_red(app: &mut App) {
 }
 
 #[robot_test]
-fn the_appearance_picker_offers_cassette_icons(app: &mut App) {
+fn the_appearance_picker_offers_rwnd_icons(app: &mut App) {
     signed_out(app);
     let account = Account::new("icon");
     sign_in_as(app, &account);
@@ -144,7 +144,7 @@ fn the_appearance_picker_offers_cassette_icons(app: &mut App) {
     let before = robot_string(app.call_function("cassette.app_icon", json!({})));
 
     app.test_id("settings-nav-appearance").click();
-    // The Appearance section offers a card per cassette icon.
+    // The Appearance section offers a card per app icon.
     app.test_id("icon-card-miami").assert_visible();
     app.test_id("icon-card-miami").click();
 
@@ -153,7 +153,7 @@ fn the_appearance_picker_offers_cassette_icons(app: &mut App) {
         after = robot_string(app.call_function("cassette.app_icon", json!({})));
         after == "miami"
     });
-    assert!(changed && before != "miami", "picking a cassette should change the app icon (before {before}, after {after})");
+    assert!(changed && before != "miami", "picking an icon should change the app icon (before {before}, after {after})");
     shot(app, "prof4-icon");
 }
 
