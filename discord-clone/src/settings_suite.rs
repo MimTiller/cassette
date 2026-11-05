@@ -34,7 +34,7 @@ use crate::theme;
 use crate::style_helpers::{col, pct, px, rounded, section_label};
 use std::rc::Rc;
 use runtime_core::{
-    component, signal, switch, ui, AlignItems, Element, FlexDirection, JustifyContent, Position,
+    component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, Position,
     Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
@@ -329,9 +329,8 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
         ..crate::style_helpers::text_field_style()
     };
 
-    let blocked_list = switch(
-        move || blocked.get(),
-        move |list: &Vec<crate::blocks::BlockedUser>| {
+    let render_blocked_list =
+        move |list: &Vec<crate::blocks::BlockedUser>| -> Element {
             if list.is_empty() {
                 return ui! {
                     text(style = StyleRules { font_size: Some(px(13.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) {
@@ -346,8 +345,12 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                     }
                 }
             }
-        },
-    );
+        };
+    let blocked_list = ui! {
+        match blocked.get() {
+            list => {{ (render_blocked_list)(&list) }},
+        }
+    };
 
     let name_field = ui! {
         text_input(
@@ -716,9 +719,8 @@ pub fn UserSettings(
 
     // The selected section, rebuilt when `active` changes. `notif_mode` is
     // the SHARED notification level the gateway reads on every message.
-    let panel = switch(
-        move || active.get(),
-        move |tab: &usize| {
+    let render_panel =
+        move |tab: &usize| -> Element {
             let body = match *tab {
                 0 => account_tab(blocked, live_rev),
                 1 => crate::profile_settings::ProfileSettings(),
@@ -739,8 +741,12 @@ pub fn UserSettings(
                     { body }
                 }
             }
-        },
-    );
+        };
+    let panel = ui! {
+        match active.get() {
+            tab => {{ (render_panel)(&tab) }},
+        }
+    };
 
     // Sidebar rows: group headings, the sections, a divider, Log Out.
     let mut nav: Vec<Element> = Vec::new();
