@@ -5,7 +5,7 @@
 use discord_server::server_emoji::{self as se, ServerEmoji, MAX_PER_SERVER};
 use file_picker::{FilePicker, MediaKind, PickOutcome, PickRequest};
 use runtime_core::{
-    signal, switch, ui, AlignItems, Element, FlexDirection, FontWeight, ObjectFit, Signal, StyleRules, Tokenized,
+    signal, ui, AlignItems, Element, FlexDirection, FontWeight, ObjectFit, Signal, StyleRules, Tokenized,
 };
 
 use crate::controls::{button_view, text_field, ButtonKind};
@@ -165,26 +165,27 @@ pub fn emoji_section(server_id: Option<i64>) -> Element {
         );
     };
 
-    let rows = switch(
-        move || list.get(),
-        move |items: &Vec<ServerEmoji>| {
-            let count = format!("{} of {MAX_PER_SERVER} used", items.len());
-            ui! {
-                view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) {
-                    text(style = StyleRules {
-                        font_size: Some(px(12.0)),
-                        font_weight: Some(FontWeight::Bold),
-                        color: Some(col(theme::TEXT_MUTED)),
-                        margin_bottom: Some(px(4.0)),
-                        ..Default::default()
-                    }) { count }
-                    for e in items.iter(), key = e.id {
-                        { emoji_row(e.clone(), sid, list, error) }
+    let rows = ui! {
+        match list.get() {
+            items => {{
+                let count = format!("{} of {MAX_PER_SERVER} used", items.len());
+                ui! {
+                    view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) {
+                        text(style = StyleRules {
+                            font_size: Some(px(12.0)),
+                            font_weight: Some(FontWeight::Bold),
+                            color: Some(col(theme::TEXT_MUTED)),
+                            margin_bottom: Some(px(4.0)),
+                            ..Default::default()
+                        }) { count }
+                        for e in items.iter(), key = e.id {
+                            { emoji_row(e.clone(), sid, list, error) }
+                        }
                     }
                 }
-            }
-        },
-    );
+            }},
+        }
+    };
 
     ui! {
         view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(16.0)), max_width: Some(px(660.0)), ..Default::default() }) {
