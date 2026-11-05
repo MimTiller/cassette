@@ -16,14 +16,14 @@
 //! - a rejected Unpin (e.g. a plain member who lacks "Manage Messages") is
 //!   surfaced in `error` and `revision` is bumped to re-render it.
 //!
-//! The list rebuilds against `(open, revision)` via `switch` — the same
-//! rebuild-trigger idiom `live_dm_revision` / `live_revision` use — so a
-//! `Signal<Vec<..>>` (whose value is not a stable `switch` key) still re-renders
-//! on every mutation.
+//! The list rebuilds against `(open, revision)` via the reactive `match` that
+//! `ui!` generates — the same rebuild-trigger idiom `live_dm_revision` /
+//! `live_revision` use — so a `Signal<Vec<..>>` (whose value is not a stable
+//! key) still re-renders on every mutation.
 //!
 //! Idioms, each verified against `components/pin_confirm_toast.rs` / `app.rs`
 //! (the `moderation_region` overlay):
-//! - show/hide is a reactive branch driven by the `switch` key (mounts while
+//! - show/hide is the `ui!` match's reactive branch (mounts while
 //!   open, unmounts the moment `open` is cleared);
 //! - every clickable node is a `view(...)` builder with `.on_touch` chained on
 //!   the builder inside `ui!` (`Element` has no `on_touch`), guarded by
@@ -39,7 +39,7 @@ use runtime_core::icon;
 use crate::pins::{PinnedMessage, unpin_message};
 use crate::style_helpers::{col, px, pct, rounded};
 use runtime_core::{
-    switch, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent, Overflow,
+    ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent, Overflow,
     Position, Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
@@ -55,18 +55,11 @@ pub fn pinned_messages_panel(
     count: Signal<i64>,
     revision: Signal<u32>,
 ) -> Element {
-    switch(
-        move || (open.get(), revision.get()),
-        move |(o, _r): &(bool, u32)| {
-            if !*o {
-                return ui! {
-                    view(style = StyleRules {
-                        width: Some(px(0.0)),
-                        height: Some(px(0.0)),
-                        ..Default::default()
-                    }) {}
-                };
-            }
+    ui! {
+        match (open.get(), revision.get()) {
+            // Mounted while `open` is true; a revision bump re-runs the arm.
+            // The hidden side is the macro's out-of-flow placeholder.
+            (true, _) => {{
             let msgs = messages.get();
             let err = error.get();
             let count_val = count.get();
@@ -172,8 +165,12 @@ pub fn pinned_messages_panel(
                     }
                 }
             }
-        },
-    )
+            }},
+            // Closed: the macro's out-of-flow placeholder, so the panel
+            // unmounts the moment `open` is cleared.
+            (false, _) => {}
+        }
+    }
 }
 
 /// The panel's scroll body: an empty state, an error state, or one row per
@@ -261,8 +258,8 @@ fn pin_row(
                 Ok(res) => {
                     cc.set(res.pinned_count);
                     // Remove the just-unpinned row from the list (the
-                    // `switch` key reads `revision`, so the bump rebuilds the
-                    // body without the row) and bump to trigger that rebuild.
+                    // `ui!` match's key reads `revision`, so the bump rebuilds
+                    // the body without the row) and bump to trigger that rebuild.
                     mc.set(mc.get().into_iter().filter(|x| x.message_id != mid2).collect());
                     rc.set(rc.get() + 1);
                 }
