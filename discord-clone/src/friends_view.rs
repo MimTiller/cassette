@@ -43,7 +43,7 @@ use std::collections::HashMap;
 use runtime_core::{
     AlignItems, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent,
     KeyOutcome, Overflow, Signal, StyleRules, Tokenized, TouchEvent,
-    TouchPhase, TouchResponse, switch, ui,
+    TouchPhase, TouchResponse, ui,
 };
 use runtime_core::icon;
 use icons_lucide::{PLUS, USERS};
@@ -283,14 +283,8 @@ pub fn friends_screen(
     // Presence is read at build time; presence_rev in the key re-renders the
     // Online tab when any tracked user's status changes.
     let pres_map = presence.clone();
-    let body = switch(
-        move || (
-            active_tab.get(),
-            snap.get(),
-            add_error.get(),
-            presence_rev.get(),
-        ),
-        move |key: &(u8, Vec<FriendRow>, String, u32)| {
+    let render =
+        move |key: &(u8, Vec<FriendRow>, String, u32)| -> Element {
             let (tab, rows, err, _rev) = key;
             let pres = pres_map.borrow().clone();
             let on_msg = on_message.clone();
@@ -563,8 +557,12 @@ pub fn friends_screen(
                     }
                 }
             }
-        },
-    );
+        };
+    let body = ui! {
+        match (active_tab.get(), snap.get(), add_error.get(), presence_rev.get()) {
+            key => {{ (render)(&key) }},
+        }
+    };
 
     // The outer column carries NO explicit width: it flex-grows into the main
     // area the live DM screen gives it (pct-based fills would pin it narrow —
