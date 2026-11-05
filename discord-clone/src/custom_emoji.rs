@@ -262,8 +262,7 @@ pub(crate) fn picker_cell(e: ServerEmoji, pick: Rc<dyn Fn(String)>) -> Element {
 /// an empty section.
 pub(crate) fn picker_row(on_pick: Rc<dyn Fn(String)>) -> Element {
     let pick = on_pick.clone();
-    // idealyst-lint-disable-next-line prefer-ui-control-flow -- keyed on a
-    // plain revision fn (no signal handle to fold into a ui! match).
+    // idealyst-lint-disable-next-line prefer-ui-control-flow -- keyed on a plain revision fn, no signal handle to fold into a ui! match.
     switch(
         move || crate::mentions::revision(),
         move |_: &u32| {
