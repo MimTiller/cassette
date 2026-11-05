@@ -7,7 +7,7 @@ use std::cell::Cell;
 
 use discord_server::notification_settings::{Level, NotificationSetting, Scope, MUTED_UNTIL_TURNED_OFF};
 use runtime_core::{
-    signal, switch, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent, Overflow, Position, Signal,
+    signal, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent, Overflow, Position, Signal,
     StyleRules, TouchPhase, TouchResponse,
 };
 
@@ -109,107 +109,108 @@ fn heading(label: &str) -> Element {
 /// The dialog, built once by `app_shell`; collapsed while closed.
 pub(crate) fn dialog() -> Element {
     let open = open_signal();
-    let body = switch(
-        move || (open.get(), crate::notif_prefs::revision()),
-        move |(target, _rev): &(Target, u32)| {
-            let Some((scope, id, name)) = target.clone() else {
-                return ui! { view {} };
-            };
-            let current = crate::notif_prefs::get(scope, id);
-            let save = move |s: NotificationSetting| crate::notif_prefs::set(s);
-            let muted = crate::notif_prefs::muted(scope, id);
+    let body = ui! {
+        match (open.get(), crate::notif_prefs::revision()) {
+            (None, _) => {},
+            (Some((scope, id, name)), _) => {{
+                let scope = *scope;
+                let id = *id;
+                let current = crate::notif_prefs::get(scope, id);
+                let save = move |s: NotificationSetting| crate::notif_prefs::set(s);
+                let muted = crate::notif_prefs::muted(scope, id);
 
-            let note = mute_note(current.muted_until.unwrap_or(MUTED_UNTIL_TURNED_OFF));
-            let default_label = match scope {
-                Scope::Server => "Use my default (User Settings)",
-                Scope::Channel => "Use the server's setting",
-            };
-            let levels = [
-                ("All messages", Some(Level::All)),
-                ("Only @mentions", Some(Level::Mentions)),
-                ("Nothing", Some(Level::Nothing)),
-                (default_label, None),
-            ];
-            let title = match scope {
-                Scope::Server => name,
-                Scope::Channel => format!("#{name}"),
-            };
-            let mute_heading = match scope {
-                Scope::Server => "MUTE SERVER",
-                Scope::Channel => "MUTE CHANNEL",
-            };
-            ui! {
-                view(style = StyleRules {
-                    flex_direction: Some(FlexDirection::Column),
-                    padding_top: Some(px(18.0)),
-                    padding_bottom: Some(px(14.0)),
-                    padding_left: Some(px(16.0)),
-                    padding_right: Some(px(16.0)),
-                    ..Default::default()
-                }) {
+                let note = mute_note(current.muted_until.unwrap_or(MUTED_UNTIL_TURNED_OFF));
+                let default_label = match scope {
+                    Scope::Server => "Use my default (User Settings)",
+                    Scope::Channel => "Use the server's setting",
+                };
+                let levels = [
+                    ("All messages", Some(Level::All)),
+                    ("Only @mentions", Some(Level::Mentions)),
+                    ("Nothing", Some(Level::Nothing)),
+                    (default_label, None),
+                ];
+                let title = match scope {
+                    Scope::Server => name.to_string(),
+                    Scope::Channel => format!("#{name}"),
+                };
+                let mute_heading = match scope {
+                    Scope::Server => "MUTE SERVER",
+                    Scope::Channel => "MUTE CHANNEL",
+                };
+                ui! {
                     view(style = StyleRules {
-                        flex_direction: Some(FlexDirection::Row),
-                        align_items: Some(AlignItems::Center),
+                        flex_direction: Some(FlexDirection::Column),
+                        padding_top: Some(px(18.0)),
+                        padding_bottom: Some(px(14.0)),
+                        padding_left: Some(px(16.0)),
+                        padding_right: Some(px(16.0)),
                         ..Default::default()
                     }) {
                         view(style = StyleRules {
-                            flex_direction: Some(FlexDirection::Column),
-                            flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
+                            flex_direction: Some(FlexDirection::Row),
+                            align_items: Some(AlignItems::Center),
                             ..Default::default()
                         }) {
-                            text(style = StyleRules {
-                                font_size: Some(px(18.0)),
-                                font_weight: Some(FontWeight::SemiBold),
-                                color: Some(col(theme::TEXT_STRONG)),
+                            view(style = StyleRules {
+                                flex_direction: Some(FlexDirection::Column),
+                                flex_grow: Some(runtime_core::Tokenized::Literal(1.0)),
                                 ..Default::default()
-                            }) { "Notification Settings".to_string() }
-                            text(style = StyleRules {
-                                font_size: Some(px(12.0)),
-                                color: Some(col(theme::TEXT_MUTED)),
-                                ..Default::default()
-                            }) { title }
-                        }
-                        view {
-                            text(style = StyleRules { font_size: Some(px(18.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { "✕".to_string() }
-                        }
-                        .on_touch(move |ev| {
-                            if ev.phase == TouchPhase::Ended {
-                                open.set(None);
+                            }) {
+                                text(style = StyleRules {
+                                    font_size: Some(px(18.0)),
+                                    font_weight: Some(FontWeight::SemiBold),
+                                    color: Some(col(theme::TEXT_STRONG)),
+                                    ..Default::default()
+                                }) { "Notification Settings".to_string() }
+                                text(style = StyleRules {
+                                    font_size: Some(px(12.0)),
+                                    color: Some(col(theme::TEXT_MUTED)),
+                                    ..Default::default()
+                                }) { title.clone() }
                             }
-                            TouchResponse::CONSUMED
-                        })
-                    }
-                    { heading(mute_heading) }
-                    if muted {
-                        text(style = StyleRules {
-                            font_size: Some(px(13.0)),
-                            color: Some(col(theme::TEXT_MUTED)),
-                            padding_left: Some(px(10.0)),
-                            ..Default::default()
-                        }) { note }
-                        { option_row("Unmute".to_string(), false, move || {
-                            save(NotificationSetting { muted_until: None, ..current });
-                        }) }
-                    } else {
-                        // The mute menu is a static list that never reorders,
-                        // so the label is the key.
-                        for (label, ms) in MUTES, key = label {
-                            { option_row(label.to_string(), false, move || {
-                                let until = if ms == 0 { MUTED_UNTIL_TURNED_OFF } else { runtime_shared::time::epoch_millis() + ms };
-                                save(NotificationSetting { muted_until: Some(until), ..current });
+                            view {
+                                text(style = StyleRules { font_size: Some(px(18.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { "✕".to_string() }
+                            }
+                            .on_touch(move |ev| {
+                                if ev.phase == TouchPhase::Ended {
+                                    open.set(None);
+                                }
+                                TouchResponse::CONSUMED
+                            })
+                        }
+                        { heading(mute_heading) }
+                        if muted {
+                            text(style = StyleRules {
+                                font_size: Some(px(13.0)),
+                                color: Some(col(theme::TEXT_MUTED)),
+                                padding_left: Some(px(10.0)),
+                                ..Default::default()
+                            }) { note }
+                            { option_row("Unmute".to_string(), false, move || {
+                                save(NotificationSetting { muted_until: None, ..current });
+                            }) }
+                        } else {
+                            // The mute menu is a static list that never reorders,
+                            // so the label is the key.
+                            for (label, ms) in MUTES, key = label {
+                                { option_row(label.to_string(), false, move || {
+                                    let until = if ms == 0 { MUTED_UNTIL_TURNED_OFF } else { runtime_shared::time::epoch_millis() + ms };
+                                    save(NotificationSetting { muted_until: Some(until), ..current });
+                                }) }
+                            }
+                        }
+                        { heading("NOTIFY ME ABOUT") }
+                        for (label, level) in levels, key = label {
+                            { option_row(label.to_string(), current.level == level, move || {
+                                save(NotificationSetting { level, ..current });
                             }) }
                         }
                     }
-                    { heading("NOTIFY ME ABOUT") }
-                    for (label, level) in levels, key = label {
-                        { option_row(label.to_string(), current.level == level, move || {
-                            save(NotificationSetting { level, ..current });
-                        }) }
-                    }
                 }
-            }
-        },
-    );
+            }},
+        }
+    };
     let card = ui! {
         view(style = StyleRules {
             width: Some(px(crate::app::mobile::fit_width(380.0))),
