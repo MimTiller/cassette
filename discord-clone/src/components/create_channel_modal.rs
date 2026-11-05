@@ -30,7 +30,7 @@
 //! position.
 use crate::theme;
 use runtime_core::{
-    component, switch, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
+    component, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
     Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
@@ -188,24 +188,20 @@ pub fn CreateChannelModal(
         );
     };
 
-    // --- Body: one switch keyed on (error, busy) -----------------------------
+    // --- Body: a match keyed on (error, busy, is_category, private) ---------
     // Error > input. The busy state only changes the Create button label, so
-    // it stays on the input arm. Each arm builds its own `Element`.
+    // it stays on the input arm. `ui!` lowers the `match` to the reactive
+    // switch, so the key still re-runs the arm whenever any of its four
+    // inputs change. Each arm builds its own `Element`.
     //
-    // The interactive elements (the two kind segments + the Create button) are
-    // built *inside* the render closure: `Element` is not `Copy`, and a
-    // pre-built one splatted into an `Fn` render closure is moved out on the
-    // first rebuild and gone the second (E0507). Building them here per rebuild
-    // is the `login_screen`/`whiteboard` idiom in this file. Every closure they
-    // reference (`seg_style`, `on_create`) captures only `Copy` signals, so it
-    // is itself `Fn` + `Copy` and can be captured by the `move` render closure.
-    let body = switch(
-        // `kind == "category"` is in the key: a category gets its own title
-        // and no Text/Voice toggle (the server menu's Create Category opens
-        // this modal with that kind preset).
-        move || (error.get().clone(), busy.get(), k.get() == "category", private.get()),
-        move |(err, _busy, is_category, is_private): &(String, bool, bool, bool)| {
-            let is_private = *is_private;
+    // The two cards share the whole prelude, so it lives in a closure called
+    // fresh from each arm: Elements aren't `Copy`, and each call builds new
+    // ones (a pre-built one splatted into an `Fn` render closure is moved out
+    // on the first rebuild — E0507). The two kind segments + the Create
+    // button are built inside it, per rebuild, which is also why every
+    // closure they reference (`seg_style`, `on_create`) captures only `Copy`
+    // signals.
+    let card = move |err: String, is_category: bool, is_private: bool| -> Element {
             let private_row = || -> Element {
                 ui! {
                     view(style = StyleRules {
@@ -252,13 +248,13 @@ pub fn CreateChannelModal(
             // time (the `join_label` idiom in `join_modal.rs`): an inline
             // `if/else` returning `&str` inside `text { … }` is parsed as a
             // structural child, not text content, so it is pre-computed.
-            let (title, sub, placeholder) = if *is_category {
+            let (title, sub, placeholder) = if is_category {
                 ("New Category", "Group channels under a heading", "Category name")
             } else {
                 ("New Channel", "Add a channel to this server", "Channel name")
             };
             let kind_row = || -> Element {
-                if *is_category {
+                if is_category {
                     return ui! { view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {} };
                 }
                 ui! { view(style = seg_row_style.clone()) { { text_seg } { voice_seg } } }
@@ -286,7 +282,12 @@ pub fn CreateChannelModal(
                         }
                         { kind_row() }
                         { private_row() }
-                        text(style = err_style.clone()) { err.clone() }
+                        { match err.is_empty() {
+                            // No error text: an empty view (zero-size,
+                            // hidden) keeps the footer strip where it was.
+                            true => ui! { view {} },
+                            false => ui! { text(style = err_style.clone()) { err.clone() } },
+                        } }
                         view(style = StyleRules {
                             margin_top: Some(px(8.0)),
                             ..crate::style_helpers::footer_strip()
@@ -322,8 +323,22 @@ pub fn CreateChannelModal(
                     }
                 }
             }
-        },
-    );
+    };
+
+    let body = ui! {
+        match (error.get().clone(), busy.get(), k.get() == "category", private.get()) {
+            // `kind == "category"` is in the key: a category gets its own
+            // title and no Text/Voice toggle (the server menu's Create
+            // Category opens this modal with that kind preset).
+            (err, _, is_category, is_private) if !err.is_empty() => {{
+                card(err.clone(), *is_category, *is_private)
+            }},
+            // No error: the input arm.
+            (_, _, is_category, is_private) => {{
+                card(String::default(), *is_category, *is_private)
+            }},
+        }
+    };
 
     // --- Full-screen backdrop + centered card --------------------------------
     // The card wrapper consumes its own touch so a tap on the card does NOT
