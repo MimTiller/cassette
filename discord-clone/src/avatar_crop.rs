@@ -9,7 +9,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use runtime_core::{
-    pan, signal, switch, ui, AlignItems, Cursor, Element, FlexDirection, FontWeight, JustifyContent, Overflow,
+    pan, signal, ui, AlignItems, Cursor, Element, FlexDirection, FontWeight, JustifyContent, Overflow,
     PanEvent, PanRecognizer, PointerEvents, Position, Signal, StyleRules, TouchEvent, TouchPhase, TouchResponse,
 };
 
@@ -410,15 +410,16 @@ pub(crate) fn dialog() -> Element {
     let st = state();
     let open = st.open;
     let error = st.error;
-    let body = switch(
-        move || open.get(),
-        move |picked: &Option<Picked>| {
-            let Some(p) = picked.clone() else {
-                return ui! { view {} };
-            };
-            let circle = frame(st, p.clone());
-            let slider = zoom_row(st, p);
-            ui! {
+    let body = ui! {
+        match open.get() {
+            // No crop picked yet: the macro's out-of-flow placeholder.
+            None => {},
+            // Open: the crop dialog for the picked picture.
+            Some(p) => {{
+                let p = p.clone();
+                let circle = frame(st, p.clone());
+                let slider = zoom_row(st, p);
+                ui! {
                 view(style = StyleRules {
                     flex_direction: Some(FlexDirection::Column),
                     align_items: Some(AlignItems::Center),
@@ -451,9 +452,10 @@ pub(crate) fn dialog() -> Element {
                         { button_view("Apply", ButtonKind::Primary, apply) }
                     }
                 }
-            }
-        },
-    );
+                }}
+            },
+        }
+    };
     let card = ui! {
         view(style = StyleRules {
             overflow: Some(Overflow::Hidden),
