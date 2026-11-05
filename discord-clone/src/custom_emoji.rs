@@ -197,6 +197,7 @@ pub(crate) fn emoji_view(id: i64, name: &str, size: f32) -> Element {
             image(
                 src = crate::auth::media_url(e.image.clone()),
                 alt = format!(":{}:", e.name),
+                test_id = "emoji-image",
                 style = StyleRules {
                     width: Some(px(size)),
                     height: Some(px(size)),

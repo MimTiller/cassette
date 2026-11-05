@@ -116,6 +116,47 @@ fn open_user_menu(user_id: i64) -> Result<(), String> {
     Ok(())
 }
 
+/// The active server's custom emoji names. The suite waits on this before
+/// typing `:name:` so the composer's client-side encode sees the new emoji.
+#[runtime_core::robot_fn(name = "cassette.custom_emoji_names")]
+fn custom_emoji_names() -> Result<Vec<String>, String> {
+    Ok(crate::custom_emoji::list().iter().map(|e| e.name.clone()).collect())
+}
+
+/// Upload a server icon for the active live server the way the settings
+/// panel's Upload icon button does, minus the native file picker (which no
+/// in-page robot can tap): `mime` + base64 `data_b64` bytes run through the
+/// same validate → encode → `set_server_icon` path.
+#[runtime_core::robot_fn(name = "cassette.upload_server_icon")]
+async fn upload_server_icon(mime: String, data_b64: String) -> Result<String, String> {
+    let sid = crate::mentions::server_id().ok_or_else(|| "no active live server".to_string())?;
+    let bytes = crate::profile_settings::b64_decode(&data_b64)?;
+    let url = crate::profile_settings::validate_and_encode_small_image(&mime, &bytes, "icon")?;
+    match crate::servers::set_server_icon(sid, Some(url)).await {
+        Ok(res) => Ok(res.icon_url.clone().unwrap_or_default()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Upload a custom emoji for the active live server the way the Emoji
+/// settings section's Upload Image button does, minus the native file
+/// picker. Answers the emoji's `/media/…` image path.
+#[runtime_core::robot_fn(name = "cassette.upload_server_emoji")]
+async fn upload_server_emoji(name: String, mime: String, data_b64: String) -> Result<String, String> {
+    let sid = crate::mentions::server_id().ok_or_else(|| "no active live server".to_string())?;
+    let bytes = crate::profile_settings::b64_decode(&data_b64)?;
+    let url = crate::profile_settings::validate_and_encode_small_image(&mime, &bytes, "emoji")?;
+    let input = discord_server::server_emoji::UploadEmojiInput {
+        server_id: sid,
+        name: name.to_string(),
+        data_url: url,
+    };
+    match discord_server::server_emoji::upload_emoji(input).await {
+        Ok(e) => Ok(e.image.clone()),
+        Err(err) => Err(crate::errors::friendly(&err)),
+    }
+}
+
 /// Register the functions; called once from `app()`.
 pub(crate) fn register() {
     runtime_vocabulary::robot_fn::register(theme_key::robot());
@@ -126,4 +167,7 @@ pub(crate) fn register() {
     runtime_vocabulary::robot_fn::register(rearm_perms::robot());
     runtime_vocabulary::robot_fn::register(open_user_menu::robot());
     runtime_vocabulary::robot_fn::register(md_runs::robot());
+    runtime_vocabulary::robot_fn::register(custom_emoji_names::robot());
+    runtime_vocabulary::robot_fn::register(upload_server_icon::robot());
+    runtime_vocabulary::robot_fn::register(upload_server_emoji::robot());
 }

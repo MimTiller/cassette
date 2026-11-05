@@ -75,7 +75,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                         height: Some(px(8.0)),
                         background: Some(col(color)),
                         ..rounded(4.0)
-                    }) {}
+                    }, test_id = "conn-dot") {}
                 }
             } else {
                 ui! {
@@ -308,6 +308,7 @@ fn rail_server_tile(
             image(
                 src = crate::auth::media_url(url),
                 alt = s.name.clone(),
+                test_id = "rail-server-icon",
                 style = StyleRules {
                     width: Some(px(48.0)),
                     height: Some(px(48.0)),

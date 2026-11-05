@@ -520,6 +520,7 @@ pub(super) fn message_body(body: &str) -> Element {
             image(
                 src = url,
                 alt = "GIF".to_string(),
+                test_id = "gif-image",
                 style = StyleRules {
                     width: Some(px(w)),
                     height: Some(px(h)),

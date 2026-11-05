@@ -179,7 +179,7 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
                     background: Some(col(theme::BG_PRIMARY)),
                     overflow: Some(Overflow::Hidden),
                     ..rounded(6.0)
-                }) {
+                }, test_id = "gif-tile") {
                     image(
                         src = src,
                         alt = alt,
@@ -303,6 +303,7 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
                     value = query,
                     on_change = on_change,
                     placeholder = "Search GIPHY",
+                    test_id = "gif-search-input",
                     style = StyleRules {
                         flex_grow: Some(Tokenized::Literal(1.0)),
                         color: Some(col(theme::TEXT_STRONG)),

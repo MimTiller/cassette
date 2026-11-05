@@ -68,6 +68,7 @@ pub(crate) fn nav_id(label: &str) -> &'static str {
         "Overview" => "settings-nav-overview",
         "Roles" => "settings-nav-roles",
         "Members" => "settings-nav-members",
+        "Emoji" => "settings-nav-emoji",
         _ => "settings-nav-other",
     }
 }
@@ -369,6 +370,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
             value = cur_pw.clone(),
             on_change = on_cur_change,
             placeholder = "Current password",
+            test_id = "settings-pw-current",
             style = input_style.clone(),
         )
     };
@@ -377,6 +379,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
             value = new_pw.clone(),
             on_change = on_new_change,
             placeholder = "New password",
+            test_id = "settings-pw-new",
             style = input_style.clone(),
         )
     };
@@ -384,6 +387,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
         button(
             label = "Update password".to_string(),
             on_click = do_pw,
+            test_id = "settings-pw-save",
             style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Primary)
         )
     };

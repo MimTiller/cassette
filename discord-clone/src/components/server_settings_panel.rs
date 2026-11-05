@@ -46,6 +46,20 @@ use std::rc::Rc;
 
 /// The sidebar's sections, in order (the `section` signal's index).
 const SECTIONS: [&str; 4] = ["Overview", "Roles", "Members", "Emoji"];
+
+/// A text input bound two-way to `value`, carrying a `test_id` for the robot
+/// suite (the `controls::text_field` shape plus the id).
+fn text_field_id(value: Signal<String>, test_id: &'static str, placeholder: &str, style: StyleRules) -> Element {
+    ui! {
+        text_input(
+            value = value,
+            on_change = move |v: String| value.set(v),
+            placeholder = placeholder.to_string(),
+            test_id = test_id,
+            style = style,
+        )
+    }
+}
 const SECTION_OVERVIEW: usize = 0;
 const SECTION_ROLES: usize = 1;
 const SECTION_EMOJI: usize = 3;
@@ -442,7 +456,7 @@ pub fn ServerSettingsPanel(
             let name_row = ui! {
                 view(style = row_col()) {
                     text(style = label_style.clone()) { "Server name".to_string() }
-                    { crate::controls::text_field(nm, "New server name", input_style.clone()) }
+                    { text_field_id(nm, "server-rename-input", "New server name", input_style.clone()) }
                     rename_btn
                 }
             };

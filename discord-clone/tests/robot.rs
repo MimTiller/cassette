@@ -30,3 +30,5 @@ mod messages;
 mod dms_friends;
 #[path = "robot/notifications.rs"]
 mod notifications;
+#[path = "robot/coverage.rs"]
+mod coverage;

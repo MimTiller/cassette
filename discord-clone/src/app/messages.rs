@@ -100,17 +100,22 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     let on_jump_bar = on_jump.clone();
     let header = switch(
         move || {
+            // The active live server's name rides in the key so a rename (the
+            // `ServerSettingsChanged` frame's refetch of `live_servers`) re-renders
+            // this header: the search box bakes its placeholder from the name.
+            let server_name =
+                live_servers.get().into_iter().find(|x| Some(x.id) == active_live_server.get()).map(|x| x.name).unwrap_or_default();
             (
                 active_live_channel.get(),
                 pinned_count.get(),
+                server_name,
             )
         },
-        move |(live_cid, pinned_cnt): &(Option<i64>, i64)| {
+        move |(live_cid, pinned_cnt, search_server_name): &(Option<i64>, i64, String)| {
             let header_style = header_style.clone();
             let hash_style = hash_style.clone();
             let title_style = title_style.clone();
             let moderation_style = moderation_style.clone();
-            let search_server_name = live_servers.get().into_iter().find(|x| Some(x.id) == active_live_server.get()).map(|x| x.name).unwrap_or_default();
             // [Feature 16] Real account with no live channel: don't fall
             // through to a mock header (it would show the demo `SERVERS[0]`
             // channel). Show a neutral onboarding title during the login ->
