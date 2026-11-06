@@ -26,15 +26,18 @@ use server::SocketStatus;
 
 pub use discord_server::server_settings::{
     AttachmentInput,
+    ChannelResult,
     MarkReadResult,
     PinResult,
     PinnedMessage,
     ReactionResult,
+    ServerSettingsResult,
     UnreadCount,
     WsClientMsg,
     WsServerMsg,
 };
 pub use discord_server::dms::{Dm, DmMessage, SendDmMessageResult};
+pub use discord_server::servers::{ChannelSummary, ServerSummary};
 
 // --- the interface, by area -------------------------------------------------
 
@@ -53,6 +56,47 @@ pub trait MessagesApi {
 
     async fn add_reaction(message_id: i64, emoji: String) -> Result<ReactionResult, ServerError>;
     async fn remove_reaction(message_id: i64, emoji: String) -> Result<ReactionResult, ServerError>;
+}
+
+/// Servers and channels: discover them, create them, and edit their
+/// settings (name, icon, ownership) — plus leaving a server. A channel's
+/// permission edits are `PermissionsApi`'s; reading a member roster is
+/// `MembersApi`'s.
+pub trait ServersApi {
+    async fn list_servers() -> Result<Vec<ServerSummary>, ServerError>;
+    async fn create_server(name: String) -> Result<ServerSummary, ServerError>;
+    async fn list_channels(server_id: i64) -> Result<Vec<ChannelSummary>, ServerError>;
+
+    async fn create_channel(
+        server_id: i64,
+        name: String,
+        kind: String,
+        parent_channel_id: Option<i64>,
+        private: bool,
+    ) -> Result<ChannelResult, ServerError>;
+    async fn rename_channel(
+        server_id: i64,
+        channel_id: i64,
+        new_name: String,
+    ) -> Result<ChannelResult, ServerError>;
+    async fn delete_channel(
+        server_id: i64,
+        channel_id: i64,
+    ) -> Result<ChannelResult, ServerError>;
+
+    async fn rename_server(
+        server_id: i64,
+        new_name: String,
+    ) -> Result<ServerSettingsResult, ServerError>;
+    async fn set_server_icon(
+        server_id: i64,
+        icon: Option<String>,
+    ) -> Result<ServerSettingsResult, ServerError>;
+    async fn transfer_server_ownership(
+        server_id: i64,
+        new_owner_id: i64,
+    ) -> Result<ServerSettingsResult, ServerError>;
+    async fn leave_server(server_id: i64) -> Result<(), ServerError>;
 }
 
 /// Direct messages: open a conversation, load its messages, send into it,
@@ -135,6 +179,7 @@ impl Gateway {
 mod messages_impl;
 mod dms_impl;
 mod realtime;
+mod servers_impl;
 
 // --- the accessors (the single place the UI gets the backend) ---------------
 
@@ -144,6 +189,83 @@ pub fn connect(token: String) -> Gateway {
     CassetteBackend::connect(token)
 }
 
+// --- the server and channel accessors ---------------------------------------
+
+pub async fn list_servers() -> Result<Vec<ServerSummary>, String> {
+    CassetteBackend::list_servers().await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn create_server(name: String) -> Result<ServerSummary, String> {
+    CassetteBackend::create_server(name).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn list_channels(server_id: i64) -> Result<Vec<ChannelSummary>, String> {
+    CassetteBackend::list_channels(server_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn create_channel(
+    server_id: i64,
+    name: String,
+    kind: String,
+    parent_channel_id: Option<i64>,
+    private: bool,
+) -> Result<ChannelResult, String> {
+    CassetteBackend::create_channel(server_id, name, kind, parent_channel_id, private)
+        .await
+        .map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn rename_channel(
+    server_id: i64,
+    channel_id: i64,
+    new_name: String,
+) -> Result<ChannelResult, String> {
+    CassetteBackend::rename_channel(server_id, channel_id, new_name)
+        .await
+        .map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn delete_channel(
+    server_id: i64,
+    channel_id: i64,
+) -> Result<ChannelResult, String> {
+    CassetteBackend::delete_channel(server_id, channel_id)
+        .await
+        .map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn rename_server(
+    server_id: i64,
+    new_name: String,
+) -> Result<ServerSettingsResult, String> {
+    CassetteBackend::rename_server(server_id, new_name)
+        .await
+        .map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn set_server_icon(
+    server_id: i64,
+    icon: Option<String>,
+) -> Result<ServerSettingsResult, String> {
+    CassetteBackend::set_server_icon(server_id, icon)
+        .await
+        .map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn transfer_server_ownership(
+    server_id: i64,
+    new_owner_id: i64,
+) -> Result<ServerSettingsResult, String> {
+    CassetteBackend::transfer_server_ownership(server_id, new_owner_id)
+        .await
+        .map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn leave_server(server_id: i64) -> Result<(), String> {
+    CassetteBackend::leave_server(server_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+// --- the message accessors --------------------------------------------------
 // The message accessors keep the per-area wrappers' behaviour: a rejection
 // becomes friendly text (`Result<_, String>`), so the UI shows the server's
 // own message verbatim.

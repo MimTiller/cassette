@@ -1,37 +1,26 @@
 //! Client-side server/channel discovery wrapper.
 //!
-//! Thin front-end for the backend's `#[server]` fns in
-//! [`discord_server::servers`]. Same shape as `auth.rs`: this crate
-//! depends on `discord-server` with default features, so these
-//! compile to the codegen'd RPC stubs -- no manual HTTP here.
+//! Thin front-end for the backend's `#[server]` fns: every call goes through
+//! the single backend interface (`crate::backend::<verb>`), so the RPCs never
+//! appear here. Wire types still ride in from `discord_server` (a shared
+//! types crate is a later decision).
 
 pub use discord_server::server_settings::{MarkReadResult, UnreadCount};
 pub use discord_server::servers::{ChannelSummary, ServerSummary};
 
 /// Create a new server, owned by the caller.
 pub async fn create_server(name: &str) -> Result<ServerSummary, String> {
-    let input = discord_server::servers::CreateServerInput {
-        name: name.to_string(),
-    };
-    discord_server::servers::create_server(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))
+    crate::backend::create_server(name.to_string()).await
 }
 
 /// List the servers the caller is a member of.
 pub async fn list_servers() -> Result<Vec<ServerSummary>, String> {
-    discord_server::servers::list_servers(())
-        .await
-        .map_err(|e| crate::errors::friendly(&e))
+    crate::backend::list_servers().await
 }
-
 
 /// List a server's channels, in position order.
 pub async fn list_channels(server_id: i64) -> Result<Vec<ChannelSummary>, String> {
-    let input = discord_server::servers::ListChannelsInput { server_id };
-    discord_server::servers::list_channels(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))
+    crate::backend::list_channels(server_id).await
 }
 
 /// Create a channel in a server. `kind` is `"text"` / `"voice"` /
@@ -46,16 +35,8 @@ pub async fn create_channel(
     parent_channel_id: Option<i64>,
     private: bool,
 ) -> Result<discord_server::server_settings::ChannelResult, String> {
-    let input = discord_server::server_settings::CreateChannelInput {
-        server_id,
-        name: name.to_string(),
-        kind: kind.to_string(),
-        parent_channel_id,
-        private,
-    };
-    discord_server::server_settings::create_channel(input)
+    crate::backend::create_channel(server_id, name.to_string(), kind.to_string(), parent_channel_id, private)
         .await
-        .map_err(|e| crate::errors::friendly(&e))
 }
 
 /// Rename a channel. Owner, admin, or moderator may call; the backend's
@@ -65,14 +46,7 @@ pub async fn rename_channel(
     channel_id: i64,
     new_name: &str,
 ) -> Result<discord_server::server_settings::ChannelResult, String> {
-    let input = discord_server::server_settings::RenameChannelInput {
-        server_id,
-        channel_id,
-        new_name: new_name.to_string(),
-    };
-    discord_server::server_settings::rename_channel(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))
+    crate::backend::rename_channel(server_id, channel_id, new_name.to_string()).await
 }
 
 /// Delete a channel. Owner or admin may call; the backend's rejection comes
@@ -81,13 +55,7 @@ pub async fn delete_channel(
     server_id: i64,
     channel_id: i64,
 ) -> Result<discord_server::server_settings::ChannelResult, String> {
-    let input = discord_server::server_settings::DeleteChannelInput {
-        server_id,
-        channel_id,
-    };
-    discord_server::server_settings::delete_channel(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))
+    crate::backend::delete_channel(server_id, channel_id).await
 }
 
 /// The per-channel unread counts for a server, keyed out as
@@ -113,13 +81,7 @@ pub async fn rename_server(
     server_id: i64,
     new_name: &str,
 ) -> Result<discord_server::server_settings::ServerSettingsResult, String> {
-    let input = discord_server::server_settings::RenameServerInput {
-        server_id,
-        new_name: new_name.to_string(),
-    };
-    discord_server::server_settings::rename_server(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))
+    crate::backend::rename_server(server_id, new_name.to_string()).await
 }
 
 /// Set (or clear) a server's icon. `icon` is a URL string, or `None` to clear
@@ -129,10 +91,7 @@ pub async fn set_server_icon(
     server_id: i64,
     icon: Option<String>,
 ) -> Result<discord_server::server_settings::ServerSettingsResult, String> {
-    let input = discord_server::server_settings::SetServerIconInput { server_id, icon };
-    discord_server::server_settings::set_server_icon(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))
+    crate::backend::set_server_icon(server_id, icon).await
 }
 
 /// Transfer server ownership to another member. Only the current owner may
@@ -142,12 +101,5 @@ pub async fn transfer_server_ownership(
     server_id: i64,
     new_owner_id: i64,
 ) -> Result<discord_server::server_settings::ServerSettingsResult, String> {
-    let input = discord_server::server_settings::TransferOwnershipInput {
-        server_id,
-        new_owner_id,
-    };
-    discord_server::server_settings::transfer_server_ownership(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))
+    crate::backend::transfer_server_ownership(server_id, new_owner_id).await
 }
-

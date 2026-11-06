@@ -955,8 +955,7 @@ fn server_dropdown(
                     confirm_leave.set(false);
                     let Some(sid) = server.get() else { return };
                     let request = async move {
-                        let input = discord_server::server_settings::LeaveServerInput { server_id: sid };
-                        discord_server::server_settings::leave_server(input).await.ok()?;
+                        crate::backend::leave_server(sid).await.ok()?;
                         Some(crate::servers::list_servers().await.ok())
                     };
                     // The menu that started this closes, so anchor to the shell.
