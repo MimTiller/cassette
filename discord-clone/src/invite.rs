@@ -16,14 +16,7 @@ pub async fn create_invite(
     expires_at: Option<i64>,
     max_uses: Option<i64>,
 ) -> Result<discord_server::invites::Invite, String> {
-    let input = discord_server::invites::CreateInviteInput {
-        server_id,
-        expires_at,
-        max_uses,
-    };
-    discord_server::invites::create_invite(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))
+    crate::backend::create_invite(server_id, expires_at, max_uses).await
 }
 
 /// The invite code in what someone pasted: a bare code, or a link ending in
@@ -42,12 +35,7 @@ pub fn code_from_input(input: &str) -> String {
 pub async fn redeem_invite(
     code: &str,
 ) -> Result<discord_server::invites::RedeemResult, String> {
-    let input = discord_server::invites::RedeemInviteInput {
-        code: code.to_string(),
-    };
-    discord_server::invites::redeem_invite(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))
+    crate::backend::redeem_invite(code.to_string()).await
 }
 
 #[cfg(test)]

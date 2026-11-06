@@ -38,6 +38,7 @@ pub use discord_server::server_settings::{
 };
 pub use discord_server::dms::{Dm, DmMessage, SendDmMessageResult};
 pub use discord_server::servers::{ChannelSummary, ServerSummary};
+pub use discord_server::invites::{Invite, RedeemResult};
 
 // --- the interface, by area -------------------------------------------------
 
@@ -97,6 +98,16 @@ pub trait ServersApi {
         new_owner_id: i64,
     ) -> Result<ServerSettingsResult, ServerError>;
     async fn leave_server(server_id: i64) -> Result<(), ServerError>;
+}
+
+/// Invites: mint a shareable code for a server, and join through one.
+pub trait InvitesApi {
+    async fn create_invite(
+        server_id: i64,
+        expires_at: Option<i64>,
+        max_uses: Option<i64>,
+    ) -> Result<Invite, ServerError>;
+    async fn redeem_invite(code: String) -> Result<RedeemResult, ServerError>;
 }
 
 /// Direct messages: open a conversation, load its messages, send into it,
@@ -178,6 +189,7 @@ impl Gateway {
 // The areas' implementations, with today's server behind them.
 mod messages_impl;
 mod dms_impl;
+mod invites_impl;
 mod realtime;
 mod servers_impl;
 
@@ -193,6 +205,22 @@ pub fn connect(token: String) -> Gateway {
 
 pub async fn list_servers() -> Result<Vec<ServerSummary>, String> {
     CassetteBackend::list_servers().await.map_err(|e| crate::errors::friendly(&e))
+}
+
+// --- the invite accessors ---------------------------------------------------
+
+pub async fn create_invite(
+    server_id: i64,
+    expires_at: Option<i64>,
+    max_uses: Option<i64>,
+) -> Result<Invite, String> {
+    CassetteBackend::create_invite(server_id, expires_at, max_uses)
+        .await
+        .map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn redeem_invite(code: String) -> Result<RedeemResult, String> {
+    CassetteBackend::redeem_invite(code).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn create_server(name: String) -> Result<ServerSummary, String> {
