@@ -92,13 +92,17 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
     // One rounded bar holds the whole composer row: the '+' attach icon on
     // the left, the borderless text input filling the middle, and the GIF
     // and emoji icon buttons inside on the right (Discord's composer).
-    // `COMPOSER` (theme's BG_INPUT, #383a40) is the bar's fill, 44px tall,
+    // `COMPOSER` (theme's BG_INPUT, #383a40) is the bar's fill, 48px tall,
     // 8px corners; the input itself is transparent so the bar reads as one
-    // surface.
+    // surface. With the 8px gap under it, its top lines up with the user
+    // panel's (a 56px band) and its rounded bottom stays clear of the
+    // window edge.
     let composer_style = StyleRules {
         // Holds the "no permission" cover (below).
         position: Some(Position::Relative),
-        min_height: Some(px(44.0)),
+        min_height: Some(px(48.0)),
+        margin_bottom: Some(px(8.0)),
+        flex_shrink: Some(grow(0.0)),
         padding_left: Some(px(4.0)),
         padding_right: Some(px(4.0)),
         background: Some(col(COMPOSER)),
