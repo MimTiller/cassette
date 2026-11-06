@@ -412,6 +412,7 @@ pub fn post_channel_message(
             author_id: user_id,
             author_username,
             author_avatar: db.user_avatar(user_id),
+            author_decoration: db.user_avatar_decoration(user_id),
             content: content.to_string(),
             created_at,
             edited_at: None,

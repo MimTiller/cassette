@@ -80,6 +80,9 @@ pub struct DmParticipant {
     pub display_name: Option<String>,
     #[serde(default)]
     pub avatar_url: Option<String>,
+    /// The catalog id of the decoration on their avatar.
+    #[serde(default)]
+    pub avatar_decoration: Option<String>,
 }
 
 /// Most people in a group DM, its creator included.
@@ -175,6 +178,9 @@ pub struct DmMessage {
     /// uploaded avatar.
     #[serde(default)]
     pub author_avatar: Option<String>,
+    /// The catalog id of the decoration on the author's avatar.
+    #[serde(default)]
+    pub author_decoration: Option<String>,
     pub content: String,
     /// UTC epoch milliseconds.
     pub created_at: i64,
@@ -294,6 +300,7 @@ impl DmService {
             author_id: user_id,
             author_username: String::new(),
             author_avatar: self.db.user_avatar(user_id),
+            author_decoration: self.db.user_avatar_decoration(user_id),
             content: content.to_string(),
             created_at,
             edited_at: None,
@@ -342,6 +349,7 @@ impl DmService {
                     author_id: m.author_id,
                     author_username: username,
                     author_avatar: self.db.user_avatar(m.author_id),
+                    author_decoration: self.db.user_avatar_decoration(m.author_id),
                     content: m.content,
                     created_at: m.created_at,
                     edited_at: m.edited_at,
@@ -468,6 +476,7 @@ impl DmService {
                 username,
                 display_name: self.db.user_display_name(user_id),
                 avatar_url: self.db.user_avatar(user_id),
+                avatar_decoration: self.db.user_avatar_decoration(user_id),
             })
             .collect();
         let (is_group, name, owner_id) = self.db.dm_channel_info(channel_id).unwrap_or((false, None, None));
@@ -534,6 +543,7 @@ pub async fn send_dm_message(input: SendDmMessageInput) -> Result<SendDmMessageR
             author_id: message.author_id,
             author_username: message.author_username.clone(),
             author_avatar: db.user_avatar(message.author_id),
+            author_decoration: db.user_avatar_decoration(message.author_id),
             content: message.content.clone(),
             created_at: message.created_at,
             seq: crate::server_settings::next_frame_seq(),
