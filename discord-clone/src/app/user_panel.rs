@@ -2,6 +2,7 @@
 //! Split out of `app.rs`; `use super::*` keeps app.rs's imports and shared
 //! colors/helpers in scope.
 
+use crate::avatar_chip::AvatarFrame;
 use crate::theme;
 use super::*;
 
@@ -185,50 +186,46 @@ pub(super) fn user_panel(
             // its own region while connected.
             let menu_toggle = status_menu;
             // When the signed-in account has an uploaded avatar, the image
-            // sits under the status dot (same 32px circle, cover-cropped);
-            // the initial-circle branch renders exactly as before.
-            let avatar = if let Some(url) = avatar_img {
+            // takes the place of the initial circle (same 32px circle,
+            // cover-cropped). Either one sits under the status dot.
+            let chip = if let Some(url) = avatar_img {
                 ui! {
-                    view(style = StyleRules {
-                        width: Some(px(32.0)),
-                        height: Some(px(32.0)),
-                        position: Some(Position::Relative),
-                        flex_shrink: Some(grow(0.0)),
-                        ..rounded(16.0)
-                    }, test_id = "user-panel-avatar") {
-                        { dot }
-                        image(
-                            src = crate::auth::media_url(url.clone()),
-                            alt = "Your avatar",
-                            style = StyleRules {
-                                width: Some(px(32.0)),
-                                height: Some(px(32.0)),
-                                flex_shrink: Some(grow(0.0)),
-                                object_fit: Some(ObjectFit::Cover),
-                                ..rounded(16.0)
-                            },
-                        )
-                    }
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            menu_toggle.set(!menu_toggle.get());
-                        }
-                        TouchResponse::CONSUMED
-                    })
+                    image(
+                        src = crate::auth::media_url(url.clone()),
+                        alt = "Your avatar",
+                        style = StyleRules {
+                            width: Some(px(32.0)),
+                            height: Some(px(32.0)),
+                            flex_shrink: Some(grow(0.0)),
+                            object_fit: Some(ObjectFit::Cover),
+                            ..rounded(16.0)
+                        },
+                    )
                 }
             } else {
                 ui! {
-                    view(style = avatar_style, test_id = "user-panel-avatar") {
+                    view(style = avatar_style) {
                         text(style = initial_style) { initial }
-                        { dot }
                     }
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            menu_toggle.set(!menu_toggle.get());
-                        }
-                        TouchResponse::CONSUMED
-                    })
                 }
+            };
+            let avatar = ui! {
+                view(style = StyleRules {
+                    width: Some(px(32.0)),
+                    height: Some(px(32.0)),
+                    position: Some(Position::Relative),
+                    flex_shrink: Some(grow(0.0)),
+                    ..rounded(16.0)
+                }, test_id = "user-panel-avatar") {
+                    AvatarFrame(name = username.get(), size = 32.0_f32) { chip }
+                    { dot }
+                }
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        menu_toggle.set(!menu_toggle.get());
+                    }
+                    TouchResponse::CONSUMED
+                })
             };
             // Mic / deafen / settings icon buttons (Discord's user-panel
             // voice actions). The signals are created in `app_shell` and

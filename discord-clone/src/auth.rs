@@ -179,6 +179,31 @@ pub(crate) fn avatar_for(username: &str) -> Option<String> {
         .map(|(_, url)| url.clone())
 }
 
+/// Avatar decorations by username, for every user the client has heard about
+/// (members, friends, DM partners, message authors).
+pub(crate) static DECORATION_MAP: std::sync::Mutex<Vec<(String, String)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Record the decoration `username` wears, or forget it with `None`.
+pub(crate) fn remember_avatar_decoration(username: &str, decoration: Option<String>) {
+    if username.is_empty() {
+        return;
+    }
+    let mut map = DECORATION_MAP.lock().unwrap_or_else(|p| p.into_inner());
+    map.retain(|(u, _)| *u != username);
+    if let Some(id) = decoration {
+        map.push((username.to_string(), id));
+    }
+}
+
+/// The catalog id of the decoration `username` wears.
+pub(crate) fn avatar_decoration_for(username: &str) -> Option<String> {
+    let map = DECORATION_MAP.lock().unwrap_or_else(|p| p.into_inner());
+    map.iter()
+        .find(|(u, _)| *u == username)
+        .map(|(_, id)| id.clone())
+}
+
 /// The page's own origin on the web target (the bundle is served same-origin
 /// with the API); `None` off-web.
 #[cfg(target_arch = "wasm32")]

@@ -182,6 +182,9 @@ pub enum WsServerMsg {
         /// avatar without a per-message user lookup.
         #[serde(default)]
         author_avatar: Option<String>,
+        /// The catalog id of the decoration on the author's avatar.
+        #[serde(default)]
+        author_decoration: Option<String>,
         content: String,
         created_at: i64,
         edited_at: Option<i64>,
@@ -253,6 +256,8 @@ pub enum WsServerMsg {
         author_username: String,
         #[serde(default)]
         author_avatar: Option<String>,
+        #[serde(default)]
+        author_decoration: Option<String>,
         content: String,
         created_at: i64,
         #[serde(default)]
@@ -337,6 +342,9 @@ pub enum WsServerMsg {
         user_id: i64,
         username: String,
         display_name: Option<String>,
+        /// The catalog id of the decoration on their avatar.
+        #[serde(default)]
+        avatar_decoration: Option<String>,
         #[serde(default)]
         seq: u64,
     },
@@ -540,6 +548,7 @@ pub async fn message_gateway(
                                 author_id: m.author_id,
                                 author_username,
                                 author_avatar: db.user_avatar(m.author_id),
+                                author_decoration: db.user_avatar_decoration(m.author_id),
                                 content: m.content,
                                 created_at: m.created_at,
                                 edited_at: m.edited_at,
@@ -1140,6 +1149,7 @@ impl ServerSettings {
                 username,
                 role,
                 avatar_url: self.db.user_avatar(user_id),
+                avatar_decoration: self.db.user_avatar_decoration(user_id),
                 presence: self.db.presence(user_id),
             })
             .collect())
@@ -1669,6 +1679,9 @@ pub struct MemberInfo {
     pub role: String,
     #[serde(default)]
     pub avatar_url: Option<String>,
+    /// The catalog id of the decoration on their avatar.
+    #[serde(default)]
+    pub avatar_decoration: Option<String>,
     /// What others currently see: 'online' / 'away' / 'dnd' / 'offline'. The
     /// member panel seeds a row's dot from this so a client that connected
     /// after the member came online (or reloaded) still shows them online;
@@ -2669,12 +2682,14 @@ mod tests {
             user_id: 3,
             username: "alice".to_string(),
             display_name: Some("Ali".to_string()),
+            avatar_decoration: None,
             seq: next_frame_seq(),
         };
         let profile_b = WsServerMsg::ProfileChanged {
             user_id: 3,
             username: "alice".to_string(),
             display_name: Some("Ali".to_string()),
+            avatar_decoration: None,
             seq: next_frame_seq(),
         };
         assert_ne!(profile_a, profile_b, "identical ProfileChanged frames differ by seq");

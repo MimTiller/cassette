@@ -79,6 +79,9 @@ pub struct FriendUser {
     pub display_name: Option<String>,
     #[serde(default)]
     pub avatar_url: Option<String>,
+    /// The catalog id of the decoration on their avatar.
+    #[serde(default)]
+    pub avatar_decoration: Option<String>,
 }
 
 /// The acting user's friends list: `incoming` (pending requests addressed to
@@ -310,6 +313,7 @@ impl FriendService {
             username,
             display_name: self.db.user_display_name(user_id),
             avatar_url: self.db.user_avatar(user_id),
+            avatar_decoration: self.db.user_avatar_decoration(user_id),
         }
     }
 }

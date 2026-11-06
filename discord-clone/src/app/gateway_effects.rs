@@ -126,6 +126,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 author_id,
                 author_username,
                 author_avatar,
+                author_decoration,
                 content,
                 created_at,
                 edited_at,
@@ -149,6 +150,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 // avatar chip and the member list can draw it.
                 let label = author_username.clone();
                 crate::auth::remember_avatar(label.as_str(), author_avatar.clone());
+                crate::auth::remember_avatar_decoration(label.as_str(), author_decoration.clone());
                 // Push the full 6-tuple: the wire `message_id` + the optional
                 // `edited_at` (epoch millis -> secs, like `created_at`) ride
                 // along so the row's edit affordance and "(edited)" marker can
@@ -538,10 +540,12 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             if let Some(discord_server::server_settings::WsServerMsg::ProfileChanged {
                 username,
                 display_name,
+                avatar_decoration,
                 ..
             }) = frame
             {
                 crate::auth::remember_display_name(username, display_name.clone());
+                crate::auth::remember_avatar_decoration(username, avatar_decoration.clone());
                 crate::mentions::names_changed();
                 live_revision.set(live_revision.get() + 1);
                 if let Some(sid) = member_server.get() {

@@ -193,6 +193,44 @@ impl Db {
         )
     }
 
+    /// The catalog id of the decoration `user_id` wears, or `None`.
+    pub fn user_avatar_decoration(&self, user_id: i64) -> Option<String> {
+        let c = self.lock().ok()?;
+        c.query_row("SELECT avatar_decoration FROM users WHERE id = ?1", rusqlite::params![user_id], |r| {
+            r.get::<_, Option<String>>(0)
+        })
+        .ok()
+        .flatten()
+    }
+
+    /// Store the decoration `user_id` wears (`None` takes it off).
+    pub fn set_user_avatar_decoration(&self, user_id: i64, decoration: Option<&str>) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        c.execute(
+            "UPDATE users SET avatar_decoration = ?2 WHERE id = ?1",
+            rusqlite::params![user_id, decoration],
+        )
+    }
+
+    /// The catalog id of the effect on `user_id`'s profile card, or `None`.
+    pub fn user_profile_effect(&self, user_id: i64) -> Option<String> {
+        let c = self.lock().ok()?;
+        c.query_row("SELECT profile_effect FROM users WHERE id = ?1", rusqlite::params![user_id], |r| {
+            r.get::<_, Option<String>>(0)
+        })
+        .ok()
+        .flatten()
+    }
+
+    /// Store the effect on `user_id`'s profile card (`None` takes it off).
+    pub fn set_user_profile_effect(&self, user_id: i64, effect: Option<&str>) -> Result<usize, rusqlite::Error> {
+        let c = self.lock()?;
+        c.execute(
+            "UPDATE users SET profile_effect = ?2 WHERE id = ?1",
+            rusqlite::params![user_id, effect],
+        )
+    }
+
     /// Set (or clear, with `None`) the stored avatar URL for `user_id`.
     pub fn set_user_avatar(
         &self,

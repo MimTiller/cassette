@@ -21,6 +21,7 @@ pub async fn list_members(server_id: i64) -> Result<Vec<MemberInfo>, String> {
         .map_err(|e| crate::errors::friendly(&e))?;
     for m in members.iter() {
         crate::auth::remember_avatar(m.username.as_str(), m.avatar_url.clone());
+        crate::auth::remember_avatar_decoration(m.username.as_str(), m.avatar_decoration.clone());
     }
     Ok(members)
 }

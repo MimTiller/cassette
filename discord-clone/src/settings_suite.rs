@@ -1,6 +1,7 @@
 //! `settings_suite` — the full-screen User Settings screen opened by the gear
 //! (and by "Profile"), laid out like Discord's: a section sidebar on the left
-//! (My Account, Profile, Appearance, Notifications, Keybinds, then Log Out), the
+//! (My Account, Profile, Profile Effects, Appearance, Notifications, Keybinds,
+//! then Log Out), the
 //! selected section in a centred column, and a close button with "ESC" on the
 //! right (Escape closes it too, see `app::popups`).
 //!
@@ -45,9 +46,10 @@ const ACCENTS: [&str; 6] = ["#5865f2", "#9b6bff", "#23a559", "#f23f43", "#f0b232
 
 /// The three settings tabs, in order (the tab-bar index keys).
 /// Sidebar entries in order: (group heading, or "" to continue the group; label).
-const SECTIONS: [(&str, &str); 5] = [
+const SECTIONS: [(&str, &str); 6] = [
     ("USER SETTINGS", "My Account"),
     ("", "Profile"),
+    ("", "Profile Effects"),
     ("APP SETTINGS", "Appearance"),
     ("", "Notifications"),
     ("", "Keybinds"),
@@ -61,6 +63,7 @@ pub(crate) fn nav_id(label: &str) -> &'static str {
     match label {
         "My Account" => "settings-nav-my-account",
         "Profile" => "settings-nav-profile",
+        "Profile Effects" => "settings-nav-profile-effects",
         "Appearance" => "settings-nav-appearance",
         "Notifications" => "settings-nav-notifications",
         "Keybinds" => "settings-nav-keybinds",
@@ -722,8 +725,9 @@ pub fn UserSettings(
             let body = match *tab {
                 0 => account_tab(blocked, live_rev),
                 1 => crate::profile_settings::ProfileSettings(),
-                2 => appearance_tab(accent),
-                3 => notifications_tab(notif_mode),
+                2 => crate::profile_effects::ProfileEffects(),
+                3 => appearance_tab(accent),
+                4 => notifications_tab(notif_mode),
                 _ => crate::keyboard_shortcuts_overlay::shortcuts_list(),
             };
             let title = SECTIONS.get(*tab).map(|(_, l)| *l).unwrap_or_default().to_string();

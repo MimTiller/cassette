@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 140" class="still">
+  <style>
+    @keyframes twinkle{0%,100%{transform:scale(1) rotate(0);opacity:1}50%{transform:scale(.25) rotate(45deg);opacity:.35}}
+    .moving .star{animation:twinkle 1.4s ease-in-out infinite}
+    .once .star{animation:twinkle 1.4s ease-in-out 2}
+    .d1{animation-delay:.2s!important}
+    .d2{animation-delay:.45s!important}
+    .d3{animation-delay:.7s!important}
+    @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+  </style>
+  <defs>
+    <radialGradient id="gold"><stop offset="0" stop-color="#fffbe0"/><stop offset=".55" stop-color="#ffe27a"/><stop offset="1" stop-color="#f0a91f"/></radialGradient>
+    <radialGradient id="pink"><stop offset="0" stop-color="#fff1f6"/><stop offset=".55" stop-color="#ffb3cf"/><stop offset="1" stop-color="#f2689c"/></radialGradient>
+    <radialGradient id="white"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#cfe6ff"/></radialGradient>
+    <path id="s" d="M0-1C.12-.28.28-.12 1 0C.28.12.12.28 0 1C-.12.28-.28.12-1 0C-.28-.12-.12-.28 0-1Z"/>
+  </defs>
+  <g transform="translate(14 40) scale(9)"><g class="star d0"><use href="#s" fill="url(#gold)"/></g></g>
+  <g transform="translate(7 80) scale(5)"><g class="star d1"><use href="#s" fill="url(#white)"/></g></g>
+  <g transform="translate(23 113) scale(7)"><g class="star d2"><use href="#s" fill="url(#pink)"/></g></g>
+  <g transform="translate(36 13) scale(5)"><g class="star d3"><use href="#s" fill="url(#pink)"/></g></g>
+  <g transform="translate(70 6) scale(5)"><g class="star d1"><use href="#s" fill="url(#white)"/></g></g>
+  <g transform="translate(106 12) scale(10)"><g class="star d2"><use href="#s" fill="url(#gold)"/></g></g>
+  <g transform="translate(131 46) scale(5)"><g class="star d0"><use href="#s" fill="url(#pink)"/></g></g>
+  <g transform="translate(129 92) scale(8)"><g class="star d3"><use href="#s" fill="url(#gold)"/></g></g>
+  <g transform="translate(60 133) scale(4)"><g class="star d2"><use href="#s" fill="url(#white)"/></g></g>
+  <g transform="translate(108 127) scale(5)"><g class="star d0"><use href="#s" fill="url(#white)"/></g></g>
+</svg>

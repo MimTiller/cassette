@@ -2,6 +2,7 @@
 //! Split out of `app.rs`; `use super::*` keeps app.rs's imports and shared
 //! colors/helpers in scope.
 
+use crate::avatar_chip::AvatarFrame;
 use crate::theme;
 use super::*;
 
@@ -968,7 +969,7 @@ pub(crate) fn message_row(
     // by login / `list_members` / gateway frames) knows a URL for this author,
     // else the pre-existing colored initial circle. Mock identities are never
     // registered, so guest/demo rows render exactly as before.
-    let avatar_chip = if let Some(url) = crate::auth::avatar_for(author) {
+    let chip = if let Some(url) = crate::auth::avatar_for(author) {
         let url = crate::auth::media_url(url.clone());
         ui! {
             image(
@@ -984,6 +985,7 @@ pub(crate) fn message_row(
             }
         }
     };
+    let avatar_chip = ui! { AvatarFrame(name = author, size = 40.0_f32) { chip } };
     if grouped {
         // Grouped form (Discord convention): no avatar, no author/time
         // header. Just the body, tightly spaced above the row it follows

@@ -38,6 +38,7 @@ mod roles_settings;
 // `notification_settings` screen as the gear's target.
 mod settings_suite;
 mod profile_settings;
+mod profile_effects;
 mod dms;
 mod styles;
 mod controls;
