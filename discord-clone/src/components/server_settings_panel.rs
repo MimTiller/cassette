@@ -34,7 +34,7 @@
 //! user's own row in `live_members` (`role == "owner"`).
 use crate::theme;
 use runtime_core::{
-    component, signal, switch, ui, AlignItems, Element, FlexDirection, FontWeight,
+    component, signal, ui, AlignItems, Element, FlexDirection, FontWeight,
     JustifyContent, ObjectFit, Overflow, Position, Signal, StyleRules, TouchResponse,
 };
 use file_picker::{FilePicker, MediaKind, PickOutcome, PickRequest};
@@ -360,9 +360,9 @@ pub fn ServerSettingsPanel(
     // `Copy` signals, so they're `Copy` + `Fn` and can be invoked here.
     // Also rebuilt on open and on a server switch, so the owner check and the
     // roles section see the current server.
-    let body = switch(
-        move || (section.get(), b.get(), e.get(), close.get(), sid.get(), section_allowed(section.get())),
-        move |(tab, busy, err, _open, _sid, allowed): &(usize, bool, String, bool, Option<i64>, bool)| {
+    let body = {
+    let render =
+        move |(tab, busy, err, _open, _sid, allowed): &(usize, bool, String, bool, Option<i64>, bool)| -> Element {
             // A section the user can't use (say, the last one viewed in
             // another server) gives way to the first one they can.
             if !*allowed {
@@ -393,9 +393,8 @@ pub fn ServerSettingsPanel(
             };
             // The current icon (or the server's initial), keyed on `ic` so it
             // follows the caller's seed when the panel opens and every save.
-            let icon_preview = switch(
-                move || ic.get(),
-                move |url: &String| {
+            let icon_render =
+                move |url: &String| -> Element {
                     let tile = StyleRules {
                         width: Some(px(64.0)),
                         height: Some(px(64.0)),
@@ -420,8 +419,12 @@ pub fn ServerSettingsPanel(
                     } else {
                         ui! { image(src = crate::auth::media_url(url.clone()), alt = "Server icon".to_string(), style = tile) }
                     }
-                },
-            );
+                };
+            let icon_preview = ui! {
+                match ic.get() {
+                    url => {{ (icon_render)(&url) }},
+                }
+            };
             let transfer_btn = ui! {
                 button(label = transfer_label.to_string(), on_click = do_transfer, test_id = "server-transfer-confirm", style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Primary))
             };
@@ -543,8 +546,14 @@ pub fn ServerSettingsPanel(
                     { err_el }
                 }
             }
-        },
-    );
+        };
+
+        ui! {
+            match (section.get(), b.get(), e.get(), close.get(), sid.get(), section_allowed(section.get())) {
+                key => {{ (render)(&key) }},
+            }
+        }
+    };
 
     // --- Sidebar: the server's name, then the sections ------------------------
     let mut nav: Vec<Element> = vec![crate::settings_suite::nav_heading(
