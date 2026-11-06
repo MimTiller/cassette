@@ -147,9 +147,9 @@ pub fn DeleteChannelModal(
         runtime_core::spawn_then_in(
             &crate::app::shell_alive(),
             async move {
-                let done = crate::servers::delete_channel(sid0, cid0).await;
+                let done = crate::backend::delete_channel(sid0, cid0).await;
                 let list = match done {
-                    Ok(_) => crate::servers::list_channels(sid0).await.ok(),
+                    Ok(_) => crate::backend::list_channels(sid0).await.ok(),
                     Err(_) => None,
                 };
                 (done, list)

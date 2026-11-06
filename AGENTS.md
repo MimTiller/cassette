@@ -11,7 +11,14 @@ Run these from the repo root. All must pass, with no new warnings from `cargo` o
 (cd discord-server && cargo check --features server && cargo test --features server)
 (cd discord-clone && cargo check && cargo test)
 idealyst lint discord-clone
+sh tools/check-backend-boundary.sh
 ```
+
+`tools/check-backend-boundary.sh` enforces the client/backend seam: UI files
+in `discord-clone/src` outside `discord-clone/src/backend/` may reach a `#[server]`
+function only through `crate::backend`, and may only open the gateway socket
+inside the seam. It exits 0 when the boundary holds and 1 with a `file:line`
+list of the violations.
 
 For a UI change, also look at it in a browser (see "Testing in a browser"),
 driving it through the idealyst MCP server (see "Driving the app").
@@ -98,7 +105,7 @@ audio comes last, after everything else.
 
 ## Testing in a browser
 
-The end-to-end browser suite lives in `e2e/` (see `e2e/README.md`): `python3 e2e/run.py http://127.0.0.1:<port>`.
+The end-to-end browser suite is the Rust robot suite in `discord-clone/tests/robot/` (see `e2e/README.md`): `idealyst test --web discord-clone`, or `sh /root/bin/robot-test [filter]` from the worktree root on this host.
 
 Start a dev server from the **repo root**, with the crate as an argument:
 

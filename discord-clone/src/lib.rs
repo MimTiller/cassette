@@ -39,6 +39,7 @@ mod roles_settings;
 mod settings_suite;
 mod profile_settings;
 mod profile_effects;
+mod backend;
 mod dms;
 mod styles;
 mod controls;
@@ -50,9 +51,7 @@ mod embeds;
 mod channel_permissions;
 mod live_dm_view;
 mod group_dm;
-// Client friends-list wrapper (RPC front-end for discord-server/src/friends.rs)
-// + the live friends panel view.
-mod friends;
+// The live friends panel view; the friend RPCs live in the backend seam.
 mod friends_view;
 // User-facing text for server-call errors.
 mod errors;
@@ -125,7 +124,7 @@ pub mod emoji_picker;
 pub mod gif_picker;
 
 pub use app::app;
-pub use identity::{login, signup};
+pub use identity::{sign_in, sign_up};
 
 // SDK-handler registration seam, invoked by the CLI-generated wrappers (web
 // `start_in`/`hydrate_in`, macOS `run_with`, iOS `run_in_view`, terminal

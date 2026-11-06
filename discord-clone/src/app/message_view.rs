@@ -521,6 +521,7 @@ pub(super) fn message_body(body: &str) -> Element {
             image(
                 src = url,
                 alt = "GIF".to_string(),
+                test_id = "gif-image",
                 style = StyleRules {
                     width: Some(px(w)),
                     height: Some(px(h)),
@@ -1449,10 +1450,7 @@ pub(super) fn live_edit_row(
     live_editing: Signal<Option<i64>>,
     live_edit_text: Signal<String>,
     live_delete_confirm: Signal<Option<i64>>,
-    gateway: server::UseSocket<
-        discord_server::server_settings::WsServerMsg,
-        discord_server::server_settings::WsClientMsg,
-    >,
+    gateway: crate::backend::Gateway,
     // Interaction parity with the mock path: the row's identity key (the real
     // wire `message_id` under the `Live` variant) plus the shared picker /
     // reply / pin / translate handles, so the hover action bar and the
@@ -1547,12 +1545,7 @@ pub(super) fn live_edit_row(
     let do_save = move || {
         let content = edit_text.get();
         if !content.trim().is_empty() {
-            gateway.send(
-                discord_server::server_settings::WsClientMsg::EditMessage {
-                    message_id: mid,
-                    content: crate::custom_emoji::encode_draft(&content),
-                },
-            );
+            gateway.edit_message(mid, crate::custom_emoji::encode_draft(&content));
         }
         editing_sig.set(None);
         edit_text.set(String::new());
@@ -1631,12 +1624,7 @@ pub(super) fn live_edit_row(
                 MsgAction::Save => {
                     let content = edit_text.get();
                     if !content.trim().is_empty() {
-                        gateway.send(
-                            discord_server::server_settings::WsClientMsg::EditMessage {
-                                message_id: mid,
-                                content: crate::custom_emoji::encode_draft(&content),
-                            },
-                        );
+                        gateway.edit_message(mid, crate::custom_emoji::encode_draft(&content));
                     }
                     editing_sig.set(None);
                     edit_text.set(String::new());
@@ -1646,9 +1634,7 @@ pub(super) fn live_edit_row(
                     edit_text.set(String::new());
                 }
                 MsgAction::Confirm => {
-                    gateway.send(discord_server::server_settings::WsClientMsg::DeleteMessage {
-                        message_id: mid,
-                    });
+                    gateway.delete_message(mid);
                     confirm_sig.set(None);
                 }
                 MsgAction::No => confirm_sig.set(None),

@@ -10,8 +10,9 @@
 //! and a `RolesChanged` gateway frame refreshes it. Changing it bumps the
 //! message list's revision signal so rows redraw.
 
-use discord_server::permissions::{self, MyPermissions, Permissions, Rank};
-use discord_server::server_roles::{self, CustomRole, MentionSeg, RolesSnapshot};
+use discord_server::permissions::{Permissions, Rank};
+use discord_server::server_roles::MentionSeg;
+use crate::backend::{MyPermissions, RolesSnapshot, CustomRole};
 use runtime_core::Signal;
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -168,8 +169,8 @@ pub fn load_roles(server_id: i64) {
         // (a row tap, a gateway frame) whose own nodes die before the reply.
         &crate::app::shell_alive(),
         async move {
-            let snap = server_roles::server_roles(server_roles::ServerRolesInput { server_id }).await;
-            let mine = permissions::my_permissions(permissions::MyPermissionsInput { server_id }).await;
+            let snap = crate::backend::server_roles(server_id).await;
+            let mine = crate::backend::my_permissions(server_id).await;
             (snap, mine)
         },
         move |result| {
@@ -272,7 +273,7 @@ pub fn segments(text: &str) -> Vec<MentionSeg> {
     if !text.contains('@') {
         return vec![MentionSeg::Text(text.to_string())];
     }
-    with(|c| server_roles::segments(text, &c.users, &c.roles.roles))
+    with(|c| discord_server::server_roles::segments(text, &c.users, &c.roles.roles))
 }
 
 /// `text` with its mentions taken out (to judge whether the rest is Markdown).

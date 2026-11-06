@@ -266,8 +266,7 @@ pub fn ProfileSettings() -> Element {
     let alive = runtime_core::ScopeAlive::current();
     {
         let me = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
-        let input = discord_server::profiles::GetUserProfileInput { user_id: me, server_id: None };
-        runtime_core::spawn_then_in(&alive, discord_server::profiles::get_user_profile(input), move |result| {
+        runtime_core::spawn_then_in(&alive, crate::backend::get_user_profile(me, None), move |result| {
             if let Ok(p) = result {
                 display_name.set(p.display_name.unwrap_or_default());
                 about.set(p.about);
@@ -280,15 +279,16 @@ pub fn ProfileSettings() -> Element {
         }
         profile_busy.set(true);
         profile_note.set(String::new());
-        let input = discord_server::profiles::SetProfileInput { display_name: display_name.get(), about: about.get() };
-        runtime_core::spawn_then_in(&alive, discord_server::profiles::set_profile(input), move |result| {
+        let dn = display_name.get();
+        let ab = about.get();
+        runtime_core::spawn_then_in(&alive, crate::backend::set_profile(dn, ab), move |result| {
             match result {
                 Ok(saved) => {
                     crate::auth::remember_display_name(&crate::auth::current_username(), saved.display_name);
                     crate::mentions::names_changed();
                     profile_note.set("Saved.".to_string());
                 }
-                Err(e) => profile_note.set(crate::errors::friendly(&e)),
+                Err(e) => profile_note.set(e),
             }
             profile_busy.set(false);
         });
@@ -349,7 +349,7 @@ pub fn ProfileSettings() -> Element {
         av_error.set(String::new());
         runtime_core::spawn_then_in(
             &crate::app::shell_alive(),
-            crate::auth::set_avatar(Some(url.clone())),
+            crate::auth::update_avatar(Some(url.clone())),
             move |result| {
                 match result {
                     Ok(_) => {
@@ -455,7 +455,7 @@ pub fn ProfileSettings() -> Element {
         // teardown (same idiom as save_avatar).
         runtime_core::spawn_then_in(
             &crate::app::shell_alive(),
-            crate::auth::set_avatar(None),
+            crate::auth::update_avatar(None),
             move |result| {
                 match result {
                     Ok(_) => {
@@ -623,7 +623,7 @@ pub(crate) fn register_avatar_upload_hook(
             // spawn_then_in callback, anchored on the app shell.
             runtime_core::spawn_then_in(
                 &crate::app::shell_alive(),
-                crate::auth::set_avatar(Some(url.clone())),
+                crate::auth::update_avatar(Some(url.clone())),
                 move |result| {
                     match result {
                         Ok(_) => {

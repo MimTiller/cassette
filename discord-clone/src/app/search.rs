@@ -4,7 +4,7 @@
 //! result jumps to the message.
 
 use crate::theme;
-use discord_server::search::{SearchInput, SearchResults};
+use discord_server::search::SearchResults;
 use super::*;
 
 const FILTER_TIPS: &str =
@@ -87,10 +87,9 @@ pub(super) fn search_box(server: Signal<Option<i64>>, server_name: String, on_ju
         }
         busy.set(true);
         error.set(String::new());
-        let input = SearchInput { server_id, query: text, tz_offset_minutes: tz_offset_minutes(), offset };
         runtime_core::spawn_then_in(
             &al,
-            discord_server::search::search_messages(input),
+            crate::backend::search_messages(server_id, text, tz_offset_minutes(), offset),
             move |found| {
                 match found {
                     Ok(mut page) => {
@@ -103,7 +102,7 @@ pub(super) fn search_box(server: Signal<Option<i64>>, server_name: String, on_ju
                         }
                         results.set(Some(page));
                     }
-                    Err(e) => error.set(crate::errors::friendly(&e)),
+                    Err(e) => error.set(e),
                 }
                 busy.set(false);
             },

@@ -246,7 +246,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
 
     // --- Live "Invite People" overlay (real backend) ----------------------
     // The live channel header's `USER_PLUS` action opens this: it mints a
-    // REAL invite via `invite::create_invite` against `active_live_server`
+    // REAL invite via `crate::backend::create_invite` against `active_live_server`
     // (the only context with a real backend `server_id`) and shows the resulting
     // code in `InviteLinkDisplay`, whose Copy button now writes the link to the
     // system clipboard. `live_invite_expiry` is the expiry the user picked
@@ -346,7 +346,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
             // Anchored on the app shell: the invite code and error live there,
             // and this handler rebuilds the overlay it is inside.
             &crate::app::shell_alive(),
-            crate::invite::create_invite(sid, expires_at, None),
+            crate::backend::create_invite(sid, expires_at, None),
             move |invited| {
                 match invited {
                     Ok(inv) => code.set(Some(inv.code)),

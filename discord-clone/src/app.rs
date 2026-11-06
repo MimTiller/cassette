@@ -477,8 +477,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // ask for it: the user panel draws it even with no roster to learn it from.
     {
         let me = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
-        let input = discord_server::profiles::GetUserProfileInput { user_id: me, server_id: None };
-        runtime_core::spawn_then_in(&crate::app::shell_alive(), discord_server::profiles::get_user_profile(input), |result| {
+        runtime_core::spawn_then_in(&crate::app::shell_alive(), crate::backend::get_user_profile(me, None), |result| {
             if let Ok(p) = result {
                 crate::auth::remember_avatar_decoration(&p.username, p.avatar_decoration);
                 crate::mentions::names_changed();
@@ -575,7 +574,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // a base URL. Rendered as its own section below the mock rows; see the
     // rail for why these rows are not yet interactive.
     let live_servers: Signal<Vec<crate::servers::ServerSummary>> = signal(Vec::new());
-    runtime_core::spawn_then(async move { crate::servers::list_servers().await }, move |result| {
+    runtime_core::spawn_then(async move { crate::backend::list_servers().await }, move |result| {
         match result {
             Ok(servers) => {
                 live_servers.set(servers);
@@ -756,7 +755,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // effect sends the saved channel's initial `History` frame over the
     // gateway (same as a manual channel-row tap), and `UseSocket` is `Copy`
     // so the effect's `async move` block just captures it.
-    let gateway = discord_server::server_settings::message_gateway(
+    let gateway = crate::backend::connect(
         crate::auth::current_token(),
     );
 
@@ -809,7 +808,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 // here raced it and (near-)always saw the pre-fetch empty `Vec`,
                 // silently no-op'ing this whole effect. Awaiting our own fetch
                 // makes the decision authoritative regardless of scheduling.
-                let Ok(servers) = crate::servers::list_servers().await else {
+                let Ok(servers) = crate::backend::list_servers().await else {
                     return (None, None);
                 };
                 // The saved last view (kind 0 = server+channel, kind 1 = open DM).
@@ -834,12 +833,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 // selecting it fires the channel-open effect, which reads the
                 // unread buffer to offer the "N new messages" bar, so the buffer
                 // must already hold the counts when that effect runs.
-                let counts: Vec<crate::servers::UnreadCount> = match crate::servers::unread_counts(sid).await {
+                let counts: Vec<crate::servers::UnreadCount> = match crate::backend::unread_counts(sid).await {
                     Ok(c) => c,
                     Err(_) => Vec::new(),
                 };
-                let channels = crate::servers::list_channels(sid).await;
-                let members = crate::moderation::list_members(sid).await;
+                let channels = crate::backend::list_channels(sid).await;
+                let members = crate::backend::list_members(sid).await;
                 (Some(servers), Some((sid, counts, channels, members, saved)))
             },
             move |fetched| {
@@ -886,12 +885,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         // fresh pane's `on_handle` callback can capture its own).
                         latbot.set(true);
                         *lhandle.borrow_mut() = None;
-                        gateway.send(
-                            discord_server::server_settings::WsClientMsg::History {
-                                channel_id: id,
-                                before_id: None,
-                            },
-                        );
+                        gateway.request_history(id, None);
                     }
                 }
                 if let Ok(fresh) = members {
@@ -914,12 +908,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     {
         let alc = active_live_channel.clone();
         runtime_core::effect!({
-            if gateway.status() == server::SocketStatus::Open {
+            if gateway.connection_status() == server::SocketStatus::Open {
                 if let Some(id) = runtime_core::Reactive::from(alc).get_untracked() {
-                    gateway.send(discord_server::server_settings::WsClientMsg::History {
-                        channel_id: id,
-                        before_id: None,
-                    });
+                    gateway.request_history(id, None);
                 }
             }
         });
@@ -1062,7 +1053,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                             // the entry panel that owns it.
                             &crate::app::shell_alive(),
                             async move {
-                                Some(crate::friends::list_friends().await)
+                                Some(crate::backend::list_friends().await)
                             },
                             move |fetched| {
                                 if let Some(Ok(list)) = fetched {
@@ -1101,15 +1092,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 // same order.
                 &crate::app::shell_alive(),
                 async move {
-                    let input = discord_server::dms::StartDmInput { user_id: uid };
-                    let dm = discord_server::dms::start_dm(input).await;
+                    let dm = crate::backend::start_dm(uid).await;
                     let history = match &dm {
-                        Ok(d) => Some(discord_server::dms::list_dm_messages(
-                            discord_server::dms::ListDmMessagesInput {
-                                channel_id: d.channel_id,
-                                limit: None,
-                            },
-                        ).await),
+                        Ok(d) => Some(crate::backend::list_dm_messages(d.channel_id, None).await),
                         Err(_) => None,
                     };
                     (dm, history)
@@ -1175,11 +1160,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 if kind != 1 {
                     return (None, None);
                 }
-                let Ok(dms_list) = crate::dms::list_dms().await else { return (None, None); };
+                let Ok(dms_list) = crate::backend::list_dms().await else { return (None, None); };
                 if !dms_list.iter().any(|d| d.channel_id == dm_id) {
                     return (None, None); // stale saved DM: keep the default (closed panel)
                 }
-                (Some(dms_list), Some((dm_id, crate::dms::list_dm_messages(dm_id, None).await)))
+                (Some(dms_list), Some((dm_id, crate::backend::list_dm_messages(dm_id, None).await)))
             },
             move |fetched| {
                 let (dms_list, payload) = fetched;
@@ -1209,7 +1194,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
 
     // Live "Invite People" flow (real backend, live mode only): the `USER_PLUS`
     // action in the live channel header opens this overlay, which mints a real
-    // invite via `invite::create_invite` against `active_live_server` and shows
+    // invite via `crate::backend::create_invite` against `active_live_server` and shows
     // the resulting code in `InviteLinkDisplay` (whose Copy button now writes
     // the link to the system clipboard). `live_invite_code` holds the freshly
     // minted code (None until created); `live_invite_error` carries a backend

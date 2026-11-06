@@ -32,7 +32,7 @@ pub(super) struct ShellState {
     pub(super) friends_open: Signal<bool>,
     pub(super) friends_snap: Signal<Vec<crate::friends_view::FriendRow>>,
     pub(super) friends_tab: Signal<u8>,
-    pub(super) gateway: server::UseSocket<discord_server::server_settings::WsServerMsg, discord_server::server_settings::WsClientMsg>,
+    pub(super) gateway: crate::backend::Gateway,
     pub(super) has_more_earlier: Signal<bool>,
     pub(super) invite_created: Signal<Option<discord_server::invites::Invite>>,
     pub(super) invite_err: Signal<String>,
@@ -165,9 +165,9 @@ pub(super) fn enter_live_server(
     runtime_core::spawn_then_in(
         &crate::app::shell_alive(),
         async move {
-            let channels = crate::servers::list_channels(sid).await.ok();
-            let members = crate::moderation::list_members(sid).await.ok();
-            let counts = crate::servers::unread_counts(sid).await.ok();
+            let channels = crate::backend::list_channels(sid).await.ok();
+            let members = crate::backend::list_members(sid).await.ok();
+            let counts = crate::backend::unread_counts(sid).await.ok();
             (channels, members, counts)
         },
         move |(channels, members, counts)| {
@@ -194,12 +194,7 @@ pub(super) fn enter_live_server(
                     crate::auth::save_last_view_channel(sid, id);
                     // Auto-selecting does not populate the channel's messages
                     // on its own, so request History like a manual row tap.
-                    gw.send(
-                        discord_server::server_settings::WsClientMsg::History {
-                            channel_id: id,
-                            before_id: None,
-                        },
-                    );
+                    gw.request_history(id, None);
                 }
             }
             if let Some(members) = members {

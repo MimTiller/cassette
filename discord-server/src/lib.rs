@@ -23,8 +23,6 @@
 //! registry (configured in the repo's `.cargo/config.toml`), pinned to exact
 //! versions like the sibling `discord-clone` UI project.
 
-#[macro_use]
-pub mod components;
 // Permission sets, channel overwrites and the role hierarchy.
 pub mod permissions;
 pub mod roles;
@@ -97,8 +95,6 @@ pub mod membership;
 pub mod rate_limit;
 #[cfg(feature = "server")]
 pub mod session;
-// Style substrate shared by the remaining component mocks.
-pub mod style_helpers;
 
 /// Shared e2e serialization guard. Every HTTP/WebSocket e2e test installs its
 /// `Db` into the same process-wide `server::install_state` slot (the macro

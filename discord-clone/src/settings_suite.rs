@@ -13,7 +13,7 @@
 //!   every inbound gateway message, and picking a notifying level also requests
 //!   the browser `Notification` permission so browser toasts start working.
 //! - **Account** — change display name and password, both calling the REAL auth
-//!   backend (`crate::auth::change_username` / `change_password`); the session
+//!   backend (`crate::auth::rename_handle` / `change_password`); the session
 //!   token is preserved, so no re-login is needed.
 //! - **Appearance** — an accent-color picker (preset swatches). A true
 //!   dark/light theme toggle is not available to the component library in this
@@ -71,6 +71,7 @@ pub(crate) fn nav_id(label: &str) -> &'static str {
         "Overview" => "settings-nav-overview",
         "Roles" => "settings-nav-roles",
         "Members" => "settings-nav-members",
+        "Emoji" => "settings-nav-emoji",
         _ => "settings-nav-other",
     }
 }
@@ -264,7 +265,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                 return;
             }
             msg.set(String::new());
-            runtime_core::spawn_then_in(&alive, async move { crate::auth::change_username(&handle).await }, move |result| {
+            runtime_core::spawn_then_in(&alive, async move { crate::auth::rename_handle(&handle).await }, move |result| {
                 match result {
                     Ok(new_name) => {
                         msg.set(format!("Display name set to {new_name}."));
@@ -296,7 +297,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                 return;
             }
             msg.set(String::new());
-            runtime_core::spawn_then_in(&alive, async move { crate::identity::change_password(&cur_v, &new_v).await }, move |result| {
+            runtime_core::spawn_then_in(&alive, async move { crate::identity::apply_password_change(&cur_v, &new_v).await }, move |result| {
                 match result {
                     Ok(()) => {
                         msg.set("Password changed.".to_string());
@@ -372,6 +373,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
             value = cur_pw.clone(),
             on_change = on_cur_change,
             placeholder = "Current password",
+            test_id = "settings-pw-current",
             style = input_style.clone(),
         )
     };
@@ -380,6 +382,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
             value = new_pw.clone(),
             on_change = on_new_change,
             placeholder = "New password",
+            test_id = "settings-pw-new",
             style = input_style.clone(),
         )
     };
@@ -387,6 +390,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
         button(
             label = "Update password".to_string(),
             on_click = do_pw,
+            test_id = "settings-pw-save",
             style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Primary)
         )
     };
@@ -578,7 +582,7 @@ fn icon_card(icon: crate::app_icon::AppIcon, active: Signal<crate::app_icon::App
     let img = ui! {
         image(
             src = icon.data_url(),
-            alt = format!("{} cassette", icon.label()),
+            alt = format!("{} app icon", icon.label()),
             style = StyleRules {
                 width: Some(px(56.0)),
                 height: Some(px(56.0)),
@@ -686,7 +690,7 @@ fn appearance_tab(accent: Signal<String>) -> Element {
                     font_size: Some(px(12.0)),
                     color: Some(col(theme::TEXT_MUTED)),
                     ..Default::default()
-                }) { "The cassette in your browser tab.".to_string() } },
+                }) { "The app icon in your browser tab.".to_string() } },
                 ui! { view(style = StyleRules {
                     flex_direction: Some(FlexDirection::Row),
                     flex_wrap: Some(runtime_core::FlexWrap::Wrap),

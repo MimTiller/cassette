@@ -39,7 +39,7 @@ use runtime_core::{
 };
 
 use crate::app::{format_when, message_row, same_group};
-use crate::dms::{self, Dm};
+use crate::dms::Dm;
 use crate::gif_picker::{GifPicker, gif_button};
 use crate::style_helpers::{col, pct, px, section_label, rounded};
 
@@ -89,7 +89,7 @@ pub(crate) fn open_dm_with(
 ) {
     // Called from popups that close, so the reply is anchored to the shell
     // (which owns the DM state).
-    runtime_core::spawn_then_in(&crate::app::shell_alive(), dms::start_dm(user_id), move |result| {
+    runtime_core::spawn_then_in(&crate::app::shell_alive(), crate::backend::start_dm(user_id), move |result| {
         let Ok(dm) = result else {
             return;
         };
@@ -711,7 +711,7 @@ fn live_dm_conversation(
                 // The RPC must outlive this Enter handler (which clears `text`,
                 // rebuilding the composer strip).
                 runtime_core::driver::spawn_detached(async move {
-                    let _ = dms::send_dm_message(cid, body).await;
+                    let _ = crate::backend::send_dm_message(cid, body).await;
                 });
             };
             let on_send = Rc::new(do_send);
@@ -754,7 +754,7 @@ fn live_dm_conversation(
                             // appends. It must outlive this callback, which closes
                             // the picker (rebuilding the pane) before the RPC ends.
                             runtime_core::driver::spawn_detached(async move {
-                                let _ = dms::send_dm_message(cid, body).await;
+                                let _ = crate::backend::send_dm_message(cid, body).await;
                             });
                         });
                     ui! {
@@ -846,9 +846,7 @@ fn live_dm_conversation(
                         let name = rename_text.get();
                         runtime_core::spawn_then_in(
                             &al_save.clone(),
-                            discord_server::dms::rename_group_dm(
-                                discord_server::dms::RenameGroupDmInput { dm_id: cid, name },
-                            ),
+                            crate::backend::rename_group_dm(cid, name),
                             move |result| {
                                 if result.is_ok() {
                                     renaming.set(false);

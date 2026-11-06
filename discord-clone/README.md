@@ -1,6 +1,6 @@
 # discord-clone: architecture notes
 
-This is the client crate of [Cassette](../README.md). The top-level README
+This is the client crate of [RWND](../README.md). The top-level README
 covers features, setup and configuration; this page covers how the pieces fit
 together and how authentication works.
 

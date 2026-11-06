@@ -86,15 +86,15 @@ pub(super) fn build(s: &ShellState) -> ModalsParts {
                 // the future; the callback does the signal writes in order.
                 &crate::app::shell_alive(),
                 async move {
-                    let created = crate::servers::create_server(&name_owned).await;
+                    let created = crate::backend::create_server(name_owned).await;
                     match &created {
                         Ok(summary) => {
                             let sid = summary.id;
                             (created,
-                                Some(crate::servers::list_servers().await),
-                                Some(crate::servers::list_channels(sid).await),
-                                Some(crate::moderation::list_members(sid).await),
-                                Some(crate::servers::unread_counts(sid).await))
+                                Some(crate::backend::list_servers().await),
+                                Some(crate::backend::list_channels(sid).await),
+                                Some(crate::backend::list_members(sid).await),
+                                Some(crate::backend::unread_counts(sid).await))
                         }
                         Err(_) => (created, None, None, None, None)
                     }
@@ -141,12 +141,7 @@ pub(super) fn build(s: &ShellState) -> ModalsParts {
                                     // its own, so send it explicitly or the
                                     // fresh server sits on an empty pane until
                                     // a channel row is manually re-tapped.
-                                    gateway.send(
-                                        discord_server::server_settings::WsClientMsg::History {
-                                            channel_id: id,
-                                            before_id: None,
-                                        },
-                                    );
+                                    gateway.request_history(id, None);
                                 }
                             }
                             if let Some(Ok(members)) = Some(member_list).flatten() {

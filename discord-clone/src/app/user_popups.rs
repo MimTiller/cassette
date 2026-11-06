@@ -11,7 +11,7 @@
 use crate::theme;
 use super::*;
 
-use discord_server::profiles::{GetUserProfileInput, UserProfile};
+use crate::backend::UserProfile;
 
 /// Which popup is open, for whom, and where it was opened (window
 /// coordinates of the press).
@@ -51,12 +51,11 @@ impl UserPopupCtx {
         }
         let profile = self.profile;
         let server_id = self.server.get();
-        let input = GetUserProfileInput { user_id, server_id };
         runtime_core::spawn_then_in(
             // Anchored on the app shell: the profile signal lives there, and
             // a popup that closes tears down the node that started this fetch.
             &crate::app::shell_alive(),
-            discord_server::profiles::get_user_profile(input),
+            crate::backend::get_user_profile(user_id, server_id),
             move |result| {
                 if let Ok(p) = result {
                     profile.set(Some(p));
@@ -415,9 +414,7 @@ fn role_chips(user_id: i64, in_server: bool, label: StyleRules) -> Element {
                         // Anchored on the app shell: the success path refetches
                         // roles into shared state via mentions::load_roles.
                         &crate::app::shell_alive(),
-                        discord_server::server_roles::assign_role(
-                            discord_server::server_roles::AssignRoleInput { role_id, user_id, assigned: add },
-                        ),
+                        crate::backend::assign_role(role_id, user_id, add),
                         move |result| {
                             if result.is_ok() {
                                 if let Some(sid) = crate::mentions::server_id() {
@@ -455,10 +452,10 @@ fn friend_action(relationship: &str, user_id: i64, username: String, ctx: UserPo
         &crate::app::shell_alive(),
         async move {
             match relationship.as_str() {
-                "none" => crate::friends::send_friend_request(username).await,
-                "incoming" => crate::friends::accept_friend_request(user_id).await,
-                "outgoing" => crate::friends::decline_or_cancel(user_id).await,
-                _ => crate::friends::remove_friend(user_id).await,
+                "none" => crate::backend::send_friend_request(username).await,
+                "incoming" => crate::backend::accept_friend_request(user_id).await,
+                "outgoing" => crate::backend::decline_or_cancel(user_id).await,
+                _ => crate::backend::remove_friend(user_id).await,
             }
         },
         // The friends RPC's own result isn't read (the profile card carries

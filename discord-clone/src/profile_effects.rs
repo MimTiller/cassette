@@ -167,8 +167,7 @@ pub fn ProfileEffects() -> Element {
     let error = signal(String::new());
     {
         let me = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
-        let input = discord_server::profiles::GetUserProfileInput { user_id: me, server_id: None };
-        runtime_core::spawn_then_in(&runtime_core::ScopeAlive::current(), discord_server::profiles::get_user_profile(input), move |result| {
+        runtime_core::spawn_then_in(&runtime_core::ScopeAlive::current(), crate::backend::get_user_profile(me, None), move |result| {
             if let Ok(p) = result {
                 decoration.set(p.avatar_decoration);
                 effect.set(p.profile_effect);
@@ -177,25 +176,23 @@ pub fn ProfileEffects() -> Element {
     }
     let pick_decoration: Rc<dyn Fn(Option<String>)> = Rc::new(move |choice| {
         error.set(String::new());
-        let input = discord_server::profiles::SetAvatarDecorationInput { decoration: choice };
-        runtime_core::spawn_then_in(&crate::app::shell_alive(), discord_server::profiles::set_avatar_decoration(input), move |result| {
+        runtime_core::spawn_then_in(&crate::app::shell_alive(), crate::backend::set_avatar_decoration(choice), move |result| {
             match result {
                 Ok(saved) => {
                     crate::auth::remember_avatar_decoration(&crate::auth::current_username(), saved.clone());
                     crate::mentions::names_changed();
                     decoration.set(saved);
                 }
-                Err(e) => error.set(crate::errors::friendly(&e)),
+                Err(e) => error.set(e),
             }
         });
     });
     let pick_effect: Rc<dyn Fn(Option<String>)> = Rc::new(move |choice| {
         error.set(String::new());
-        let input = discord_server::profiles::SetProfileEffectInput { effect: choice };
-        runtime_core::spawn_then_in(&crate::app::shell_alive(), discord_server::profiles::set_profile_effect(input), move |result| {
+        runtime_core::spawn_then_in(&crate::app::shell_alive(), crate::backend::set_profile_effect(choice), move |result| {
             match result {
                 Ok(saved) => effect.set(saved),
-                Err(e) => error.set(crate::errors::friendly(&e)),
+                Err(e) => error.set(e),
             }
         });
     });

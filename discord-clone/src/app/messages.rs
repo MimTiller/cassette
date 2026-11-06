@@ -37,7 +37,11 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
         padding_right: Some(px(16.0)),
         border_bottom_width: Some(border_width(1.0)),
         border_bottom_color: Some(col(BORDER)),
+        // A phone window can't fit title + search + all moderation icons on
+        // one line; let them wrap onto a second line instead of clipping the
+        // right-hand controls out of the header.
         flex_direction: Some(FlexDirection::Row),
+        flex_wrap: Some(FlexWrap::Wrap),
         align_items: Some(AlignItems::Center),
         gap: Some(px(8.0)),
         ..Default::default()
@@ -81,7 +85,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                     crate::auth::save_last_view_channel(sid, channel_id);
                 }
                 *live_scroll_handle.borrow_mut() = None;
-                gw.send(discord_server::server_settings::WsClientMsg::History { channel_id, before_id: None });
+                gw.request_history(channel_id, None);
             }
             live_at_bottom.set(false);
             super::jump::start(super::jump::Jump {
@@ -92,7 +96,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                 load_busy,
                 live_revision,
                 load_older: Rc::new(move |before: i64| {
-                    gw.send(discord_server::server_settings::WsClientMsg::History { channel_id, before_id: Some(before) });
+                    gw.request_history(channel_id, Some(before));
                 }),
             });
         }
@@ -100,17 +104,22 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
     let on_jump_bar = on_jump.clone();
     let header = switch(
         move || {
+            // The active live server's name rides in the key so a rename (the
+            // `ServerSettingsChanged` frame's refetch of `live_servers`) re-renders
+            // this header: the search box bakes its placeholder from the name.
+            let server_name =
+                live_servers.get().into_iter().find(|x| Some(x.id) == active_live_server.get()).map(|x| x.name).unwrap_or_default();
             (
                 active_live_channel.get(),
                 pinned_count.get(),
+                server_name,
             )
         },
-        move |(live_cid, pinned_cnt): &(Option<i64>, i64)| {
+        move |(live_cid, pinned_cnt, search_server_name): &(Option<i64>, i64, String)| {
             let header_style = header_style.clone();
             let hash_style = hash_style.clone();
             let title_style = title_style.clone();
             let moderation_style = moderation_style.clone();
-            let search_server_name = live_servers.get().into_iter().find(|x| Some(x.id) == active_live_server.get()).map(|x| x.name).unwrap_or_default();
             // [Feature 16] Real account with no live channel: don't fall
             // through to a mock header (it would show the demo `SERVERS[0]`
             // channel). Show a neutral onboarding title during the login ->
@@ -176,8 +185,8 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                                 // the panel rebuilds the header node.
                                 &crate::app::shell_alive(),
                                 async move {
-                                    (crate::pins::list_pinned(pin_live).await,
-                                     crate::pins::pinned_count(pin_live).await)
+                                    (crate::backend::list_pinned(pin_live).await,
+                                     crate::backend::pinned_count(pin_live).await)
                                 },
                                 move |pinned| {
                                     let (list, count) = pinned;
@@ -620,7 +629,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         z_index: Some(5),
                         ..Default::default()
                     }) {
-                        view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {
+                        view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }, test_id = "unread-bar-jump") {
                             text(style = StyleRules {
                                 font_size: Some(px(13.0)),
                                 font_weight: Some(FontWeight::SemiBold),
@@ -650,7 +659,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                                 // screen (the badge above already cleared), so the RPC
                                 // must outlive this row's handler.
                                 runtime_core::driver::spawn_detached(async move {
-                                    let _ = crate::servers::mark_read(cid, last_id).await;
+                                    let _ = crate::backend::mark_read(cid, last_id).await;
                                 });
                             }
                             TouchResponse::CONSUMED
@@ -716,7 +725,7 @@ impl ListRow {
 /// The handles rows need for their actions.
 #[derive(Clone)]
 struct RowCtx {
-    gateway: server::UseSocket<discord_server::server_settings::WsServerMsg, discord_server::server_settings::WsClientMsg>,
+    gateway: crate::backend::Gateway,
     editing: Signal<Option<i64>>,
     edit_text: Signal<String>,
     delete_confirm: Signal<Option<i64>>,
@@ -748,7 +757,7 @@ impl RowCtx {
                 let on_load = Rc::new(move || {
                     busy.set(true);
                     if let Some(before) = oldest {
-                        gw.send(discord_server::server_settings::WsClientMsg::History { channel_id: cid, before_id: Some(before) });
+                        gw.request_history(cid, Some(before));
                     }
                 });
                 load_earlier_button(self.load_busy, on_load)
@@ -771,9 +780,9 @@ impl RowCtx {
                 // revision live there, and this row's handler rebuilds.
                 &crate::app::shell_alive(),
                 async move {
-                    let res = crate::pins::pin_message(mid).await;
+                    let res = crate::backend::pin_message(mid).await;
                     let list = match &res {
-                        Ok(r) => Some(crate::pins::list_pinned(r.channel_id.clone()).await),
+                        Ok(r) => Some(crate::backend::list_pinned(r.channel_id.clone()).await),
                         Err(_) => None,
                     };
                     (res, list)

@@ -71,6 +71,38 @@ fn cassette_motif(x: f32, y: f32) -> Element {
     }
 }
 
+/// The login card's brand lockup: the cassette mark from `icons/` beside the
+/// RWND wordmark.
+fn login_lockup() -> Element {
+    ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Row),
+            align_items: Some(AlignItems::Center),
+            gap: Some(px(10.0)),
+            justify_content: Some(JustifyContent::Center),
+            ..Default::default()
+        }) {
+            image(
+                src = crate::app_icon::AppIcon::Sunset.data_url(),
+                alt = "RWND logo: a cassette tape with an orange label",
+                style = StyleRules {
+                    width: Some(px(44.0)),
+                    height: Some(px(44.0)),
+                    object_fit: Some(ObjectFit::Contain),
+                    ..Default::default()
+                },
+            )
+            text(style = StyleRules {
+                font_size: Some(px(26.0)),
+                font_weight: Some(FontWeight::Bold),
+                letter_spacing: Some(Tokenized::Literal(2.0)),
+                color: Some(col(TEXT)),
+                ..Default::default()
+            }) { "RWND".to_string() }
+        }
+    }
+}
+
 /// The login screen, shown while `authed` is false. One card with two tabs,
 /// "Log In" and "Sign Up". Sign-up has its own heading, a confirm-password
 /// field, a username hint and a green submit button, so the two forms don't
@@ -118,20 +150,6 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
         flex_direction: Some(FlexDirection::Column),
         align_items: Some(AlignItems::Center),
         ..rounded(12.0)
-    };
-    let logo_style = StyleRules {
-        width: Some(px(56.0)),
-        height: Some(px(56.0)),
-        align_items: Some(AlignItems::Center),
-        justify_content: Some(JustifyContent::Center),
-        background: Some(col(BUTTON)),
-        ..rounded(18.0)
-    };
-    let logo_text_style = StyleRules {
-        font_size: Some(px(26.0)),
-        font_weight: Some(FontWeight::Bold),
-        color: Some(col(TEXT)),
-        ..Default::default()
     };
     let heading_style = StyleRules {
         margin_top: Some(px(24.0)),
@@ -201,7 +219,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             error.set(String::new());
             notice.set(String::new());
             busy.set(true);
-            runtime_core::spawn_then_in(&alive, async move { crate::identity::login(&name, &pw).await }, move |result| {
+            runtime_core::spawn_then_in(&alive, async move { crate::identity::sign_in(&name, &pw).await }, move |result| {
                 match result {
                     Ok(_) => authed.set(true),
                     Err(message) => error.set(message),
@@ -232,7 +250,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             }
             error.set(String::new());
             busy.set(true);
-            runtime_core::spawn_then_in(&alive, async move { crate::identity::signup(&name, &pw).await }, move |result| {
+            runtime_core::spawn_then_in(&alive, async move { crate::identity::sign_up(&name, &pw).await }, move |result| {
                 match result {
                     Ok(_) => authed.set(true),
                     Err(message) => error.set(message),
@@ -262,7 +280,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             error.set(String::new());
             busy.set(true);
             let token = reset_token.get();
-            runtime_core::spawn_then_in(&alive, async move { crate::identity::reset_password(&token, &pw).await }, move |result| {
+            runtime_core::spawn_then_in(&alive, async move { crate::identity::apply_reset_password(&token, &pw).await }, move |result| {
                 match result {
                     Ok(name) => {
                         crate::auth::clear_reset_token_from_url();
@@ -628,9 +646,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             cassette_motif(-460.0, -60.0)
             cassette_motif(420.0, 80.0)
             view(style = card_style) {
-                view(style = logo_style) {
-                    text(style = logo_text_style) { "C".to_string() }
-                }
+                login_lockup()
                 form
             }
         }

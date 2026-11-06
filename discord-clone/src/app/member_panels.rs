@@ -402,7 +402,7 @@ pub(super) fn live_member_panel(
                                     &crate::app::shell_alive(),
                                     async move {
                                         let kicked = crate::moderation::kick_member(sid, uid).await;
-                                        let roster = if kicked.is_ok() { Some(crate::moderation::list_members(sid).await) } else { None };
+                                        let roster = if kicked.is_ok() { Some(crate::backend::list_members(sid).await) } else { None };
                                         (kicked, roster)
                                     },
                                     move |kicked_and| {
@@ -465,8 +465,8 @@ pub(super) fn live_member_panel(
                                     // rebuilds the row it belongs to.
                                     &crate::app::shell_alive(),
                                     async move {
-                                        let banned = crate::moderation::ban_member(sid, uid, None).await;
-                                        let roster = if banned.is_ok() { Some(crate::moderation::list_members(sid).await) } else { None };
+                                        let banned = crate::backend::ban_member(sid, uid, None).await.map(|_| ());
+                                        let roster = if banned.is_ok() { Some(crate::backend::list_members(sid).await) } else { None };
                                         (banned, roster)
                                     },
                                     move |banned_and| {
@@ -543,7 +543,7 @@ pub(super) fn live_member_panel(
                                     // own write clears the row's confirm state,
                                     // rebuilding the node that started it.
                                     &crate::app::shell_alive(),
-                                    crate::moderation::timeout_member(sid, uid, secs),
+                                    crate::backend::timeout_member(sid, uid, secs),
                                     move |timed_out| {
                                         timeout.set(None);
                                         if let Err(msg) = timed_out {

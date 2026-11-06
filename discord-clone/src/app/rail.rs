@@ -57,7 +57,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
     // nothing while connected; a small yellow dot while reconnecting
     // (`Connecting`) and a red one while `Closed` / `Error`.
     let conn_indicator = switch(
-        move || format!("{:?}", gateway.status()),
+        move || format!("{:?}", gateway.connection_status()),
         move |status: &String| {
             // Nothing while connected (`Open`) or before the first connect
             // reaches a steady state; a small dot only for trouble:
@@ -75,7 +75,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                         height: Some(px(8.0)),
                         background: Some(col(color)),
                         ..rounded(4.0)
-                    }) {}
+                    }, test_id = "conn-dot") {}
                 }
             } else {
                 ui! {
@@ -162,7 +162,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                         runtime_core::spawn_then_in(
                             &crate::app::shell_alive(),
                             async move {
-                                (crate::dms::list_dms().await, crate::friends::list_friends().await)
+                                (crate::backend::list_dms().await, crate::backend::list_friends().await)
                             },
                             move |dms_and_friends| {
                                 let (dms, friends_list) = dms_and_friends;
@@ -308,6 +308,7 @@ fn rail_server_tile(
             image(
                 src = crate::auth::media_url(url),
                 alt = s.name.clone(),
+                test_id = "rail-server-icon",
                 style = StyleRules {
                     width: Some(px(48.0)),
                     height: Some(px(48.0)),

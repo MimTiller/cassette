@@ -6,18 +6,17 @@ license = "MIT OR Apache-2.0"
 
 # Full-stack server project for the Discord clone — the backend half.
 #
-# This is the idealyst-native "server target": a single crate that is BOTH
-# the web client (a plain idealyst app built to wasm) and the API server.
+# This is the idealyst-native "server target": a single crate that hosts
+# the `#[server]` API AND serves the built wasm UI bundle (from the
+# sibling `discord-clone` project) at `/`, so the whole app — UI + API
+# — comes from one process. It ships no UI code of its own.
 #
-#   - The web client is an idealyst app — `pub fn app() -> Element`, built
-#     via `idealyst build --web` into a wasm bundle in `pkg/`.
 #   - The server (`--bin server --features server`) hosts the `#[server]`
-#     API at `/_srv/*` AND serves the static bundle at `/`, so the whole
-#     app — UI + API — comes from one process at `http://127.0.0.1:3000`.
-#   - The `#[server]` macro keys off the `server` cargo feature to emit real
-#     fn bodies (server) vs RPC stubs (client). The wasm build uses default
-#     features (stubs); the server bin uses `--features server` (bodies +
-#     inventory registration).
+#     API at `/_srv/*` AND serves the static bundle at `/`, one process.
+#   - The `#[server]` macro keys off the `server` cargo feature to emit
+#     real fn bodies (server) vs RPC stubs (client). The wasm client
+#     build uses default features (stubs); the server bin uses
+#     `--features server` (bodies + inventory registration).
 #
 # Data layer: users / servers / channels / messages / server_memberships,
 # persisted in SQLite (rusqlite, bundled) via numbered SQL migrations under
@@ -61,18 +60,8 @@ server = [
 sidecar = ["dep:dev-server"]
 
 [dependencies]
-# The platform surface, used by `src/main.rs` only. It carries whatever the
-# target needs — `backend-web` + the wasm-bindgen glue on wasm, a native
-# shell otherwise — so this manifest names no backend directly and `cargo
-# build` alone produces a runnable artifact.
-idealyst = { version = "=4.1.0", registry = "idealyst" }
-# The author surface. `runtime-core` is the crate this project aliases to
-# `runtime_core` at its root (see src/lib.rs). `runtime-vocabulary` is
-# needed because the `ui!` emission spells absolute
-# `::runtime_vocabulary::glue::…` paths, and `runtime-scene` because
-# `register_scene_extensions` is generic over the scene `Registry` host.
-runtime-core = { version = "=3.3.0", registry = "idealyst" }
-runtime-vocabulary = { version = "=4.7.0", registry = "idealyst" }
+# `runtime-scene` is needed because `register_scene_extensions` is generic
+# over the scene `Registry` host (the CLI-generated wrappers call it).
 runtime-scene = { version = "=1.11.0", registry = "idealyst" }
 # Server-functions SDK. The `#[server]` attribute macro + the client RPC
 # transport live here; enabling its `server` feature (via the `server`
