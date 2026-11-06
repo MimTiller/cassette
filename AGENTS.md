@@ -11,7 +11,14 @@ Run these from the repo root. All must pass, with no new warnings from `cargo` o
 (cd discord-server && cargo check --features server && cargo test --features server)
 (cd discord-clone && cargo check && cargo test)
 idealyst lint discord-clone
+sh tools/check-backend-boundary.sh
 ```
+
+`tools/check-backend-boundary.sh` enforces the client/backend seam: UI files
+in `discord-clone/src` outside `discord-clone/src/backend/` may reach a `#[server]`
+function only through `crate::backend`, and may only open the gateway socket
+inside the seam. It exits 0 when the boundary holds and 1 with a `file:line`
+list of the violations.
 
 For a UI change, also look at it in a browser (see "Testing in a browser"),
 driving it through the idealyst MCP server (see "Driving the app").
