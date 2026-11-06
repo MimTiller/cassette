@@ -64,8 +64,8 @@ fn close_dms(app: &mut App) {
     app.test_id("dm-done-pill").click();
     // On a phone an opened conversation switched the pane to Chat, so the
     // profile bar (and its settings gear) stays hidden until the pane closes.
-    if app.test_id("dm-mobile-back").is_visible() {
-        app.test_id("dm-mobile-back").click();
+    if app.test_id("mobile-back").is_visible() {
+        app.test_id("mobile-back").click();
     }
     app.test_id("user-settings").assert_visible();
 }

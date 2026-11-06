@@ -128,6 +128,11 @@ fn switching_the_theme_recolours_the_app(app: &mut App) {
 /// press the Server Settings row, leaving the panel up on Overview.
 fn open_server_settings(app: &mut App) {
     app.set_timeout(WAIT);
+    // A phone may sit in the Chat pane (select_general opened it); the
+    // sidebar header with the dropdown lives in the List pane, so close it.
+    if app.test_id("mobile-back").is_visible() {
+        app.test_id("mobile-back").click();
+    }
     app.test_id("server-header").click();
     if !app.test_id("menu-server-settings").is_visible() {
         known_bug(
