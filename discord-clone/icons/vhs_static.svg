@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 420" preserveAspectRatio="xMidYMin slice">
+  <style>
+    @keyframes roll{from{transform:translateY(-120px)}to{transform:translateY(440px)}}
+    @keyframes jitter{0%,100%{transform:translate(0,0)}25%{transform:translate(-40px,-30px)}50%{transform:translate(30px,-60px)}75%{transform:translate(-20px,-10px)}}
+    @keyframes blink{50%{opacity:0}}
+    .band{animation:roll 6s linear infinite}
+    .grain{animation:jitter .4s steps(1) infinite}
+    .blink{animation:blink 1.6s steps(1) infinite}
+    @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+  </style>
+  <defs>
+    <pattern id="lines" width="4" height="4" patternUnits="userSpaceOnUse"><rect width="4" height="2" fill="#000000" opacity=".16"/></pattern>
+    <filter id="noise" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .9 -.25"/></filter>
+    <linearGradient id="track" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0"/><stop offset=".45" stop-color="#7fe6ff" stop-opacity=".14"/><stop offset=".55" stop-color="#ff7fd0" stop-opacity=".14"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect class="grain" x="-60" y="-80" width="420" height="580" filter="url(#noise)" opacity=".16"/>
+  <rect width="300" height="420" fill="url(#lines)"/>
+  <rect class="band" width="300" height="90" fill="url(#track)"/>
+  <g class="blink" fill="#ffffff" opacity=".9"><path d="M268 14l14 8-14 8z"/></g>
+</svg>

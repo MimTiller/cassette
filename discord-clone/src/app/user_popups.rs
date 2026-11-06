@@ -188,6 +188,7 @@ fn profile_card(
     presence: Rc<RefCell<HashMap<i64, String>>>,
 ) -> Element {
     let (left, top) = place(x, y, CARD_W, CARD_H);
+    let effect = signal(profile.as_ref().and_then(|p| p.profile_effect.clone()));
     let frame = StyleRules {
         position: Some(Position::Absolute),
         left: Some(px(left)),
@@ -352,6 +353,7 @@ fn profile_card(
                 view(style = StyleRules { height: Some(px(16.0)), ..Default::default() }) {}
                 { actions }
             }
+            crate::profile_effects::EffectOverlay(effect, "profile-effect")
         }
         .on_touch(|_| TouchResponse::CONSUMED)
     }

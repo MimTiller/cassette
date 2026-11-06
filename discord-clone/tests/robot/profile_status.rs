@@ -152,7 +152,7 @@ fn cat_ears_reach_the_other_browser_and_come_off_again(app: &mut App) {
 
     // A picks cat ears: the preview wears them, and so does A's row on B's rail.
     open_user_settings(app);
-    app.test_id("settings-nav-profile").click();
+    app.test_id("settings-nav-profile-effects").click();
     app.test_id("profile-decoration-cat-ears").click();
     app.test_id("avatar-decoration").assert_visible();
     shot(app, "ears1-preview");
@@ -168,11 +168,60 @@ fn cat_ears_reach_the_other_browser_and_come_off_again(app: &mut App) {
 
     // A takes them off again, and they leave B's rail without a reload.
     open_user_settings(app);
-    app.test_id("settings-nav-profile").click();
+    app.test_id("settings-nav-profile-effects").click();
     app.test_id("profile-decoration-none").click();
     let gone = eventually(10, || !other.app.test_id("avatar-decoration").is_visible());
     assert!(gone, "B still sees the ears A took off");
     app.press_key("Escape");
+    sign_out(app);
+}
+
+#[robot_test]
+fn a_profile_effect_shows_on_the_card_and_comes_off_again(app: &mut App) {
+    let crew = crew("fx");
+    signed_out(app);
+    sign_in_as(app, &crew.a);
+    app.text(&crew.server).assert_visible();
+    app.text("general").click();
+    app.set_timeout(WAIT);
+
+    // A picks an effect: the preview draws it straight away, and every other
+    // decoration in the catalog can go on beside it.
+    open_user_settings(app);
+    app.test_id("settings-nav-profile-effects").click();
+    assert!(!app.test_id("profile-effect-preview").is_visible(), "nobody starts with an effect");
+    app.test_id("profile-effect-starfield").click();
+    app.test_id("profile-effect-preview").assert_visible();
+    for tile in ["cassette-reels", "halo", "flower-crown", "sparkles"] {
+        app.test_id(&format!("profile-decoration-{tile}")).click();
+        app.test_id("avatar-decoration").assert_visible();
+    }
+    shot(app, "fx1-preview");
+    app.press_key("Escape");
+
+    // B opens A's card and finds the saved effect on it. Every member row
+    // carries `member-row-name`, so take A by name.
+    let mut other = open_browser(&fresh_name("fxwatch"));
+    sign_in_as(&mut other.app, &crew.b);
+    other.app.text(&crew.server).assert_visible();
+    other.app.set_timeout(WAIT);
+    other.app.text(&crew.a.name).click();
+    other.app.text("Member since").assert_visible();
+    other.app.test_id("profile-effect").assert_visible();
+    shot(&mut other.app, "fx2-b-sees-the-card");
+    other.app.press_key("Escape");
+
+    // A takes it off again, and the next look at the card has none.
+    open_user_settings(app);
+    app.test_id("settings-nav-profile-effects").click();
+    app.test_id("profile-effect-none").click();
+    let gone = eventually(10, || !app.test_id("profile-effect-preview").is_visible());
+    assert!(gone, "the preview still shows the effect A took off");
+    app.test_id("profile-decoration-none").click();
+    app.press_key("Escape");
+    other.app.text(&crew.a.name).click();
+    other.app.text("Member since").assert_visible();
+    assert!(!other.app.test_id("profile-effect").is_visible(), "B still sees the effect A took off");
     sign_out(app);
 }
 
