@@ -491,6 +491,10 @@ fn theme_card(name: theme::ThemeName, active: Signal<theme::ThemeName>, on_pick:
         theme::ThemeName::Dark => "theme-card-dark",
         theme::ThemeName::Light => "theme-card-light",
         theme::ThemeName::Purple => "theme-card-purple",
+        theme::ThemeName::Sunset => "theme-card-sunset",
+        theme::ThemeName::Miami => "theme-card-miami",
+        theme::ThemeName::Memphis => "theme-card-memphis",
+        theme::ThemeName::Bubblegum => "theme-card-bubblegum",
     };
     let bar = |w: f32, c: &str| ui! {
         view(style = StyleRules {
