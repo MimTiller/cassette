@@ -118,11 +118,22 @@ pub fn signed_out(app: &mut App) {
     for _ in 0..3 {
         app.press_key("Escape");
     }
+    // Escape closes dialogs/menus; full-screen overlays close through their
+    // Done pill — the DM screen's own, then any other panel's label.
     for _ in 0..3 {
-        if !app.label("Done").is_visible() {
+        if app.test_id("dm-done-pill").is_visible() {
+            app.test_id("dm-done-pill").click();
+        } else if app.label("Done").is_visible() {
+            app.label("Done").click();
+        } else {
             break;
         }
-        app.label("Done").click();
+    }
+    // A phone test that failed in the Chat or DM pane leaves the profile
+    // bar (and its settings gear) hidden: the pane header's back button
+    // drives it onto the rail.
+    if app.test_id("mobile-back").is_visible() {
+        app.test_id("mobile-back").click();
     }
     if app.text("Online").is_visible() {
         sign_out(app);
