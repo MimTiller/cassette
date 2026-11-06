@@ -70,7 +70,11 @@ pub(super) fn user_panel(
             let row_style = StyleRules {
                 min_height: Some(px(32.0)),
                 gap: Some(px(8.0)),
-                flex_direction: Some(FlexDirection::Row),
+                // A phone's panel sits in the narrow 72px rail: stacked as a
+                // column, the avatar, the readable name/status line and the
+                // icon buttons each get their own line; on a desktop sidebar
+                // the row has room for all of them side by side.
+                flex_direction: Some(if crate::app::mobile::is_phone() { FlexDirection::Column } else { FlexDirection::Row }),
                 align_items: Some(AlignItems::Center),
                 ..Default::default()
             };
@@ -94,20 +98,27 @@ pub(super) fn user_panel(
             // The shared 10px presence dot, ring cut out in the panel's own
             // fill — the one convention used on every avatar surface.
             let dot = crate::avatar_chip::presence_dot(status.color(), USER_BAR);
-            let text_stack = StyleRules {
+            let text_stack = move || StyleRules {
                 flex_direction: Some(FlexDirection::Column),
-                flex_grow: Some(grow(1.0)),
-                // Only this column absorbs row shrinkage (the avatar and the
-                // icon buttons are fixed): the name must keep ~40px so "you"
-                // renders in full instead of clipping to "yo".
-                min_width: Some(px(40.0)),
+                // A phone's panel is the narrow 72px rail: nothing absorbs the
+                // row, so the avatar, the name/status stack and each icon
+                // button wrap onto their own lines inside it. The stack keeps
+                // its natural width — the status line ("Online") stays
+                // readable and the name clamps to one line.
+                flex_grow: Some(grow(if crate::app::mobile::is_phone() { 0.0 } else { 1.0 })),
                 overflow: Some(Overflow::Hidden),
                 ..Default::default()
             };
-            let name_style = StyleRules {
+            // On a phone the row is the whole window less the rail: an
+            // unshrunk name would push the three icon buttons off the
+            // right edge. `max_lines` clamps the label to one line AND
+            // lets it shrink below its natural width (the header's
+            // server-name idiom), so the buttons keep their tap size.
+            let name_style = move || StyleRules {
                 font_size: Some(px(14.0)),
                 font_weight: Some(FontWeight::SemiBold),
                 color: Some(col(TEXT)),
+                max_lines: crate::app::mobile::is_phone().then_some(1u32),
                 ..Default::default()
             };
             let initial = display_name.chars().next().unwrap_or(' ').to_string();
@@ -292,6 +303,11 @@ pub(super) fn user_panel(
                 }
                 .on_touch(move |ev| {
                     if ev.phase == TouchPhase::Ended {
+                        // A phone shows one settings screen at a time: the
+                        // gear re-opens it on its section list, so the Log
+                        // Out row is reachable even after a test (or a user)
+                        // left a section open.
+                        crate::app::mobile::show_settings_nav(true);
                         notif_open.set(true);
                     }
                     TouchResponse::CONSUMED
