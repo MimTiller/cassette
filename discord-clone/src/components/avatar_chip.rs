@@ -15,7 +15,7 @@
 use crate::theme;
 use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
-    ui, AlignItems, Element, FontWeight, JustifyContent, ObjectFit, Position,
+    component, ui, AlignItems, Element, FontWeight, JustifyContent, ObjectFit, Position,
     StyleRules, Tokenized,
 };
 
@@ -117,22 +117,43 @@ pub fn grow(v: f32) -> Tokenized<f32> {
 pub const PRESENCE_DOT_PX: f32 = 10.0;
 pub const PRESENCE_RING_PX: f32 = 2.0;
 
+/// The box every avatar on every surface sits in: `size` square and
+/// `Position::Relative`, with the chip as its child. Surfaces that draw their
+/// own chip wrap it in this; [`avatar_chip`] and [`avatar_chip_url`] do it for
+/// everyone else.
+#[component]
+pub fn AvatarFrame(#[prop(static)] size: f32, children: Vec<Element>) -> Element {
+    ui! {
+        view(style = StyleRules {
+            position: Some(Position::Relative),
+            width: Some(px(size)),
+            height: Some(px(size)),
+            flex_shrink: Some(grow(0.0)),
+            ..Default::default()
+        }) {
+            { children }
+        }
+    }
+}
+
 /// A circle chip from an explicit avatar URL (already gated mountable by the
 /// caller): cover-cropped at `size`, radius always size/2.
 pub fn avatar_chip_url(name: &str, url: &str, size: f32) -> Element {
     let radius = size / 2.0;
     ui! {
-        image(
-            src = crate::auth::media_url(url.to_string()),
-            alt = format!("{} avatar", name),
-            style = StyleRules {
-                width: Some(px(size)),
-                height: Some(px(size)),
-                flex_shrink: Some(grow(0.0)),
-                object_fit: Some(ObjectFit::Cover),
-                ..rounded(radius)
-            },
-        )
+        AvatarFrame(size = size) {
+            image(
+                src = crate::auth::media_url(url.to_string()),
+                alt = format!("{} avatar", name),
+                style = StyleRules {
+                    width: Some(px(size)),
+                    height: Some(px(size)),
+                    flex_shrink: Some(grow(0.0)),
+                    object_fit: Some(ObjectFit::Cover),
+                    ..rounded(radius)
+                },
+            )
+        }
     }
 }
 
@@ -147,21 +168,23 @@ pub fn avatar_chip(name: &str, tint: &str, size: f32) -> Element {
         avatar_chip_url(name, url.as_str(), size)
     } else {
         ui! {
-            view(style = StyleRules {
-                width: Some(px(size)),
-                height: Some(px(size)),
-                flex_shrink: Some(grow(0.0)),
-                align_items: Some(AlignItems::Center),
-                justify_content: Some(JustifyContent::Center),
-                background: Some(col(tint)),
-                ..rounded(radius)
-            }) {
-                text(style = StyleRules {
-                    font_size: Some(px(size * 0.44)),
-                    font_weight: Some(FontWeight::Bold),
-                    color: Some(col(theme::TEXT_STRONG)),
-                    ..Default::default()
-                }) { initial }
+            AvatarFrame(size = size) {
+                view(style = StyleRules {
+                    width: Some(px(size)),
+                    height: Some(px(size)),
+                    flex_shrink: Some(grow(0.0)),
+                    align_items: Some(AlignItems::Center),
+                    justify_content: Some(JustifyContent::Center),
+                    background: Some(col(tint)),
+                    ..rounded(radius)
+                }) {
+                    text(style = StyleRules {
+                        font_size: Some(px(size * 0.44)),
+                        font_weight: Some(FontWeight::Bold),
+                        color: Some(col(theme::TEXT_STRONG)),
+                        ..Default::default()
+                    }) { initial }
+                }
             }
         }
     }

@@ -28,6 +28,7 @@
 //!   the labels reactively (the
 //!   `ServerSettingsPanel` triple, minus the paste input).
 
+use crate::avatar_chip::AvatarFrame;
 use crate::theme;
 use crate::controls::{ButtonKind};
 use crate::style_helpers::{col, px, rounded};
@@ -487,6 +488,7 @@ pub fn ProfileSettings() -> Element {
             // non-Copy is captured across the `when` boundary.
             view(style = StyleRules { justify_content: Some(JustifyContent::Center), ..Default::default() }) {
             view(style = StyleRules { cursor: Some(runtime_core::Cursor::Pointer), ..Default::default() }) {
+            AvatarFrame(size = AVATAR_PREVIEW) {
             if !avatar_url.get().is_empty() {
                 image(
                     src = move || crate::auth::media_url(avatar_url.get().clone()),
@@ -511,6 +513,7 @@ pub fn ProfileSettings() -> Element {
                     font_weight: Some(FontWeight::Bold),
                     ..rounded(AVATAR_PREVIEW / 2.0)
                 }) { avatar_letter }
+            }
             }
             }
             .on_touch(move |ev| {

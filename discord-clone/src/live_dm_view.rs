@@ -26,6 +26,7 @@
 //! frame, the effect buffers and bumps the revision" path as the live
 //! channel composer in `app.rs`.
 
+use crate::avatar_chip::AvatarFrame;
 use crate::theme;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -390,8 +391,10 @@ fn live_dm_row(
         }
     } else {
         ui! {
-            view(style = avatar_style) {
-                text(style = initial_style) { initial }
+            AvatarFrame(size = 34.0_f32) {
+                view(style = avatar_style) {
+                    text(style = initial_style) { initial }
+                }
             }
         }
     };
