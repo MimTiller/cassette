@@ -12,7 +12,7 @@
 //!   every inbound gateway message, and picking a notifying level also requests
 //!   the browser `Notification` permission so browser toasts start working.
 //! - **Account** — change display name and password, both calling the REAL auth
-//!   backend (`crate::auth::change_username` / `change_password`); the session
+//!   backend (`crate::auth::rename_handle` / `change_password`); the session
 //!   token is preserved, so no re-login is needed.
 //! - **Appearance** — an accent-color picker (preset swatches). A true
 //!   dark/light theme toggle is not available to the component library in this
@@ -262,7 +262,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                 return;
             }
             msg.set(String::new());
-            runtime_core::spawn_then_in(&alive, async move { crate::auth::change_username(&handle).await }, move |result| {
+            runtime_core::spawn_then_in(&alive, async move { crate::auth::rename_handle(&handle).await }, move |result| {
                 match result {
                     Ok(new_name) => {
                         msg.set(format!("Display name set to {new_name}."));
@@ -294,7 +294,7 @@ fn account_tab(blocked: Signal<Vec<crate::blocks::BlockedUser>>, live_rev: Signa
                 return;
             }
             msg.set(String::new());
-            runtime_core::spawn_then_in(&alive, async move { crate::identity::change_password(&cur_v, &new_v).await }, move |result| {
+            runtime_core::spawn_then_in(&alive, async move { crate::identity::apply_password_change(&cur_v, &new_v).await }, move |result| {
                 match result {
                     Ok(()) => {
                         msg.set("Password changed.".to_string());

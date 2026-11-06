@@ -5,8 +5,3 @@
 //! later replaces only the implementation files under `crate::backend`.
 
 pub use discord_server::dms::Dm;
-
-pub use crate::backend::{
-    add_group_dm_member, create_group_dm, list_dm_messages, list_dms, remove_group_dm_member,
-    rename_group_dm, send_dm_message, start_dm,
-};

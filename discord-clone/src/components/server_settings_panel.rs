@@ -22,7 +22,7 @@
 //! any successful op the caller's `servers` list (and thus the rail's live
 //! section) is re-fetched via `crate::servers::list_servers`, so the renamed
 //! name / new icon appear without a reload; after a successful add the roster
-//! (`members`) is re-fetched via `crate::moderation::list_members`, so the new
+//! (`members`) is re-fetched via `crate::backend::list_members`, so the new
 //! member's row appears.
 //!
 //! Idioms (verified against `delete_channel_modal.rs`): one `switch` keyed on
@@ -154,9 +154,9 @@ pub fn ServerSettingsPanel(
         runtime_core::spawn_then_in(
             &crate::app::shell_alive(),
             async move {
-                let renamed = crate::servers::rename_server(sid0, &new_name).await;
+                let renamed = crate::backend::rename_server(sid0, new_name).await;
                 let list = match renamed {
-                    Ok(_) => crate::servers::list_servers().await.ok(),
+                    Ok(_) => crate::backend::list_servers().await.ok(),
                     Err(_) => None,
                 };
                 (renamed, list)
@@ -231,9 +231,9 @@ pub fn ServerSettingsPanel(
                 } else {
                     None
                 };
-                match crate::servers::set_server_icon(sid0, icon_opt).await {
+                match crate::backend::set_server_icon(sid0, icon_opt).await {
                     Ok(r) => {
-                        let servers = if let Ok(list) = crate::servers::list_servers().await { Some(list) } else { None };
+                        let servers = if let Ok(list) = crate::backend::list_servers().await { Some(list) } else { None };
                         IconOutcome { skipped: false, err: None, icon_url: Some(r.icon_url.clone().unwrap_or_default()), servers }
                     }
                     Err(msg) => IconOutcome { skipped: false, err: Some(msg), icon_url: None, servers: None },
@@ -273,12 +273,12 @@ pub fn ServerSettingsPanel(
                 runtime_core::spawn_then_in(
                     &crate::app::shell_alive(),
                     async move {
-                        let transferred = crate::servers::transfer_server_ownership(sid0, new_owner_id).await;
+                        let transferred = crate::backend::transfer_server_ownership(sid0, new_owner_id).await;
                         if transferred.is_err() {
                             return (transferred, None, None);
                         }
-                        let servers = crate::servers::list_servers().await.ok();
-                        let members = crate::moderation::list_members(sid0).await.ok();
+                        let servers = crate::backend::list_servers().await.ok();
+                        let members = crate::backend::list_members(sid0).await.ok();
                         (transferred, servers, members)
                     },
                     move |(transferred, servers, members)| {
@@ -328,8 +328,8 @@ pub fn ServerSettingsPanel(
                 runtime_core::spawn_then_in(
                     &crate::app::shell_alive(),
                     async move {
-                        let added = crate::moderation::add_member(sid0, user_id).await;
-                        let members = if added.is_ok() { crate::moderation::list_members(sid0).await.ok() } else { None };
+                        let added = crate::backend::add_member(sid0, user_id).await.map(|_| ());
+                        let members = if added.is_ok() { crate::backend::list_members(sid0).await.ok() } else { None };
                         (added, members)
                     },
                     move |(added, members)| {

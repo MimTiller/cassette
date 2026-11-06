@@ -19,7 +19,7 @@
 /// `None` to clear, or a `data:image/{png,jpeg,webp,gif};base64,` URL (≤256 KB)
 /// to set; the backend validates the prefix and size and its rejection comes
 /// back as the `Err` string. Self-only: the acting user is the bearer token.
-pub async fn set_avatar(avatar: Option<String>) -> Result<Option<String>, String> {
+pub async fn update_avatar(avatar: Option<String>) -> Result<Option<String>, String> {
     crate::backend::set_avatar(avatar).await.map(|r| r.avatar_url)
 }
 
@@ -44,7 +44,7 @@ pub async fn set_avatar(avatar: Option<String>) -> Result<Option<String>, String
 /// Returns `Err(message)` for any failure — a duplicate handle, a missing
 /// session (not logged in), or a transport-level `ServerError`.
 /// The message is user-facing text from `errors::friendly`.
-pub async fn change_username(new_username: &str) -> Result<String, String> {
+pub async fn rename_handle(new_username: &str) -> Result<String, String> {
     match crate::backend::change_username(new_username.to_string()).await {
         Ok(result) => {
             *CURRENT_USERNAME.lock().unwrap_or_else(|p| p.into_inner()) =

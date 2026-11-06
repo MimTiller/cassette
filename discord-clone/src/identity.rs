@@ -234,7 +234,7 @@ pub fn remember_provider(raw_id: String) {
 
 /// Authenticate with username + password; returns the account's numeric id
 /// on success, or a user-facing message on failure.
-pub async fn login(username: &str, password: &str) -> Result<i64, String> {
+pub async fn sign_in(username: &str, password: &str) -> Result<i64, String> {
     let kind = current_provider();
     match kind {
         ProviderKind::Password =>
@@ -243,7 +243,7 @@ pub async fn login(username: &str, password: &str) -> Result<i64, String> {
 }
 
 /// Create a new account and sign it in; returns the account's numeric id.
-pub async fn signup(username: &str, password: &str) -> Result<i64, String> {
+pub async fn sign_up(username: &str, password: &str) -> Result<i64, String> {
     let kind = current_provider();
     match kind {
         ProviderKind::Password =>
@@ -252,7 +252,7 @@ pub async fn signup(username: &str, password: &str) -> Result<i64, String> {
 }
 
 /// Change the signed-in account's password.
-pub async fn change_password(current: &str, next: &str) -> Result<(), String> {
+pub async fn apply_password_change(current: &str, next: &str) -> Result<(), String> {
     match current_provider() {
         ProviderKind::Password => PasswordAuth::change_password(current, next).await,
     }
@@ -260,7 +260,7 @@ pub async fn change_password(current: &str, next: &str) -> Result<(), String> {
 
 /// Set a new password with the token from a reset link; returns the
 /// account's username so the login form can be filled in.
-pub async fn reset_password(token: &str, new_password: &str) -> Result<String, String> {
+pub async fn apply_reset_password(token: &str, new_password: &str) -> Result<String, String> {
     match current_provider() {
         ProviderKind::Password => PasswordAuth::reset_password(token, new_password).await,
     }

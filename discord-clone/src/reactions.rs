@@ -7,6 +7,6 @@
 //! Permission model (enforced by the backend, not here): reacting is
 //! allowed for ANY member of the message's channel's server (Discord
 //! parity), unlike pinning (moderator+). A guest (no session token) gets
-//! `Err("unauthenticated")`.
-
-pub use crate::backend::{add_reaction, remove_reaction};
+//! `Err("unauthenticated")`. The UI calls `crate::backend::add_reaction`
+//! / `crate::backend::remove_reaction` directly; this module keeps only
+//! the permission notes for readers.

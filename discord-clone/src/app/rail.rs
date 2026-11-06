@@ -162,7 +162,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
                         runtime_core::spawn_then_in(
                             &crate::app::shell_alive(),
                             async move {
-                                (crate::dms::list_dms().await, crate::friends::list_friends().await)
+                                (crate::backend::list_dms().await, crate::backend::list_friends().await)
                             },
                             move |dms_and_friends| {
                                 let (dms, friends_list) = dms_and_friends;

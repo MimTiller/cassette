@@ -132,7 +132,7 @@ async fn upload_server_icon(mime: String, data_b64: String) -> Result<String, St
     let sid = crate::mentions::server_id().ok_or_else(|| "no active live server".to_string())?;
     let bytes = crate::profile_settings::b64_decode(&data_b64)?;
     let url = crate::profile_settings::validate_and_encode_small_image(&mime, &bytes, "icon")?;
-    match crate::servers::set_server_icon(sid, Some(url)).await {
+    match crate::backend::set_server_icon(sid, Some(url)).await {
         Ok(res) => Ok(res.icon_url.clone().unwrap_or_default()),
         Err(e) => Err(e),
     }

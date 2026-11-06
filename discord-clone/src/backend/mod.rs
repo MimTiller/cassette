@@ -518,29 +518,47 @@ pub async fn rename_group_dm(dm_id: i64, name: String) -> Result<Dm, String> {
 // --- the friends and blocks accessors ---------------------------------------
 
 pub async fn list_friends() -> Result<FriendList, String> {
-    CassetteBackend::list_friends().await.map_err(|e| crate::errors::friendly(&e))
+    let list = CassetteBackend::list_friends().await.map_err(|e| crate::errors::friendly(&e))?;
+    remember_friend_avatars(list.clone());
+    Ok(list)
+}
+
+/// Pull every participant of a friends list into the shared avatar and
+/// display-name registries so the friends rows draw uploaded images on a cold
+/// load.
+fn remember_friend_avatars(list: FriendList) {
+    for group in
+        list
+            .incoming
+            .iter()
+            .chain(list.outgoing.iter())
+            .chain(list.accepted.iter())
+    {
+        crate::auth::remember_avatar(group.username.as_str(), group.avatar_url.clone());
+        crate::auth::remember_display_name(group.username.as_str(), group.display_name.clone());
+    }
 }
 
 /// Send a friend request, then answer with the actor's refreshed list — the
 /// backend's `FriendChanged` frame only reaches the other user.
 pub async fn send_friend_request(username: String) -> Result<FriendList, String> {
     CassetteBackend::send_friend_request(username).await.map_err(|e| crate::errors::friendly(&e))?;
-    CassetteBackend::list_friends().await.map_err(|e| crate::errors::friendly(&e))
+    list_friends().await
 }
 
 pub async fn accept_friend_request(user_id: i64) -> Result<FriendList, String> {
     CassetteBackend::accept_friend_request(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
-    CassetteBackend::list_friends().await.map_err(|e| crate::errors::friendly(&e))
+    list_friends().await
 }
 
 pub async fn decline_or_cancel(user_id: i64) -> Result<FriendList, String> {
     CassetteBackend::decline_or_cancel(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
-    CassetteBackend::list_friends().await.map_err(|e| crate::errors::friendly(&e))
+    list_friends().await
 }
 
 pub async fn remove_friend(user_id: i64) -> Result<FriendList, String> {
     CassetteBackend::remove_friend(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
-    CassetteBackend::list_friends().await.map_err(|e| crate::errors::friendly(&e))
+    list_friends().await
 }
 
 pub async fn list_blocked() -> Result<Vec<BlockedUser>, String> {
@@ -637,7 +655,13 @@ pub async fn search_messages(server_id: i64, query: String, tz_offset_minutes: i
 // --- members, roles and permissions -----------------------------------------
 
 pub async fn list_members(server_id: i64) -> Result<Vec<MemberInfo>, String> {
-    CassetteBackend::list_members(server_id).await.map_err(|e| crate::errors::friendly(&e))
+    let members = CassetteBackend::list_members(server_id).await.map_err(|e| crate::errors::friendly(&e))?;
+    // The roster is authoritative for avatars: register (or wipe) every row
+    // so the member panels, message rows and DMs draw the real image.
+    for m in members.iter() {
+        crate::auth::remember_avatar(m.username.as_str(), m.avatar_url.clone());
+    }
+    Ok(members)
 }
 
 pub async fn add_member(server_id: i64, user_id: i64) -> Result<MemberResult, String> {

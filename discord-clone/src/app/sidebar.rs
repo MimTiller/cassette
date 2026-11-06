@@ -329,7 +329,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                     // server-side read-mark isn't read by the screen.
                                     // Detached so the RPC finishes after this handler.
                                     runtime_core::driver::spawn_detached(async move {
-                                        let _ = crate::servers::mark_read(cid, 0).await;
+                                        let _ = crate::backend::mark_read(cid, 0).await;
                                     });
                                 }),
                             ));
@@ -956,7 +956,7 @@ fn server_dropdown(
                     let Some(sid) = server.get() else { return };
                     let request = async move {
                         crate::backend::leave_server(sid).await.ok()?;
-                        Some(crate::servers::list_servers().await.ok())
+                        Some(crate::backend::list_servers().await.ok())
                     };
                     // The menu that started this closes, so anchor to the shell.
                     runtime_core::spawn_then_in(&crate::app::shell_alive(), request, move |left| {

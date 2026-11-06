@@ -219,7 +219,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             error.set(String::new());
             notice.set(String::new());
             busy.set(true);
-            runtime_core::spawn_then_in(&alive, async move { crate::identity::login(&name, &pw).await }, move |result| {
+            runtime_core::spawn_then_in(&alive, async move { crate::identity::sign_in(&name, &pw).await }, move |result| {
                 match result {
                     Ok(_) => authed.set(true),
                     Err(message) => error.set(message),
@@ -250,7 +250,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             }
             error.set(String::new());
             busy.set(true);
-            runtime_core::spawn_then_in(&alive, async move { crate::identity::signup(&name, &pw).await }, move |result| {
+            runtime_core::spawn_then_in(&alive, async move { crate::identity::sign_up(&name, &pw).await }, move |result| {
                 match result {
                     Ok(_) => authed.set(true),
                     Err(message) => error.set(message),
@@ -280,7 +280,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             error.set(String::new());
             busy.set(true);
             let token = reset_token.get();
-            runtime_core::spawn_then_in(&alive, async move { crate::identity::reset_password(&token, &pw).await }, move |result| {
+            runtime_core::spawn_then_in(&alive, async move { crate::identity::apply_reset_password(&token, &pw).await }, move |result| {
                 match result {
                     Ok(name) => {
                         crate::auth::clear_reset_token_from_url();

@@ -165,9 +165,9 @@ pub(super) fn enter_live_server(
     runtime_core::spawn_then_in(
         &crate::app::shell_alive(),
         async move {
-            let channels = crate::servers::list_channels(sid).await.ok();
-            let members = crate::moderation::list_members(sid).await.ok();
-            let counts = crate::servers::unread_counts(sid).await.ok();
+            let channels = crate::backend::list_channels(sid).await.ok();
+            let members = crate::backend::list_members(sid).await.ok();
+            let counts = crate::backend::unread_counts(sid).await.ok();
             (channels, members, counts)
         },
         move |(channels, members, counts)| {

@@ -499,7 +499,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                     let sid = *server_id;
                     runtime_core::spawn_then_in(
                         &crate::app::shell_alive(),
-                        crate::moderation::list_members(sid),
+                        crate::backend::list_members(sid),
                         move |members| {
                             if let Ok(members) = members {
                                 crate::mentions::members_loaded(sid, &members);
@@ -521,7 +521,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                     let sid = *server_id;
                     runtime_core::spawn_then_in(
                         &crate::app::shell_alive(),
-                        crate::servers::list_channels(sid),
+                        crate::backend::list_channels(sid),
                         move |channels| {
                             if let Ok(channels) = channels {
                                 if let Some(open) = active_live_channel.get() {
@@ -542,7 +542,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             if let Some(discord_server::server_settings::WsServerMsg::ServerSettingsChanged { .. }) = frame {
                 runtime_core::spawn_then_in(
                     &crate::app::shell_alive(),
-                    crate::servers::list_servers(),
+                    crate::backend::list_servers(),
                     move |servers| {
                         if let Ok(servers) = servers {
                             live_servers.set(servers);
@@ -562,7 +562,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 if let Some(sid) = member_server.get() {
                     runtime_core::spawn_then_in(
                         &crate::app::shell_alive(),
-                        crate::moderation::list_members(sid),
+                        crate::backend::list_members(sid),
                         move |fresh| {
                             if let Ok(fresh) = fresh {
                                 member_roster.set(fresh);
@@ -580,7 +580,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 if member_server.get() == Some(server_id) {
                     runtime_core::spawn_then_in(
                         &crate::app::shell_alive(),
-                        crate::moderation::list_members(server_id),
+                        crate::backend::list_members(server_id),
                         move |fresh| {
                             if let Ok(fresh) = fresh {
                                 member_roster.set(fresh);
@@ -601,7 +601,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             if let Some(discord_server::server_settings::WsServerMsg::FriendChanged { .. }) = frame {
                 runtime_core::spawn_then_in(
                     &crate::app::shell_alive(),
-                    crate::friends::list_friends(),
+                    crate::backend::list_friends(),
                     move |list| {
                         if let Ok(list) = list {
                             friends_snap.set(crate::friends_view::snapshot(list));
@@ -696,7 +696,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                     // Detached: the mark-read's result isn't read by the screen, so
                     // the RPC must finish even after the row rebuilds.
                     runtime_core::driver::spawn_detached(async move {
-                        let _ = crate::servers::mark_read(cid, last_id).await;
+                        let _ = crate::backend::mark_read(cid, last_id).await;
                     });
                 }
             }

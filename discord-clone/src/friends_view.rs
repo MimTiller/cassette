@@ -27,7 +27,7 @@
 //! just a copy of All.)
 //!
 //! Rows carry: avatar chip (uploaded image once the shared client avatar
-//! registry knows the user — fed by `crate::friends` on every list landing —
+//! registry knows the user — fed by `crate::backend` on every list landing —
 //! else the initial), username, and actions: accepted rows get Message
 //! (opens/creates the DM through the existing live-DM functions via the
 //! app_shell `on_message` callback) and Remove; incoming rows get Accept /
@@ -49,7 +49,7 @@ use runtime_core::icon;
 use icons_lucide::{PLUS, USERS};
 
 use crate::avatar_chip::{avatar_chip, avatar_chip_url, registered_avatar, mountable_avatar_url};
-use crate::friends::{FriendList};
+use crate::backend::{FriendList};
 use crate::style_helpers::{col, px, rounded};
 
 // --- palette (same Discord dark palette as live_dm_view.rs) ------------------
@@ -135,7 +135,7 @@ fn name_style() -> StyleRules {
 }
 
 /// The avatar chip: the uploaded image (round-cropped) when the shared client
-/// avatar registry (`crate::auth::avatar_for`, fed by `crate::friends` on
+/// avatar registry (`crate::auth::avatar_for`, fed by `crate::backend` on
 /// every list landing) carries a RESOLVABLE URL, else the initial-letter
 /// circle. The snapshot's own `avatar_url` is consulted only as a fallback —
 /// the web backend refuses to mount an unresolvable src (broken-image
@@ -313,7 +313,7 @@ pub fn friends_screen(
                                     move || {
                                         runtime_core::spawn_then_in(
                                             &crate::app::shell_alive(),
-                                            crate::friends::accept_friend_request(uid),
+                                            crate::backend::accept_friend_request(uid),
                                             move |result| {
                                                 if let Ok(list) = result {
                                                     s.set(snapshot(list));
@@ -328,7 +328,7 @@ pub fn friends_screen(
                                     move || {
                                         runtime_core::spawn_then_in(
                                             &crate::app::shell_alive(),
-                                            crate::friends::decline_or_cancel(uid),
+                                            crate::backend::decline_or_cancel(uid),
                                             move |result| {
                                                 if let Ok(list) = result {
                                                     s.set(snapshot(list));
@@ -350,7 +350,7 @@ pub fn friends_screen(
                                     move || {
                                         runtime_core::spawn_then_in(
                                             &crate::app::shell_alive(),
-                                            crate::friends::decline_or_cancel(uid),
+                                            crate::backend::decline_or_cancel(uid),
                                             move |result| {
                                                 if let Ok(list) = result {
                                                     s.set(snapshot(list));
@@ -376,7 +376,7 @@ pub fn friends_screen(
                                     move || {
                                         runtime_core::spawn_then_in(
                                             &crate::app::shell_alive(),
-                                            crate::friends::remove_friend(uid),
+                                            crate::backend::remove_friend(uid),
                                             move |result| {
                                                 if let Ok(list) = result {
                                                     s.set(snapshot(list));
@@ -407,7 +407,7 @@ pub fn friends_screen(
                         }
                         runtime_core::spawn_then_in(
                             &crate::app::shell_alive(),
-                            crate::friends::send_friend_request(raw),
+                            crate::backend::send_friend_request(raw),
                             move |result| {
                                 match result {
                                     Ok(list) => {

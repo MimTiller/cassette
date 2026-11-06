@@ -11,5 +11,3 @@
 //! it.
 
 pub use discord_server::server_settings::PinnedMessage;
-
-pub use crate::backend::{list_pinned, pin_message, pinned_count, unpin_message};

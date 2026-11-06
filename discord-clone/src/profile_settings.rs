@@ -348,7 +348,7 @@ pub fn ProfileSettings() -> Element {
         av_error.set(String::new());
         runtime_core::spawn_then_in(
             &crate::app::shell_alive(),
-            crate::auth::set_avatar(Some(url.clone())),
+            crate::auth::update_avatar(Some(url.clone())),
             move |result| {
                 match result {
                     Ok(_) => {
@@ -454,7 +454,7 @@ pub fn ProfileSettings() -> Element {
         // teardown (same idiom as save_avatar).
         runtime_core::spawn_then_in(
             &crate::app::shell_alive(),
-            crate::auth::set_avatar(None),
+            crate::auth::update_avatar(None),
             move |result| {
                 match result {
                     Ok(_) => {
@@ -620,7 +620,7 @@ pub(crate) fn register_avatar_upload_hook(
             // spawn_then_in callback, anchored on the app shell.
             runtime_core::spawn_then_in(
                 &crate::app::shell_alive(),
-                crate::auth::set_avatar(Some(url.clone())),
+                crate::auth::update_avatar(Some(url.clone())),
                 move |result| {
                     match result {
                         Ok(_) => {

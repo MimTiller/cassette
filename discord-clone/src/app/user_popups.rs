@@ -450,10 +450,10 @@ fn friend_action(relationship: &str, user_id: i64, username: String, ctx: UserPo
         &crate::app::shell_alive(),
         async move {
             match relationship.as_str() {
-                "none" => crate::friends::send_friend_request(username).await,
-                "incoming" => crate::friends::accept_friend_request(user_id).await,
-                "outgoing" => crate::friends::decline_or_cancel(user_id).await,
-                _ => crate::friends::remove_friend(user_id).await,
+                "none" => crate::backend::send_friend_request(username).await,
+                "incoming" => crate::backend::accept_friend_request(user_id).await,
+                "outgoing" => crate::backend::decline_or_cancel(user_id).await,
+                _ => crate::backend::remove_friend(user_id).await,
             }
         },
         // The friends RPC's own result isn't read (the profile card carries

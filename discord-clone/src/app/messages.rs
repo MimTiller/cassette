@@ -185,8 +185,8 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                                 // the panel rebuilds the header node.
                                 &crate::app::shell_alive(),
                                 async move {
-                                    (crate::pins::list_pinned(pin_live).await,
-                                     crate::pins::pinned_count(pin_live).await)
+                                    (crate::backend::list_pinned(pin_live).await,
+                                     crate::backend::pinned_count(pin_live).await)
                                 },
                                 move |pinned| {
                                     let (list, count) = pinned;
@@ -659,7 +659,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                                 // screen (the badge above already cleared), so the RPC
                                 // must outlive this row's handler.
                                 runtime_core::driver::spawn_detached(async move {
-                                    let _ = crate::servers::mark_read(cid, last_id).await;
+                                    let _ = crate::backend::mark_read(cid, last_id).await;
                                 });
                             }
                             TouchResponse::CONSUMED
@@ -780,9 +780,9 @@ impl RowCtx {
                 // revision live there, and this row's handler rebuilds.
                 &crate::app::shell_alive(),
                 async move {
-                    let res = crate::pins::pin_message(mid).await;
+                    let res = crate::backend::pin_message(mid).await;
                     let list = match &res {
-                        Ok(r) => Some(crate::pins::list_pinned(r.channel_id.clone()).await),
+                        Ok(r) => Some(crate::backend::list_pinned(r.channel_id.clone()).await),
                         Err(_) => None,
                     };
                     (res, list)

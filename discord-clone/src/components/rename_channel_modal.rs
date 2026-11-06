@@ -139,9 +139,9 @@ pub fn RenameChannelModal(
         runtime_core::spawn_then_in(
             &crate::app::shell_alive(),
             async move {
-                let done = crate::servers::rename_channel(sid0, cid0, &trimmed).await;
+                let done = crate::backend::rename_channel(sid0, cid0, trimmed).await;
                 let list = match done {
-                    Ok(_) => crate::servers::list_channels(sid0).await.ok(),
+                    Ok(_) => crate::backend::list_channels(sid0).await.ok(),
                     Err(_) => None,
                 };
                 (done, list)
