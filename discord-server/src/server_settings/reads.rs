@@ -323,9 +323,9 @@ mod tests {
         // Three messages in channel 1 authored by user 1 (the owner); two of
         // them @mention user 2 (alice). The mention rows land via the live
         // gateway's resolver, exactly as the production path writes them.
-        crate::realtime::post_channel_message(&db, 1, 1, "hello @alice and @bob", None, Vec::new()).unwrap();
-        crate::realtime::post_channel_message(&db, 1, 1, "no mention here", None, Vec::new()).unwrap();
-        crate::realtime::post_channel_message(&db, 1, 1, "again @alice", None, Vec::new()).unwrap();
+        crate::realtime::post_channel_message(&db, 1, 1, "hello @alice and @bob", None, Vec::new(), None).unwrap();
+        crate::realtime::post_channel_message(&db, 1, 1, "no mention here", None, Vec::new(), None).unwrap();
+        crate::realtime::post_channel_message(&db, 1, 1, "again @alice", None, Vec::new(), None).unwrap();
 
         // User 2 (alice) has read nothing. The channel has 3 unread messages,
         // and 2 of them mention alice (the "hello" and "again" lines). The

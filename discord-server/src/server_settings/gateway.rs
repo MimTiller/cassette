@@ -32,6 +32,17 @@ pub struct AttachmentInput {
     pub data: String,
 }
 
+/// The sticker copied onto a message at send time (see `0033_server_stickers.sql`):
+/// the id, name and image path so the message still renders after the
+/// sticker itself is deleted. `None` = a text message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StickerCopy {
+    pub id: i64,
+    pub name: String,
+    /// A `/media/…` path.
+    pub image: String,
+}
+
 /// The persisted form of an image attachment (`id` = `message_attachments.id`),
 /// riding on history/live `Message` frames. `url` is a `/media/<sha>.<ext>` path
 /// (the bytes live on disk); a legacy inline `data:` URL until the one-time
@@ -82,6 +93,11 @@ pub enum WsClientMsg {
         /// Image attachments sent with this message (empty = none).
         #[serde(default)]
         attachments: Vec<AttachmentInput>,
+        /// A sticker sent instead of text (see `stickers.rs`): the sticker's
+        /// id; the server copies its name and image path onto the message so
+        /// it renders even after the sticker is deleted.
+        #[serde(default)]
+        sticker_id: Option<i64>,
     },
     /// Request the recent message history for a channel. `before_id` is the
     /// scrollback cursor: `None` for the initial load (latest `limit`), or the
@@ -175,6 +191,10 @@ pub enum WsServerMsg {
         /// `MessageEmbeds` frame.
         #[serde(default)]
         embeds: Vec<crate::link_previews::Embed>,
+        /// The sticker this message carries instead of text (copied at send
+        /// time, see [`StickerCopy`]); `None` = a text message.
+        #[serde(default)]
+        sticker: Option<StickerCopy>,
         #[serde(default)]
         seq: u64,
     },
@@ -189,6 +209,13 @@ pub enum WsServerMsg {
     },
     /// A server's custom emoji changed; members refetch them.
     EmojiChanged {
+        server_id: i64,
+        #[serde(default)]
+        seq: u64,
+    },
+    /// A server's stickers changed (one uploaded, edited or deleted); members
+    /// refetch them.
+    StickersChanged {
         server_id: i64,
         #[serde(default)]
         seq: u64,
@@ -221,6 +248,9 @@ pub enum WsServerMsg {
         author_decoration: Option<String>,
         content: String,
         created_at: i64,
+        /// The sticker this DM message carries instead of text.
+        #[serde(default)]
+        sticker: Option<StickerCopy>,
         #[serde(default)]
         seq: u64,
     },
@@ -465,6 +495,7 @@ pub async fn message_gateway(
                 content,
                 reply_to_message_id,
                 attachments,
+                sticker_id,
             } => {
                 // Success fans out through the hub (the sender's own echo
                 // included); only failures are answered on this socket.
@@ -476,6 +507,7 @@ pub async fn message_gateway(
                         &content,
                         reply_to_message_id,
                         attachments,
+                        sticker_id,
                     )
                 {
                     let _ = ch.send(WsServerMsg::Error { reason, seq: next_frame_seq() }).await;
@@ -523,6 +555,9 @@ pub async fn message_gateway(
                                 new: false,
                                 mentioned_user_ids: m.mentioned_user_ids,
                                 reply_to_message_id: m.reply_to_message_id,
+                                // The sticker copied onto the row at send time, so
+                                // a cold history load renders it like the live echo.
+                                sticker: m.sticker,
                                 // Cold-load persistence: history frames carry the
                                 // message's persisted reactions, with
                                 // `reacted_by_me` relative to the socket's own user.

@@ -153,6 +153,10 @@ pub fn validate_group_name(name: &str) -> Result<Option<String>, String> {
 pub struct SendDmMessageInput {
     pub channel_id: i64,
     pub content: String,
+    /// A sticker sent instead of text: its id; the server copies the name
+    /// and image path onto the message (see `0033_server_stickers.sql`).
+    #[serde(default)]
+    pub sticker_id: Option<i64>,
 }
 
 /// Input for [`list_dm_messages`]: the DM channel to fetch history from.
@@ -186,6 +190,10 @@ pub struct DmMessage {
     pub created_at: i64,
     /// UTC epoch milliseconds, or `None` until the first edit.
     pub edited_at: Option<i64>,
+    /// The sticker copied onto this DM message at send time; `None` = a
+    /// text message (see the `sticker_*` columns of `0033_server_stickers.sql`).
+    #[serde(default)]
+    pub sticker: Option<crate::server_settings::StickerCopy>,
 }
 
 /// The result of [`send_dm_message`]: the persisted message.
@@ -274,9 +282,14 @@ impl DmService {
         user_id: i64,
         channel_id: i64,
         content: &str,
+        sticker_id: Option<i64>,
     ) -> Result<DmMessage, String> {
-        if content.trim().is_empty() {
+        // A sticker message carries the sticker alone: no text, no blank.
+        if content.trim().is_empty() && sticker_id.is_none() {
             return Err("message content is empty".into());
+        }
+        if sticker_id.is_some() && !content.trim().is_empty() {
+            return Err("a sticker message carries no text".into());
         }
         self.db
             .user_by_id(user_id)
@@ -287,11 +300,21 @@ impl DmService {
         if !self.db.is_dm_participant(channel_id, user_id) {
             return Err("not a participant of this DM".into());
         }
+        // A DM may carry a member's server sticker: membership of the
+        // sticker's server is the only gate (the DM itself has no server).
+        let sticker = match sticker_id {
+            None => None,
+            Some(sid) => {
+                let s = crate::stickers::can_send(&self.db, user_id, sid, 0)?;
+                Some(crate::server_settings::StickerCopy { id: s.id, name: s.name, image: s.image })
+            }
+        };
         let created_at = now_ms();
-        let message_id = self
-            .db
-            .insert_dm_message(channel_id, user_id, content, created_at)
-            .map_err(|e| format!("failed to insert DM message: {e}"))?;
+        let message_id = match &sticker {
+            None => self.db.insert_dm_message(channel_id, user_id, content, created_at),
+            Some(s) => self.db.insert_dm_message_sticker(channel_id, user_id, created_at, s.clone()),
+        }
+        .map_err(|e| format!("failed to insert DM message: {e}"))?;
         // The row was just written by the insert above — assemble the wire
         // record directly (no re-read).
         Ok(self.with_username(DmMessage {
@@ -304,6 +327,7 @@ impl DmService {
             content: content.to_string(),
             created_at,
             edited_at: None,
+            sticker,
         }))
     }
 
@@ -353,6 +377,7 @@ impl DmService {
                     content: m.content,
                     created_at: m.created_at,
                     edited_at: m.edited_at,
+                    sticker: m.sticker,
                 }
             })
             .collect())
@@ -527,7 +552,7 @@ pub async fn send_dm_message(input: SendDmMessageInput) -> Result<SendDmMessageR
     let db = db_from_state()?;
     let user = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
     let message = DmService::new(db.clone())
-        .send_message(user, input.channel_id, &input.content)
+        .send_message(user, input.channel_id, &input.content, input.sticker_id)
         .map_err(ServerError::failed)?;
     // Push it to every connected participant (the sender's other sockets too).
     let audience: Vec<i64> = db
@@ -546,6 +571,7 @@ pub async fn send_dm_message(input: SendDmMessageInput) -> Result<SendDmMessageR
             author_decoration: db.user_avatar_decoration(message.author_id),
             content: message.content.clone(),
             created_at: message.created_at,
+            sticker: message.sticker.clone(),
             seq: crate::server_settings::next_frame_seq(),
         },
     );
@@ -697,7 +723,7 @@ mod tests {
         assert!(!one_to_one.is_group);
         assert_ne!(one_to_one.channel_id, g.channel_id);
         // Every member can post and read.
-        svc.send_message(3, g.channel_id, "hi all").unwrap();
+        svc.send_message(3, g.channel_id, "hi all", None).unwrap();
         assert_eq!(svc.list_messages(2, g.channel_id, None).unwrap().len(), 1);
         assert!(svc.create_group(1, &(2..=11).collect::<Vec<_>>(), "").unwrap_err().contains("at most"));
     }
@@ -716,7 +742,7 @@ mod tests {
         assert_eq!(svc.remove_from_group(2, g, 3).unwrap_err(), "only the group's owner can remove people");
         svc.remove_from_group(1, g, 3).unwrap();
         assert!(!db.is_dm_participant(g, 3));
-        assert!(svc.send_message(3, g, "let me back").is_err());
+        assert!(svc.send_message(3, g, "let me back", None).is_err());
         svc.rename_group(2, g, "Crew").unwrap();
         assert_eq!(svc.rename_group(4, g, &"x".repeat(101)).unwrap_err(), "group names can be at most 100 characters");
         // The owner leaving hands the group to the longest-standing member.
@@ -870,7 +896,7 @@ mod tests {
         let dm = svc.start_dm(1, 2).unwrap();
 
         let msg = svc
-            .send_message(1, dm.channel_id, "hello bob")
+            .send_message(1, dm.channel_id, "hello bob", None)
             .expect("a participant can send into their DM");
         assert!(msg.message_id > 0);
         assert_eq!(msg.channel_id, dm.channel_id);
@@ -906,7 +932,7 @@ mod tests {
         let svc = DmService::new(db.clone());
         let dm = svc.start_dm(1, 2).unwrap();
         let err = svc
-            .send_message(3, dm.channel_id, "intruder")
+            .send_message(3, dm.channel_id, "intruder", None)
             .expect_err("carol is not a participant");
         assert!(
             err.contains("not a participant"),
@@ -921,18 +947,18 @@ mod tests {
         let dm = svc.start_dm(1, 2).unwrap();
 
         assert_eq!(
-            svc.send_message(1, dm.channel_id, "   ")
+            svc.send_message(1, dm.channel_id, "   ", None)
                 .unwrap_err(),
             "message content is empty",
             "whitespace-only content is empty"
         );
         assert_eq!(
-            svc.send_message(1, 9999, "hi").unwrap_err(),
+            svc.send_message(1, 9999, "hi", None).unwrap_err(),
             "dm channel not found",
             "unknown DM channel id"
         );
         assert_eq!(
-            svc.send_message(999, dm.channel_id, "hi")
+            svc.send_message(999, dm.channel_id, "hi", None)
                 .unwrap_err(),
             "user not found",
             "unknown caller"
@@ -948,9 +974,9 @@ mod tests {
         let dm = svc.start_dm(1, 2).unwrap();
 
         // bob replies to alice, so both authors appear in the history.
-        svc.send_message(1, dm.channel_id, "one").unwrap();
-        svc.send_message(2, dm.channel_id, "two").unwrap();
-        svc.send_message(1, dm.channel_id, "three").unwrap();
+        svc.send_message(1, dm.channel_id, "one", None).unwrap();
+        svc.send_message(2, dm.channel_id, "two", None).unwrap();
+        svc.send_message(1, dm.channel_id, "three", None).unwrap();
 
         let msgs = svc
             .list_messages(2, dm.channel_id, None)
@@ -980,7 +1006,7 @@ mod tests {
         let svc = DmService::new(db.clone());
         let dm = svc.start_dm(1, 2).unwrap();
         for i in 0..5 {
-            svc.send_message(1, dm.channel_id, &format!("m{i}")).unwrap();
+            svc.send_message(1, dm.channel_id, &format!("m{i}"), None).unwrap();
         }
 
         // limit=2 → the TWO most recent, still oldest-first.

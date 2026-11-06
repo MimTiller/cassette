@@ -78,6 +78,9 @@ pub mod notification_settings;
 // Custom server emoji.
 pub mod server_emoji;
 
+// Server stickers: big images sent as whole messages (see stickers.rs).
+pub mod stickers;
+
 // The identity-provider seam in front of login/signup (see `src/identity.rs`).
 // Server-only: the `#[server]` fns in `auth` compile to client RPC stubs on
 // the wasm build and never reference a provider.

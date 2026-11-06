@@ -51,7 +51,7 @@ mod reads;
 mod pins;
 mod reactions;
 
-pub use gateway::{AttachmentInput, MessageAttachment, WsClientMsg, WsServerMsg, next_frame_seq, message_gateway};
+pub use gateway::{AttachmentInput, MessageAttachment, StickerCopy, WsClientMsg, WsServerMsg, next_frame_seq, message_gateway};
 pub use settings::{RenameServerInput, SetServerIconInput, TransferOwnershipInput, rename_server, set_server_icon, transfer_server_ownership};
 pub use channels::{CreateChannelInput, RenameChannelInput, DeleteChannelInput, ChannelResult, create_channel, rename_channel, delete_channel};
 pub use members::{AddMemberInput, LeaveServerInput, RemoveMemberInput, BanMemberInput, TimeoutMemberInput, ListMembersInput, MemberInfo, MemberResult, add_member, remove_member, leave_server, ban_member, timeout_member, list_members};

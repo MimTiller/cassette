@@ -240,6 +240,32 @@ impl Db {
         Ok(c.last_insert_rowid())
     }
 
+    /// Insert a DM message carrying a sticker instead of text: the sticker
+    /// is copied onto the row at send time so the message renders even after
+    /// the sticker is deleted.
+    pub fn insert_dm_message_sticker(
+        &self,
+        channel_id: i64,
+        author_id: i64,
+        created_at: i64,
+        sticker: crate::server_settings::StickerCopy,
+    ) -> Result<i64, rusqlite::Error> {
+        let c = self.lock()?;
+        c.execute(
+            "INSERT INTO dm_messages (channel_id, author_id, content, created_at, sticker_id, sticker_name, sticker_image)
+             VALUES (?1, ?2, '', ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                channel_id,
+                author_id,
+                created_at,
+                sticker.id,
+                sticker.name,
+                sticker.image,
+            ],
+        )?;
+        Ok(c.last_insert_rowid())
+    }
+
     /// The most recent `limit` messages in a DM channel, oldest-first (ready
     /// to hand to a client as initial history). Mirrors [`recent_messages`].
     pub fn recent_dm_messages(&self, channel_id: i64, limit: i64) -> Vec<Message> {
@@ -247,13 +273,18 @@ impl Db {
             return Vec::new();
         };
         let mut stmt = match c.prepare(
-            "SELECT id, channel_id, author_id, content, created_at, edited_at
+            "SELECT id, channel_id, author_id, content, created_at, edited_at, sticker_id, sticker_name, sticker_image
              FROM dm_messages WHERE channel_id = ?1 ORDER BY created_at DESC, id DESC LIMIT ?2",
         ) {
             Ok(s) => s,
             Err(_) => return Vec::new(),
         };
         let rows = match stmt.query_map(rusqlite::params![channel_id, limit], |r| {
+            let (sticker_id, sticker_name, sticker_image): (
+                Option<i64>,
+                Option<String>,
+                Option<String>,
+            ) = (r.get(6)?, r.get(7)?, r.get(8)?);
             Ok(Message {
                 id: r.get(0)?,
                 channel_id: r.get(1)?,
@@ -264,6 +295,10 @@ impl Db {
                 reply_to_message_id: None,
                 mentioned_user_ids: Vec::new(),
                 attachments: Vec::new(),
+                sticker: match (sticker_id, sticker_name, sticker_image) {
+                    (Some(sid), Some(name), Some(image)) => Some(crate::server_settings::StickerCopy { id: sid, name, image }),
+                    _ => None,
+                },
             })
         }) {
             Ok(rows) => rows,

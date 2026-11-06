@@ -173,7 +173,7 @@ mod gateway_tests {
         );
 
         // 3. Fan-out: Alice posts; Alice (echo) and Bob receive it.
-        send(&mut alice, &WsClientMsg::Send { channel_id: 1, content: "hello bob".into(), reply_to_message_id: None, attachments: Vec::new() }).await;
+        send(&mut alice, &WsClientMsg::Send { channel_id: 1, content: "hello bob".into(), reply_to_message_id: None, attachments: Vec::new(), sticker_id: None }).await;
         assert!(next_matching(&mut alice, is_msg("hello bob")).await.is_some(), "echo to sender");
         assert!(next_matching(&mut bob, is_msg("hello bob")).await.is_some(), "bob receives");
         // ...but users outside server 1 hear nothing.
@@ -181,13 +181,13 @@ mod gateway_tests {
         assert!(hears_nothing(&mut dave, is_msg("hello bob")).await, "dave is in no server");
 
         // 4. Authorization: a non-member cannot post or read; voice is not text.
-        send(&mut dave, &WsClientMsg::Send { channel_id: 1, content: "sneaky".into(), reply_to_message_id: None, attachments: Vec::new() }).await;
+        send(&mut dave, &WsClientMsg::Send { channel_id: 1, content: "sneaky".into(), reply_to_message_id: None, attachments: Vec::new(), sticker_id: None }).await;
         let err = next_matching(&mut dave, |m| matches!(m, WsServerMsg::Error { .. })).await;
         assert!(matches!(err, Some(WsServerMsg::Error { ref reason, .. }) if reason.contains("not a member")));
         send(&mut dave, &WsClientMsg::History { channel_id: 1, before_id: None }).await;
         let err = next_matching(&mut dave, |m| matches!(m, WsServerMsg::Error { .. })).await;
         assert!(matches!(err, Some(WsServerMsg::Error { ref reason, .. }) if reason.contains("not a member")));
-        send(&mut alice, &WsClientMsg::Send { channel_id: 2, content: "into voice".into(), reply_to_message_id: None, attachments: Vec::new() }).await;
+        send(&mut alice, &WsClientMsg::Send { channel_id: 2, content: "into voice".into(), reply_to_message_id: None, attachments: Vec::new(), sticker_id: None }).await;
         let err = next_matching(&mut alice, |m| matches!(m, WsServerMsg::Error { .. })).await;
         assert!(matches!(err, Some(WsServerMsg::Error { ref reason, .. }) if reason.contains("not a text")));
         assert!(hears_nothing(&mut bob, is_msg("sneaky")).await);

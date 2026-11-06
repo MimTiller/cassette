@@ -131,11 +131,19 @@ pub fn post_channel_message(
     content: &str,
     reply_to_message_id: Option<i64>,
     attachments: Vec<crate::server_settings::AttachmentInput>,
+    sticker_id: Option<i64>,
 ) -> Result<(), String> {
     if attachments.len() > MAX_ATTACHMENTS_PER_MESSAGE {
         return Err(format!("too many attachments (max {MAX_ATTACHMENTS_PER_MESSAGE})"));
     }
-    if content.trim().is_empty() && attachments.is_empty() {
+    // A sticker message carries the sticker alone: no text, no attachments.
+    if sticker_id.is_some() && !attachments.is_empty() {
+        return Err("a sticker message cannot also carry attachments".into());
+    }
+    if sticker_id.is_some() && !content.trim().is_empty() {
+        return Err("a sticker message carries no text".into());
+    }
+    if content.trim().is_empty() && attachments.is_empty() && sticker_id.is_none() {
         return Err("empty message".into());
     }
     if content.chars().count() > MAX_MESSAGE_CHARS {
@@ -159,6 +167,14 @@ pub fn post_channel_message(
     if db.is_timed_out(server_id, user_id, now_millis() / 1000) {
         return Err("you are timed out and cannot post messages".into());
     }
+    // A sticker send: the sender must be a member of the sticker's server,
+    // and the channel must be in that same server. The sticker's name and
+    // image path are copied onto the row at SEND time so the message still
+    // renders after the sticker itself is deleted.
+    let sticker = match sticker_id {
+        None => None,
+        Some(sid) => Some(crate::stickers::can_send(db, user_id, sid, server_id)?),
+    };
     let created_at = now_millis();
     // Move every attachment's bytes into the media store only now, after the
     // sender is authorized, and before touching the DB: the rows (and the
@@ -167,16 +183,26 @@ pub fn post_channel_message(
         .into_iter()
         .map(|a| media_store_attachment(&a.data, &a.mime).map(|url| (a.filename, a.mime, url)))
         .collect::<Result<Vec<(String, String, String)>, String>>()?;
-    let (message_id, attachment_ids) = db
-        .insert_message_with_attachments(
+    let (message_id, attachment_ids) = match &sticker {
+        None => db.insert_message_with_attachments(
             channel_id,
             user_id,
             content,
             created_at,
             reply_to_message_id,
             &media_rows,
-        )
-        .map_err(|e| e.to_string())?;
+        ),
+        Some(s) => db
+            .insert_message_sticker(
+                channel_id,
+                user_id,
+                created_at,
+                reply_to_message_id,
+                crate::server_settings::StickerCopy { id: s.id, name: s.name.clone(), image: s.image.clone() },
+            )
+            .map(|message_id| (message_id, Vec::new())),
+    }
+    .map_err(|e| e.to_string())?;
     let mentioned_user_ids = resolve_mentions(db, channel_id, user_id, content);
     if let Err(e) = db.insert_message_mentions(message_id, &mentioned_user_ids) {
         return Err(format!("failed to store mentions: {e}"));
@@ -219,6 +245,8 @@ pub fn post_channel_message(
             attachments: wire_attachments,
             // Cards follow in a `MessageEmbeds` frame once fetched.
             embeds: Vec::new(),
+            // The sticker copy rides the frame so the live client renders it.
+            sticker: sticker.map(|s| crate::server_settings::StickerCopy { id: s.id, name: s.name, image: s.image }),
             seq: next_frame_seq(),
         },
     );
@@ -351,8 +379,8 @@ mod tests {
         with_private_channel(&db);
         assert_eq!(authorize_text_channel(&db, 2, 4, Permissions::VIEW_CHANNEL), Err("channel not found".into()));
         assert!(history_for(&db, 2, 4, None, 50).is_err());
-        assert_eq!(post_channel_message(&db, 2, 4, "let me in", None, Vec::new()).unwrap_err(), "channel not found");
-        assert!(post_channel_message(&db, 1, 4, "owner only", None, Vec::new()).is_ok());
+        assert_eq!(post_channel_message(&db, 2, 4, "let me in", None, Vec::new(), None).unwrap_err(), "channel not found");
+        assert!(post_channel_message(&db, 1, 4, "owner only", None, Vec::new(), None).is_ok());
         assert_eq!(channel_audience(&db, 4), vec![1]);
         assert_eq!(channel_audience(&db, 1), vec![1, 2]);
         // bob isn't notified by name or by @everyone in a channel he can't see.
@@ -369,10 +397,10 @@ mod tests {
             .unwrap();
         assert!(history_for(&db, 2, 1, None, 50).is_ok());
         assert_eq!(
-            post_channel_message(&db, 2, 1, "hi", None, Vec::new()).unwrap_err(),
+            post_channel_message(&db, 2, 1, "hi", None, Vec::new(), None).unwrap_err(),
             "you need the Send Messages permission to do that"
         );
-        assert!(post_channel_message(&db, 1, 1, "owner can", None, Vec::new()).is_ok());
+        assert!(post_channel_message(&db, 1, 1, "owner can", None, Vec::new(), None).is_ok());
     }
 
     #[test]
@@ -403,12 +431,12 @@ mod tests {
     #[test]
     fn posting_validates_size_emptiness_and_membership() {
         let (_d, db) = setup();
-        assert_eq!(post_channel_message(&db, 1, 1, "   ", None, Vec::new()).unwrap_err(), "empty message");
+        assert_eq!(post_channel_message(&db, 1, 1, "   ", None, Vec::new(), None).unwrap_err(), "empty message");
         let long = "x".repeat(MAX_MESSAGE_CHARS + 1);
-        assert!(post_channel_message(&db, 1, 1, &long, None, Vec::new()).unwrap_err().contains("too long"));
-        assert!(post_channel_message(&db, 4, 1, "hi", None, Vec::new()).unwrap_err().contains("not a member"));
-        assert!(post_channel_message(&db, 1, 2, "hi", None, Vec::new()).unwrap_err().contains("not a text"));
-        assert!(post_channel_message(&db, 1, 1, "ok", None, Vec::new()).is_ok());
+        assert!(post_channel_message(&db, 1, 1, &long, None, Vec::new(), None).unwrap_err().contains("too long"));
+        assert!(post_channel_message(&db, 4, 1, "hi", None, Vec::new(), None).unwrap_err().contains("not a member"));
+        assert!(post_channel_message(&db, 1, 2, "hi", None, Vec::new(), None).unwrap_err().contains("not a text"));
+        assert!(post_channel_message(&db, 1, 1, "ok", None, Vec::new(), None).is_ok());
         assert_eq!(db.recent_messages(1, 10).len(), 1, "only the valid post persisted");
     }
 
@@ -425,7 +453,7 @@ mod tests {
         };
         // An attachment-only message (empty body) is accepted — a message
         // carrying body OR attachments, not neither.
-        assert!(post_channel_message(&db, 1, 1, "", None, vec![att]).is_ok());
+        assert!(post_channel_message(&db, 1, 1, "", None, vec![att], None).is_ok());
         let msgs = db.recent_messages(1, 10);
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0].attachments.len(), 1, "attachment comes back in history");
@@ -447,7 +475,7 @@ mod tests {
         // 5 attachments on one message: rejected (max 4), nothing persisted.
         let five = vec![good.clone(), good.clone(), good.clone(), good.clone(), good.clone()];
         assert!(
-            post_channel_message(&db, 1, 1, "x", None, five).unwrap_err()
+            post_channel_message(&db, 1, 1, "x", None, five, None).unwrap_err()
                 .contains("too many attachments")
         );
         assert!(db.recent_messages(1, 10).is_empty());
@@ -465,6 +493,7 @@ mod tests {
                     mime: "image/png".into(),
                     data: huge_data,
                 }],
+                None,
             )
             .unwrap_err()
             .contains("too large")
@@ -476,7 +505,7 @@ mod tests {
             data: "data:application/pdf;base64,JU".into(),
         };
         assert!(
-            post_channel_message(&db, 1, 1, "x", None, vec![pdf]).unwrap_err()
+            post_channel_message(&db, 1, 1, "x", None, vec![pdf], None).unwrap_err()
                 .contains("mime not allowed")
         );
         // Declared mime agrees but the data URL prefix disagrees: rejected.
@@ -486,7 +515,7 @@ mod tests {
             data: "data:image/gif;base64,R0lG".into(),
         };
         assert!(
-            post_channel_message(&db, 1, 1, "x", None, vec![liar]).unwrap_err()
+            post_channel_message(&db, 1, 1, "x", None, vec![liar], None).unwrap_err()
                 .contains("does not match")
         );
         assert!(db.recent_messages(1, 10).is_empty(), "no rejected post persisted");
@@ -538,7 +567,7 @@ mod tests {
         hub.reset();
         let (_id, mut rx) = hub.register(1); // alice's (sender) socket
 
-        assert!(post_channel_message(&db, 1, 1, "@bob @alice and @nobody", None, Vec::new()).is_ok());
+        assert!(post_channel_message(&db, 1, 1, "@bob @alice and @nobody", None, Vec::new(), None).is_ok());
         // The echo frame carries the resolved mentions (bob=2, alice=1; nobody
         // dropped). Tests elsewhere publish membership frames on the same hub
         // without the lock, so skip anything that isn't a message.
