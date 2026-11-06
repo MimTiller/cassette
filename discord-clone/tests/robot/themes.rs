@@ -1,5 +1,6 @@
 //! Switching the Appearance picker to each new theme and reading it back
-//! through the `cassette.theme` hook: Sunset, Miami, Memphis, and Bubblegum.
+//! through the `cassette.theme` hook: Sunset, Miami, Memphis, Bubblegum,
+//! Game Boy, Windows 95, VHS, and Blockbuster.
 
 use robot_test::{json, robot_test, App, Value};
 
@@ -104,6 +105,106 @@ fn picking_bubblegum_recolours_the_app(app: &mut App) {
     });
     assert!(ok, "cassette.theme should report bubblegum (got {got})");
     shot(app, "themes5-bubblegum");
+    for _ in 0..3 { app.press_key("Escape"); }
+}
+
+#[robot_test]
+fn picking_gameboy_recolours_the_app(app: &mut App) {
+    signed_out(app);
+    let user = fresh_name("gameboytheme");
+    sign_up(app, &user, &format!("pass-{user}"));
+    app.text("Online").assert_visible();
+
+    app.test_id("user-settings").click();
+    app.text("USER SETTINGS").assert_visible();
+    app.set_timeout(WAIT);
+    app.test_id("settings-nav-appearance").click();
+    app.set_timeout(WAIT);
+
+    app.test_id("theme-card-gameboy").click();
+    app.set_timeout(WAIT);
+    let mut got = String::new();
+    let ok = crate::support::eventually(10, || {
+        got = robot_string(app.call_function("cassette.theme", json!({})));
+        got == "gameboy"
+    });
+    assert!(ok, "cassette.theme should report gameboy (got {got})");
+    shot(app, "themes6-gameboy");
+    for _ in 0..3 { app.press_key("Escape"); }
+}
+
+#[robot_test]
+fn picking_win95_recolours_the_app(app: &mut App) {
+    signed_out(app);
+    let user = fresh_name("win95theme");
+    sign_up(app, &user, &format!("pass-{user}"));
+    app.text("Online").assert_visible();
+
+    app.test_id("user-settings").click();
+    app.text("USER SETTINGS").assert_visible();
+    app.set_timeout(WAIT);
+    app.test_id("settings-nav-appearance").click();
+    app.set_timeout(WAIT);
+
+    app.test_id("theme-card-win95").click();
+    app.set_timeout(WAIT);
+    let mut got = String::new();
+    let ok = crate::support::eventually(10, || {
+        got = robot_string(app.call_function("cassette.theme", json!({})));
+        got == "win95"
+    });
+    assert!(ok, "cassette.theme should report win95 (got {got})");
+    shot(app, "themes7-win95");
+    for _ in 0..3 { app.press_key("Escape"); }
+}
+
+#[robot_test]
+fn picking_vhs_recolours_the_app(app: &mut App) {
+    signed_out(app);
+    let user = fresh_name("vhstheme");
+    sign_up(app, &user, &format!("pass-{user}"));
+    app.text("Online").assert_visible();
+
+    app.test_id("user-settings").click();
+    app.text("USER SETTINGS").assert_visible();
+    app.set_timeout(WAIT);
+    app.test_id("settings-nav-appearance").click();
+    app.set_timeout(WAIT);
+
+    app.test_id("theme-card-vhs").click();
+    app.set_timeout(WAIT);
+    let mut got = String::new();
+    let ok = crate::support::eventually(10, || {
+        got = robot_string(app.call_function("cassette.theme", json!({})));
+        got == "vhs"
+    });
+    assert!(ok, "cassette.theme should report vhs (got {got})");
+    shot(app, "themes8-vhs");
+    for _ in 0..3 { app.press_key("Escape"); }
+}
+
+#[robot_test]
+fn picking_blockbuster_recolours_the_app(app: &mut App) {
+    signed_out(app);
+    let user = fresh_name("blockbustertheme");
+    sign_up(app, &user, &format!("pass-{user}"));
+    app.text("Online").assert_visible();
+
+    app.test_id("user-settings").click();
+    app.text("USER SETTINGS").assert_visible();
+    app.set_timeout(WAIT);
+    app.test_id("settings-nav-appearance").click();
+    app.set_timeout(WAIT);
+
+    app.test_id("theme-card-blockbuster").click();
+    app.set_timeout(WAIT);
+    let mut got = String::new();
+    let ok = crate::support::eventually(10, || {
+        got = robot_string(app.call_function("cassette.theme", json!({})));
+        got == "blockbuster"
+    });
+    assert!(ok, "cassette.theme should report blockbuster (got {got})");
+    shot(app, "themes9-blockbuster");
     for _ in 0..3 { app.press_key("Escape"); }
 }
 

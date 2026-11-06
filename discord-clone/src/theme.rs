@@ -1,5 +1,6 @@
-//! The app's colour themes: named colour roles, with seven palettes (Dark,
-//! Light, Purple, Sunset, Miami, Memphis, Bubblegum).
+//! The app's colour themes: named colour roles, with eleven palettes (Dark,
+//! Light, Purple, Sunset, Miami, Memphis, Bubblegum, Game Boy, Windows 95,
+//! VHS, Blockbuster).
 //!
 //! Every UI colour comes from a role here (`BG_PRIMARY`, `TEXT_MUTED`,
 //! `ACCENT`, …) instead of a per-file hex constant. A role's constant is its
@@ -338,6 +339,147 @@ const BUBBLEGUM: [&str; 30] = [
     "rgba(236, 178, 220, 0.35)", // mention row
 ];
 
+/// "Game Boy": the four-shade Game Boy green palette, a light scheme — the
+/// screen surface is the palest olive, the rail and dark fills the mid green,
+/// and all text the two dark shades.
+const GAMEBOY: [&str; 30] = [
+    "#9bbc0f", // bg primary (palest screen green)
+    "#8bac0f", // bg secondary
+    "#306230", // bg tertiary (the dark rail)
+    "#8bac0f", // bg floating
+    "#9bbc0f", // bg input (same pale screen so text reads)
+    "#8bac0f", // bg user panel
+    "#8bac0f", // bg hover (second-lightest so dark text reads)
+    "#8bac0f", // bg selected (light enough for dark selected text)
+    "#8bac0f", // bg accent subtle
+    "#0f380f", // text strong
+    "#0f380f", // text normal
+    "#306230", // text muted
+    "#306230", // text faint
+    "#0f380f", // interactive
+    "#0f380f", // text link
+    "#9bbc0f", // text on accent (pale on the dark fill)
+    "#0f380f", // accent (darkest line-art green)
+    "#306230", // accent hover (lighter dark green)
+    "#8bac0f", // button secondary
+    "#306230", // divider
+    "#0f380f", // danger
+    "#0f380f", // danger strong
+    "#306230", // success
+    "#0f380f", // success strong
+    "#306230", // warning
+    "#0f380f", // shadow
+    "rgba(15, 56, 15, 0.6)", // overlay
+    "rgba(48, 98, 48, 0.4)", // mention bg
+    "#0f380f", // mention text
+    "rgba(48, 98, 48, 0.15)", // mention row
+];
+
+/// "Windows 95": grey window panels on a teal desktop, navy title-bar
+/// accents, black text and grey bevel-like dividers.
+const WIN95: [&str; 30] = [
+    "#c0c0c0", // bg primary
+    "#c0c0c0", // bg secondary
+    "#008080", // bg tertiary (the teal desktop behind the app)
+    "#c0c0c0", // bg floating
+    "#ffffff", // bg input (classic white text fields)
+    "#a8a8a8", // bg user panel
+    "#d8d8d8", // bg hover
+    "#8fa8d0", // bg selected (the steel-blue selection wash)
+    "#c8d4e8", // bg accent subtle
+    "#000000", // text strong
+    "#000000", // text normal
+    "#595959", // text muted
+    "#707070", // text faint
+    "#595959", // interactive
+    "#000080", // text link (navy)
+    "#ffffff", // text on accent
+    "#000080", // accent (title-bar navy)
+    "#0000a0", // accent hover
+    "#a9a9a9", // button secondary
+    "#808080", // divider (bevel grey)
+    "#800000", // danger (maroon)
+    "#800000", // danger strong
+    "#004d00", // success
+    "#00393a", // success strong
+    "#7f6000", // warning
+    "#000000", // shadow
+    "rgba(0, 0, 0, 0.5)", // overlay
+    "rgba(0, 0, 128, 0.15)", // mention bg
+    "#000080", // mention text
+    "rgba(0, 0, 128, 0.08)", // mention row
+];
+
+/// "VHS": late-night tape — near-black surfaces, CRT-amber text and accents,
+/// and a REC red for danger and mentions.
+const VHS: [&str; 30] = [
+    "#0f0f13", // bg primary
+    "#141418", // bg secondary
+    "#08080a", // bg tertiary
+    "#101014", // bg floating
+    "#1a1a20", // bg input
+    "#0c0c10", // bg user panel
+    "#1c1c24", // bg hover
+    "#26262e", // bg selected
+    "#33270f", // bg accent subtle (amber tint)
+    "#ffc060", // text strong
+    "#ffb000", // text normal (CRT amber)
+    "#c89a4e", // text muted
+    "#8a6d3a", // text faint
+    "#e0a860", // interactive
+    "#7ec8e3", // text link (cold scanline blue)
+    "#101014", // text on accent (dark on amber fills)
+    "#ff9a3c", // accent (CRT amber-orange)
+    "#cc7d2e", // accent hover
+    "#3a3a42", // button secondary
+    "#2a2a30", // divider
+    "#ff4b4b", // danger (REC red)
+    "#c81f2d", // danger strong
+    "#47c75a", // success (phosphor green)
+    "#2f9a44", // success strong
+    "#ffcc55", // warning
+    "#000000", // shadow
+    "rgba(0, 0, 0, 0.65)", // overlay
+    "rgba(200, 31, 45, 0.25)", // mention bg (REC red)
+    "#ff8f8f", // mention text
+    "rgba(200, 31, 45, 0.12)", // mention row
+];
+
+/// "Blockbuster": video-store navy with ticket-stub yellow accents and cream
+/// text.
+const BLOCKBUSTER: [&str; 30] = [
+    "#002355", // bg primary (house navy)
+    "#001a40", // bg secondary
+    "#000f2b", // bg tertiary
+    "#000a20", // bg floating
+    "#002f66", // bg input
+    "#00173a", // bg user panel
+    "#002d6b", // bg hover
+    "#003a7f", // bg selected
+    "#0d2e52", // bg accent subtle
+    "#f5f0dc", // text strong (ticket cream)
+    "#e8dfc4", // text normal
+    "#9aa8b8", // text muted
+    "#72808e", // text faint
+    "#c9d6e2", // interactive
+    "#ffd700", // text link (stub yellow)
+    "#001a40", // text on accent (navy on yellow)
+    "#ffd700", // accent (ticket-stub yellow)
+    "#e0b400", // accent hover
+    "#0f2c55", // button secondary
+    "#00395f", // divider
+    "#ff5a5a", // danger
+    "#d92e4f", // danger strong
+    "#3fb86e", // success
+    "#2a8a52", // success strong
+    "#ff9d3b", // warning
+    "#000000", // shadow
+    "rgba(0, 0, 20, 0.65)", // overlay
+    "rgba(255, 215, 0, 0.25)", // mention bg
+    "#ffea9d", // mention text
+    "rgba(255, 215, 0, 0.10)", // mention row
+];
+
 /// The themes the user can pick.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ThemeName {
@@ -348,10 +490,14 @@ pub enum ThemeName {
     Miami,
     Memphis,
     Bubblegum,
+    GameBoy,
+    Win95,
+    Vhs,
+    Blockbuster,
 }
 
 impl ThemeName {
-    pub const ALL: [ThemeName; 7] = [
+    pub const ALL: [ThemeName; 11] = [
         ThemeName::Dark,
         ThemeName::Light,
         ThemeName::Purple,
@@ -359,9 +505,13 @@ impl ThemeName {
         ThemeName::Miami,
         ThemeName::Memphis,
         ThemeName::Bubblegum,
+        ThemeName::GameBoy,
+        ThemeName::Win95,
+        ThemeName::Vhs,
+        ThemeName::Blockbuster,
     ];
 
-    /// The stored name ("dark" / "light" / "purple" / "sunset" / "miami" / "memphis" / "bubblegum").
+    /// The stored name ("dark" / "light" / "purple" / "sunset" / "miami" / "memphis" / "bubblegum" / "gameboy" / "win95" / "vhs" / "blockbuster").
     pub fn key(self) -> &'static str {
         match self {
             ThemeName::Dark => "dark",
@@ -371,6 +521,10 @@ impl ThemeName {
             ThemeName::Miami => "miami",
             ThemeName::Memphis => "memphis",
             ThemeName::Bubblegum => "bubblegum",
+            ThemeName::GameBoy => "gameboy",
+            ThemeName::Win95 => "win95",
+            ThemeName::Vhs => "vhs",
+            ThemeName::Blockbuster => "blockbuster",
         }
     }
 
@@ -384,6 +538,10 @@ impl ThemeName {
             ThemeName::Miami => "Miami",
             ThemeName::Memphis => "Memphis",
             ThemeName::Bubblegum => "Bubblegum",
+            ThemeName::GameBoy => "Game Boy",
+            ThemeName::Win95 => "Windows 95",
+            ThemeName::Vhs => "VHS",
+            ThemeName::Blockbuster => "Blockbuster",
         }
     }
 
@@ -400,6 +558,10 @@ impl ThemeName {
             ThemeName::Miami => &MIAMI,
             ThemeName::Memphis => &MEMPHIS,
             ThemeName::Bubblegum => &BUBBLEGUM,
+            ThemeName::GameBoy => &GAMEBOY,
+            ThemeName::Win95 => &WIN95,
+            ThemeName::Vhs => &VHS,
+            ThemeName::Blockbuster => &BLOCKBUSTER,
         }
     }
 
