@@ -33,7 +33,7 @@ pub(super) fn user_panel(
     muted: Signal<bool>,
     deafened: Signal<bool>,
     status_menu: Signal<bool>,
-    gateway: server::UseSocket<discord_server::server_settings::WsServerMsg, discord_server::server_settings::WsClientMsg>,
+    gateway: crate::backend::Gateway,
 ) -> Element {
     switch(
         move || (user_status.get(), joined_voice.get()),
@@ -359,7 +359,7 @@ fn status_menu_view(
     open: Signal<bool>,
     user_status: Signal<Status>,
     profile_mode: Signal<bool>,
-    gateway: server::UseSocket<discord_server::server_settings::WsServerMsg, discord_server::server_settings::WsClientMsg>,
+    gateway: crate::backend::Gateway,
 ) -> Element {
     switch(
         move || open.get(),
@@ -385,9 +385,7 @@ fn status_menu_view(
                 status_menu_row(st.name(), Some(st.color()), st.hint(), st == current, test_id, move || {
                     open.set(false);
                     set_status(user_status, st);
-                    gateway.send(discord_server::server_settings::WsClientMsg::SetStatus {
-                        status: st.wire().to_string(),
-                    });
+                    gateway.set_status(st.wire().to_string());
                 })
             };
             ui! {

@@ -661,17 +661,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                             // `on_handle` callback can capture its own.
                                             live_at_bottom_row.set(true);
                                             *live_scroll_handle_row.borrow_mut() = None;
-                                            gw.send(
-                                                discord_server::server_settings::WsClientMsg::History {
-                                                    // Initial load: the latest page (no
-                                                    // scrollback cursor yet).
-                                                    channel_id: cid,
-                                                    // `before_id: None` = fetch the
-                                                    // latest page (no before-cursor) —
-                                                    // the initial load on channel select.
-                                                    before_id: None,
-                                                },
-                                            );
+                                            gw.request_history(cid, None);
                                         }
                                         TouchResponse::CONSUMED
                                     })

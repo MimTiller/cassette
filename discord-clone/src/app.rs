@@ -744,7 +744,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // effect sends the saved channel's initial `History` frame over the
     // gateway (same as a manual channel-row tap), and `UseSocket` is `Copy`
     // so the effect's `async move` block just captures it.
-    let gateway = discord_server::server_settings::message_gateway(
+    let gateway = crate::backend::connect(
         crate::auth::current_token(),
     );
 
@@ -874,12 +874,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         // fresh pane's `on_handle` callback can capture its own).
                         latbot.set(true);
                         *lhandle.borrow_mut() = None;
-                        gateway.send(
-                            discord_server::server_settings::WsClientMsg::History {
-                                channel_id: id,
-                                before_id: None,
-                            },
-                        );
+                        gateway.request_history(id, None);
                     }
                 }
                 if let Ok(fresh) = members {
@@ -902,12 +897,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
     {
         let alc = active_live_channel.clone();
         runtime_core::effect!({
-            if gateway.status() == server::SocketStatus::Open {
+            if gateway.connection_status() == server::SocketStatus::Open {
                 if let Some(id) = runtime_core::Reactive::from(alc).get_untracked() {
-                    gateway.send(discord_server::server_settings::WsClientMsg::History {
-                        channel_id: id,
-                        before_id: None,
-                    });
+                    gateway.request_history(id, None);
                 }
             }
         });
@@ -1089,15 +1081,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 // same order.
                 &crate::app::shell_alive(),
                 async move {
-                    let input = discord_server::dms::StartDmInput { user_id: uid };
-                    let dm = discord_server::dms::start_dm(input).await;
+                    let dm = crate::dms::start_dm(uid).await;
                     let history = match &dm {
-                        Ok(d) => Some(discord_server::dms::list_dm_messages(
-                            discord_server::dms::ListDmMessagesInput {
-                                channel_id: d.channel_id,
-                                limit: None,
-                            },
-                        ).await),
+                        Ok(d) => Some(crate::dms::list_dm_messages(d.channel_id, None).await),
                         Err(_) => None,
                     };
                     (dm, history)

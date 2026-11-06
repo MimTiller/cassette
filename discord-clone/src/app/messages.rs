@@ -85,7 +85,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                     crate::auth::save_last_view_channel(sid, channel_id);
                 }
                 *live_scroll_handle.borrow_mut() = None;
-                gw.send(discord_server::server_settings::WsClientMsg::History { channel_id, before_id: None });
+                gw.request_history(channel_id, None);
             }
             live_at_bottom.set(false);
             super::jump::start(super::jump::Jump {
@@ -96,7 +96,7 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                 load_busy,
                 live_revision,
                 load_older: Rc::new(move |before: i64| {
-                    gw.send(discord_server::server_settings::WsClientMsg::History { channel_id, before_id: Some(before) });
+                    gw.request_history(channel_id, Some(before));
                 }),
             });
         }
@@ -725,7 +725,7 @@ impl ListRow {
 /// The handles rows need for their actions.
 #[derive(Clone)]
 struct RowCtx {
-    gateway: server::UseSocket<discord_server::server_settings::WsServerMsg, discord_server::server_settings::WsClientMsg>,
+    gateway: crate::backend::Gateway,
     editing: Signal<Option<i64>>,
     edit_text: Signal<String>,
     delete_confirm: Signal<Option<i64>>,
@@ -757,7 +757,7 @@ impl RowCtx {
                 let on_load = Rc::new(move || {
                     busy.set(true);
                     if let Some(before) = oldest {
-                        gw.send(discord_server::server_settings::WsClientMsg::History { channel_id: cid, before_id: Some(before) });
+                        gw.request_history(cid, Some(before));
                     }
                 });
                 load_earlier_button(self.load_busy, on_load)

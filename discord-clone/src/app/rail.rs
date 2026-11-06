@@ -57,7 +57,7 @@ pub(super) fn build(s: &ShellState) -> RailParts {
     // nothing while connected; a small yellow dot while reconnecting
     // (`Connecting`) and a red one while `Closed` / `Error`.
     let conn_indicator = switch(
-        move || format!("{:?}", gateway.status()),
+        move || format!("{:?}", gateway.connection_status()),
         move |status: &String| {
             // Nothing while connected (`Open`) or before the first connect
             // reaches a steady state; a small dot only for trouble:

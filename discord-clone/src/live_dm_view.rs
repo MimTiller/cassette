@@ -842,9 +842,7 @@ fn live_dm_conversation(
                         let name = rename_text.get();
                         runtime_core::spawn_then_in(
                             &al_save.clone(),
-                            discord_server::dms::rename_group_dm(
-                                discord_server::dms::RenameGroupDmInput { dm_id: cid, name },
-                            ),
+                            dms::rename_group_dm(cid, name),
                             move |result| {
                                 if result.is_ok() {
                                     renaming.set(false);

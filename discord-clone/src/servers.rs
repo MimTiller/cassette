@@ -95,23 +95,14 @@ pub async fn delete_channel(
 /// including fully-read ones (both counts `0`). See the backend's
 /// `UnreadCount` docs for the mention-vs-total semantics.
 pub async fn unread_counts(server_id: i64) -> Result<Vec<UnreadCount>, String> {
-    let input = discord_server::server_settings::UnreadCountsInput { server_id };
-    discord_server::server_settings::unread_counts(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))
+    crate::backend::unread_counts(server_id).await
 }
 
 /// Mark a channel read up to (at least) `message_id`. The backend advances
 /// the caller's stored read state monotonically, so sending an older id is a
 /// no-op, never a regression.
 pub async fn mark_read(channel_id: i64, message_id: i64) -> Result<MarkReadResult, String> {
-    let input = discord_server::server_settings::MarkReadInput {
-        channel_id,
-        message_id,
-    };
-    discord_server::server_settings::mark_read(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))
+    crate::backend::mark_read(channel_id, message_id).await
 }
 
 /// Rename a server. Only the current owner may call (owner-only by policy);
@@ -159,3 +150,4 @@ pub async fn transfer_server_ownership(
         .await
         .map_err(|e| crate::errors::friendly(&e))
 }
+

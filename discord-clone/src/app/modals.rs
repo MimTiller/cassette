@@ -141,12 +141,7 @@ pub(super) fn build(s: &ShellState) -> ModalsParts {
                                     // its own, so send it explicitly or the
                                     // fresh server sits on an empty pane until
                                     // a channel row is manually re-tapped.
-                                    gateway.send(
-                                        discord_server::server_settings::WsClientMsg::History {
-                                            channel_id: id,
-                                            before_id: None,
-                                        },
-                                    );
+                                    gateway.request_history(id, None);
                                 }
                             }
                             if let Some(Ok(members)) = Some(member_list).flatten() {

@@ -127,10 +127,9 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
     // signal/Rc is cloned behind an `Rc` so the handler can be `Fn` (callable
     // from the `text_input on_key_down` closure).
     let send_composer = composer.clone();
-    // Live-send handles: `gateway` is a `Copy` `UseSocket`, so clone it in so
-    // the (shared) `move` handler can send over the global socket.
+    // Live-send handles: `gateway` is a `Copy` handle, so the (shared) `move`
+    // handler can send over the global socket.
     let live_chan = active_live_channel.clone();
-    let gateway_send = gateway;
     let do_send = move || {
         let body = send_composer.get();
         let attached = pending_attachment.get();
@@ -157,12 +156,12 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
         // effect buffers and bumps `live_revision`, rebuilding the list.
         crate::app::request_scroll_to_latest();
         if let Some(live_cid) = live_chan.get() {
-            gateway_send.send(discord_server::server_settings::WsClientMsg::Send {
-                channel_id: live_cid,
-                content: crate::custom_emoji::encode_draft(&body),
-                reply_to_message_id: reply_target.get(),
-                attachments: inputs,
-            });
+            gateway.send_message(
+                live_cid,
+                crate::custom_emoji::encode_draft(&body),
+                reply_target.get(),
+                inputs,
+            );
             send_composer.set(String::new());
             pending_attachment.set(Vec::new());
             reply_ctx.set(None);
@@ -280,10 +279,7 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                     .map(|last| now_ms - *last < 3_000)
                     .unwrap_or(false);
                 if !too_soon {
-                    typing_gateway_h
-                        .send(discord_server::server_settings::WsClientMsg::Typing {
-                            channel_id: cid,
-                        });
+                    typing_gateway_h.announce_typing(cid);
                     typing_last_sent_h.borrow_mut().insert(cid, now_ms);
                 }
             }
@@ -583,12 +579,12 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                 gif_open.set(false);
                 let Some(live_cid) = active_live_channel.get() else { return };
                 crate::app::request_scroll_to_latest();
-                gateway.send(discord_server::server_settings::WsClientMsg::Send {
-                    channel_id: live_cid,
-                    content: discord_server::gifs::gif_message(&gif),
-                    reply_to_message_id: reply_target.get(),
-                    attachments: Vec::new(),
-                });
+                gateway.send_message(
+                    live_cid,
+                    discord_server::gifs::gif_message(&gif),
+                    reply_target.get(),
+                    Vec::new(),
+                );
                 reply_ctx.set(None);
                 reply_target.set(None);
             });
