@@ -146,14 +146,9 @@ async fn upload_server_emoji(name: String, mime: String, data_b64: String) -> Re
     let sid = crate::mentions::server_id().ok_or_else(|| "no active live server".to_string())?;
     let bytes = crate::profile_settings::b64_decode(&data_b64)?;
     let url = crate::profile_settings::validate_and_encode_small_image(&mime, &bytes, "emoji")?;
-    let input = discord_server::server_emoji::UploadEmojiInput {
-        server_id: sid,
-        name: name.to_string(),
-        data_url: url,
-    };
-    match discord_server::server_emoji::upload_emoji(input).await {
+    match crate::backend::upload_emoji(sid, name.to_string(), url).await {
         Ok(e) => Ok(e.image.clone()),
-        Err(err) => Err(crate::errors::friendly(&err)),
+        Err(err) => Err(err),
     }
 }
 

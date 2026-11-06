@@ -412,9 +412,7 @@ fn role_chips(user_id: i64, in_server: bool, label: StyleRules) -> Element {
                         // Anchored on the app shell: the success path refetches
                         // roles into shared state via mentions::load_roles.
                         &crate::app::shell_alive(),
-                        discord_server::server_roles::assign_role(
-                            discord_server::server_roles::AssignRoleInput { role_id, user_id, assigned: add },
-                        ),
+                        crate::backend::assign_role(role_id, user_id, add),
                         move |result| {
                             if result.is_ok() {
                                 if let Some(sid) = crate::mentions::server_id() {

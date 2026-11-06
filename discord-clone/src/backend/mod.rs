@@ -51,10 +51,19 @@ pub use discord_server::auth::{
 };
 pub use discord_server::password_resets::ResetPasswordResult;
 pub use discord_server::profiles::{ProfileFields, UserProfile};
-pub use discord_server::notification_settings::NotificationSetting;
-pub use discord_server::server_emoji::ServerEmoji;
-pub use discord_server::gifs::GifPage;
+pub use discord_server::notification_settings::{
+    Level,
+    NotificationSetting,
+    Scope,
+    MUTED_UNTIL_TURNED_OFF,
+    is_muted,
+};
+pub use discord_server::server_emoji::{ServerEmoji, MAX_PER_SERVER};
+pub use discord_server::gifs::{GifPage, gif_body, gif_message};
 pub use discord_server::search::SearchResults;
+pub use discord_server::server_settings::{MemberInfo, MemberResult};
+pub use discord_server::server_roles::{RolesSnapshot, CustomRole};
+pub use discord_server::permissions::{Permissions, Target, MyPermissions, Overwrite};
 
 // --- the interface, by area -------------------------------------------------
 
@@ -205,6 +214,35 @@ pub trait SearchApi {
     async fn search_messages(server_id: i64, query: String, tz_offset_minutes: i64, offset: i64) -> Result<SearchResults, ServerError>;
 }
 
+/// A server's members: the roster, and adding, kicking, banning, timing out
+/// or re-adding a member.
+pub trait MembersApi {
+    async fn list_members(server_id: i64) -> Result<Vec<MemberInfo>, ServerError>;
+    async fn add_member(server_id: i64, user_id: i64) -> Result<MemberResult, ServerError>;
+    async fn remove_member(server_id: i64, user_id: i64) -> Result<MemberResult, ServerError>;
+    async fn ban_member(server_id: i64, user_id: i64, reason: Option<String>) -> Result<MemberResult, ServerError>;
+    async fn timeout_member(server_id: i64, user_id: i64, duration_secs: i64) -> Result<MemberResult, ServerError>;
+}
+
+/// Named roles: the snapshot, and create / rename / recolour / reorder /
+/// delete, plus giving or taking a role from a member.
+pub trait RolesApi {
+    async fn server_roles(server_id: i64) -> Result<RolesSnapshot, ServerError>;
+    async fn create_role(server_id: i64, name: String, color: String, mentionable: bool) -> Result<CustomRole, ServerError>;
+    async fn update_role(role_id: i64, name: String, color: String, mentionable: bool, permissions: Option<Permissions>) -> Result<CustomRole, ServerError>;
+    async fn move_role(role_id: i64, position: i64) -> Result<CustomRole, ServerError>;
+    async fn delete_role(role_id: i64) -> Result<(), ServerError>;
+    async fn assign_role(role_id: i64, user_id: i64, assigned: bool) -> Result<(), ServerError>;
+}
+
+/// What the caller may do: the server-wide answer and per-channel overwrites.
+pub trait PermissionsApi {
+    async fn my_permissions(server_id: i64) -> Result<MyPermissions, ServerError>;
+    async fn channel_overwrites(channel_id: i64) -> Result<Vec<Overwrite>, ServerError>;
+    async fn set_channel_overwrite(channel_id: i64, target: Target, allow: Permissions, deny: Permissions) -> Result<Vec<Overwrite>, ServerError>;
+    async fn set_everyone_permissions(server_id: i64, permissions: Permissions) -> Result<Permissions, ServerError>;
+}
+
 /// Today's backend: the implementation files below implement the areas
 /// above for this type.
 pub struct CassetteBackend;
@@ -272,6 +310,9 @@ mod notif_impl;
 mod emoji_impl;
 mod gif_impl;
 mod search_impl;
+mod members_impl;
+mod roles_impl;
+mod permissions_impl;
 
 // --- the accessors (the single place the UI gets the backend) ---------------
 
@@ -591,4 +632,66 @@ pub async fn gif_search(query: String, offset: u32) -> Result<GifPage, String> {
 
 pub async fn search_messages(server_id: i64, query: String, tz_offset_minutes: i64, offset: i64) -> Result<SearchResults, String> {
     CassetteBackend::search_messages(server_id, query, tz_offset_minutes, offset).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+// --- members, roles and permissions -----------------------------------------
+
+pub async fn list_members(server_id: i64) -> Result<Vec<MemberInfo>, String> {
+    CassetteBackend::list_members(server_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn add_member(server_id: i64, user_id: i64) -> Result<MemberResult, String> {
+    CassetteBackend::add_member(server_id, user_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn remove_member(server_id: i64, user_id: i64) -> Result<MemberResult, String> {
+    CassetteBackend::remove_member(server_id, user_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn ban_member(server_id: i64, user_id: i64, reason: Option<String>) -> Result<MemberResult, String> {
+    CassetteBackend::ban_member(server_id, user_id, reason).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn timeout_member(server_id: i64, user_id: i64, duration_secs: i64) -> Result<MemberResult, String> {
+    CassetteBackend::timeout_member(server_id, user_id, duration_secs).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn server_roles(server_id: i64) -> Result<RolesSnapshot, String> {
+    CassetteBackend::server_roles(server_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn create_role(server_id: i64, name: String, color: String, mentionable: bool) -> Result<CustomRole, String> {
+    CassetteBackend::create_role(server_id, name, color, mentionable).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn update_role(role_id: i64, name: String, color: String, mentionable: bool, permissions: Option<Permissions>) -> Result<CustomRole, String> {
+    CassetteBackend::update_role(role_id, name, color, mentionable, permissions).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn move_role(role_id: i64, position: i64) -> Result<CustomRole, String> {
+    CassetteBackend::move_role(role_id, position).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn delete_role(role_id: i64) -> Result<(), String> {
+    CassetteBackend::delete_role(role_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn assign_role(role_id: i64, user_id: i64, assigned: bool) -> Result<(), String> {
+    CassetteBackend::assign_role(role_id, user_id, assigned).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn my_permissions(server_id: i64) -> Result<MyPermissions, String> {
+    CassetteBackend::my_permissions(server_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn channel_overwrites(channel_id: i64) -> Result<Vec<Overwrite>, String> {
+    CassetteBackend::channel_overwrites(channel_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn set_channel_overwrite(channel_id: i64, target: Target, allow: Permissions, deny: Permissions) -> Result<Vec<Overwrite>, String> {
+    CassetteBackend::set_channel_overwrite(channel_id, target, allow, deny).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn set_everyone_permissions(server_id: i64, permissions: Permissions) -> Result<Permissions, String> {
+    CassetteBackend::set_everyone_permissions(server_id, permissions).await.map_err(|e| crate::errors::friendly(&e))
 }

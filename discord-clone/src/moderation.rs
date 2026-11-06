@@ -7,7 +7,7 @@
 //! to the codegen'd RPC stubs -- no manual HTTP here. Every call authenticates
 //! as the signed-in user via the session token the `server` SDK attaches.
 
-pub use discord_server::server_settings::MemberInfo;
+pub use crate::backend::MemberInfo;
 
 /// List the members of a server with their roles, owner-first. Every row's
 /// avatar (a `data:image/…;base64,` URL or `None`) is pushed into the shared
@@ -15,10 +15,7 @@ pub use discord_server::server_settings::MemberInfo;
 /// panel, message rows, and DMs can draw it by username; the roster is
 /// authoritative, so a `None` row wipes a stale entry.
 pub async fn list_members(server_id: i64) -> Result<Vec<MemberInfo>, String> {
-    let input = discord_server::server_settings::ListMembersInput { server_id };
-    let members = discord_server::server_settings::list_members(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))?;
+    let members = crate::backend::list_members(server_id).await?;
     for m in members.iter() {
         crate::auth::remember_avatar(m.username.as_str(), m.avatar_url.clone());
     }
@@ -29,11 +26,7 @@ pub async fn list_members(server_id: i64) -> Result<Vec<MemberInfo>, String> {
 /// check (moderator-or-above may call; the owner can't be removed) -- on a
 /// rejection the backend's message comes back as the `Err` string.
 pub async fn kick_member(server_id: i64, user_id: i64) -> Result<(), String> {
-    let input = discord_server::server_settings::RemoveMemberInput { server_id, user_id };
-    discord_server::server_settings::remove_member(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))?;
-    Ok(())
+    crate::backend::remove_member(server_id, user_id).await.map(|_| ())
 }
 
 /// Ban a member from a server: remove them AND bar rejoining (an invite
@@ -43,15 +36,7 @@ pub async fn kick_member(server_id: i64, user_id: i64) -> Result<(), String> {
 /// `Err` string. `reason` is an optional free-text note stored on the ban
 /// record.
 pub async fn ban_member(server_id: i64, user_id: i64, reason: Option<&str>) -> Result<(), String> {
-    let input = discord_server::server_settings::BanMemberInput {
-        server_id,
-        user_id,
-        reason: reason.map(|s| s.to_string()),
-    };
-    discord_server::server_settings::ban_member(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))?;
-    Ok(())
+    crate::backend::ban_member(server_id, user_id, reason.map(|s| s.to_string())).await.map(|_| ())
 }
 
 /// Time out a member of a server: silence them from posting messages for
@@ -62,23 +47,11 @@ pub async fn ban_member(server_id: i64, user_id: i64, reason: Option<&str>) -> R
 /// backend's message comes back as the `Err` string. A re-timeout overwrites
 /// the existing deadline in place.
 pub async fn timeout_member(server_id: i64, user_id: i64, duration_secs: i64) -> Result<(), String> {
-    let input = discord_server::server_settings::TimeoutMemberInput {
-        server_id,
-        user_id,
-        duration_secs,
-    };
-    discord_server::server_settings::timeout_member(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))?;
-    Ok(())
+    crate::backend::timeout_member(server_id, user_id, duration_secs).await.map(|_| ())
 }
 
 /// Add a user to a server as a plain member. The backend's rejection
 /// message comes back as the `Err` string.
 pub async fn add_member(server_id: i64, user_id: i64) -> Result<(), String> {
-    let input = discord_server::server_settings::AddMemberInput { server_id, user_id };
-    discord_server::server_settings::add_member(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))?;
-    Ok(())
+    crate::backend::add_member(server_id, user_id).await.map(|_| ())
 }
