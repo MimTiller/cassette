@@ -217,7 +217,7 @@ pub(super) fn user_panel(
                     flex_shrink: Some(grow(0.0)),
                     ..rounded(16.0)
                 }, test_id = "user-panel-avatar") {
-                    AvatarFrame(size = 32.0_f32) { chip }
+                    AvatarFrame(name = username.get(), size = 32.0_f32) { chip }
                     { dot }
                 }
                 .on_touch(move |ev| {

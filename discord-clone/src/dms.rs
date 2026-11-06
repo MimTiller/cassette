@@ -17,6 +17,7 @@ pub async fn list_dms() -> Result<Vec<Dm>, String> {
     for dm in list.iter() {
         for p in dm.participants.iter() {
             crate::auth::remember_avatar(p.username.as_str(), p.avatar_url.clone());
+            crate::auth::remember_avatar_decoration(p.username.as_str(), p.avatar_decoration.clone());
         crate::auth::remember_display_name(p.username.as_str(), p.display_name.clone());
         }
     }
@@ -30,6 +31,7 @@ pub async fn start_dm(user_id: i64) -> Result<Dm, String> {
     let dm = discord_server::dms::start_dm(input).await.map_err(|e| crate::errors::friendly(&e))?;
     for p in dm.participants.iter() {
         crate::auth::remember_avatar(p.username.as_str(), p.avatar_url.clone());
+        crate::auth::remember_avatar_decoration(p.username.as_str(), p.avatar_decoration.clone());
         crate::auth::remember_display_name(p.username.as_str(), p.display_name.clone());
     }
     Ok(dm)
@@ -64,6 +66,7 @@ pub async fn list_dm_messages(dm_id: i64, limit: Option<i64>) -> Result<Vec<DmMe
         .map_err(|e| crate::errors::friendly(&e))?;
     for m in history.iter() {
         crate::auth::remember_avatar(m.author_username.as_str(), m.author_avatar.clone());
+        crate::auth::remember_avatar_decoration(m.author_username.as_str(), m.author_decoration.clone());
     }
     Ok(history)
 }

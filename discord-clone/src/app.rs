@@ -473,6 +473,18 @@ fn app_shell(authed: Signal<bool>) -> Element {
         Rc::new(RefCell::new(HashMap::new()));
     let live_revision: Signal<u32> = signal(0);
     crate::mentions::install(live_revision);
+    // A saved session doesn't carry the signed-in user's avatar decoration, so
+    // ask for it: the user panel draws it even with no roster to learn it from.
+    {
+        let me = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
+        let input = discord_server::profiles::GetUserProfileInput { user_id: me, server_id: None };
+        runtime_core::spawn_then_in(&crate::app::shell_alive(), discord_server::profiles::get_user_profile(input), |result| {
+            if let Ok(p) = result {
+                crate::auth::remember_avatar_decoration(&p.username, p.avatar_decoration);
+                crate::mentions::names_changed();
+            }
+        });
+    }
 
     // --- message reactions (shared by the MOCK and the LIVE message lists) --
     // Per-message reaction state: `reactions` is the pill map (see the `ReactionMap`

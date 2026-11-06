@@ -985,7 +985,7 @@ pub(crate) fn message_row(
             }
         }
     };
-    let avatar_chip = ui! { AvatarFrame(size = 40.0_f32) { chip } };
+    let avatar_chip = ui! { AvatarFrame(name = author, size = 40.0_f32) { chip } };
     if grouped {
         // Grouped form (Discord convention): no avatar, no author/time
         // header. Just the body, tightly spaced above the row it follows

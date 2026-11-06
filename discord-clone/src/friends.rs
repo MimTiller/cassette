@@ -25,6 +25,7 @@ fn remember_avatars(list: FriendList) {
             .chain(list.accepted.iter())
     {
         crate::auth::remember_avatar(group.username.as_str(), group.avatar_url.clone());
+        crate::auth::remember_avatar_decoration(group.username.as_str(), group.avatar_decoration.clone());
         crate::auth::remember_display_name(group.username.as_str(), group.display_name.clone());
     }
 }

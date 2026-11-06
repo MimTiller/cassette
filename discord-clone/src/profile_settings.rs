@@ -57,6 +57,12 @@ use file_picker::{FilePicker, PickRequest, PickOutcome, MediaKind};
 // The same Discord dark palette as `app.rs`, kept local so the screen is
 // self-contained.
 
+/// What the decoration picker offers: test id, label, catalog id.
+static DECORATION_CHOICES: [(&str, &str, Option<&str>); 2] = [
+    ("profile-decoration-none", "None", None),
+    ("profile-decoration-cat-ears", "Cat ears", Some("cat_ears")),
+];
+
 /// The avatar preview's size on the Profile screen.
 const AVATAR_PREVIEW: f32 = 112.0;
 
@@ -262,6 +268,10 @@ pub fn ProfileSettings() -> Element {
     let about = signal(String::new());
     let profile_note = signal(String::new());
     let profile_busy = signal(false);
+    // The decoration on the avatar. Picking one saves it straight away, like
+    // the avatar itself.
+    let decoration = signal(crate::auth::avatar_decoration_for(&username));
+    let decoration_error = signal(String::new());
     // Replies land in this page's signals, so they are anchored to it.
     let alive = runtime_core::ScopeAlive::current();
     {
@@ -271,6 +281,7 @@ pub fn ProfileSettings() -> Element {
             if let Ok(p) = result {
                 display_name.set(p.display_name.unwrap_or_default());
                 about.set(p.about);
+                decoration.set(p.avatar_decoration);
             }
         });
     }
@@ -291,6 +302,20 @@ pub fn ProfileSettings() -> Element {
                 Err(e) => profile_note.set(crate::errors::friendly(&e)),
             }
             profile_busy.set(false);
+        });
+    };
+    let pick_decoration = move |choice: Option<String>| {
+        decoration_error.set(String::new());
+        let input = discord_server::profiles::SetAvatarDecorationInput { decoration: choice };
+        runtime_core::spawn_then_in(&crate::app::shell_alive(), discord_server::profiles::set_avatar_decoration(input), move |result| {
+            match result {
+                Ok(saved) => {
+                    crate::auth::remember_avatar_decoration(&crate::auth::current_username(), saved.clone());
+                    crate::mentions::names_changed();
+                    decoration.set(saved);
+                }
+                Err(e) => decoration_error.set(crate::errors::friendly(&e)),
+            }
         });
     };
     // The signed-in user's avatar URL (a `data:image/…;base64,` string,
@@ -488,7 +513,7 @@ pub fn ProfileSettings() -> Element {
             // non-Copy is captured across the `when` boundary.
             view(style = StyleRules { justify_content: Some(JustifyContent::Center), ..Default::default() }) {
             view(style = StyleRules { cursor: Some(runtime_core::Cursor::Pointer), ..Default::default() }) {
-            AvatarFrame(size = AVATAR_PREVIEW) {
+            AvatarFrame(name = username.clone(), size = AVATAR_PREVIEW) {
             if !avatar_url.get().is_empty() {
                 image(
                     src = move || crate::auth::media_url(avatar_url.get().clone()),
@@ -558,6 +583,46 @@ pub fn ProfileSettings() -> Element {
                     color: Some(col(theme::DANGER)),
                     ..Default::default()
                 }) { move || av_error.get().clone() }
+            }
+            { crate::settings_suite::settings_card("Avatar decoration".to_string(), vec![
+                ui! {
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Row),
+                        gap: Some(px(8.0)),
+                        ..Default::default()
+                    }) {
+                        for choice in DECORATION_CHOICES.iter(), key = choice.0 {
+                            view(style = move || StyleRules {
+                                padding_top: Some(px(8.0)),
+                                padding_bottom: Some(px(8.0)),
+                                padding_left: Some(px(12.0)),
+                                padding_right: Some(px(12.0)),
+                                cursor: Some(runtime_core::Cursor::Pointer),
+                                background: Some(crate::style_helpers::selected_fill(decoration.get().as_deref() == choice.2, false)),
+                                ..rounded(4.0)
+                            }, test_id = choice.0) {
+                                text(style = move || StyleRules {
+                                    font_size: Some(px(14.0)),
+                                    color: Some(col(if decoration.get().as_deref() == choice.2 { theme::TEXT_STRONG } else { theme::TEXT_MUTED })),
+                                    ..Default::default()
+                                }) { choice.1.to_string() }
+                            }
+                            .on_touch(move |ev| {
+                                if ev.phase == TouchPhase::Ended {
+                                    pick_decoration(choice.2.map(str::to_string));
+                                }
+                                TouchResponse::CONSUMED
+                            })
+                        }
+                    }
+                }
+            ]) }
+            if !decoration_error.get().is_empty() {
+                text(style = StyleRules {
+                    font_size: Some(px(12.0)),
+                    color: Some(col(theme::DANGER)),
+                    ..Default::default()
+                }) { move || decoration_error.get().clone() }
             }
             { crate::settings_suite::settings_card("Display name".to_string(), vec![
                 ui! {

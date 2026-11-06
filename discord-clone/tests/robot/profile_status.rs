@@ -16,7 +16,7 @@
 
 use robot_test::{json, robot_test, App, Value};
 
-use crate::support::{Account, fresh_name, sign_in_as, sign_out, signed_out};
+use crate::support::{Account, eventually, fresh_name, sign_in_as, sign_out, signed_out};
 use crate::support::WAIT;
 use crate::users::open_browser;
 
@@ -130,6 +130,49 @@ fn do_not_disturb_reaches_the_other_user_as_red(app: &mut App) {
     app.press_key("Escape");
     // Sign A out: its picked status is Do Not Disturb, so the next test's
     // `signed_out` (keyed on "Online") would otherwise leave it signed in.
+    sign_out(app);
+}
+
+#[robot_test]
+fn cat_ears_reach_the_other_browser_and_come_off_again(app: &mut App) {
+    let crew = crew("ears");
+
+    signed_out(app);
+    sign_in_as(app, &crew.a);
+    app.text(&crew.server).assert_visible();
+    app.text("general").click();
+    app.set_timeout(WAIT);
+
+    // B is already connected and watching A's member row.
+    let mut other = open_browser(&fresh_name("earswatch"));
+    sign_in_as(&mut other.app, &crew.b);
+    other.app.text(&crew.server).assert_visible();
+    other.app.set_timeout(WAIT);
+    assert!(!other.app.test_id("avatar-decoration").is_visible(), "nobody starts with ears");
+
+    // A picks cat ears: the preview wears them, and so does A's row on B's rail.
+    open_user_settings(app);
+    app.test_id("settings-nav-profile").click();
+    app.test_id("profile-decoration-cat-ears").click();
+    app.test_id("avatar-decoration").assert_visible();
+    shot(app, "ears1-preview");
+    other.app.test_id("avatar-decoration").assert_visible();
+    shot(&mut other.app, "ears2-b-sees-them");
+    app.press_key("Escape");
+
+    // The ears take no presses: the avatar under them still opens its menu.
+    app.test_id("user-panel-avatar").click();
+    app.test_id("status-menu").assert_visible();
+    shot(app, "ears3-status-menu");
+    app.press_key("Escape");
+
+    // A takes them off again, and they leave B's rail without a reload.
+    open_user_settings(app);
+    app.test_id("settings-nav-profile").click();
+    app.test_id("profile-decoration-none").click();
+    let gone = eventually(10, || !other.app.test_id("avatar-decoration").is_visible());
+    assert!(gone, "B still sees the ears A took off");
+    app.press_key("Escape");
     sign_out(app);
 }
 

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60">
+  <g id="ear" stroke="#3b2a26" stroke-width="2" stroke-linejoin="round">
+    <path fill="#f6d9c4" d="M4 52C1 36 1 18 6 6c1-3 4-3 6-1 7 6 17 13 25 18C27 25 13 35 4 52z"/>
+    <path fill="#f29cb0" stroke="none" d="M9 38C8 29 8 20 10 12c5 5 12 10 18 13-7 2-14 6-19 13z"/>
+  </g>
+  <use href="#ear" transform="matrix(-1 0 0 1 100 0)"/>
+</svg>

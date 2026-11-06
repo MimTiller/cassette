@@ -265,6 +265,7 @@ mod dm_find_tests {
             display_name: None,
             role: "member".to_string(),
             avatar_url: None,
+            avatar_decoration: None,
             presence: None,
         }
     }
@@ -391,7 +392,7 @@ fn live_dm_row(
         }
     } else {
         ui! {
-            AvatarFrame(size = 34.0_f32) {
+            AvatarFrame(name = name.clone(), size = 34.0_f32) {
                 view(style = avatar_style) {
                     text(style = initial_style) { initial }
                 }
@@ -1105,6 +1106,7 @@ pub fn dm_incoming_effect(
                 dm_id,
                 author_username,
                 author_avatar,
+                author_decoration,
                 content,
                 created_at,
                 ..
@@ -1114,6 +1116,7 @@ pub fn dm_incoming_effect(
                 // The author's avatar rides the frame: register it so the DM
                 // pane's rows (and the rail) draw it instead of the initial.
                 crate::auth::remember_avatar(author_username.as_str(), author_avatar.clone());
+                crate::auth::remember_avatar_decoration(author_username.as_str(), author_decoration.clone());
                 // A message in a DM this client has never seen (the other
                 // person just started it) means the list is stale: refetch it
                 // so the new row shows up live.

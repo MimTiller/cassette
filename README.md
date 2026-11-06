@@ -69,7 +69,8 @@ a chat and calling backend built on the same idealyst framework.
   so moderators can't gang up on the owner
 
 **You**
-- A display name, avatar and "about me"
+- A display name, avatar and "about me", and cat ears for the avatar if you
+  want them
 - Online, Idle, Do Not Disturb or Invisible
 - Friends, DMs and group DMs, plus a block button for when you need it
 - Browser notifications that you control per server and per channel: ping

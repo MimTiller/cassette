@@ -15,8 +15,8 @@
 use crate::theme;
 use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
-    component, ui, AlignItems, Element, FontWeight, JustifyContent, ObjectFit, Position,
-    StyleRules, Tokenized,
+    component, signal, ui, AlignItems, Element, FontWeight, JustifyContent, ObjectFit,
+    PointerEvents, Position, StyleRules, Tokenized,
 };
 
 /// True when `url` may be mounted as an `image()` src: the
@@ -117,12 +117,43 @@ pub fn grow(v: f32) -> Tokenized<f32> {
 pub const PRESENCE_DOT_PX: f32 = 10.0;
 pub const PRESENCE_RING_PX: f32 = 2.0;
 
+/// Avatars smaller than this wear no decoration: the art stops reading.
+const DECORATION_MIN_PX: f32 = 24.0;
+/// How far decoration art starts above the avatar, as a fraction of its size.
+const DECORATION_RISE: f32 = 0.2;
+/// How tall decoration art is, as a fraction of the avatar's size (its viewBox
+/// is 100 x 60, and as wide as the avatar).
+const DECORATION_HEIGHT: f32 = 0.6;
+
+/// The art for a catalog id (`discord_server::profiles::AVATAR_DECORATIONS`),
+/// or `None` for an id this build doesn't know.
+fn decoration_svg(id: &str) -> Option<&'static str> {
+    match id {
+        "cat_ears" => Some(include_str!("../../icons/cat_ears.svg")),
+        _ => None,
+    }
+}
+
 /// The box every avatar on every surface sits in: `size` square and
-/// `Position::Relative`, with the chip as its child. Surfaces that draw their
-/// own chip wrap it in this; [`avatar_chip`] and [`avatar_chip_url`] do it for
-/// everyone else.
+/// `Position::Relative`, with the chip as its child and `name`'s decoration
+/// over it. Surfaces that draw their own chip wrap it in this; [`avatar_chip`]
+/// and [`avatar_chip_url`] do it for everyone else.
+///
+/// The art reads the mentions revision, so it follows the decoration registry
+/// on any surface without the surface rebuilding. It takes no pointer events,
+/// so a press on it lands on the avatar. A presence dot goes after this frame
+/// in its parent, which keeps the dot on top.
 #[component]
-pub fn AvatarFrame(#[prop(static)] size: f32, children: Vec<Element>) -> Element {
+pub fn AvatarFrame(#[prop(static)] name: String, #[prop(static)] size: f32, children: Vec<Element>) -> Element {
+    // A signal, not the String, so the closures below stay `Copy`.
+    let name = signal(name);
+    let art = move || {
+        crate::mentions::revision();
+        if size < DECORATION_MIN_PX {
+            return None;
+        }
+        crate::auth::avatar_decoration_for(&name.get()).and_then(|id| decoration_svg(&id))
+    };
     ui! {
         view(style = StyleRules {
             position: Some(Position::Relative),
@@ -132,6 +163,22 @@ pub fn AvatarFrame(#[prop(static)] size: f32, children: Vec<Element>) -> Element
             ..Default::default()
         }) {
             { children }
+            if art().is_some() {
+                image(
+                    src = move || art().map(crate::app_icon::svg_data_url).unwrap_or_default(),
+                    alt = "",
+                    style = StyleRules {
+                        position: Some(Position::Absolute),
+                        left: Some(px(0.0)),
+                        top: Some(px(-size * DECORATION_RISE)),
+                        width: Some(px(size)),
+                        height: Some(px(size * DECORATION_HEIGHT)),
+                        pointer_events: Some(PointerEvents::None),
+                        ..Default::default()
+                    },
+                    test_id = "avatar-decoration",
+                )
+            }
         }
     }
 }
@@ -141,7 +188,7 @@ pub fn AvatarFrame(#[prop(static)] size: f32, children: Vec<Element>) -> Element
 pub fn avatar_chip_url(name: &str, url: &str, size: f32) -> Element {
     let radius = size / 2.0;
     ui! {
-        AvatarFrame(size = size) {
+        AvatarFrame(name = name, size = size) {
             image(
                 src = crate::auth::media_url(url.to_string()),
                 alt = format!("{} avatar", name),
@@ -168,7 +215,7 @@ pub fn avatar_chip(name: &str, tint: &str, size: f32) -> Element {
         avatar_chip_url(name, url.as_str(), size)
     } else {
         ui! {
-            AvatarFrame(size = size) {
+            AvatarFrame(name = name, size = size) {
                 view(style = StyleRules {
                     width: Some(px(size)),
                     height: Some(px(size)),
@@ -247,7 +294,15 @@ pub fn presence_status_role(status: &str) -> &str {
 
 #[cfg(test)]
 mod avatar_gate_tests {
-    use crate::avatar_chip::mountable_avatar_url;
+    use crate::avatar_chip::{decoration_svg, mountable_avatar_url};
+
+    #[test]
+    fn every_catalog_decoration_has_art() {
+        for id in discord_server::profiles::AVATAR_DECORATIONS {
+            assert!(decoration_svg(id).is_some(), "{id} has no art");
+        }
+        assert!(decoration_svg("dog_ears").is_none());
+    }
 
     #[test]
     fn regression_avatar_corrupt_png_chunk_never_mounts() {
