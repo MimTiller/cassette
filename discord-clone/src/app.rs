@@ -326,25 +326,19 @@ pub fn app() -> Element {
         RESTORED.store(true, std::sync::atomic::Ordering::SeqCst);
     }
     let authed: Signal<bool> = signal(restored);
-    let authed_copy = authed; // `Signal` is `Copy`; the render closure only
-                              // receives the current value, so pass the signal in.
     // The login screen's in-flight flag: `true` between a submit and the
     // backend call landing (login or signup). Root-scoped so it outlives the
     // screen; threaded in and consumed by the form's submit button (its
     // `disabled` state + in-flight label) and the handlers' double-submit
     // guard. See `login_screen`.
     let busy: Signal<bool> = signal(false);
-    let busy_copy = busy;
-    switch(
-        move || authed.get(),
-        move |authed: &bool| {
-            if *authed {
-                app_shell(authed_copy)
-            } else {
-                login_screen(authed_copy, busy_copy)
-            }
-        },
-    )
+    ui! {
+        if authed.get() {{
+            app_shell(authed)
+        }} else {{
+            login_screen(authed, busy)
+        }}
+    }
 }
 
 // --- @-mention autocomplete helpers (pure) --------------------------------
@@ -1534,9 +1528,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let scroll = msg_scroll_ref.clone();
         let away = msg_show_jump;
         let last_channel: Rc<Cell<Option<(Option<i64>, u32)>>> = Rc::new(Cell::new(None));
-        switch(
-            move || (live_revision.get(), revision.get(), active_live_channel.get(), active_channel.get()),
-            move |(_, _, live_cid, mock_cid): &(u32, u32, Option<i64>, u32)| {
+        let render =
+            move |key: &(u32, u32, Option<i64>, u32)| -> Element {
+                let (_, _, live_cid, mock_cid) = key;
                 let channel = (*live_cid, *mock_cid);
                 let switched = last_channel.replace(Some(channel)) != Some(channel);
                 let forced = FOLLOW_LATEST.with(|f| f.replace(false));
@@ -1561,8 +1555,12 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     }
                 }
                 ui! { view(style = StyleRules { width: Some(px(0.0)), height: Some(px(0.0)), ..Default::default() }) {} }
-            },
-        )
+            };
+        ui! {
+            match (live_revision.get(), revision.get(), active_live_channel.get(), active_channel.get()) {
+                key => {{ (render)(&key) }},
+            }
+        }
     };
     let msg_scroll_handle = msg_scroll_ref.clone();
     let msg_jump_el = JumpToBottomButton(
