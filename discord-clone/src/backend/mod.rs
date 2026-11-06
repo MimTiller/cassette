@@ -41,6 +41,16 @@ pub use discord_server::servers::{ChannelSummary, ServerSummary};
 pub use discord_server::invites::{Invite, RedeemResult};
 pub use discord_server::friends::{FriendList, FriendUser, SendFriendRequestResult};
 pub use discord_server::blocks::BlockedUser;
+pub use discord_server::auth::{
+    LoginResult,
+    SignupResult,
+    ChangeUsernameResult,
+    ChangePasswordResult,
+    LogoutResult,
+    AvatarResult,
+};
+pub use discord_server::password_resets::ResetPasswordResult;
+pub use discord_server::profiles::{ProfileFields, UserProfile};
 
 // --- the interface, by area -------------------------------------------------
 
@@ -148,6 +158,24 @@ pub trait EventStreamApi {
     fn connect(token: String) -> Gateway;
 }
 
+/// The signed-in account itself: sign in and out, rename, change password,
+/// the avatar, and the profile (display name, about). The identity providers
+/// in `crate::identity` sit on this area.
+pub trait AccountApi {
+    async fn login(username: String, password: String) -> Result<LoginResult, ServerError>;
+    async fn signup(username: String, password: String) -> Result<SignupResult, ServerError>;
+    async fn logout() -> Result<LogoutResult, ServerError>;
+    async fn logout_everywhere() -> Result<LogoutResult, ServerError>;
+    async fn change_password(current_password: String, new_password: String) -> Result<ChangePasswordResult, ServerError>;
+    async fn change_username(new_username: String) -> Result<ChangeUsernameResult, ServerError>;
+    async fn reset_password(token: String, new_password: String) -> Result<ResetPasswordResult, ServerError>;
+
+    async fn set_avatar(avatar_url: Option<String>) -> Result<AvatarResult, ServerError>;
+
+    async fn get_user_profile(user_id: i64, server_id: Option<i64>) -> Result<UserProfile, ServerError>;
+    async fn set_profile(display_name: String, about: String) -> Result<ProfileFields, ServerError>;
+}
+
 /// Today's backend: the implementation files below implement the areas
 /// above for this type.
 pub struct CassetteBackend;
@@ -210,6 +238,7 @@ mod invites_impl;
 mod realtime;
 mod servers_impl;
 mod social_impl;
+mod account_impl;
 
 // --- the accessors (the single place the UI gets the backend) ---------------
 
@@ -453,4 +482,48 @@ pub async fn set_blocked(user_id: i64, block: bool) -> Result<Vec<BlockedUser>, 
         CassetteBackend::unblock_user(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
     }
     CassetteBackend::list_blocked().await.map_err(|e| crate::errors::friendly(&e))
+}
+
+// --- the account accessors --------------------------------------------------
+
+pub async fn login(username: String, password: String) -> Result<LoginResult, String> {
+    CassetteBackend::login(username, password).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn signup(username: String, password: String) -> Result<SignupResult, String> {
+    CassetteBackend::signup(username, password).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn logout() -> Result<LogoutResult, String> {
+    CassetteBackend::logout().await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn logout_everywhere() -> Result<LogoutResult, String> {
+    CassetteBackend::logout_everywhere().await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn change_password(current_password: String, new_password: String) -> Result<ChangePasswordResult, String> {
+    CassetteBackend::change_password(current_password, new_password).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn change_username(new_username: String) -> Result<ChangeUsernameResult, String> {
+    CassetteBackend::change_username(new_username).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn reset_password(token: String, new_password: String) -> Result<String, String> {
+    CassetteBackend::reset_password(token, new_password).await
+        .map(|r| r.username)
+        .map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn set_avatar(avatar_url: Option<String>) -> Result<AvatarResult, String> {
+    CassetteBackend::set_avatar(avatar_url).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn get_user_profile(user_id: i64, server_id: Option<i64>) -> Result<UserProfile, String> {
+    CassetteBackend::get_user_profile(user_id, server_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn set_profile(display_name: String, about: String) -> Result<ProfileFields, String> {
+    CassetteBackend::set_profile(display_name, about).await.map_err(|e| crate::errors::friendly(&e))
 }

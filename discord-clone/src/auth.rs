@@ -20,13 +20,7 @@
 /// to set; the backend validates the prefix and size and its rejection comes
 /// back as the `Err` string. Self-only: the acting user is the bearer token.
 pub async fn set_avatar(avatar: Option<String>) -> Result<Option<String>, String> {
-    let input = discord_server::auth::SetAvatarInput {
-        avatar_url: avatar,
-    };
-    discord_server::auth::set_avatar(input)
-        .await
-        .map(|r| r.avatar_url)
-        .map_err(|e| crate::errors::friendly(&e))
+    crate::backend::set_avatar(avatar).await.map(|r| r.avatar_url)
 }
 
 // Sign-in (`login`), sign-up, password change/reset and logout live in
@@ -51,17 +45,13 @@ pub async fn set_avatar(avatar: Option<String>) -> Result<Option<String>, String
 /// session (not logged in), or a transport-level `ServerError`.
 /// The message is user-facing text from `errors::friendly`.
 pub async fn change_username(new_username: &str) -> Result<String, String> {
-    let input = discord_server::auth::ChangeUsernameInput {
-        new_username: new_username.to_string(),
-    };
-
-    match discord_server::auth::change_username(input).await {
+    match crate::backend::change_username(new_username.to_string()).await {
         Ok(result) => {
             *CURRENT_USERNAME.lock().unwrap_or_else(|p| p.into_inner()) =
                 result.username.clone();
             Ok(result.username)
         }
-        Err(error) => Err(crate::errors::friendly(&error)),
+        Err(error) => Err(error),
     }
 }
 

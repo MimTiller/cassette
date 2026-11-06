@@ -66,7 +66,7 @@ mod seam_tests {
     use crate::identity::provider_id;
     use crate::identity::ProviderKind;
     use crate::identity::identity_from_login;
-    use discord_server::auth::LoginResult;
+    use crate::backend::LoginResult;
 
     #[test]
     fn the_password_provider_round_trips_its_id() {
@@ -161,13 +161,9 @@ impl AuthProvider for PasswordAuth {
     // the stub, flatten the `ServerError` into user-facing text, and map the
     // `LoginResult` onto the seam's [`Identity`].
     async fn sign_in(username: &str, password: &str) -> Result<Identity, String> {
-        let creds = discord_server::auth::LoginInput {
-            username: username.to_string(),
-            password: password.to_string(),
-        };
-        match discord_server::auth::login(creds).await {
+        match crate::backend::login(username.to_string(), password.to_string()).await {
             Ok(result) => Ok(identity_from_login(result)),
-            Err(error) => Err(crate::errors::friendly(&error)),
+            Err(error) => Err(error),
         }
     }
 
@@ -175,51 +171,32 @@ impl AuthProvider for PasswordAuth {
     // caller lands on the app shell without retyping — the recorded identity
     // (and persisted session) come from the sign-in, exactly as before.
     async fn sign_up(username: &str, password: &str) -> Result<Identity, String> {
-        let input = discord_server::auth::SignupInput {
-            username: username.to_string(),
-            password: password.to_string(),
-        };
-        match discord_server::auth::signup(input).await {
-            Ok(_result) => PasswordAuth::sign_in(username, password).await,
-            Err(error) => Err(crate::errors::friendly(&error)),
-        }
+        crate::backend::signup(username.to_string(), password.to_string()).await?;
+        PasswordAuth::sign_in(username, password).await
     }
 
     // The session token is a signature over the user id, not the password,
     // so the caller stays signed in across the change.
     async fn change_password(current: &str, next: &str) -> Result<(), String> {
-        let input = discord_server::auth::ChangePasswordInput {
-            current_password: current.to_string(),
-            new_password: next.to_string(),
-        };
-        match discord_server::auth::change_password(input).await {
-            Ok(_) => Ok(()),
-            Err(error) => Err(crate::errors::friendly(&error)),
-        }
+        crate::backend::change_password(current.to_string(), next.to_string()).await
+            .map(|_| ())
     }
 
     async fn reset_password(token: &str, new_password: &str) -> Result<String, String> {
-        let input = discord_server::password_resets::ResetPasswordInput {
-            token: token.to_string(),
-            new_password: new_password.to_string(),
-        };
-        match discord_server::password_resets::reset_password(input).await {
-            Ok(result) => Ok(result.username),
-            Err(error) => Err(crate::errors::friendly(&error)),
-        }
+        crate::backend::reset_password(token.to_string(), new_password.to_string()).await
     }
 
     // Fire-and-forget logout: the client-side `clear_session()` already
     // dropped the identity keys, so a failed RPC cannot resurrect the shell.
     fn sign_out_here() {
         runtime_core::driver::spawn_detached(async move {
-            let _ = discord_server::auth::logout().await;
+            let _ = crate::backend::logout().await;
         });
     }
 
     fn sign_out_everywhere() {
         runtime_core::driver::spawn_detached(async move {
-            if discord_server::auth::logout_everywhere().await.is_ok() {
+            if crate::backend::logout_everywhere().await.is_ok() {
                 crate::auth::clear_session();
                 #[cfg(target_arch = "wasm32")]
                 if let Some(w) = web_sys::window() {
