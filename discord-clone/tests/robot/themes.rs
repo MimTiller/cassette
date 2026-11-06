@@ -29,6 +29,7 @@ fn picking_sunset_recolours_the_app(app: &mut App) {
     });
     assert!(ok, "cassette.theme should report sunset (got {got})");
     shot(app, "themes2-sunset");
+    for _ in 0..3 { app.press_key("Escape"); }
 }
 
 #[robot_test]
@@ -53,6 +54,7 @@ fn picking_miami_recolours_the_app(app: &mut App) {
     });
     assert!(ok, "cassette.theme should report miami (got {got})");
     shot(app, "themes3-miami");
+    for _ in 0..3 { app.press_key("Escape"); }
 }
 
 #[robot_test]
@@ -77,6 +79,7 @@ fn picking_memphis_recolours_the_app(app: &mut App) {
     });
     assert!(ok, "cassette.theme should report memphis (got {got})");
     shot(app, "themes4-memphis");
+    for _ in 0..3 { app.press_key("Escape"); }
 }
 
 #[robot_test]
@@ -101,6 +104,7 @@ fn picking_bubblegum_recolours_the_app(app: &mut App) {
     });
     assert!(ok, "cassette.theme should report bubblegum (got {got})");
     shot(app, "themes5-bubblegum");
+    for _ in 0..3 { app.press_key("Escape"); }
 }
 
 // Shared helpers for this module.
