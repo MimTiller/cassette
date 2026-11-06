@@ -512,6 +512,10 @@ pub(super) fn message_body_piece(piece: &BodyPiece, emoji_size: crate::styles::B
 }
 
 pub(super) fn message_body(body: &str) -> Element {
+    // A sticker message's row body is a marker for its sticker.
+    if let Some(s) = crate::sticker_msgs::from_body(body) {
+        return crate::sticker_msgs::view(&s);
+    }
     // A body that is just a Giphy media link (a GIF sent from the picker, or
     // a pasted one) shows as the animated image, sized from the link's
     // `#WxH` fragment like an attachment.
@@ -1251,6 +1255,8 @@ pub(super) fn message_row_with_actions(
     on_delete: Option<Rc<dyn Fn()>>,
     on_author: Option<AuthorPress>,
 ) -> Element {
+    // A sticker has no text to edit.
+    let on_edit = if crate::sticker_msgs::from_body(body).is_some() { None } else { on_edit };
     let hovered = signal(false);
     let menu_open = super::popups::MenuHandle { key };
     let base = message_row(author, color, body, when, full, edited, grouped, on_author);
@@ -1261,6 +1267,8 @@ pub(super) fn message_row_with_actions(
     let author_owned = author.to_string();
     let snippet: String = if discord_server::gifs::gif_body(body).is_some() {
         "GIF".to_string()
+    } else if let Some(s) = crate::sticker_msgs::snippet(body) {
+        s
     } else {
         let s: String = body.chars().take(48).collect();
         if body.chars().count() > 48 {

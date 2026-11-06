@@ -1178,12 +1178,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
                         // counter) — the fetch is the click path's fetch.
                         if let Ok(msgs) = history {
                             buf.borrow_mut().clear();
-                            buf.borrow_mut().extend(msgs.into_iter().map(|m| (
-                                m.author_username,
-                                m.content,
-                                m.created_at,
-                                m.edited_at,
-                            )));
+                            buf.borrow_mut().extend(msgs.into_iter().map(|m| {
+                                let body = crate::sticker_msgs::dm_body(m.message_id, m.sticker.as_ref(), &m.content);
+                                (m.author_username, body, m.created_at, m.edited_at)
+                            }));
                             rev.set(rev.get() + 1);
                         }
                     }

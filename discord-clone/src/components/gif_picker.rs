@@ -39,7 +39,7 @@ const DEBOUNCE_MS: i32 = 400;
 /// emoji popover, when present — the DM composer passes `None`). Shared by
 /// the channel composer in `app/composer.rs` and the live DM composer in
 /// `live_dm_view.rs`.
-pub(crate) fn gif_button(on: Signal<bool>, close_others: Option<Signal<bool>>) -> Element {
+pub(crate) fn gif_button(on: Signal<bool>, close_others: Vec<Signal<bool>>) -> Element {
     let hovered = signal(false);
     ui! {
         // GIF = open/close the GIF picker (closing the emoji picker's
@@ -58,7 +58,7 @@ pub(crate) fn gif_button(on: Signal<bool>, close_others: Option<Signal<bool>>) -
         .on_hover(move |on_| hovered.set(on_))
         .on_touch(move |ev| {
             if ev.phase == TouchPhase::Ended {
-                if let Some(other) = close_others {
+                for other in &close_others {
                     other.set(false);
                 }
                 on.set(!on.get());

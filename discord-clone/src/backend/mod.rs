@@ -59,6 +59,7 @@ pub use discord_server::notification_settings::{
     is_muted,
 };
 pub use discord_server::server_emoji::{ServerEmoji, MAX_PER_SERVER};
+pub use discord_server::stickers::{Sticker, MAX_PER_SERVER as STICKERS_MAX_PER_SERVER};
 pub use discord_server::gifs::{GifPage, gif_body, gif_message};
 pub use discord_server::search::SearchResults;
 pub use discord_server::server_settings::{MemberInfo, MemberResult};
@@ -140,7 +141,7 @@ pub trait InvitesApi {
 pub trait DmsApi {
     async fn list_dms() -> Result<Vec<Dm>, ServerError>;
     async fn start_dm(user_id: i64) -> Result<Dm, ServerError>;
-    async fn send_dm_message(channel_id: i64, content: String) -> Result<SendDmMessageResult, ServerError>;
+    async fn send_dm_message(channel_id: i64, content: String, sticker_id: Option<i64>) -> Result<SendDmMessageResult, ServerError>;
     async fn list_dm_messages(channel_id: i64, limit: Option<i64>) -> Result<Vec<DmMessage>, ServerError>;
 
     async fn create_group_dm(user_ids: Vec<i64>, name: String) -> Result<Dm, ServerError>;
@@ -206,6 +207,25 @@ pub trait EmojiApi {
     async fn upload_emoji(server_id: i64, name: String, data_url: String) -> Result<ServerEmoji, ServerError>;
     async fn rename_emoji(emoji_id: i64, name: String) -> Result<ServerEmoji, ServerError>;
     async fn delete_emoji(emoji_id: i64) -> Result<(), ServerError>;
+}
+
+/// A server's stickers: the list, upload, edit and delete.
+pub trait StickersApi {
+    async fn list_stickers(server_id: i64) -> Result<Vec<Sticker>, ServerError>;
+    async fn upload_sticker(
+        server_id: i64,
+        name: String,
+        description: String,
+        related_emoji: String,
+        data_url: String,
+    ) -> Result<Sticker, ServerError>;
+    async fn edit_sticker(
+        sticker_id: i64,
+        name: String,
+        description: String,
+        related_emoji: String,
+    ) -> Result<Sticker, ServerError>;
+    async fn delete_sticker(sticker_id: i64) -> Result<(), ServerError>;
 }
 
 /// The GIF search service: paging through results for a query.
@@ -274,12 +294,14 @@ impl Gateway {
         content: String,
         reply_to_message_id: Option<i64>,
         attachments: Vec<AttachmentInput>,
+        sticker_id: Option<i64>,
     ) {
         self.handle.send(WsClientMsg::Send {
             channel_id,
             content,
             reply_to_message_id,
             attachments,
+            sticker_id,
         });
     }
     pub fn edit_message(self: Gateway, message_id: i64, content: String) {
@@ -312,6 +334,7 @@ mod social_impl;
 mod account_impl;
 mod notif_impl;
 mod emoji_impl;
+mod stickers_impl;
 mod gif_impl;
 mod search_impl;
 mod members_impl;
@@ -492,8 +515,8 @@ pub async fn start_dm(user_id: i64) -> Result<Dm, String> {
 /// message as an event-stream frame to every participant (the sender
 /// included), so the caller does NOT append the reply itself — the
 /// [`incoming`] feed renders it.
-pub async fn send_dm_message(channel_id: i64, content: String) -> Result<DmMessage, String> {
-    let result = CassetteBackend::send_dm_message(channel_id, content).await.map_err(|e| crate::errors::friendly(&e))?;
+pub async fn send_dm_message(channel_id: i64, content: String, sticker_id: Option<i64>) -> Result<DmMessage, String> {
+    let result = CassetteBackend::send_dm_message(channel_id, content, sticker_id).await.map_err(|e| crate::errors::friendly(&e))?;
     Ok(result.message)
 }
 
@@ -658,6 +681,33 @@ pub async fn rename_emoji(emoji_id: i64, name: String) -> Result<ServerEmoji, St
 
 pub async fn delete_emoji(emoji_id: i64) -> Result<(), String> {
     CassetteBackend::delete_emoji(emoji_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn list_stickers(server_id: i64) -> Result<Vec<Sticker>, String> {
+    CassetteBackend::list_stickers(server_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn upload_sticker(
+    server_id: i64,
+    name: String,
+    description: String,
+    related_emoji: String,
+    data_url: String,
+) -> Result<Sticker, String> {
+    CassetteBackend::upload_sticker(server_id, name, description, related_emoji, data_url).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn edit_sticker(
+    sticker_id: i64,
+    name: String,
+    description: String,
+    related_emoji: String,
+) -> Result<Sticker, String> {
+    CassetteBackend::edit_sticker(sticker_id, name, description, related_emoji).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn delete_sticker(sticker_id: i64) -> Result<(), String> {
+    CassetteBackend::delete_sticker(sticker_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn gif_search(query: String, offset: u32) -> Result<GifPage, String> {

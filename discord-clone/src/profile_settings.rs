@@ -88,7 +88,7 @@ const B64_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwx
 
 /// Base64-encode `data` (standard alphabet, padded). The app crate carries no
 /// `base64` dependency — avatars are tiny and the encoder is fifteen lines.
-fn b64_encode(data: &[u8]) -> String {
+pub(crate) fn b64_encode(data: &[u8]) -> String {
     let out_len = (data.len() + 2) / 3 * 4;
     let mut out: Vec<u8> = Vec::new();
     out.reserve(out_len);
@@ -147,7 +147,7 @@ pub fn b64_decode(s: &str) -> Result<Vec<u8>, String> {
 /// `application/octet-stream`) against the backend's accepted set, falling
 /// back to magic-byte sniffing. `Some(mime)` = one of the four accepted
 /// `data:image/…` kinds, `None` = rejected.
-fn accepted_mime(mime: &str, bytes: &[u8]) -> Option<&'static str> {
+pub(crate) fn accepted_mime(mime: &str, bytes: &[u8]) -> Option<&'static str> {
     // The accepted set is exactly the backend's (`avatar_is_valid_spec`).
     const ACCEPTED: [&'static str; 4] = ["image/png", "image/jpeg", "image/webp", "image/gif"];
     let lowered = mime.to_ascii_lowercase();

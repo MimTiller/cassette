@@ -152,6 +152,17 @@ async fn upload_server_emoji(name: String, mime: String, data_b64: String) -> Re
     }
 }
 
+/// Upload a sticker for the active live server the way the Stickers
+/// settings section's Upload Image button does, minus the native file
+/// picker. Answers the new sticker's id.
+#[runtime_core::robot_fn(name = "cassette.upload_server_sticker")]
+async fn upload_server_sticker(name: String, related: String, mime: String, data_b64: String) -> Result<String, String> {
+    let sid = crate::mentions::server_id().ok_or_else(|| "no active live server".to_string())?;
+    let bytes = crate::profile_settings::b64_decode(&data_b64)?;
+    let url = crate::sticker_settings::encode(&mime, &bytes)?;
+    crate::backend::upload_sticker(sid, name, String::new(), related, url).await.map(|s| s.id.to_string())
+}
+
 /// Register the functions; called once from `app()`.
 pub(crate) fn register() {
     runtime_vocabulary::robot_fn::register(theme_key::robot());
@@ -165,4 +176,5 @@ pub(crate) fn register() {
     runtime_vocabulary::robot_fn::register(custom_emoji_names::robot());
     runtime_vocabulary::robot_fn::register(upload_server_icon::robot());
     runtime_vocabulary::robot_fn::register(upload_server_emoji::robot());
+    runtime_vocabulary::robot_fn::register(upload_server_sticker::robot());
 }

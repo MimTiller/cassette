@@ -356,3 +356,65 @@ fn a_password_change_signs_other_sessions_out_and_the_new_password_works(app: &m
     let shot = second.app.screenshot();
     eprintln!("[shot] cov-pwd-new-works: {shot}");
 }
+
+// ---- a sticker uploads, sends from the picker and shows for a second browser
+
+#[robot_test]
+fn a_sticker_uploads_sends_from_the_picker_and_shows_for_another_browser(app: &mut App) {
+    signed_out(app);
+    let a = Account::new("covstka");
+    sign_in_as(app, &a);
+    let server = fresh_name("Cov Sticker ");
+    create_and_enter(app, &server);
+    let code = mint_invite(app);
+
+    // B joins with A's invite and stays on the server's channel, so the
+    // sticker message reaches it live.
+    let b = Account::new("covstkb");
+    let mut second = open_browser("b");
+    second.app.set_timeout(WAIT);
+    sign_in_as(&mut second.app, &b);
+    join_modal(&mut second.app, &code);
+    second.app.text("Joined!").assert_visible();
+    second.app.test_id("join-server-done").click();
+    second.app.set_timeout(WAIT);
+    second.app.text(&server).assert_visible();
+
+    // Upload a sticker. The settings section's Upload Image button runs a
+    // native file picker the robot cannot tap, so the hook feeds the same
+    // encode + upload path.
+    let png = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAACXBIWXMAAAABAAAAAQBPJcTWAAAAEUlEQVR4nGOQjVqOFTEMLQkAzd1HgU4BMj8AAAAASUVORK5CYII=";
+    let reply = app.call_function(
+        "cassette.upload_server_sticker",
+        json!({ "name": "covwave", "related": "\u{1F44B}", "mime": "image/png", "data_b64": png }),
+    );
+    // The hook answers the new sticker id (an error comes back as Err).
+    assert!(reply.as_str().is_some_and(|id| id.parse::<i64>().is_ok()), "sticker upload failed: {reply}");
+
+    // A sends it from the composer's sticker picker.
+    app.test_id("sticker-button").click();
+    app.test_id("sticker-picker").assert_visible();
+    app.test_id("sticker-search-input").fill("wave");
+    app.test_id("sticker-tile").assert_visible();
+    app.test_id("sticker-tile").click();
+    app.test_id("sticker-picker").assert_hidden();
+    app.test_id("sticker-image").assert_visible();
+    let shot = app.screenshot();
+    eprintln!("[shot] cov-sticker-sent: {shot}");
+
+    // B sees the sticker message live, and the sticker in its own picker.
+    second.app.test_id("sticker-image").assert_visible();
+    second.app.test_id("sticker-button").click();
+    second.app.test_id("sticker-tile").assert_visible();
+    let shot = second.app.screenshot();
+    eprintln!("[shot] cov-sticker-b-live: {shot}");
+
+    // The Stickers section lists it.
+    app.test_id("server-header").click();
+    app.test_id("menu-server-settings").click();
+    app.test_id("settings-nav-stickers").click();
+    app.text("1 of 30 used").assert_visible();
+    app.test_id("sticker-row").assert_visible();
+    let shot = app.screenshot();
+    eprintln!("[shot] cov-sticker-settings: {shot}");
+}

@@ -9,9 +9,9 @@ impl DmsApi for CassetteBackend {
     async fn start_dm(user_id: i64) -> Result<Dm, ServerError> {
         discord_server::dms::start_dm(discord_server::dms::StartDmInput { user_id }).await
     }
-    async fn send_dm_message(channel_id: i64, content: String) -> Result<SendDmMessageResult, ServerError> {
+    async fn send_dm_message(channel_id: i64, content: String, sticker_id: Option<i64>) -> Result<SendDmMessageResult, ServerError> {
         discord_server::dms::send_dm_message(
-            discord_server::dms::SendDmMessageInput { channel_id, content },
+            discord_server::dms::SendDmMessageInput { channel_id, content, sticker_id },
         ).await
     }
     async fn list_dm_messages(channel_id: i64, limit: Option<i64>) -> Result<Vec<DmMessage>, ServerError> {

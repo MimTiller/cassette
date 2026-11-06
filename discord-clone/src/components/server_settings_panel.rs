@@ -45,7 +45,7 @@ use std::rc::Rc;
 // Discord dark palette (kept local so the component is self-contained).
 
 /// The sidebar's sections, in order (the `section` signal's index).
-const SECTIONS: [&str; 4] = ["Overview", "Roles", "Members", "Emoji"];
+const SECTIONS: [&str; 5] = ["Overview", "Roles", "Members", "Emoji", "Stickers"];
 
 /// A text input bound two-way to `value`, carrying a `test_id` for the robot
 /// suite (the `controls::text_field` shape plus the id).
@@ -63,6 +63,7 @@ fn text_field_id(value: Signal<String>, test_id: &'static str, placeholder: &str
 const SECTION_OVERVIEW: usize = 0;
 const SECTION_ROLES: usize = 1;
 const SECTION_EMOJI: usize = 3;
+const SECTION_STICKERS: usize = 4;
 
 /// Whether the signed-in user may use section `i` (the owner may use all).
 fn section_allowed(i: usize) -> bool {
@@ -70,7 +71,7 @@ fn section_allowed(i: usize) -> bool {
     match i {
         SECTION_OVERVIEW => crate::mentions::can(P::MANAGE_SERVER),
         SECTION_ROLES => crate::mentions::can(P::MANAGE_ROLES),
-        SECTION_EMOJI => crate::mentions::can(P::MANAGE_EXPRESSIONS),
+        SECTION_EMOJI | SECTION_STICKERS => crate::mentions::can(P::MANAGE_EXPRESSIONS),
         _ => crate::mentions::can(P::CREATE_INVITE),
     }
 }
@@ -538,6 +539,7 @@ pub fn ServerSettingsPanel(
                 // Named roles: create, list, delete (admins and the owner).
                 SECTION_ROLES => vec![crate::roles_settings::roles_section(sid.get())],
                 SECTION_EMOJI => vec![crate::emoji_settings::emoji_section(sid.get())],
+                SECTION_STICKERS => vec![crate::sticker_settings::sticker_section(sid.get())],
                 _ => vec![add_row, transfer_el],
             };
             let title = SECTIONS.get(*tab).copied().unwrap_or_default().to_string();

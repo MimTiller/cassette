@@ -125,7 +125,10 @@ pub(crate) fn load_history(dm_id: i64, msgs: Rc<RefCell<Vec<LiveDmMsg>>>, rev: S
         if let Ok(history) = result {
             let mut buf = msgs.borrow_mut();
             buf.clear();
-            buf.extend(history.into_iter().map(|m| (m.author_username, m.content, m.created_at, m.edited_at)));
+            buf.extend(history.into_iter().map(|m| {
+                let body = crate::sticker_msgs::dm_body(m.message_id, m.sticker.as_ref(), &m.content);
+                (m.author_username, body, m.created_at, m.edited_at)
+            }));
             drop(buf);
             rev.set(rev.get() + 1);
         }

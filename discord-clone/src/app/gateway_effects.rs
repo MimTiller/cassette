@@ -136,9 +136,12 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 reactions,
                 attachments,
                 embeds,
+                sticker,
                 seq: _,
             }) = frame
             {
+                // A sticker message has no text: its row shows the sticker.
+                let content = &crate::sticker_msgs::channel_body(*message_id, sticker.as_ref(), content);
                 crate::embeds::set(*message_id, embeds.clone());
                 let me = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
                 crate::mentions::mark_message(*message_id, me != 0 && mentioned_user_ids.contains(&me));

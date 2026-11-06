@@ -4,6 +4,7 @@
 use crate::theme;
 use super::*;
 use crate::gif_picker::{GifPicker, gif_button};
+use crate::sticker_picker::{StickerPicker, sticker_button};
 
 /// One staged-attachment chip on the composer strip: the thumbnail and an
 /// ✕ that unstages just this entry. Keyed by the staged entry's id.
@@ -165,6 +166,7 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                 crate::custom_emoji::encode_draft(&body),
                 reply_target.get(),
                 inputs,
+                None,
             );
             send_composer.set(String::new());
             pending_attachment.set(Vec::new());
@@ -588,6 +590,7 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                     discord_server::gifs::gif_message(&gif),
                     reply_target.get(),
                     Vec::new(),
+                    None,
                 );
                 reply_ctx.set(None);
                 reply_target.set(None);
@@ -601,6 +604,39 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                     ..Default::default()
                 }) {
                     GifPicker(on_pick = Some(pick_cb))
+                }
+            }
+        },
+    );
+
+    // Sticker popover: the same float. Picking a sticker sends it at once as
+    // its own message (the draft stays), as a reply when one is active.
+    let sticker_open = signal(false);
+    let sticker_popover = switch(
+        move || sticker_open.get(),
+        move |open: &bool| {
+            if !open {
+                return ui! {
+                    view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
+                };
+            }
+            let pick_cb: Rc<dyn Fn(crate::backend::Sticker)> = Rc::new(move |s: crate::backend::Sticker| {
+                sticker_open.set(false);
+                let Some(live_cid) = active_live_channel.get() else { return };
+                crate::app::request_scroll_to_latest();
+                gateway.send_message(live_cid, String::new(), reply_target.get(), Vec::new(), Some(s.id));
+                reply_ctx.set(None);
+                reply_target.set(None);
+            });
+            ui! {
+                view(style = StyleRules {
+                    position: Some(Position::Absolute),
+                    right: Some(px(16.0)),
+                    bottom: Some(px(76.0)),
+                    z_index: Some(super::popups::POPUP_Z),
+                    ..Default::default()
+                }) {
+                    StickerPicker(on_pick = Some(pick_cb))
                 }
             }
         },
@@ -648,6 +684,7 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
             attach_chip
             emoji_popover
             gif_popover
+            sticker_popover
             ac_el
             // Slash-command autocomplete: shown only while the composer
             // text actually starts with "/" (a real slash command is
@@ -686,7 +723,9 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                 text_input(value = composer, on_change = update_on_type, placeholder_reactive = composer_placeholder.read_only(), style = input_style, test_id = "composer").on_key_down(composer_key)
                 // GIF = open/close the GIF picker (closes the emoji one,
                 // like the reference app). Chip shared with the DM composer.
-                gif_button(gif_open, Some(emoji_open))
+                gif_button(gif_open, vec![emoji_open, sticker_open])
+                // Sticker = open/close the sticker picker (closes the others).
+                sticker_button(sticker_open, vec![gif_open, emoji_open])
                 view(style = move || StyleRules {
                     width: Some(px(28.0)),
                     height: Some(px(28.0)),
@@ -704,6 +743,7 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                 .on_touch(move |ev| {
                     if ev.phase == TouchPhase::Ended {
                         gif_open.set(false);
+                        sticker_open.set(false);
                         emoji_open.set(!emoji_open.get());
                     }
                     TouchResponse::CONSUMED
