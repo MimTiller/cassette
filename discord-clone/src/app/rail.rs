@@ -321,8 +321,9 @@ fn rail_server_tile(
         None => ui! { text(style = initial_style.clone()) { initial } },
     };
     let sid = s.id;
+    let dm_open = shell.live_dm_mode;
     ui! {
-        view(style = base.clone()) {
+        view(style = base.clone(), test_id = "rail-server") {
             // The active-server pill on the far-left rail edge — the
             // sole selection signal (the row is `Position::Relative`,
             // 48px centered in the 72px rail, so left: -12 is flush).
@@ -333,7 +334,7 @@ fn rail_server_tile(
                 width: Some(px(4.0)),
                 height: Some(px(20.0)),
                 background: Some(col(PILL)),
-                opacity: Some(Tokenized::Literal(if active_live.get() == Some(sid) {
+                opacity: Some(Tokenized::Literal(if active_live.get() == Some(sid) && !dm_open.get() {
                     1.0
                 } else {
                     0.0

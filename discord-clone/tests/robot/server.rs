@@ -39,6 +39,35 @@ fn create_a_server_shows_it_in_the_sidebar(app: &mut App) {
 }
 
 #[robot_test]
+fn the_server_rail_stays_beside_the_dms_and_switches_back(app: &mut App) {
+    signed_out(app);
+    let account = Account::new("railsw");
+    sign_in_as(app, &account);
+    let server = fresh_name("Rail Server ");
+    create_server(app, &server);
+    app.test_id("server-header").assert_visible();
+
+    app.test_id("rail-direct-messages").click();
+    app.test_id("dm-done-pill").assert_visible();
+    // The rail is still there beside the DM screen, as in Discord.
+    app.test_id("rail-server").assert_visible();
+    let shot = app.screenshot();
+    eprintln!("[shot] rail beside dms: {shot}");
+
+    // Its server tile takes you straight back to the server.
+    app.test_id("rail-server").click();
+    app.set_timeout(WAIT);
+    assert!(
+        crate::support::eventually(10, || !app.test_id("dm-done-pill").is_visible()),
+        "the DM screen stays open after picking a server from the rail"
+    );
+    app.test_id("server-header").assert_visible();
+    app.text(&server).assert_visible();
+    let shot = app.screenshot();
+    eprintln!("[shot] back on the server: {shot}");
+}
+
+#[robot_test]
 fn the_owners_menu_offers_create_channel(app: &mut App) {
     signed_out(app);
     let account = Account::new("srvperm");

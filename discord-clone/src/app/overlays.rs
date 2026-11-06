@@ -220,12 +220,17 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         }
     };
     let live_dm_open_chk = live_dm_mode.clone();
+    // On a desktop the DM screen starts after the 72px server rail, so the
+    // rail stays on screen and a server tile switches back (as in Discord).
+    // A phone shows it full-screen.
     let live_dm_wrap = move || StyleRules {
         position: Some(Position::Absolute),
-        left: Some(px(0.0)),
+        left: Some(px(if crate::app::mobile::is_phone() { 0.0 } else { 72.0 })),
         top: Some(px(0.0)),
-        width: Some(if live_dm_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        height: Some(if live_dm_open_chk.get() { pct(100.0) } else { px(0.0) }),
+        right: live_dm_open_chk.get().then(|| px(0.0)),
+        bottom: live_dm_open_chk.get().then(|| px(0.0)),
+        width: (!live_dm_open_chk.get()).then(|| px(0.0)),
+        height: (!live_dm_open_chk.get()).then(|| px(0.0)),
         background: Some(col(theme::OVERLAY)),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),

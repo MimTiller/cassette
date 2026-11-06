@@ -148,6 +148,8 @@ pub(super) fn enter_live_server(
     sid: i64,
     unread_buf: Rc<RefCell<HashMap<i64, (i64, i64)>>>,
 ) {
+    // Picking a server from the rail while the DM screen is open leaves it.
+    s.live_dm_mode.set(false);
     s.active_live_server.set(Some(sid));
     s.active_live_channel.set(None);
     s.live_kick_confirm.set(None);
