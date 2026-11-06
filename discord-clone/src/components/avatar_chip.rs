@@ -16,7 +16,7 @@ use crate::theme;
 use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
     component, signal, ui, AlignItems, Element, FontWeight, JustifyContent, ObjectFit,
-    PointerEvents, Position, StyleRules, Tokenized,
+    PointerEvents, Position, StyleRules, Tokenized, TouchPhase, TouchResponse,
 };
 
 /// True when `url` may be mounted as an `image()` src: the
@@ -119,19 +119,40 @@ pub const PRESENCE_RING_PX: f32 = 2.0;
 
 /// Avatars smaller than this wear no decoration: the art stops reading.
 const DECORATION_MIN_PX: f32 = 24.0;
-/// How far decoration art starts above the avatar, as a fraction of its size.
-const DECORATION_RISE: f32 = 0.2;
-/// How tall decoration art is, as a fraction of the avatar's size (its viewBox
-/// is 100 x 60, and as wide as the avatar).
-const DECORATION_HEIGHT: f32 = 0.6;
+/// How wide decoration art is, as a multiple of the avatar's size. Its viewBox
+/// is 140 square, with the avatar's circle centred in it, 100 across.
+const DECORATION_SCALE: f32 = 1.4;
+/// Avatars at least this big (the profile card, the settings preview) play
+/// their decoration once as they appear.
+const DECORATION_GREET_PX: f32 = 64.0;
 
 /// The art for a catalog id (`discord_server::profiles::AVATAR_DECORATIONS`),
-/// or `None` for an id this build doesn't know.
-fn decoration_svg(id: &str) -> Option<&'static str> {
+/// or `None` for an id this build doesn't know. Each file's root element has
+/// `class="still"`, which [`decoration_url`] swaps to start its motion.
+pub(crate) fn decoration_svg(id: &str) -> Option<&'static str> {
     match id {
         "cat_ears" => Some(include_str!("../../icons/cat_ears.svg")),
+        "cassette_reels" => Some(include_str!("../../icons/cassette_reels.svg")),
+        "halo" => Some(include_str!("../../icons/halo.svg")),
+        "flower_crown" => Some(include_str!("../../icons/flower_crown.svg")),
+        "sparkles" => Some(include_str!("../../icons/sparkles.svg")),
         _ => None,
     }
+}
+
+/// `svg` as a mountable URL: moving on a loop while `hovered`, playing once
+/// after a press, otherwise still. Each press gets its own URL, because a new
+/// URL is what restarts the motion.
+fn decoration_url(svg: &str, hovered: bool, presses: u32) -> String {
+    let motion = if hovered {
+        "moving"
+    } else if presses > 0 {
+        "once"
+    } else {
+        "still"
+    };
+    let root = format!("class=\"{motion}\" data-press=\"{presses}\"");
+    crate::app_icon::svg_data_url(&svg.replacen("class=\"still\"", &root, 1))
 }
 
 /// The box every avatar on every surface sits in: `size` square and
@@ -141,12 +162,16 @@ fn decoration_svg(id: &str) -> Option<&'static str> {
 ///
 /// The art reads the mentions revision, so it follows the decoration registry
 /// on any surface without the surface rebuilding. It takes no pointer events,
-/// so a press on it lands on the avatar. A presence dot goes after this frame
-/// in its parent, which keeps the dot on top.
+/// so a press on it lands on the avatar, and the frame only watches that press
+/// on its way to the surface's own handler. A presence dot goes after this
+/// frame in its parent, which keeps the dot on top.
 #[component]
 pub fn AvatarFrame(#[prop(static)] name: String, #[prop(static)] size: f32, children: Vec<Element>) -> Element {
     // A signal, not the String, so the closures below stay `Copy`.
     let name = signal(name);
+    let hovered = signal(false);
+    let presses = signal(u32::from(size >= DECORATION_GREET_PX));
+    let overhang = size * (DECORATION_SCALE - 1.0) / 2.0;
     let art = move || {
         crate::mentions::revision();
         if size < DECORATION_MIN_PX {
@@ -165,14 +190,18 @@ pub fn AvatarFrame(#[prop(static)] name: String, #[prop(static)] size: f32, chil
             { children }
             if art().is_some() {
                 image(
-                    src = move || art().map(crate::app_icon::svg_data_url).unwrap_or_default(),
+                    src = move || {
+                        art()
+                            .map(|svg| decoration_url(svg, hovered.get(), presses.get()))
+                            .unwrap_or_default()
+                    },
                     alt = "",
                     style = StyleRules {
                         position: Some(Position::Absolute),
-                        left: Some(px(0.0)),
-                        top: Some(px(-size * DECORATION_RISE)),
-                        width: Some(px(size)),
-                        height: Some(px(size * DECORATION_HEIGHT)),
+                        left: Some(px(-overhang)),
+                        top: Some(px(-overhang)),
+                        width: Some(px(size * DECORATION_SCALE)),
+                        height: Some(px(size * DECORATION_SCALE)),
                         pointer_events: Some(PointerEvents::None),
                         ..Default::default()
                     },
@@ -180,6 +209,20 @@ pub fn AvatarFrame(#[prop(static)] name: String, #[prop(static)] size: f32, chil
                 )
             }
         }
+        // Presses outlive the hover, so a press whose popup takes the pointer
+        // away still plays. Coming back forgets them.
+        .on_hover(move |on| {
+            hovered.set(on);
+            if on {
+                presses.set(0);
+            }
+        })
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Began {
+                presses.set(presses.get() + 1);
+            }
+            TouchResponse::IGNORED
+        })
     }
 }
 
@@ -294,14 +337,26 @@ pub fn presence_status_role(status: &str) -> &str {
 
 #[cfg(test)]
 mod avatar_gate_tests {
-    use crate::avatar_chip::{decoration_svg, mountable_avatar_url};
+    use crate::avatar_chip::{decoration_svg, decoration_url, mountable_avatar_url};
 
     #[test]
-    fn every_catalog_decoration_has_art() {
+    fn every_catalog_decoration_has_art_that_can_move() {
         for id in discord_server::profiles::AVATAR_DECORATIONS {
-            assert!(decoration_svg(id).is_some(), "{id} has no art");
+            let svg = decoration_svg(id).unwrap_or_else(|| panic!("{id} has no art"));
+            assert!(svg.contains("class=\"still\""), "{id} has no still root class to swap");
         }
         assert!(decoration_svg("dog_ears").is_none());
+    }
+
+    #[test]
+    fn decoration_art_moves_on_hover_and_plays_once_per_press() {
+        let svg = "<svg class=\"still\"/>";
+        assert!(decoration_url(svg, false, 0).contains("class='still'"));
+        assert!(decoration_url(svg, true, 0).contains("class='moving'"));
+        assert!(decoration_url(svg, false, 1).contains("class='once'"));
+        assert!(decoration_url(svg, true, 1).contains("class='moving'"), "hover outranks a press");
+        assert_ne!(decoration_url(svg, false, 1), decoration_url(svg, false, 2), "a new press restarts");
+        assert_ne!(decoration_url(svg, true, 1), decoration_url(svg, true, 2), "a press restarts the hover loop");
     }
 
     #[test]

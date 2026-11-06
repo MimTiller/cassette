@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 140" class="still">
+  <style>
+    @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+    @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
+    @keyframes twinkle{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.3);opacity:.4}}
+    .bright{opacity:.5}
+    .moving .ring{animation:float 1.6s ease-in-out infinite}
+    .once .ring{animation:float 1.6s ease-in-out}
+    .moving .bright{animation:pulse 1.6s ease-in-out infinite}
+    .once .bright{animation:pulse 1.6s ease-in-out}
+    .moving .spark{animation:twinkle 1.2s ease-in-out infinite}
+    .once .spark{animation:twinkle 1.2s ease-in-out}
+    .spark.late{animation-delay:.4s}
+    @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+  </style>
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#d98f12"/><stop offset=".3" stop-color="#ffe27a"/><stop offset=".55" stop-color="#fff9d8"/><stop offset=".8" stop-color="#ffd24a"/><stop offset="1" stop-color="#cf850e"/>
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-150%" width="160%" height="400%"><feGaussianBlur stdDeviation="2.6"/></filter>
+  </defs>
+  <g class="ring" fill="none">
+    <ellipse class="bright" cx="70" cy="15" rx="33" ry="8.5" stroke="#ffdc66" stroke-width="7" filter="url(#soft)"/>
+    <path d="M37 15A33 8.5 0 0 1 103 15" stroke="#b9770f" stroke-width="2.8"/>
+    <path d="M37 15A33 8.5 0 0 0 103 15" stroke="url(#gold)" stroke-width="4.4" stroke-linecap="round"/>
+    <path d="M50 21.4A33 8.5 0 0 0 86 22" stroke="#ffffff" stroke-opacity=".75" stroke-width="1" stroke-linecap="round"/>
+  </g>
+  <g fill="#fff3b8">
+    <g transform="translate(28 9) scale(5.5)"><path class="spark" d="M0-1C.12-.28.28-.12 1 0C.28.12.12.28 0 1C-.12.28-.28.12-1 0C-.28-.12-.12-.28 0-1Z"/></g>
+    <g transform="translate(112 22) scale(4.5)"><path class="spark late" d="M0-1C.12-.28.28-.12 1 0C.28.12.12.28 0 1C-.12.28-.28.12-1 0C-.28-.12-.12-.28 0-1Z"/></g>
+  </g>
+</svg>
