@@ -101,8 +101,17 @@ pub fn sign_in_as(app: &mut App, account: &Account) {
     sign_in(app, &account.name, &account.password);
 }
 
+/// Close a phone's open Chat pane so the rail (with the channel rows and
+/// the profile bar) shows again; a no-op on desktop and in the List pane.
+pub fn back_to_list(app: &mut App) {
+    if app.test_id("mobile-back").is_visible() {
+        app.test_id("mobile-back").click();
+    }
+}
+
 /// Sign out through the User Settings sidebar's Log Out row.
 pub fn sign_out(app: &mut App) {
+    back_to_list(app);
     app.test_id("user-settings").click();
     app.label("Log Out").click();
     app.text("Welcome back!").assert_visible();

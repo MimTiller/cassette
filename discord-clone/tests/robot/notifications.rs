@@ -21,7 +21,7 @@
 
 use robot_test::{json, robot_test, App, Value};
 
-use crate::support::{Account, eventually, fresh_name, sign_in_as, signed_out};
+use crate::support::{Account, back_to_list, eventually, fresh_name, sign_in_as, signed_out};
 use crate::support::WAIT;
 use crate::users::open_browser;
 
@@ -126,8 +126,10 @@ fn a_channel_mutes_from_its_menu_and_shows_it(app: &mut App) {
     app.text("MUTE CHANNEL").assert_hidden();
 
     // With another channel open, the muted row draws its bell icon — the
-    // state the Python suite read off the label's dimmed colour.
+    // state the Python suite read off the label's dimmed colour. On a phone
+    // opening a channel hides the rail, so close the pane first.
     app.test_id("live-channel-row").nth(1).click();
+    back_to_list(app);
     app.test_id("muted-bell-icon").assert_visible();
 
     // The mute is stored on the server as a Channel-scope setting for A.
