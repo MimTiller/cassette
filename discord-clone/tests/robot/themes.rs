@@ -4,7 +4,7 @@
 
 use robot_test::{json, robot_test, App, Value};
 
-use crate::support::{eventually, fresh_name, sign_up, signed_out};
+use crate::support::{fresh_name, sign_up, signed_out};
 use crate::support::WAIT;
 
 #[robot_test]
