@@ -39,6 +39,8 @@ pub use discord_server::server_settings::{
 pub use discord_server::dms::{Dm, DmMessage, SendDmMessageResult};
 pub use discord_server::servers::{ChannelSummary, ServerSummary};
 pub use discord_server::invites::{Invite, RedeemResult};
+pub use discord_server::friends::{FriendList, FriendUser, SendFriendRequestResult};
+pub use discord_server::blocks::BlockedUser;
 
 // --- the interface, by area -------------------------------------------------
 
@@ -124,6 +126,21 @@ pub trait DmsApi {
     async fn rename_group_dm(dm_id: i64, name: String) -> Result<Dm, ServerError>;
 }
 
+/// Social graph: the signed-in user's friends, requests, and blocks. A
+/// mutation answers with the single changed relationship; the refreshed
+/// lists the UI re-renders from come from the accessors below.
+pub trait SocialApi {
+    async fn list_friends() -> Result<FriendList, ServerError>;
+    async fn send_friend_request(username: String) -> Result<SendFriendRequestResult, ServerError>;
+    async fn accept_friend_request(user_id: i64) -> Result<FriendUser, ServerError>;
+    async fn decline_or_cancel(user_id: i64) -> Result<FriendUser, ServerError>;
+    async fn remove_friend(user_id: i64) -> Result<FriendUser, ServerError>;
+
+    async fn list_blocked() -> Result<Vec<BlockedUser>, ServerError>;
+    async fn block_user(user_id: i64) -> Result<BlockedUser, ServerError>;
+    async fn unblock_user(user_id: i64) -> Result<BlockedUser, ServerError>;
+}
+
 /// The realtime event stream: a backend offers exactly one connection
 /// point; [`connect`] hands back the [`Gateway`] handle that carries every
 /// frame the backend pushes (and the client's own outbound verbs).
@@ -192,6 +209,7 @@ mod dms_impl;
 mod invites_impl;
 mod realtime;
 mod servers_impl;
+mod social_impl;
 
 // --- the accessors (the single place the UI gets the backend) ---------------
 
@@ -392,4 +410,47 @@ pub async fn remove_group_dm_member(dm_id: i64, user_id: i64) -> Result<(), Stri
 
 pub async fn rename_group_dm(dm_id: i64, name: String) -> Result<Dm, String> {
     CassetteBackend::rename_group_dm(dm_id, name).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+// --- the friends and blocks accessors ---------------------------------------
+
+pub async fn list_friends() -> Result<FriendList, String> {
+    CassetteBackend::list_friends().await.map_err(|e| crate::errors::friendly(&e))
+}
+
+/// Send a friend request, then answer with the actor's refreshed list — the
+/// backend's `FriendChanged` frame only reaches the other user.
+pub async fn send_friend_request(username: String) -> Result<FriendList, String> {
+    CassetteBackend::send_friend_request(username).await.map_err(|e| crate::errors::friendly(&e))?;
+    CassetteBackend::list_friends().await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn accept_friend_request(user_id: i64) -> Result<FriendList, String> {
+    CassetteBackend::accept_friend_request(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
+    CassetteBackend::list_friends().await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn decline_or_cancel(user_id: i64) -> Result<FriendList, String> {
+    CassetteBackend::decline_or_cancel(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
+    CassetteBackend::list_friends().await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn remove_friend(user_id: i64) -> Result<FriendList, String> {
+    CassetteBackend::remove_friend(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
+    CassetteBackend::list_friends().await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn list_blocked() -> Result<Vec<BlockedUser>, String> {
+    CassetteBackend::list_blocked().await.map_err(|e| crate::errors::friendly(&e))
+}
+
+/// Block (or, with `block` false, unblock) `user_id`, then answer with the
+/// refreshed blocked list so the message list can re-filter.
+pub async fn set_blocked(user_id: i64, block: bool) -> Result<Vec<BlockedUser>, String> {
+    if block {
+        CassetteBackend::block_user(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
+    } else {
+        CassetteBackend::unblock_user(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
+    }
+    CassetteBackend::list_blocked().await.map_err(|e| crate::errors::friendly(&e))
 }

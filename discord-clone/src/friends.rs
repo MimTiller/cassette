@@ -1,9 +1,10 @@
 //! Client-side friends-list wrapper (live mode).
 //!
-//! Thin front-end for the backend's `#[server]` fns in [`discord_server::friends`]
-//! — same shape as `dms.rs` / `servers.rs`: this crate depends on `discord-server`
-//! with default features, so these compile to the codegen'd RPC stubs (the acting
-//! user rides the signed session token the credential provider attaches).
+//! Thin front-end for the backend seam's friend verbs
+//! (`crate::backend::list_friends` etc) — same shape as `dms.rs` / `servers.rs`:
+//! every call routes through the single backend interface, so the RPCs never
+//! appear here and a different backend later replaces only the implementation
+//! files under `crate::backend`.
 //!
 //! Every mutating call returns the actor's FRESH [`FriendList`] (one extra
 //! `list_friends` round-trip): the backend pushes the `FriendChanged` realtime
@@ -12,7 +13,7 @@
 //! every returned participant are pushed into the shared client avatar registry
 //! so the friends rows draw uploaded images on a cold load.
 
-pub use discord_server::friends::{FriendList};
+pub use crate::backend::{FriendList};
 
 /// Pull every participant of a list into the shared client avatar and
 /// display-name registries.
@@ -31,9 +32,7 @@ fn remember_avatars(list: FriendList) {
 
 /// List the signed-in user's relationships: `incoming`, `outgoing`, `accepted`.
 pub async fn list_friends() -> Result<FriendList, String> {
-    let list = discord_server::friends::list_friends()
-        .await
-        .map_err(|e| crate::errors::friendly(&e))?;
+    let list = crate::backend::list_friends().await?;
     remember_avatars(list.clone());
     Ok(list)
 }
@@ -41,37 +40,25 @@ pub async fn list_friends() -> Result<FriendList, String> {
 /// Send a friend request to the user named by `username`; on success return the
 /// actor's refreshed list (a crossed request auto-accepts server-side).
 pub async fn send_friend_request(username: String) -> Result<FriendList, String> {
-    let input = discord_server::friends::SendFriendRequestInput { username };
-    discord_server::friends::send_friend_request(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))?;
+    crate::backend::send_friend_request(username).await?;
     list_friends().await
 }
 
 /// Accept the incoming request from `user_id`; return the refreshed list.
 pub async fn accept_friend_request(user_id: i64) -> Result<FriendList, String> {
-    let input = discord_server::friends::AcceptFriendRequestInput { user_id };
-    discord_server::friends::accept_friend_request(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))?;
+    crate::backend::accept_friend_request(user_id).await?;
     list_friends().await
 }
 
 /// Decline an incoming request from `user_id`, or cancel the caller's own
 /// outgoing request to them; return the refreshed list.
 pub async fn decline_or_cancel(user_id: i64) -> Result<FriendList, String> {
-    let input = discord_server::friends::DeclineOrCancelInput { user_id };
-    discord_server::friends::decline_or_cancel(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))?;
+    crate::backend::decline_or_cancel(user_id).await?;
     list_friends().await
 }
 
 /// Remove the accepted friend `user_id`; return the refreshed list.
 pub async fn remove_friend(user_id: i64) -> Result<FriendList, String> {
-    let input = discord_server::friends::RemoveFriendInput { user_id };
-    discord_server::friends::remove_friend(input)
-        .await
-        .map_err(|e| crate::errors::friendly(&e))?;
+    crate::backend::remove_friend(user_id).await?;
     list_friends().await
 }
