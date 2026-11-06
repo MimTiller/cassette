@@ -236,18 +236,11 @@ pub(crate) fn picker_dialog(
                 let request = async move {
                     let result: Result<Dm, String> = match mode {
                         Picker::NewGroup if picked.len() == 1 => dms::start_dm(picked[0]).await,
-                        Picker::NewGroup => discord_server::dms::create_group_dm(discord_server::dms::CreateGroupDmInput {
-                            user_ids: picked.clone(),
-                            name: group_name,
-                        })
-                        .await
-                        .map_err(|e| crate::errors::friendly(&e)),
+                        Picker::NewGroup => dms::create_group_dm(picked.clone(), group_name).await,
                         Picker::AddTo(dm_id) => {
                             let mut last = Err("nothing to add".to_string());
                             for user_id in picked.iter().copied() {
-                                last = discord_server::dms::add_group_dm_member(discord_server::dms::GroupDmMemberInput { dm_id, user_id })
-                                    .await
-                                    .map_err(|e| crate::errors::friendly(&e));
+                                last = dms::add_group_dm_member(dm_id, user_id).await;
                                 if last.is_err() {
                                     break;
                                 }
@@ -368,10 +361,9 @@ fn member_row(
             }
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
-                    let input = discord_server::dms::GroupDmMemberInput { dm_id, user_id: uid };
-                    runtime_core::spawn_then(discord_server::dms::remove_group_dm_member(input), move |result| {
+                    runtime_core::spawn_then(dms::remove_group_dm_member(dm_id, uid), move |result| {
                         if let Err(e) = result {
-                            error.set(crate::errors::friendly(&e));
+                            error.set(e);
                         }
                     });
                 }
@@ -457,10 +449,9 @@ pub(crate) fn members_panel(dm: &Dm) -> Element {
             }
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
-                    let input = discord_server::dms::GroupDmMemberInput { dm_id, user_id: me };
-                    runtime_core::spawn_then(discord_server::dms::remove_group_dm_member(input), move |result| {
+                    runtime_core::spawn_then(dms::remove_group_dm_member(dm_id, me), move |result| {
                         if let Err(e) = result {
-                            error.set(crate::errors::friendly(&e));
+                            error.set(e);
                         }
                     });
                 }
