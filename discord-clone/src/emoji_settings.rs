@@ -2,7 +2,8 @@
 //! an image as a named emoji, rename or delete one, and see how many of the
 //! server's 50 are used.
 
-use discord_server::server_emoji::{self as se, ServerEmoji, MAX_PER_SERVER};
+use discord_server::server_emoji::{name_ok, MAX_PER_SERVER};
+use crate::backend::ServerEmoji;
 use file_picker::{FilePicker, MediaKind, PickOutcome, PickRequest};
 use runtime_core::{
     signal, switch, ui, AlignItems, Element, FlexDirection, FontWeight, ObjectFit, Signal, StyleRules, Tokenized,
@@ -13,7 +14,7 @@ use crate::style_helpers::{col, px};
 use crate::theme;
 
 fn reload(server_id: i64, list: Signal<Vec<ServerEmoji>>, alive: runtime_core::ScopeAlive) {
-    runtime_core::spawn_then_in(&alive, se::server_emoji(se::ServerEmojiInput { server_id }), move |result| {
+    runtime_core::spawn_then_in(&alive, crate::backend::list_server_emoji(server_id), move |result| {
         if let Ok(l) = result {
             list.set(l);
         }
@@ -48,13 +49,13 @@ fn emoji_row(
         let al = al_rename.clone();
         runtime_core::spawn_then_in(
             &al.clone(),
-            se::rename_emoji(se::RenameEmojiInput { emoji_id: id, name: new }),
+            crate::backend::rename_emoji(id, new),
             move |result| match result {
                 Ok(_) => {
                     error.set(String::new());
                     reload(sid, list, al);
                 }
-                Err(err) => error.set(crate::errors::friendly(&err)),
+                Err(err) => error.set(err),
             },
         );
     };
@@ -63,10 +64,10 @@ fn emoji_row(
         let al = al_delete.clone();
         runtime_core::spawn_then_in(
             &al.clone(),
-            se::delete_emoji(se::DeleteEmojiInput { emoji_id: id }),
+            crate::backend::delete_emoji(id),
             move |result| match result {
                 Ok(()) => reload(sid, list, al),
-                Err(err) => error.set(crate::errors::friendly(&err)),
+                Err(err) => error.set(err),
             },
         );
     };
@@ -122,7 +123,7 @@ pub fn emoji_section(server_id: Option<i64>) -> Element {
             return;
         }
         let n = name.get().trim().to_string();
-        if !se::name_ok(&n) {
+        if !name_ok(&n) {
             error.set("Name it first: 2–32 letters, digits or underscores".to_string());
             return;
         }
@@ -148,8 +149,7 @@ pub fn emoji_section(server_id: Option<i64>) -> Element {
                     Ok(data_url) => data_url,
                     Err(msg) => return Some(Err(msg)),
                 };
-                let input = se::UploadEmojiInput { server_id: sid, name: n, data_url };
-                Some(se::upload_emoji(input).await.map(|_| ()).map_err(|e| crate::errors::friendly(&e)))
+                Some(crate::backend::upload_emoji(sid, n, data_url).await.map(|_| ()))
             },
             move |outcome| {
                 match outcome {

@@ -51,6 +51,10 @@ pub use discord_server::auth::{
 };
 pub use discord_server::password_resets::ResetPasswordResult;
 pub use discord_server::profiles::{ProfileFields, UserProfile};
+pub use discord_server::notification_settings::NotificationSetting;
+pub use discord_server::server_emoji::ServerEmoji;
+pub use discord_server::gifs::GifPage;
+pub use discord_server::search::SearchResults;
 
 // --- the interface, by area -------------------------------------------------
 
@@ -176,6 +180,31 @@ pub trait AccountApi {
     async fn set_profile(display_name: String, about: String) -> Result<ProfileFields, ServerError>;
 }
 
+/// Notification preferences: the user's whole settings table, and saving
+/// one row (mute windows and notification levels per server/channel).
+pub trait NotificationsApi {
+    async fn notification_settings(server_id: Option<i64>) -> Result<Vec<NotificationSetting>, ServerError>;
+    async fn set_notification_setting(setting: NotificationSetting) -> Result<NotificationSetting, ServerError>;
+}
+
+/// Custom emoji: the server's emoji table, and upload / rename / delete.
+pub trait EmojiApi {
+    async fn list_server_emoji(server_id: i64) -> Result<Vec<ServerEmoji>, ServerError>;
+    async fn upload_emoji(server_id: i64, name: String, data_url: String) -> Result<ServerEmoji, ServerError>;
+    async fn rename_emoji(emoji_id: i64, name: String) -> Result<ServerEmoji, ServerError>;
+    async fn delete_emoji(emoji_id: i64) -> Result<(), ServerError>;
+}
+
+/// The GIF search service: paging through results for a query.
+pub trait GifApi {
+    async fn gif_search(query: String, offset: u32) -> Result<GifPage, ServerError>;
+}
+
+/// Text search over one server's messages.
+pub trait SearchApi {
+    async fn search_messages(server_id: i64, query: String, tz_offset_minutes: i64, offset: i64) -> Result<SearchResults, ServerError>;
+}
+
 /// Today's backend: the implementation files below implement the areas
 /// above for this type.
 pub struct CassetteBackend;
@@ -239,6 +268,10 @@ mod realtime;
 mod servers_impl;
 mod social_impl;
 mod account_impl;
+mod notif_impl;
+mod emoji_impl;
+mod gif_impl;
+mod search_impl;
 
 // --- the accessors (the single place the UI gets the backend) ---------------
 
@@ -526,4 +559,36 @@ pub async fn get_user_profile(user_id: i64, server_id: Option<i64>) -> Result<Us
 
 pub async fn set_profile(display_name: String, about: String) -> Result<ProfileFields, String> {
     CassetteBackend::set_profile(display_name, about).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn notification_settings(server_id: Option<i64>) -> Result<Vec<NotificationSetting>, String> {
+    CassetteBackend::notification_settings(server_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn set_notification_setting(setting: NotificationSetting) -> Result<NotificationSetting, String> {
+    CassetteBackend::set_notification_setting(setting).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn list_server_emoji(server_id: i64) -> Result<Vec<ServerEmoji>, String> {
+    CassetteBackend::list_server_emoji(server_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn upload_emoji(server_id: i64, name: String, data_url: String) -> Result<ServerEmoji, String> {
+    CassetteBackend::upload_emoji(server_id, name, data_url).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn rename_emoji(emoji_id: i64, name: String) -> Result<ServerEmoji, String> {
+    CassetteBackend::rename_emoji(emoji_id, name).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn delete_emoji(emoji_id: i64) -> Result<(), String> {
+    CassetteBackend::delete_emoji(emoji_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn gif_search(query: String, offset: u32) -> Result<GifPage, String> {
+    CassetteBackend::gif_search(query, offset).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn search_messages(server_id: i64, query: String, tz_offset_minutes: i64, offset: i64) -> Result<SearchResults, String> {
+    CassetteBackend::search_messages(server_id, query, tz_offset_minutes, offset).await.map_err(|e| crate::errors::friendly(&e))
 }

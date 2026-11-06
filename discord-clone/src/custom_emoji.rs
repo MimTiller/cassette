@@ -6,7 +6,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use discord_server::server_emoji::{self as se, ServerEmoji};
+use discord_server::server_emoji::name_ok;
+use crate::backend::ServerEmoji;
 use runtime_core::{ui, AlignItems, AlignSelf, Element, FlexDirection, FlexWrap, FontWeight, ObjectFit, StyleRules, TouchPhase, TouchResponse, switch};
 
 use crate::style_helpers::{col, px, rounded};
@@ -23,7 +24,7 @@ pub(crate) fn load(server_id: i64) {
     // drops the writes instead of touching freed slots.
     runtime_core::spawn_then_in(
         &crate::app::shell_alive(),
-        se::server_emoji(se::ServerEmojiInput { server_id }),
+        crate::backend::list_server_emoji(server_id),
         move |result| {
             if let Ok(list) = result {
                 LIST.with(|l| *l.borrow_mut() = list);
@@ -72,7 +73,7 @@ fn parse_token(s: &str) -> Option<(&str, i64, usize)> {
     let after = &rest[colon + 1..];
     let close = after.find('>')?;
     let id = after[..close].parse::<i64>().ok()?;
-    se::name_ok(name).then_some((name, id, 2 + colon + 1 + close + 1))
+    name_ok(name).then_some((name, id, 2 + colon + 1 + close + 1))
 }
 
 /// Split text into plain runs and emoji tokens.
@@ -136,7 +137,7 @@ pub(crate) fn encode(text: &str, lookup: impl Fn(&str) -> Option<i64>) -> String
             if s[i..].starts_with(':') {
                 if let Some(end) = s[i + 1..].find(':') {
                     let name = &s[i + 1..i + 1 + end];
-                    if se::name_ok(name) {
+                    if name_ok(name) {
                         if let Some(id) = lookup(name) {
                             out.push_str(&format!("<:{name}:{id}>"));
                             i += end + 2;

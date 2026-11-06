@@ -11,7 +11,7 @@
 use crate::theme;
 use super::*;
 
-use discord_server::profiles::{GetUserProfileInput, UserProfile};
+use crate::backend::UserProfile;
 
 /// Which popup is open, for whom, and where it was opened (window
 /// coordinates of the press).
@@ -51,12 +51,11 @@ impl UserPopupCtx {
         }
         let profile = self.profile;
         let server_id = self.server.get();
-        let input = GetUserProfileInput { user_id, server_id };
         runtime_core::spawn_then_in(
             // Anchored on the app shell: the profile signal lives there, and
             // a popup that closes tears down the node that started this fetch.
             &crate::app::shell_alive(),
-            discord_server::profiles::get_user_profile(input),
+            crate::backend::get_user_profile(user_id, server_id),
             move |result| {
                 if let Ok(p) = result {
                     profile.set(Some(p));
