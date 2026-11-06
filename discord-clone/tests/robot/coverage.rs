@@ -49,6 +49,11 @@ fn create_and_enter(app: &mut App, name: &str) {
 /// Mint an invite from the channel header's invite action, read the code
 /// off the card, and close the overlay.
 fn mint_invite(app: &mut App) -> String {
+    // A phone shows the channel header (with its invite action) only in the
+    // Chat pane, so open the server's channel first; on a desktop window the
+    // click just selects it.
+    app.text("general").click();
+    app.set_timeout(WAIT);
     app.test_id("invite-live").assert_visible();
     app.test_id("invite-live").click();
     app.test_id("live-invite-open").assert_visible();

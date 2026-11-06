@@ -37,10 +37,10 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
         padding_right: Some(px(16.0)),
         border_bottom_width: Some(border_width(1.0)),
         border_bottom_color: Some(col(BORDER)),
-        flex_direction: Some(FlexDirection::Row),
         // A phone window can't fit title + search + all moderation icons on
         // one line; let them wrap onto a second line instead of clipping the
         // right-hand controls out of the header.
+        flex_direction: Some(FlexDirection::Row),
         flex_wrap: Some(FlexWrap::Wrap),
         align_items: Some(AlignItems::Center),
         gap: Some(px(8.0)),
