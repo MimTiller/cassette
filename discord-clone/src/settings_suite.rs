@@ -31,6 +31,7 @@
 //! capture copies of the same signals and stay `Fn`.
 
 use crate::theme;
+use crate::cassette_pair::{CassetteOfferView, ThemeOfferView};
 use crate::style_helpers::{col, pct, px, rounded, section_label};
 use std::rc::Rc;
 use runtime_core::{
@@ -575,7 +576,7 @@ fn theme_card(name: theme::ThemeName, active: Signal<theme::ThemeName>, on_pick:
 
 /// One app icon choice: the cassette and its name; the active one has an
 /// accent outline.
-fn icon_card(icon: crate::app_icon::AppIcon, active: Signal<crate::app_icon::AppIcon>) -> Element {
+fn icon_card(icon: crate::app_icon::AppIcon, active: Signal<crate::app_icon::AppIcon>, on_pick: Rc<dyn Fn(crate::app_icon::AppIcon)>) -> Element {
     let test_id: &'static str = match icon {
         crate::app_icon::AppIcon::Sunset => "icon-card-sunset",
         crate::app_icon::AppIcon::Memphis => "icon-card-memphis",
@@ -628,7 +629,7 @@ fn icon_card(icon: crate::app_icon::AppIcon, active: Signal<crate::app_icon::App
         .on_touch(move |ev| {
             if ev.phase == TouchPhase::Ended {
                 active.set(icon);
-                crate::app_icon::choose(icon);
+                on_pick(icon);
             }
             TouchResponse::CONSUMED
         })
@@ -639,11 +640,24 @@ fn appearance_tab(accent: Signal<String>) -> Element {
     // The theme: picking one saves it, recolours the app and brings the
     // theme's own accent back.
     let active = signal(theme::current());
+    // Pairing: picking a theme whose matching cassette is not the active
+    // icon offers the cassette ("Switch icon" / "No thanks"), and picking an
+    // icon whose theme is not the active one offers the theme. A dismissed
+    // pair is remembered per account on the storage SDK and never offers
+    // again; pairs with no partner (Game Boy…, Classic) never arm either.
+    let icon = signal(crate::app_icon::current());
+    let offer_icon: Signal<Option<crate::app_icon::AppIcon>> = signal(None);
+    let offer_theme: Signal<Option<crate::theme::ThemeName>> = signal(None);
     let on_theme: Rc<dyn Fn(theme::ThemeName)> = Rc::new(move |name: theme::ThemeName| {
         active.set(name);
         crate::notify::save_theme(name);
         theme::set_theme_name(name);
         accent.set(name.value(theme::ACCENT).to_string());
+        offer_theme.set(None);
+        offer_icon.set(match crate::cassette_pair::cassette_for(name) {
+            Some(c) if icon.get() != c && !crate::cassette_pair::dismissed(name.key()) => Some(c),
+            _ => None,
+        });
     });
     let theme_cards: Vec<Element> = theme::ThemeName::ALL.iter().map(|t| theme_card(*t, active, on_theme.clone())).collect();
     let accent_chk = accent.clone();
@@ -652,8 +666,66 @@ fn appearance_tab(accent: Signal<String>) -> Element {
         crate::notify::save_accent(&hex);
         crate::theme::set_accent(&hex);
     });
-    let icon = signal(crate::app_icon::current());
-    let icon_cards: Vec<Element> = crate::app_icon::AppIcon::ALL.iter().map(|i| icon_card(*i, icon)).collect();
+    let icon_signal = icon.clone();
+    let active_theme = active.clone();
+    let offer_icon_c = offer_icon.clone();
+    let on_icon: Rc<dyn Fn(crate::app_icon::AppIcon)> = Rc::new(move |pick: crate::app_icon::AppIcon| {
+        icon_signal.set(pick);
+        crate::app_icon::choose(pick);
+        offer_icon_c.set(None);
+        offer_theme.set(match crate::cassette_pair::theme_for(pick) {
+            Some(t) if active_theme.get() != t && !crate::cassette_pair::dismissed(t.key()) => Some(t),
+            _ => None,
+        });
+    });
+    let icon_cards: Vec<Element> = crate::app_icon::AppIcon::ALL.iter().map(|i| icon_card(*i, icon, on_icon.clone())).collect();
+
+    // The offer buttons. "Switch icon" applies the cassette and marks the
+    // pair dismissed (applying it keeps it from re-offering after, say, a
+    // later theme change); "No thanks" dismisses without applying. Both
+    // clear the signal, so the inline card drops either way. Signals are
+    // Copy, so the bare `move ||` closures stay `Fn` across taps.
+    let switch_icon: Rc<dyn Fn()> = Rc::new(move || {
+        if let Some(c) = offer_icon.get() {
+            crate::cassette_pair::dismiss(c.key());
+            icon.set(c);
+            crate::app_icon::choose(c);
+        }
+        offer_icon.set(None);
+    });
+    let dismiss_icon_offer: Rc<dyn Fn()> = Rc::new(move || {
+        if let Some(c) = offer_icon.get() {
+            crate::cassette_pair::dismiss(c.key());
+        }
+        offer_icon.set(None);
+    });
+    let switch_theme: Rc<dyn Fn()> = Rc::new(move || {
+        if let Some(t) = offer_theme.get() {
+            crate::cassette_pair::dismiss(t.key());
+            active.set(t);
+            crate::notify::save_theme(t);
+            theme::set_theme_name(t);
+            accent.set(t.value(theme::ACCENT).to_string());
+        }
+        offer_theme.set(None);
+    });
+    let dismiss_theme_offer: Rc<dyn Fn()> = Rc::new(move || {
+        if let Some(t) = offer_theme.get() {
+            crate::cassette_pair::dismiss(t.key());
+        }
+        offer_theme.set(None);
+    });
+    // Build the offer views inside the render closure (Elements are not Copy).
+    let icon_offer_view = ui! { CassetteOfferView(
+        offer = offer_icon.clone(),
+        switch = Some(switch_icon.clone()),
+        no_thanks = Some(dismiss_icon_offer.clone()),
+    ) };
+    let theme_offer_view = ui! { ThemeOfferView(
+        offer = offer_theme.clone(),
+        switch = Some(switch_theme.clone()),
+        no_thanks = Some(dismiss_theme_offer.clone()),
+    ) };
 
     ui! {
         view(style = StyleRules {
@@ -672,6 +744,9 @@ fn appearance_tab(accent: Signal<String>) -> Element {
                     gap: Some(px(16.0)),
                     ..Default::default()
                 }) { theme_cards } },
+                // The offer for a cassette matching the newly active theme:
+                // under the theme cards, "Use the matching X cassette too?".
+                icon_offer_view,
             ]) }
             { crate::settings_suite::settings_card("Accent color".to_string(), vec![
                 ui! { text(style = StyleRules {
@@ -701,6 +776,8 @@ fn appearance_tab(accent: Signal<String>) -> Element {
                     gap: Some(px(16.0)),
                     ..Default::default()
                 }) { icon_cards } },
+                // The offer for a theme matching the newly chosen cassette.
+                theme_offer_view,
             ]) }
         }
     }

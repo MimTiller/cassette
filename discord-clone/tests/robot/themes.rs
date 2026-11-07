@@ -208,6 +208,118 @@ fn picking_blockbuster_recolours_the_app(app: &mut App) {
     for _ in 0..3 { app.press_key("Escape"); }
 }
 
+#[robot_test]
+fn picking_miami_offers_the_matching_cassette(app: &mut App) {
+    signed_out(app);
+    let user = fresh_name("miamicassette");
+    sign_up(app, &user, &format!("pass-{user}"));
+    app.text("Online").assert_visible();
+
+    app.test_id("user-settings").click();
+    app.text("USER SETTINGS").assert_visible();
+    app.set_timeout(WAIT);
+    app.test_id("settings-nav-appearance").click();
+    app.set_timeout(WAIT);
+
+    // The default icon is Sunset, so picking Miami arms the cassette offer.
+    app.test_id("theme-card-miami").click();
+    app.set_timeout(WAIT);
+    app.test_id("pair-offer-icon").assert_visible();
+    app.test_id("pair-offer-icon-text").assert_text_contains("matching Miami cassette");
+    shot(app, "themes10-offer-icon");
+
+    app.test_id("pair-switch-icon").click();
+    app.set_timeout(WAIT);
+    let mut got = String::new();
+    let ok = crate::support::eventually(10, || {
+        got = robot_string(app.call_function("cassette.app_icon", json!({})));
+        got == "miami"
+    });
+    assert!(ok, "Switch icon should set the app icon (got {got})");
+    app.test_id("pair-offer-icon").assert_hidden();
+    shot(app, "themes11-miami-icon-set");
+    for _ in 0..3 { app.press_key("Escape"); }
+}
+
+#[robot_test]
+fn no_thanks_leaves_the_icon_unchanged(app: &mut App) {
+    signed_out(app);
+    let user = fresh_name("nothanksmiami");
+    sign_up(app, &user, &format!("pass-{user}"));
+    app.text("Online").assert_visible();
+
+    app.test_id("user-settings").click();
+    app.text("USER SETTINGS").assert_visible();
+    app.set_timeout(WAIT);
+    app.test_id("settings-nav-appearance").click();
+    app.set_timeout(WAIT);
+
+    // The suite shares one browser, so another test may already have set the
+    // active icon to Miami (which suppresses this offer). Pick Sunset first so
+    // the Miami cassette offer deterministically arms.
+    app.test_id("icon-card-sunset").click();
+    app.set_timeout(WAIT);
+    app.test_id("theme-card-miami").click();
+    app.set_timeout(WAIT);
+    app.test_id("pair-offer-icon").assert_visible();
+    let before = robot_string(app.call_function("cassette.app_icon", json!({})));
+
+    app.test_id("pair-dismiss-icon").click();
+    app.set_timeout(WAIT);
+    app.test_id("pair-offer-icon").assert_hidden();
+    let after = robot_string(app.call_function("cassette.app_icon", json!({})));
+    assert_eq!(after, before, "No thanks must leave the icon unchanged");
+
+    // The dismissed pair must not come back for this account.
+    app.test_id("theme-card-miami").click();
+    app.set_timeout(WAIT);
+    app.test_id("pair-offer-icon").assert_hidden();
+    shot(app, "themes12-dismissed-no-reoffer");
+    for _ in 0..3 { app.press_key("Escape"); }
+}
+
+#[robot_test]
+fn picking_memphis_cassette_offers_the_theme(app: &mut App) {
+    signed_out(app);
+    let user = fresh_name("memphisthemeoffer");
+    sign_up(app, &user, &format!("pass-{user}"));
+    app.text("Online").assert_visible();
+
+    app.test_id("user-settings").click();
+    app.text("USER SETTINGS").assert_visible();
+    app.set_timeout(WAIT);
+    app.test_id("settings-nav-appearance").click();
+    app.set_timeout(WAIT);
+
+    // The default theme is not Memphis, so picking the cassette arms it.
+    app.test_id("icon-card-memphis").click();
+    app.set_timeout(WAIT);
+    app.test_id("pair-offer-theme").assert_visible();
+    app.test_id("pair-offer-theme-text").assert_text_contains("matching Memphis theme");
+    shot(app, "themes13-theme-offer");
+    for _ in 0..3 { app.press_key("Escape"); }
+}
+
+#[robot_test]
+fn a_theme_without_a_cassette_offers_nothing(app: &mut App) {
+    signed_out(app);
+    let user = fresh_name("gameboynoop");
+    sign_up(app, &user, &format!("pass-{user}"));
+    app.text("Online").assert_visible();
+
+    app.test_id("user-settings").click();
+    app.text("USER SETTINGS").assert_visible();
+    app.set_timeout(WAIT);
+    app.test_id("settings-nav-appearance").click();
+    app.set_timeout(WAIT);
+
+    app.test_id("theme-card-gameboy").click();
+    app.set_timeout(WAIT);
+    app.test_id("pair-offer-icon").assert_hidden();
+    shot(app, "themes14-gameboy-no-offer");
+    for _ in 0..3 { app.press_key("Escape"); }
+}
+
 // Shared helpers for this module.
 fn shot(app: &mut App, label: &str) {
     let path = app.screenshot();
