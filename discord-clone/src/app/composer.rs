@@ -735,7 +735,13 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                     background: Some(col(if emoji_hovered.get() { BG_HOVER } else { "transparent" })),
                     ..rounded(14.0)
                 }, test_id = "composer-emoji") {
-                    icon(SMILE).color(move || theme::live(if emoji_hovered.get() { theme::INTERACTIVE } else { TEXT_MUTED })).size(16.0)
+                    image(
+                        src = move || crate::composer_icons::emoji_url(
+                            theme::live(if emoji_hovered.get() { theme::INTERACTIVE } else { theme::TEXT_MUTED }).0
+                        ),
+                        alt = "Emoji",
+                        style = StyleRules { width: Some(px(24.0)), height: Some(px(24.0)), ..Default::default() },
+                    )
                 }
                 .on_hover(move |on| emoji_hovered.set(on))
                 // Smile = open/close the emoji popover (a `Copy` handle

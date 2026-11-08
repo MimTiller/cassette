@@ -48,7 +48,7 @@ use runtime_core::primitives::portal::{AnchorTarget, ElementAlign, ElementSide};
 use file_picker::{FilePicker, PickRequest, PickOutcome, MediaKind};
 use icons_lucide::{
     CHEVRON_DOWN, CHEVRON_RIGHT, HASH, HEADPHONES,
-    MIC, MIC_OFF, PIN, PLUS, SETTINGS, SMILE, SMILE_PLUS,
+    MIC, MIC_OFF, PIN, PLUS, SETTINGS, SMILE_PLUS,
     USER_PLUS, USERS, VOLUME_2, MENU, LOCK, BELL_OFF,
 };
 use crate::server_settings_panel::ServerSettingsPanel;
