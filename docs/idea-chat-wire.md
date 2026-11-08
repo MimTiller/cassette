@@ -138,6 +138,41 @@ Maxes: `MAX_UPLOAD`, `MAX_IMAGE` (`srv.rs`); 60 uploads/min.
 RWND's flows map onto this directly (avatar upload, server icon) but not its
 inline base64 attachments — see the table.
 
+## 3.5 Backend trait areas (MessagesApi, ServersApi, MembersApi, SocialApi, AccountApi, StickersApi, event stream)
+
+The task text lists the backend surface as area traits (MessagesApi, ServersApi,
+MembersApi, SocialApi, AccountApi, StickersApi, …) implemented by CassetteBackend.
+No such trait declarations exist in this repo's history; the same surface appears
+as the per-area wrapper modules named below, and this study maps those. Grouped by
+the task's trait areas:
+
+- **MessagesApi** — `list_dm_messages`/`dms::list_dm_messages`, `send_dm_message`,
+  `search::search_messages`, gateway `History`/`Send`/`EditMessage`/`DeleteMessage`,
+  `pins::*`, `reactions::*`, `marks_read`/`unread_counts` → `history`, `send`,
+  `search`, `mark_read` + `MessageCreated/Edited/Deleted` events; pins/reactions-
+  listing/embeds have no counterpart (below).
+- **ServersApi** — `servers::create_server`, `list_servers`, `list_channels`,
+  `server_settings::create_channel`/`rename_channel`/`delete_channel`,
+  `rename_server`, `set_server_icon`, `transfer_server_ownership`,
+  `server_roles::*`, `server_emoji::*`, `channel_permissions::*` → `create_space`,
+  `create_channel`/`rename_channel`/`delete_channel`/`rename_space`/`set_space_icon`/
+  `transfer_space` + snapshot state; roles/emoji/permissions RWND-only.
+- **MembersApi** — `server_settings::list_members`, `add_member`, `remove_member`,
+  `ban_member`, `timeout_member`, `leave_server`, `blocks::*` → `join_space`/
+  `remove_member`/`leave_space` + `MemberJoined/MemberLeft/MemberRole` events;
+  bans/timeouts RWND-only; blocks adapt.
+- **SocialApi** — `friends::*`, `dms::start_dm`/`create_group_dm`/member ops,
+  `notification_settings::*` → `add_friend`/`accept_friend`/`remove_relation`,
+  `open_direct`/`create_group`/`add_to_group`/`leave_group`, `set_muted`;
+  notification settings RWND-only.
+- **AccountApi** — `auth::*`, `profiles::*`, `password_resets::*` → `sign_in`/
+  `sign_up`/`sign_out*`/`change_password`/`whoami`/`update_profile`/`forgot_password`/
+  `reset_password`; username change RWND-only.
+- **StickersApi** — `gifs::*`, `custom_emoji`, stickers, avatar decorations → none,
+  RWND-only.
+- **Event stream** — `message_gateway` + `WsServerMsg` frames → live `Down` events
+  (§4 and §5).
+
 ## 4. Trait/call-surface → idea-chat mapping
 
 "RWND-only" = nothing in idea-chat serves it at all (or the data model has no
