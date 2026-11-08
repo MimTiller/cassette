@@ -145,7 +145,10 @@ async fn upload_server_icon(mime: String, data_b64: String) -> Result<String, St
 async fn upload_server_emoji(name: String, mime: String, data_b64: String) -> Result<String, String> {
     let sid = crate::mentions::server_id().ok_or_else(|| "no active live server".to_string())?;
     let bytes = crate::profile_settings::b64_decode(&data_b64)?;
-    let url = crate::profile_settings::validate_and_encode_small_image(&mime, &bytes, "emoji")?;
+    // Route through the emoji upload's sniffing encode (accepted_mime reads the
+    // real format from the bytes, so a JPEG works even when the caller declared
+    // a different MIME), not the profile path's declared-only validation.
+    let url = crate::emoji_upload::encode_as_is(&mime, &bytes)?;
     match crate::backend::upload_emoji(sid, name.to_string(), url).await {
         Ok(e) => Ok(e.image.clone()),
         Err(err) => Err(err),

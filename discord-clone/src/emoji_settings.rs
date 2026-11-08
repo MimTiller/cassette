@@ -145,9 +145,25 @@ pub fn emoji_section(server_id: Option<i64>) -> Element {
                     Ok(bytes) => bytes,
                     Err(e) => return Some(Err(format!("could not read the file: {e}"))),
                 };
-                let data_url = match crate::profile_settings::validate_and_encode_small_image(file.mime(), &bytes, "emoji") {
-                    Ok(data_url) => data_url,
-                    Err(msg) => return Some(Err(msg)),
+                // A still bigger than the 128×128 draw box or the 256 KB cap is
+                // shrunk on the browser's canvas before upload; an animation over
+                // the cap is refused outright so the picker never flattens it.
+                let is_animated = crate::emoji_upload::animated(&bytes);
+                let data_url = if is_animated {
+                    match crate::emoji_upload::encode_as_is(file.mime(), &bytes) {
+                        Ok(url) => url,
+                        Err(msg) =>
+                            if msg.starts_with("emoji images can be at most") {
+                                return Some(Err("An animated emoji over 256 KB isn't accepted — pick a smaller GIF or WebP".to_string()))
+                            } else {
+                                return Some(Err(msg))
+                            },
+                    }
+                } else {
+                    match crate::emoji_upload::encode_still_resized(bytes.to_vec(), file.mime()).await {
+                        Ok(url) => url,
+                        Err(msg) => return Some(Err(msg)),
+                    }
                 };
                 Some(crate::backend::upload_emoji(sid, n, data_url).await.map(|_| ()))
             },
@@ -189,7 +205,7 @@ pub fn emoji_section(server_id: Option<i64>) -> Element {
     ui! {
         view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(16.0)), max_width: Some(px(660.0)), ..Default::default() }) {
             text(style = StyleRules { font_size: Some(px(12.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) {
-                "Anyone in the server can use these in messages (:name:) and reactions. PNG, GIF or WebP, up to 256 KB.".to_string()
+                "Anyone in the server can use these in messages (:name:) and reactions. PNG, JPEG, GIF, or WebP (animated is fine). Under 256 KB, or a still image is shrunk to fit 128×128.".to_string()
             }
             view(style = StyleRules { flex_direction: Some(FlexDirection::Row), gap: Some(px(8.0)), align_items: Some(AlignItems::Center), ..Default::default() }) {
                 { text_field(name, "Emoji name", input_style()) }

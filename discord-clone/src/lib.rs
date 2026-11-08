@@ -45,6 +45,7 @@ mod styles;
 mod controls;
 mod custom_emoji;
 mod emoji_settings;
+mod emoji_upload;
 mod sticker_msgs;
 mod sticker_settings;
 mod notif_prefs;
