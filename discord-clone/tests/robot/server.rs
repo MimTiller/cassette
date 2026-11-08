@@ -18,7 +18,7 @@
 
 use robot_test::{json, robot_test, App};
 
-use crate::support::{Account, fresh_name, known_bug, sign_in_as, sign_up, signed_out};
+use crate::support::{Account, fresh_name, sign_in_as, sign_up, signed_out};
 use crate::support::WAIT;
 
 #[robot_test]
@@ -77,21 +77,31 @@ fn the_owners_menu_offers_create_channel(app: &mut App) {
 
     app.set_timeout(WAIT);
     app.test_id("server-header").click();
-    let armed = app.test_id("menu-create-channel").is_visible();
-    known_bug(
-        "the fresh server arms its permissions right away",
-        armed,
-        "the dropdown lists no permission rows until a reload",
-    );
-    if !armed {
-        app.call_function("cassette.rearm_perms", json!({}));
-    }
+    // Entering a fresh server must arm its permissions right away: the
+    // dropdown's owner-only Create Channel row is there with no reload
+    // and no re-arming hook.
     app.test_id("menu-create-channel").assert_visible();
     app.test_id("menu-create-channel").click();
     app.text("New Channel").assert_visible();
     let shot = app.screenshot();
     assert!(shot.ends_with(".png"), "screenshot was not saved: {shot}");
     eprintln!("[shot] create channel modal: {shot}");
+    // A message the owner sends in a channel created after entering must
+    // not be covered by the no-permission line: the create announces the
+    // new channel so the snapshot refreshes.
+    let channel = fresh_name("armchan");
+    app.test_id("create-channel-name-input").fill(&channel);
+    app.test_id("create-channel-create").click();
+    app.text(&channel).assert_visible();
+    app.text(&channel).click();
+    let msg = fresh_name("hello ");
+    app.test_id("composer").fill(&msg);
+    app.test_id("composer").press_key("Enter");
+    app.text(&msg).assert_visible();
+    app.test_id("composer-no-permission").assert_hidden();
+    let shot = app.screenshot();
+    assert!(shot.ends_with(".png"), "screenshot was not saved: {shot}");
+    eprintln!("[shot] owner posts in fresh channel: {shot}");
 }
 
 #[robot_test]
@@ -125,10 +135,11 @@ fn send_a_message_and_see_it_appear(app: &mut App) {
     app.test_id("composer").fill(&msg);
     app.test_id("composer").press_key("Enter");
     app.text(&msg).assert_visible();
+    // The owner may post in a channel created after entering: the create
+    // announces the new channel, so the permission snapshot refreshed and
+    // the composer is not covered by the no-permission line.
+    app.test_id("composer-no-permission").assert_hidden();
     let shot = app.screenshot();
-    assert!(shot.ends_with(".png"), "screenshot was not saved: {shot}");
-    eprintln!("[shot] sent message: {shot}");
-    // The composer clears after sending.
     app.test_id("composer").assert_value("");
 }
 
@@ -199,15 +210,13 @@ fn create_server(app: &mut App, name: &str) {
     app.text(name).assert_visible();
 }
 
-/// Open the fresh server's dropdown, re-arming permissions through the robot
-/// hook if the create path left them unfetched (the known bug), and leave the
-/// New Channel modal up.
+/// Open the fresh server's dropdown and leave the New Channel modal up.
+/// Entering a fresh server arms its permissions right away (the create
+/// path announces the fresh server's channel to its members), so no
+/// re-arming hook is needed.
 fn open_menu_with_perms(app: &mut App) {
     app.set_timeout(WAIT);
     app.test_id("server-header").click();
-    if !app.test_id("menu-create-channel").is_visible() {
-        app.call_function("cassette.rearm_perms", json!({}));
-    }
     app.test_id("menu-create-channel").assert_visible();
     app.test_id("menu-create-channel").click();
     app.text("New Channel").assert_visible();

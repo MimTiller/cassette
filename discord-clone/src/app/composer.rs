@@ -777,7 +777,7 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                                 align_items: Some(AlignItems::Center),
                                 background: Some(col(COMPOSER)),
                                 ..rounded(8.0)
-                            }) {
+                            }, test_id = "composer-no-permission") {
                                 text(style = StyleRules {
                                     font_size: Some(px(14.0)),
                                     color: Some(col(TEXT_MUTED)),
