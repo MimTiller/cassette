@@ -22,7 +22,7 @@
 //! any successful op the caller's `servers` list (and thus the rail's live
 //! section) is re-fetched via `crate::servers::list_servers`, so the renamed
 //! name / new icon appear without a reload; after a successful add the roster
-//! (`members`) is re-fetched via `crate::moderation::list_members`, so the new
+//! (`members`) is re-fetched via `crate::backend::list_members`, so the new
 //! member's row appears.
 //!
 //! Idioms (verified against `delete_channel_modal.rs`): one `switch` keyed on
@@ -45,10 +45,25 @@ use std::rc::Rc;
 // Discord dark palette (kept local so the component is self-contained).
 
 /// The sidebar's sections, in order (the `section` signal's index).
-const SECTIONS: [&str; 4] = ["Overview", "Roles", "Members", "Emoji"];
+const SECTIONS: [&str; 5] = ["Overview", "Roles", "Members", "Emoji", "Stickers"];
+
+/// A text input bound two-way to `value`, carrying a `test_id` for the robot
+/// suite (the `controls::text_field` shape plus the id).
+fn text_field_id(value: Signal<String>, test_id: &'static str, placeholder: &str, style: StyleRules) -> Element {
+    ui! {
+        text_input(
+            value = value,
+            on_change = move |v: String| value.set(v),
+            placeholder = placeholder.to_string(),
+            test_id = test_id,
+            style = style,
+        )
+    }
+}
 const SECTION_OVERVIEW: usize = 0;
 const SECTION_ROLES: usize = 1;
 const SECTION_EMOJI: usize = 3;
+const SECTION_STICKERS: usize = 4;
 
 /// Whether the signed-in user may use section `i` (the owner may use all).
 fn section_allowed(i: usize) -> bool {
@@ -56,7 +71,7 @@ fn section_allowed(i: usize) -> bool {
     match i {
         SECTION_OVERVIEW => crate::mentions::can(P::MANAGE_SERVER),
         SECTION_ROLES => crate::mentions::can(P::MANAGE_ROLES),
-        SECTION_EMOJI => crate::mentions::can(P::MANAGE_EXPRESSIONS),
+        SECTION_EMOJI | SECTION_STICKERS => crate::mentions::can(P::MANAGE_EXPRESSIONS),
         _ => crate::mentions::can(P::CREATE_INVITE),
     }
 }
@@ -140,9 +155,9 @@ pub fn ServerSettingsPanel(
         runtime_core::spawn_then_in(
             &crate::app::shell_alive(),
             async move {
-                let renamed = crate::servers::rename_server(sid0, &new_name).await;
+                let renamed = crate::backend::rename_server(sid0, new_name).await;
                 let list = match renamed {
-                    Ok(_) => crate::servers::list_servers().await.ok(),
+                    Ok(_) => crate::backend::list_servers().await.ok(),
                     Err(_) => None,
                 };
                 (renamed, list)
@@ -217,9 +232,9 @@ pub fn ServerSettingsPanel(
                 } else {
                     None
                 };
-                match crate::servers::set_server_icon(sid0, icon_opt).await {
+                match crate::backend::set_server_icon(sid0, icon_opt).await {
                     Ok(r) => {
-                        let servers = if let Ok(list) = crate::servers::list_servers().await { Some(list) } else { None };
+                        let servers = if let Ok(list) = crate::backend::list_servers().await { Some(list) } else { None };
                         IconOutcome { skipped: false, err: None, icon_url: Some(r.icon_url.clone().unwrap_or_default()), servers }
                     }
                     Err(msg) => IconOutcome { skipped: false, err: Some(msg), icon_url: None, servers: None },
@@ -259,12 +274,12 @@ pub fn ServerSettingsPanel(
                 runtime_core::spawn_then_in(
                     &crate::app::shell_alive(),
                     async move {
-                        let transferred = crate::servers::transfer_server_ownership(sid0, new_owner_id).await;
+                        let transferred = crate::backend::transfer_server_ownership(sid0, new_owner_id).await;
                         if transferred.is_err() {
                             return (transferred, None, None);
                         }
-                        let servers = crate::servers::list_servers().await.ok();
-                        let members = crate::moderation::list_members(sid0).await.ok();
+                        let servers = crate::backend::list_servers().await.ok();
+                        let members = crate::backend::list_members(sid0).await.ok();
                         (transferred, servers, members)
                     },
                     move |(transferred, servers, members)| {
@@ -314,8 +329,8 @@ pub fn ServerSettingsPanel(
                 runtime_core::spawn_then_in(
                     &crate::app::shell_alive(),
                     async move {
-                        let added = crate::moderation::add_member(sid0, user_id).await;
-                        let members = if added.is_ok() { crate::moderation::list_members(sid0).await.ok() } else { None };
+                        let added = crate::backend::add_member(sid0, user_id).await.map(|_| ());
+                        let members = if added.is_ok() { crate::backend::list_members(sid0).await.ok() } else { None };
                         (added, members)
                     },
                     move |(added, members)| {
@@ -445,7 +460,7 @@ pub fn ServerSettingsPanel(
             let name_row = ui! {
                 view(style = row_col()) {
                     text(style = label_style.clone()) { "Server name".to_string() }
-                    { crate::controls::text_field(nm, "New server name", input_style.clone()) }
+                    { text_field_id(nm, "server-rename-input", "New server name", input_style.clone()) }
                     rename_btn
                 }
             };
@@ -527,6 +542,7 @@ pub fn ServerSettingsPanel(
                 // Named roles: create, list, delete (admins and the owner).
                 SECTION_ROLES => vec![crate::roles_settings::roles_section(sid.get())],
                 SECTION_EMOJI => vec![crate::emoji_settings::emoji_section(sid.get())],
+                SECTION_STICKERS => vec![crate::sticker_settings::sticker_section(sid.get())],
                 _ => vec![add_row, transfer_el],
             };
             let title = SECTIONS.get(*tab).copied().unwrap_or_default().to_string();

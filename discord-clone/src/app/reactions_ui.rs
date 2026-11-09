@@ -58,9 +58,9 @@ pub(super) fn request_live_reaction(
     // The request must outlive this row's handler, so it stays detached.
     runtime_core::driver::spawn_detached(async move {
         if remove {
-            let _ = crate::reactions::remove_reaction(id, emoji).await;
+            let _ = crate::backend::remove_reaction(id, emoji).await;
         } else {
-            let _ = crate::reactions::add_reaction(id, emoji).await;
+            let _ = crate::backend::add_reaction(id, emoji).await;
         }
     });
 }

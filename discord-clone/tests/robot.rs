@@ -30,3 +30,7 @@ mod messages;
 mod dms_friends;
 #[path = "robot/themes.rs"]
 mod themes;
+#[path = "robot/notifications.rs"]
+mod notifications;
+#[path = "robot/coverage.rs"]
+mod coverage;

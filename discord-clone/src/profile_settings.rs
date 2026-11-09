@@ -28,6 +28,7 @@
 //!   the labels reactively (the
 //!   `ServerSettingsPanel` triple, minus the paste input).
 
+use crate::avatar_chip::AvatarFrame;
 use crate::theme;
 use crate::controls::{ButtonKind};
 use crate::style_helpers::{col, px, rounded};
@@ -87,7 +88,7 @@ const B64_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwx
 
 /// Base64-encode `data` (standard alphabet, padded). The app crate carries no
 /// `base64` dependency — avatars are tiny and the encoder is fifteen lines.
-fn b64_encode(data: &[u8]) -> String {
+pub(crate) fn b64_encode(data: &[u8]) -> String {
     let out_len = (data.len() + 2) / 3 * 4;
     let mut out: Vec<u8> = Vec::new();
     out.reserve(out_len);
@@ -146,7 +147,7 @@ pub fn b64_decode(s: &str) -> Result<Vec<u8>, String> {
 /// `application/octet-stream`) against the backend's accepted set, falling
 /// back to magic-byte sniffing. `Some(mime)` = one of the four accepted
 /// `data:image/…` kinds, `None` = rejected.
-fn accepted_mime(mime: &str, bytes: &[u8]) -> Option<&'static str> {
+pub(crate) fn accepted_mime(mime: &str, bytes: &[u8]) -> Option<&'static str> {
     // The accepted set is exactly the backend's (`avatar_is_valid_spec`).
     const ACCEPTED: [&'static str; 4] = ["image/png", "image/jpeg", "image/webp", "image/gif"];
     let lowered = mime.to_ascii_lowercase();
@@ -265,8 +266,7 @@ pub fn ProfileSettings() -> Element {
     let alive = runtime_core::ScopeAlive::current();
     {
         let me = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
-        let input = discord_server::profiles::GetUserProfileInput { user_id: me, server_id: None };
-        runtime_core::spawn_then_in(&alive, discord_server::profiles::get_user_profile(input), move |result| {
+        runtime_core::spawn_then_in(&alive, crate::backend::get_user_profile(me, None), move |result| {
             if let Ok(p) = result {
                 display_name.set(p.display_name.unwrap_or_default());
                 about.set(p.about);
@@ -279,15 +279,16 @@ pub fn ProfileSettings() -> Element {
         }
         profile_busy.set(true);
         profile_note.set(String::new());
-        let input = discord_server::profiles::SetProfileInput { display_name: display_name.get(), about: about.get() };
-        runtime_core::spawn_then_in(&alive, discord_server::profiles::set_profile(input), move |result| {
+        let dn = display_name.get();
+        let ab = about.get();
+        runtime_core::spawn_then_in(&alive, crate::backend::set_profile(dn, ab), move |result| {
             match result {
                 Ok(saved) => {
                     crate::auth::remember_display_name(&crate::auth::current_username(), saved.display_name);
                     crate::mentions::names_changed();
                     profile_note.set("Saved.".to_string());
                 }
-                Err(e) => profile_note.set(crate::errors::friendly(&e)),
+                Err(e) => profile_note.set(e),
             }
             profile_busy.set(false);
         });
@@ -348,7 +349,7 @@ pub fn ProfileSettings() -> Element {
         av_error.set(String::new());
         runtime_core::spawn_then_in(
             &crate::app::shell_alive(),
-            crate::auth::set_avatar(Some(url.clone())),
+            crate::auth::update_avatar(Some(url.clone())),
             move |result| {
                 match result {
                     Ok(_) => {
@@ -454,7 +455,7 @@ pub fn ProfileSettings() -> Element {
         // teardown (same idiom as save_avatar).
         runtime_core::spawn_then_in(
             &crate::app::shell_alive(),
-            crate::auth::set_avatar(None),
+            crate::auth::update_avatar(None),
             move |result| {
                 match result {
                     Ok(_) => {
@@ -487,6 +488,7 @@ pub fn ProfileSettings() -> Element {
             // non-Copy is captured across the `when` boundary.
             view(style = StyleRules { justify_content: Some(JustifyContent::Center), ..Default::default() }) {
             view(style = StyleRules { cursor: Some(runtime_core::Cursor::Pointer), ..Default::default() }) {
+            AvatarFrame(name = username.clone(), size = AVATAR_PREVIEW) {
             if !avatar_url.get().is_empty() {
                 image(
                     src = move || crate::auth::media_url(avatar_url.get().clone()),
@@ -511,6 +513,7 @@ pub fn ProfileSettings() -> Element {
                     font_weight: Some(FontWeight::Bold),
                     ..rounded(AVATAR_PREVIEW / 2.0)
                 }) { avatar_letter }
+            }
             }
             }
             .on_touch(move |ev| {
@@ -620,7 +623,7 @@ pub(crate) fn register_avatar_upload_hook(
             // spawn_then_in callback, anchored on the app shell.
             runtime_core::spawn_then_in(
                 &crate::app::shell_alive(),
-                crate::auth::set_avatar(Some(url.clone())),
+                crate::auth::update_avatar(Some(url.clone())),
                 move |result| {
                     match result {
                         Ok(_) => {

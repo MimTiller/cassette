@@ -8,8 +8,8 @@
 //! All data is caller-owned signals so the header pin badge and the list stay
 //! in sync with the backend:
 //! - the caller (the live channel header's pin icon) sets `open` true and
-//!   spawns `crate::pins::list_pinned(channel_id)` to fill `messages`;
-//! - each Unpin button calls `crate::pins::unpin_message(message_id)`, then on
+//!   spawns `crate::backend::list_pinned(channel_id)` to fill `messages`;
+//! - each Unpin button calls `crate::backend::unpin_message(message_id)`, then on
 //!   success writes the backend's fresh `pinned_count` into `count` (the header
 //!   badge updates from it with no second round trip), removes the row from
 //!   `messages`, and bumps `revision` so the list rebuilds;
@@ -36,7 +36,8 @@
 use crate::theme;
 use icons_lucide::{PIN, PIN_OFF};
 use runtime_core::icon;
-use crate::pins::{PinnedMessage, unpin_message};
+use crate::pins::PinnedMessage;
+use crate::backend::{unpin_message};
 use crate::style_helpers::{col, px, pct, rounded};
 use runtime_core::{
     ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent, Overflow,

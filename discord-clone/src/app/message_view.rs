@@ -2,6 +2,7 @@
 //! Split out of `app.rs`; `use super::*` keeps app.rs's imports and shared
 //! colors/helpers in scope.
 
+use crate::avatar_chip::AvatarFrame;
 use crate::theme;
 use super::*;
 
@@ -511,6 +512,10 @@ pub(super) fn message_body_piece(piece: &BodyPiece, emoji_size: crate::styles::B
 }
 
 pub(super) fn message_body(body: &str) -> Element {
+    // A sticker message's row body is a marker for its sticker.
+    if let Some(s) = crate::sticker_msgs::from_body(body) {
+        return crate::sticker_msgs::view(&s);
+    }
     // A body that is just a Giphy media link (a GIF sent from the picker, or
     // a pasted one) shows as the animated image, sized from the link's
     // `#WxH` fragment like an attachment.
@@ -520,6 +525,7 @@ pub(super) fn message_body(body: &str) -> Element {
             image(
                 src = url,
                 alt = "GIF".to_string(),
+                test_id = "gif-image",
                 style = StyleRules {
                     width: Some(px(w)),
                     height: Some(px(h)),
@@ -968,7 +974,7 @@ pub(crate) fn message_row(
     // by login / `list_members` / gateway frames) knows a URL for this author,
     // else the pre-existing colored initial circle. Mock identities are never
     // registered, so guest/demo rows render exactly as before.
-    let avatar_chip = if let Some(url) = crate::auth::avatar_for(author) {
+    let chip = if let Some(url) = crate::auth::avatar_for(author) {
         let url = crate::auth::media_url(url.clone());
         ui! {
             image(
@@ -984,6 +990,7 @@ pub(crate) fn message_row(
             }
         }
     };
+    let avatar_chip = ui! { AvatarFrame(name = author, size = 40.0_f32) { chip } };
     if grouped {
         // Grouped form (Discord convention): no avatar, no author/time
         // header. Just the body, tightly spaced above the row it follows
@@ -1248,6 +1255,8 @@ pub(super) fn message_row_with_actions(
     on_delete: Option<Rc<dyn Fn()>>,
     on_author: Option<AuthorPress>,
 ) -> Element {
+    // A sticker has no text to edit.
+    let on_edit = if crate::sticker_msgs::from_body(body).is_some() { None } else { on_edit };
     let hovered = signal(false);
     let menu_open = super::popups::MenuHandle { key };
     let base = message_row(author, color, body, when, full, edited, grouped, on_author);
@@ -1258,6 +1267,8 @@ pub(super) fn message_row_with_actions(
     let author_owned = author.to_string();
     let snippet: String = if discord_server::gifs::gif_body(body).is_some() {
         "GIF".to_string()
+    } else if let Some(s) = crate::sticker_msgs::snippet(body) {
+        s
     } else {
         let s: String = body.chars().take(48).collect();
         if body.chars().count() > 48 {
@@ -1447,10 +1458,7 @@ pub(super) fn live_edit_row(
     live_editing: Signal<Option<i64>>,
     live_edit_text: Signal<String>,
     live_delete_confirm: Signal<Option<i64>>,
-    gateway: server::UseSocket<
-        discord_server::server_settings::WsServerMsg,
-        discord_server::server_settings::WsClientMsg,
-    >,
+    gateway: crate::backend::Gateway,
     // Interaction parity with the mock path: the row's identity key (the real
     // wire `message_id` under the `Live` variant) plus the shared picker /
     // reply / pin / translate handles, so the hover action bar and the
@@ -1545,12 +1553,7 @@ pub(super) fn live_edit_row(
     let do_save = move || {
         let content = edit_text.get();
         if !content.trim().is_empty() {
-            gateway.send(
-                discord_server::server_settings::WsClientMsg::EditMessage {
-                    message_id: mid,
-                    content: crate::custom_emoji::encode_draft(&content),
-                },
-            );
+            gateway.edit_message(mid, crate::custom_emoji::encode_draft(&content));
         }
         editing_sig.set(None);
         edit_text.set(String::new());
@@ -1629,12 +1632,7 @@ pub(super) fn live_edit_row(
                 MsgAction::Save => {
                     let content = edit_text.get();
                     if !content.trim().is_empty() {
-                        gateway.send(
-                            discord_server::server_settings::WsClientMsg::EditMessage {
-                                message_id: mid,
-                                content: crate::custom_emoji::encode_draft(&content),
-                            },
-                        );
+                        gateway.edit_message(mid, crate::custom_emoji::encode_draft(&content));
                     }
                     editing_sig.set(None);
                     edit_text.set(String::new());
@@ -1644,9 +1642,7 @@ pub(super) fn live_edit_row(
                     edit_text.set(String::new());
                 }
                 MsgAction::Confirm => {
-                    gateway.send(discord_server::server_settings::WsClientMsg::DeleteMessage {
-                        message_id: mid,
-                    });
+                    gateway.delete_message(mid);
                     confirm_sig.set(None);
                 }
                 MsgAction::No => confirm_sig.set(None),

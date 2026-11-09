@@ -7,8 +7,9 @@
 
 use crate::style_helpers::{col, px, rounded};
 use crate::theme;
-use discord_server::permissions::{self, Permissions, Rank};
-use discord_server::server_roles::{self, CustomRole};
+use discord_server::permissions::Rank;
+use crate::backend::CustomRole;
+use crate::backend::Permissions;
 use runtime_core::{
     signal, ui, AlignItems, Element, FlexDirection, FlexWrap, FontWeight, JustifyContent,
     Signal, StyleRules, Tokenized, TouchPhase, TouchResponse,
@@ -54,7 +55,7 @@ fn dot(color: &str, size: f32) -> Element {
 fn reload(server_id: i64, roles: Signal<Vec<CustomRole>>, everyone: Signal<Permissions>, alive: runtime_core::ScopeAlive) {
     runtime_core::spawn_then_in(
         &alive,
-        server_roles::server_roles(server_roles::ServerRolesInput { server_id }),
+        crate::backend::server_roles(server_id),
         move |result| {
             if let Ok(snap) = result {
                 roles.set(snap.roles);
@@ -170,15 +171,15 @@ fn role_row(cx: &RolesCx, list: &[CustomRole], i: usize, sel: Option<Selected>) 
             runtime_core::spawn_then_in(
                 &al.clone(),
                 async move {
-                    let first = server_roles::move_role(server_roles::MoveRoleInput { role_id: a.id, position: pa }).await;
+                    let first = crate::backend::move_role(a.id, pa).await;
                     match first {
-                        Ok(_) => server_roles::move_role(server_roles::MoveRoleInput { role_id: b.id, position: pb }).await.map(|_| ()),
+                        Ok(_) => crate::backend::move_role(b.id, pb).await.map(|_| ()),
                         Err(e) => Err(e),
                     }
                 },
                 move |second| {
                     if let Err(e) = second {
-                        error.set(crate::errors::friendly(&e));
+                        error.set(e);
                     }
                     reload(sid, roles, everyone, al);
                 },
@@ -243,17 +244,11 @@ fn role_row(cx: &RolesCx, list: &[CustomRole], i: usize, sel: Option<Selected>) 
                     let al = al_toggle.clone();
                     runtime_core::spawn_then_in(
                         &al.clone(),
-                        server_roles::update_role(server_roles::UpdateRoleInput {
-                            role_id: t.id,
-                            name: t.name.clone(),
-                            color: t.color.clone(),
-                            mentionable: !t.mentionable,
-                            permissions: None,
-                        }),
+                        crate::backend::update_role(t.id, t.name.clone(), t.color.clone(), !t.mentionable, None),
                         move |result| {
                             match result {
                                 Ok(_) => reload(sid, roles, everyone, al),
-                                Err(e) => error.set(crate::errors::friendly(&e)),
+                                Err(e) => error.set(e),
                             }
                         },
                     );
@@ -268,7 +263,7 @@ fn role_row(cx: &RolesCx, list: &[CustomRole], i: usize, sel: Option<Selected>) 
                         let al = al_del.clone();
                         runtime_core::spawn_then_in(
                             &al.clone(),
-                            server_roles::delete_role(server_roles::DeleteRoleInput { role_id: id }),
+                            crate::backend::delete_role(id),
                             move |result| {
                                 match result {
                                     Ok(()) => {
@@ -277,7 +272,7 @@ fn role_row(cx: &RolesCx, list: &[CustomRole], i: usize, sel: Option<Selected>) 
                                         }
                                         reload(sid, roles, everyone, al);
                                     }
-                                    Err(e) => error.set(crate::errors::friendly(&e)),
+                                    Err(e) => error.set(e),
                                 }
                             },
                         );
@@ -477,16 +472,10 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                     &al.clone(),
                     async move {
                         match role {
-                            Some(r) => server_roles::update_role(server_roles::UpdateRoleInput {
-                                role_id: r.id,
-                                name: r.name,
-                                color: r.color,
-                                mentionable: r.mentionable,
-                                permissions: Some(perms),
-                            })
+                            Some(r) => crate::backend::update_role(r.id, r.name, r.color, r.mentionable, Some(perms))
                             .await
                             .map(|_| ()),
-                            None => permissions::set_everyone_permissions(permissions::SetEveryoneInput { server_id: sid, permissions: perms })
+                            None => crate::backend::set_everyone_permissions(sid, perms)
                                 .await
                                 .map(|_| ()),
                         }
@@ -497,7 +486,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                                 error.set(String::new());
                                 reload(sid, roles, everyone, al);
                             }
-                            Err(e) => error.set(crate::errors::friendly(&e)),
+                            Err(e) => error.set(e),
                         }
                     },
                 );
@@ -572,15 +561,9 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                     .on_touch(move |ev| {
                         if ev.phase == TouchPhase::Ended {
                             let al = al_create.clone();
-                            let input = server_roles::CreateRoleInput {
-                                server_id: sid,
-                                name: name.get(),
-                                color: color.get(),
-                                mentionable: true,
-                            };
                             runtime_core::spawn_then_in(
                                 &al.clone(),
-                                server_roles::create_role(input),
+                                crate::backend::create_role(sid, name.get(), color.get(), true),
                                 move |result| {
                                     match result {
                                         Ok(_) => {
@@ -588,7 +571,7 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                                             error.set(String::new());
                                             reload(sid, roles, everyone, al);
                                         }
-                                        Err(e) => error.set(crate::errors::friendly(&e)),
+                                        Err(e) => error.set(e),
                                     }
                                 },
                             );

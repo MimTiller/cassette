@@ -65,11 +65,11 @@ pub(crate) fn open_for(channel_id: i64, name: String) {
     // scope can't land a write on a freed slot.
     runtime_core::spawn_then_in(
         &crate::app::shell_alive(),
-        permissions::channel_overwrites(permissions::ChannelOverwritesInput { channel_id }),
+        crate::backend::channel_overwrites(channel_id),
         move |result| {
             match result {
                 Ok(list) => s.overwrites.set(list),
-                Err(e) => s.error.set(crate::errors::friendly(&e)),
+                Err(e) => s.error.set(e),
             }
         },
     );
@@ -81,8 +81,7 @@ fn find(list: &[Overwrite], target: Target) -> (Permissions, Permissions) {
 }
 
 async fn put(channel_id: i64, target: Target, allow: Permissions, deny: Permissions) -> Result<Vec<Overwrite>, String> {
-    let input = permissions::SetOverwriteInput { channel_id, target, allow, deny };
-    permissions::set_channel_overwrite(input).await.map_err(|e| crate::errors::friendly(&e))
+    crate::backend::set_channel_overwrite(channel_id, target, allow, deny).await
 }
 
 /// Save one target's overwrite and show the result.

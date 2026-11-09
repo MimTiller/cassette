@@ -64,7 +64,7 @@ pub fn rail_mono_url() -> String {
 
 /// `svg` as a `data:image/svg+xml,…` URL: double quotes become single ones
 /// and anything a URL can't carry as-is is percent-encoded.
-fn svg_data_url(svg: &str) -> String {
+pub(crate) fn svg_data_url(svg: &str) -> String {
     let mut out = String::from("data:image/svg+xml,");
     for c in svg.replace('"', "'").split_whitespace().collect::<Vec<_>>().join(" ").chars() {
         if c.is_ascii_alphanumeric() || " '=/:,.()-".contains(c) {

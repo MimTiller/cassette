@@ -26,6 +26,7 @@
 //! frame, the effect buffers and bumps the revision" path as the live
 //! channel composer in `app.rs`.
 
+use crate::avatar_chip::AvatarFrame;
 use crate::theme;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -38,8 +39,9 @@ use runtime_core::{
 };
 
 use crate::app::{format_when, message_row, same_group};
-use crate::dms::{self, Dm};
+use crate::dms::Dm;
 use crate::gif_picker::{GifPicker, gif_button};
+use crate::sticker_picker::{StickerPicker, sticker_button};
 use crate::style_helpers::{col, pct, px, section_label, rounded};
 
 // --- palette -----------------------------------------------------------------
@@ -88,7 +90,7 @@ pub(crate) fn open_dm_with(
 ) {
     // Called from popups that close, so the reply is anchored to the shell
     // (which owns the DM state).
-    runtime_core::spawn_then_in(&crate::app::shell_alive(), dms::start_dm(user_id), move |result| {
+    runtime_core::spawn_then_in(&crate::app::shell_alive(), crate::backend::start_dm(user_id), move |result| {
         let Ok(dm) = result else {
             return;
         };
@@ -268,6 +270,7 @@ mod dm_find_tests {
             display_name: None,
             role: "member".to_string(),
             avatar_url: None,
+            avatar_decoration: None,
             presence: None,
         }
     }
@@ -394,8 +397,10 @@ fn live_dm_row(
         }
     } else {
         ui! {
-            view(style = avatar_style) {
-                text(style = initial_style) { initial }
+            AvatarFrame(name = name.clone(), size = 34.0_f32) {
+                view(style = avatar_style) {
+                    text(style = initial_style) { initial }
+                }
             }
         }
     };
@@ -666,6 +671,7 @@ fn live_dm_conversation(
     // cannot lose the open state; it is also closed whenever the selected DM
     // changes (the render below compares `last_cid` and resets it).
     let gif_open: Signal<bool> = signal(false);
+    let sticker_open: Signal<bool> = signal(false);
     let last_cid: Signal<i64> = signal(-1);
 
     // --- message list ------------------------------------------------------
@@ -688,6 +694,7 @@ fn live_dm_conversation(
             let prev_cid = last_cid.get();
             if cid != prev_cid {
                 gif_open.set(false);
+                sticker_open.set(false);
             }
             last_cid.set(cid);
 
@@ -712,7 +719,7 @@ fn live_dm_conversation(
                 // The RPC must outlive this Enter handler (which clears `text`,
                 // rebuilding the composer strip).
                 runtime_core::driver::spawn_detached(async move {
-                    let _ = dms::send_dm_message(cid, body).await;
+                    let _ = crate::backend::send_dm_message(cid, body, None).await;
                 });
             };
             let on_send = Rc::new(do_send);
@@ -749,7 +756,7 @@ fn live_dm_conversation(
                             // appends. It must outlive this callback, which closes
                             // the picker (rebuilding the pane) before the RPC ends.
                             runtime_core::driver::spawn_detached(async move {
-                                let _ = dms::send_dm_message(cid, body).await;
+                                let _ = crate::backend::send_dm_message(cid, body, None).await;
                             });
                         });
                     ui! {
@@ -764,13 +771,41 @@ fn live_dm_conversation(
                     }
                 }}
             };
+            // Sticker picker float, the GIF float's twin. Picking sends the
+            // sticker as its own DM and closes the picker.
+            let sticker_switch = ui! {
+                if sticker_open.get() {{
+                    let pick_cb: Rc<dyn Fn(crate::backend::Sticker)> = Rc::new(move |s: crate::backend::Sticker| {
+                        sticker_open.set(false);
+                        let Some(cid) = active.get() else { return };
+                        let sid = s.id;
+                        // Detached, like the GIF send: the echoed DmMessage
+                        // frame draws it, after this callback has closed the picker.
+                        runtime_core::driver::spawn_detached(async move {
+                            let _ = crate::backend::send_dm_message(cid, String::new(), Some(sid)).await;
+                        });
+                    });
+                    ui! {
+                        view(style = StyleRules {
+                            position: Some(runtime_core::Position::Absolute),
+                            right: Some(px(16.0)),
+                            bottom: Some(px(GIF_PICKER_BOTTOM_PX)),
+                            ..Default::default()
+                        }) {
+                            StickerPicker(on_pick = Some(pick_cb))
+                        }
+                    }
+                }}
+            };
             let composer_el = ui! {
                 view(style = composer_style) {
                     text_input(value = text, on_change = on_change, placeholder = "Message", style = input_style, test_id = "live-dm-composer").on_key_down(on_enter)
                     // GIF button: shared chip (style + toggle handler) with
                     // the channel composer.
-                    gif_button(gif_open, None)
+                    gif_button(gif_open, vec![sticker_open])
+                    sticker_button(sticker_open, vec![gif_open])
                     { gif_switch }
+                    { sticker_switch }
                 }
             };
 
@@ -841,9 +876,7 @@ fn live_dm_conversation(
                         let name = rename_text.get();
                         runtime_core::spawn_then_in(
                             &al_save.clone(),
-                            discord_server::dms::rename_group_dm(
-                                discord_server::dms::RenameGroupDmInput { dm_id: cid, name },
-                            ),
+                            crate::backend::rename_group_dm(cid, name),
                             move |result| {
                                 if result.is_ok() {
                                     renaming.set(false);
@@ -1102,19 +1135,24 @@ pub fn dm_incoming_effect(
                 crate::group_dm::refresh(live_dms, dm_active, dm_buf.clone(), dm_rev);
             }
             if let Some(discord_server::server_settings::WsServerMsg::DmMessage {
-                message_id: _,
+                message_id,
                 dm_id,
                 author_username,
                 author_avatar,
+                author_decoration,
                 content,
                 created_at,
+                sticker,
                 ..
             }) = frame
             {
                 let dm_id = *dm_id;
+                // A sticker message has no text: its row shows the sticker.
+                let content = &crate::sticker_msgs::dm_body(*message_id, sticker.as_ref(), content);
                 // The author's avatar rides the frame: register it so the DM
                 // pane's rows (and the rail) draw it instead of the initial.
                 crate::auth::remember_avatar(author_username.as_str(), author_avatar.clone());
+                crate::auth::remember_avatar_decoration(author_username.as_str(), author_decoration.clone());
                 // A message in a DM this client has never seen (the other
                 // person just started it) means the list is stale: refetch it
                 // so the new row shows up live.

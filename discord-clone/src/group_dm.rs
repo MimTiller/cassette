@@ -12,7 +12,7 @@ use runtime_core::{
 };
 
 use crate::controls::{button_view, ButtonKind};
-use crate::dms::{self, Dm};
+use crate::dms::Dm;
 use crate::live_dm_view::LiveDmMsg;
 use crate::style_helpers::{col, pct, px, rounded};
 use crate::theme;
@@ -121,11 +121,14 @@ pub(crate) fn dm_title(dm: &Dm) -> String {
 /// Load a DM's history into the open-conversation buffer (app-shell state,
 /// so the reply is anchored to the shell).
 pub(crate) fn load_history(dm_id: i64, msgs: Rc<RefCell<Vec<LiveDmMsg>>>, rev: Signal<u32>) {
-    runtime_core::spawn_then_in(&crate::app::shell_alive(), dms::list_dm_messages(dm_id, None), move |result| {
+    runtime_core::spawn_then_in(&crate::app::shell_alive(), crate::backend::list_dm_messages(dm_id, None), move |result| {
         if let Ok(history) = result {
             let mut buf = msgs.borrow_mut();
             buf.clear();
-            buf.extend(history.into_iter().map(|m| (m.author_username, m.content, m.created_at, m.edited_at)));
+            buf.extend(history.into_iter().map(|m| {
+                let body = crate::sticker_msgs::dm_body(m.message_id, m.sticker.as_ref(), &m.content);
+                (m.author_username, body, m.created_at, m.edited_at)
+            }));
             drop(buf);
             rev.set(rev.get() + 1);
         }
@@ -150,7 +153,7 @@ fn open(dm: Dm, live_dms: Signal<Vec<Dm>>, active: Signal<Option<i64>>, msgs: Rc
 /// Refetch the DM list after a `DmChanged` frame; if the open DM is gone
 /// (the user left or was removed), close it.
 pub(crate) fn refresh(live_dms: Signal<Vec<Dm>>, active: Signal<Option<i64>>, msgs: Rc<RefCell<Vec<LiveDmMsg>>>, rev: Signal<u32>) {
-    runtime_core::spawn_then_in(&crate::app::shell_alive(), dms::list_dms(), move |result| {
+    runtime_core::spawn_then_in(&crate::app::shell_alive(), crate::backend::list_dms(), move |result| {
         if let Ok(list) = result {
             if let Some(open) = active.get() {
                 if !list.iter().any(|d| d.channel_id == open) {
@@ -196,7 +199,7 @@ pub(crate) fn picker_dialog(
             };
             // Fetch accepted friends the first time the dialog opens.
             if friend_list.is_empty() {
-                runtime_core::spawn_then_in(&alive, crate::friends::list_friends(), move |result| {
+                runtime_core::spawn_then_in(&alive, crate::backend::list_friends(), move |result| {
                     if let Ok(list) = result {
                         let mut rows: Vec<(i64, String)> = list.accepted.into_iter().map(|u| (u.user_id, u.username)).collect();
                         rows.sort_by_key(|(_, n)| crate::auth::shown_name(n).to_lowercase());
@@ -234,19 +237,12 @@ pub(crate) fn picker_dialog(
                 let msgs = msgs_go.clone();
                 let request = async move {
                     let result: Result<Dm, String> = match mode {
-                        Picker::NewGroup if picked.len() == 1 => dms::start_dm(picked[0]).await,
-                        Picker::NewGroup => discord_server::dms::create_group_dm(discord_server::dms::CreateGroupDmInput {
-                            user_ids: picked.clone(),
-                            name: group_name,
-                        })
-                        .await
-                        .map_err(|e| crate::errors::friendly(&e)),
+                        Picker::NewGroup if picked.len() == 1 => crate::backend::start_dm(picked[0]).await,
+                        Picker::NewGroup => crate::backend::create_group_dm(picked.clone(), group_name).await,
                         Picker::AddTo(dm_id) => {
                             let mut last = Err("nothing to add".to_string());
                             for user_id in picked.iter().copied() {
-                                last = discord_server::dms::add_group_dm_member(discord_server::dms::GroupDmMemberInput { dm_id, user_id })
-                                    .await
-                                    .map_err(|e| crate::errors::friendly(&e));
+                                last = crate::backend::add_group_dm_member(dm_id, user_id).await;
                                 if last.is_err() {
                                     break;
                                 }
@@ -372,10 +368,9 @@ fn member_row(
             }
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
-                    let input = discord_server::dms::GroupDmMemberInput { dm_id, user_id: uid };
-                    runtime_core::spawn_then(discord_server::dms::remove_group_dm_member(input), move |result| {
+                    runtime_core::spawn_then(crate::backend::remove_group_dm_member(dm_id, uid), move |result| {
                         if let Err(e) = result {
-                            error.set(crate::errors::friendly(&e));
+                            error.set(e);
                         }
                     });
                 }
@@ -461,10 +456,9 @@ pub(crate) fn members_panel(dm: &Dm) -> Element {
             }
             .on_touch(move |ev| {
                 if ev.phase == TouchPhase::Ended {
-                    let input = discord_server::dms::GroupDmMemberInput { dm_id, user_id: me };
-                    runtime_core::spawn_then(discord_server::dms::remove_group_dm_member(input), move |result| {
+                    runtime_core::spawn_then(crate::backend::remove_group_dm_member(dm_id, me), move |result| {
                         if let Err(e) = result {
-                            error.set(crate::errors::friendly(&e));
+                            error.set(e);
                         }
                     });
                 }

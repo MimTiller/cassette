@@ -4,6 +4,7 @@
 use crate::theme;
 use super::*;
 use crate::gif_picker::{GifPicker, gif_button};
+use crate::sticker_picker::{StickerPicker, sticker_button};
 
 /// One staged-attachment chip on the composer strip: the thumbnail and an
 /// ✕ that unstages just this entry. Keyed by the staged entry's id.
@@ -92,13 +93,17 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
     // One rounded bar holds the whole composer row: the '+' attach icon on
     // the left, the borderless text input filling the middle, and the GIF
     // and emoji icon buttons inside on the right (Discord's composer).
-    // `COMPOSER` (theme's BG_INPUT, #383a40) is the bar's fill, 44px tall,
+    // `COMPOSER` (theme's BG_INPUT, #383a40) is the bar's fill, 48px tall,
     // 8px corners; the input itself is transparent so the bar reads as one
-    // surface.
+    // surface. With the 8px gap under it, its top lines up with the user
+    // panel's (a 56px band) and its rounded bottom stays clear of the
+    // window edge.
     let composer_style = StyleRules {
         // Holds the "no permission" cover (below).
         position: Some(Position::Relative),
-        min_height: Some(px(44.0)),
+        min_height: Some(px(48.0)),
+        margin_bottom: Some(px(8.0)),
+        flex_shrink: Some(grow(0.0)),
         padding_left: Some(px(4.0)),
         padding_right: Some(px(4.0)),
         background: Some(col(COMPOSER)),
@@ -127,10 +132,9 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
     // signal/Rc is cloned behind an `Rc` so the handler can be `Fn` (callable
     // from the `text_input on_key_down` closure).
     let send_composer = composer.clone();
-    // Live-send handles: `gateway` is a `Copy` `UseSocket`, so clone it in so
-    // the (shared) `move` handler can send over the global socket.
+    // Live-send handles: `gateway` is a `Copy` handle, so the (shared) `move`
+    // handler can send over the global socket.
     let live_chan = active_live_channel.clone();
-    let gateway_send = gateway;
     let do_send = move || {
         let body = send_composer.get();
         let attached = pending_attachment.get();
@@ -157,12 +161,13 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
         // effect buffers and bumps `live_revision`, rebuilding the list.
         crate::app::request_scroll_to_latest();
         if let Some(live_cid) = live_chan.get() {
-            gateway_send.send(discord_server::server_settings::WsClientMsg::Send {
-                channel_id: live_cid,
-                content: crate::custom_emoji::encode_draft(&body),
-                reply_to_message_id: reply_target.get(),
-                attachments: inputs,
-            });
+            gateway.send_message(
+                live_cid,
+                crate::custom_emoji::encode_draft(&body),
+                reply_target.get(),
+                inputs,
+                None,
+            );
             send_composer.set(String::new());
             pending_attachment.set(Vec::new());
             reply_ctx.set(None);
@@ -280,10 +285,7 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                     .map(|last| now_ms - *last < 3_000)
                     .unwrap_or(false);
                 if !too_soon {
-                    typing_gateway_h
-                        .send(discord_server::server_settings::WsClientMsg::Typing {
-                            channel_id: cid,
-                        });
+                    typing_gateway_h.announce_typing(cid);
                     typing_last_sent_h.borrow_mut().insert(cid, now_ms);
                 }
             }
@@ -583,12 +585,13 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                 gif_open.set(false);
                 let Some(live_cid) = active_live_channel.get() else { return };
                 crate::app::request_scroll_to_latest();
-                gateway.send(discord_server::server_settings::WsClientMsg::Send {
-                    channel_id: live_cid,
-                    content: discord_server::gifs::gif_message(&gif),
-                    reply_to_message_id: reply_target.get(),
-                    attachments: Vec::new(),
-                });
+                gateway.send_message(
+                    live_cid,
+                    discord_server::gifs::gif_message(&gif),
+                    reply_target.get(),
+                    Vec::new(),
+                    None,
+                );
                 reply_ctx.set(None);
                 reply_target.set(None);
             });
@@ -601,6 +604,39 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                     ..Default::default()
                 }) {
                     GifPicker(on_pick = Some(pick_cb))
+                }
+            }
+        },
+    );
+
+    // Sticker popover: the same float. Picking a sticker sends it at once as
+    // its own message (the draft stays), as a reply when one is active.
+    let sticker_open = signal(false);
+    let sticker_popover = switch(
+        move || sticker_open.get(),
+        move |open: &bool| {
+            if !open {
+                return ui! {
+                    view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
+                };
+            }
+            let pick_cb: Rc<dyn Fn(crate::backend::Sticker)> = Rc::new(move |s: crate::backend::Sticker| {
+                sticker_open.set(false);
+                let Some(live_cid) = active_live_channel.get() else { return };
+                crate::app::request_scroll_to_latest();
+                gateway.send_message(live_cid, String::new(), reply_target.get(), Vec::new(), Some(s.id));
+                reply_ctx.set(None);
+                reply_target.set(None);
+            });
+            ui! {
+                view(style = StyleRules {
+                    position: Some(Position::Absolute),
+                    right: Some(px(16.0)),
+                    bottom: Some(px(76.0)),
+                    z_index: Some(super::popups::POPUP_Z),
+                    ..Default::default()
+                }) {
+                    StickerPicker(on_pick = Some(pick_cb))
                 }
             }
         },
@@ -648,6 +684,7 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
             attach_chip
             emoji_popover
             gif_popover
+            sticker_popover
             ac_el
             // Slash-command autocomplete: shown only while the composer
             // text actually starts with "/" (a real slash command is
@@ -686,7 +723,9 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                 text_input(value = composer, on_change = update_on_type, placeholder_reactive = composer_placeholder.read_only(), style = input_style, test_id = "composer").on_key_down(composer_key)
                 // GIF = open/close the GIF picker (closes the emoji one,
                 // like the reference app). Chip shared with the DM composer.
-                gif_button(gif_open, Some(emoji_open))
+                gif_button(gif_open, vec![emoji_open, sticker_open])
+                // Sticker = open/close the sticker picker (closes the others).
+                sticker_button(sticker_open, vec![gif_open, emoji_open])
                 view(style = move || StyleRules {
                     width: Some(px(28.0)),
                     height: Some(px(28.0)),
@@ -704,6 +743,7 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                 .on_touch(move |ev| {
                     if ev.phase == TouchPhase::Ended {
                         gif_open.set(false);
+                        sticker_open.set(false);
                         emoji_open.set(!emoji_open.get());
                     }
                     TouchResponse::CONSUMED

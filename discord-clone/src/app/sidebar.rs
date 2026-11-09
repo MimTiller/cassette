@@ -329,7 +329,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                     // server-side read-mark isn't read by the screen.
                                     // Detached so the RPC finishes after this handler.
                                     runtime_core::driver::spawn_detached(async move {
-                                        let _ = crate::servers::mark_read(cid, 0).await;
+                                        let _ = crate::backend::mark_read(cid, 0).await;
                                     });
                                 }),
                             ));
@@ -619,7 +619,13 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                             .size(18.0)
                                         text(style = label_style) { name }
                                         if muted {
-                                            icon(BELL_OFF).color(|| theme::live(theme::TEXT_FAINT)).size(14.0)
+                                            // The robot reads a channel's live
+                                            // mute through this bell: the dim
+                                            // label colour it pairs with is
+                                            // not a value the bridge can see.
+                                            view(test_id = "muted-bell-icon") {
+                                                icon(BELL_OFF).color(|| theme::live(theme::TEXT_FAINT)).size(14.0)
+                                            }
                                         }
                                         { actions }
                                         { unread_pill }
@@ -655,17 +661,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                             // `on_handle` callback can capture its own.
                                             live_at_bottom_row.set(true);
                                             *live_scroll_handle_row.borrow_mut() = None;
-                                            gw.send(
-                                                discord_server::server_settings::WsClientMsg::History {
-                                                    // Initial load: the latest page (no
-                                                    // scrollback cursor yet).
-                                                    channel_id: cid,
-                                                    // `before_id: None` = fetch the
-                                                    // latest page (no before-cursor) —
-                                                    // the initial load on channel select.
-                                                    before_id: None,
-                                                },
-                                            );
+                                            gw.request_history(cid, None);
                                         }
                                         TouchResponse::CONSUMED
                                     })
@@ -959,9 +955,8 @@ fn server_dropdown(
                     confirm_leave.set(false);
                     let Some(sid) = server.get() else { return };
                     let request = async move {
-                        let input = discord_server::server_settings::LeaveServerInput { server_id: sid };
-                        discord_server::server_settings::leave_server(input).await.ok()?;
-                        Some(crate::servers::list_servers().await.ok())
+                        crate::backend::leave_server(sid).await.ok()?;
+                        Some(crate::backend::list_servers().await.ok())
                     };
                     // The menu that started this closes, so anchor to the shell.
                     runtime_core::spawn_then_in(&crate::app::shell_alive(), request, move |left| {

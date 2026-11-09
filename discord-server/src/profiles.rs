@@ -69,6 +69,29 @@ pub fn validate_about(about: &str) -> Result<String, String> {
     Ok(about.to_string())
 }
 
+/// The avatar decorations anyone can wear, by the id stored in
+/// `users.avatar_decoration`. The client draws each id in `avatar_chip.rs`.
+pub const AVATAR_DECORATIONS: [&str; 5] =
+    ["cat_ears", "cassette_reels", "halo", "flower_crown", "sparkles"];
+
+/// The profile effects anyone can use, by the id stored in
+/// `users.profile_effect`. The client draws each id in `profile_effects.rs`.
+pub const PROFILE_EFFECTS: [&str; 3] = ["vhs_static", "falling_petals", "starfield"];
+
+/// Input for [`set_avatar_decoration`]: a catalog id, or `None` to take the
+/// current decoration off.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SetAvatarDecorationInput {
+    pub decoration: Option<String>,
+}
+
+/// Input for [`set_profile_effect`]: a catalog id, or `None` to take the
+/// current effect off.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SetProfileEffectInput {
+    pub effect: Option<String>,
+}
+
 /// Input for [`set_profile`].
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SetProfileInput {
@@ -95,6 +118,12 @@ pub struct UserProfile {
     #[serde(default)]
     pub about: String,
     pub avatar_url: Option<String>,
+    /// The catalog id of the decoration on their avatar.
+    #[serde(default)]
+    pub avatar_decoration: Option<String>,
+    /// The catalog id of the effect over their profile card.
+    #[serde(default)]
+    pub profile_effect: Option<String>,
     /// When the account was created, epoch milliseconds ("Member Since").
     pub created_at: i64,
     /// The role in the requested server, when the user is a member of it.
@@ -164,6 +193,8 @@ impl ProfileService {
             display_name: self.db.user_display_name(target),
             about: self.db.user_about(target),
             avatar_url: self.db.user_avatar(target),
+            avatar_decoration: self.db.user_avatar_decoration(target),
+            profile_effect: self.db.user_profile_effect(target),
             created_at: self.created_at(target),
             server_role,
             joined_server_at,
@@ -181,6 +212,36 @@ impl ProfileService {
             .set_user_profile(user_id, display_name.as_deref(), &about)
             .map_err(|e| format!("failed to save your profile: {e}"))?;
         Ok(ProfileFields { display_name, about })
+    }
+
+    /// Put `decoration` on `user_id`'s avatar, or take it off with `None`.
+    /// Every decoration in the catalog is free to everyone.
+    ///
+    /// # Errors
+    /// - `that avatar decoration doesn't exist` — not in [`AVATAR_DECORATIONS`].
+    pub fn set_decoration(&self, user_id: i64, decoration: Option<&str>) -> Result<Option<String>, String> {
+        if decoration.is_some_and(|id| !AVATAR_DECORATIONS.contains(&id)) {
+            return Err("that avatar decoration doesn't exist".to_string());
+        }
+        self.db
+            .set_user_avatar_decoration(user_id, decoration)
+            .map_err(|e| format!("failed to save your avatar decoration: {e}"))?;
+        Ok(decoration.map(str::to_string))
+    }
+
+    /// Put `effect` on `user_id`'s profile card, or take it off with `None`.
+    /// Every effect in the catalog is free to everyone.
+    ///
+    /// # Errors
+    /// - `that profile effect doesn't exist` — not in [`PROFILE_EFFECTS`].
+    pub fn set_effect(&self, user_id: i64, effect: Option<&str>) -> Result<Option<String>, String> {
+        if effect.is_some_and(|id| !PROFILE_EFFECTS.contains(&id)) {
+            return Err("that profile effect doesn't exist".to_string());
+        }
+        self.db
+            .set_user_profile_effect(user_id, effect)
+            .map_err(|e| format!("failed to save your profile effect: {e}"))?;
+        Ok(effect.map(str::to_string))
     }
 
     fn created_at(&self, user_id: i64) -> i64 {
@@ -237,17 +298,49 @@ pub async fn set_profile(input: SetProfileInput) -> Result<ProfileFields, Server
     let fields = ProfileService::new(db.clone())
         .set_fields(user, &input.display_name, &input.about)
         .map_err(ServerError::failed)?;
-    let username = db.user_by_id(user).map(|(_, n)| n).unwrap_or_default();
+    announce_profile(&db, user);
+    Ok(fields)
+}
+
+/// Put a catalog decoration on the signed-in user's avatar, or take it off
+/// with `None`, and tell everyone who shares a server with them.
+#[server]
+pub async fn set_avatar_decoration(input: SetAvatarDecorationInput) -> Result<Option<String>, ServerError> {
+    let db = db_from_state()?;
+    let user = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let decoration = ProfileService::new(db.clone())
+        .set_decoration(user, input.decoration.as_deref())
+        .map_err(ServerError::failed)?;
+    announce_profile(&db, user);
+    Ok(decoration)
+}
+
+/// Put a catalog effect on the signed-in user's profile card, or take it off
+/// with `None`. A card fetches the profile each time it opens, so nobody needs
+/// telling.
+#[server]
+pub async fn set_profile_effect(input: SetProfileEffectInput) -> Result<Option<String>, ServerError> {
+    let db = db_from_state()?;
+    let user = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    ProfileService::new(db)
+        .set_effect(user, input.effect.as_deref())
+        .map_err(ServerError::failed)
+}
+
+/// Tell `user` and everyone who shares a server with them what `user`'s
+/// profile now holds.
+#[cfg(feature = "server")]
+fn announce_profile(db: &Db, user: i64) {
     crate::realtime::hub().publish(
-        &crate::realtime::presence_audience(&db, user),
+        &crate::realtime::presence_audience(db, user),
         &crate::server_settings::WsServerMsg::ProfileChanged {
             user_id: user,
-            username,
-            display_name: fields.display_name.clone(),
+            username: db.user_by_id(user).map(|(_, n)| n).unwrap_or_default(),
+            display_name: db.user_display_name(user),
+            avatar_decoration: db.user_avatar_decoration(user),
             seq: crate::server_settings::next_frame_seq(),
         },
     );
-    Ok(fields)
 }
 
 /// Pull the shared `Db` out of server state (installed at startup by the
@@ -356,5 +449,68 @@ mod tests {
         svc.set_fields(2, "", "").unwrap();
         assert_eq!(svc.get(1, 2, None).unwrap().display_name, None);
         assert!(svc.set_fields(2, &"x".repeat(40), "").is_err());
+    }
+
+    #[test]
+    fn a_decoration_goes_on_and_comes_off() {
+        let (_d, db) = setup_db();
+        let svc = ProfileService::new(db.clone());
+        assert_eq!(svc.get(1, 2, None).unwrap().avatar_decoration, None);
+
+        assert_eq!(svc.set_decoration(2, Some("cat_ears")), Ok(Some("cat_ears".to_string())));
+        assert_eq!(db.user_avatar_decoration(2).as_deref(), Some("cat_ears"));
+        assert_eq!(svc.get(1, 2, None).unwrap().avatar_decoration.as_deref(), Some("cat_ears"));
+        assert_eq!(db.user_avatar_decoration(1), None, "only the caller's avatar changes");
+
+        assert_eq!(svc.set_decoration(2, None), Ok(None));
+        assert_eq!(db.user_avatar_decoration(2), None);
+    }
+
+    #[test]
+    fn every_catalog_decoration_goes_on() {
+        let (_d, db) = setup_db();
+        let svc = ProfileService::new(db.clone());
+        for id in AVATAR_DECORATIONS {
+            assert_eq!(svc.set_decoration(2, Some(id)), Ok(Some(id.to_string())));
+            assert_eq!(db.user_avatar_decoration(2).as_deref(), Some(id));
+        }
+    }
+
+    #[test]
+    fn a_profile_effect_goes_on_and_comes_off() {
+        let (_d, db) = setup_db();
+        let svc = ProfileService::new(db.clone());
+        assert_eq!(svc.get(1, 2, None).unwrap().profile_effect, None);
+
+        for id in PROFILE_EFFECTS {
+            assert_eq!(svc.set_effect(2, Some(id)), Ok(Some(id.to_string())));
+            assert_eq!(svc.get(1, 2, None).unwrap().profile_effect.as_deref(), Some(id));
+        }
+        assert_eq!(db.user_profile_effect(1), None, "only the caller's card changes");
+
+        assert_eq!(svc.set_effect(2, None), Ok(None));
+        assert_eq!(db.user_profile_effect(2), None);
+    }
+
+    #[test]
+    fn an_unknown_profile_effect_is_refused_and_changes_nothing() {
+        let (_d, db) = setup_db();
+        let svc = ProfileService::new(db.clone());
+        svc.set_effect(2, Some("starfield")).unwrap();
+        for bad in ["cat_ears", "", "STARFIELD", "/media/effect.svg"] {
+            assert_eq!(svc.set_effect(2, Some(bad)).unwrap_err(), "that profile effect doesn't exist");
+            assert_eq!(db.user_profile_effect(2).as_deref(), Some("starfield"), "{bad} changed nothing");
+        }
+    }
+
+    #[test]
+    fn an_unknown_decoration_is_refused_and_changes_nothing() {
+        let (_d, db) = setup_db();
+        let svc = ProfileService::new(db.clone());
+        svc.set_decoration(2, Some("cat_ears")).unwrap();
+        for bad in ["dog_ears", "", "CAT_EARS", "/media/ears.svg"] {
+            assert_eq!(svc.set_decoration(2, Some(bad)).unwrap_err(), "that avatar decoration doesn't exist");
+            assert_eq!(db.user_avatar_decoration(2).as_deref(), Some("cat_ears"), "{bad} changed nothing");
+        }
     }
 }

@@ -6,7 +6,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 
-use discord_server::notification_settings::{self as ns, Level, NotificationSetting, Scope};
+use discord_server::notification_settings::{Level, NotificationSetting, Scope, is_muted};
 use runtime_core::Signal;
 
 thread_local! {
@@ -41,7 +41,7 @@ pub(crate) fn load() {
     // in the callback, anchored on the app shell that owns REV.
     runtime_core::spawn_then_in(
         &crate::app::shell_alive(),
-        ns::notification_settings(ns::NotificationSettingsInput { server_id: None }),
+        crate::backend::notification_settings(None),
         move |result| {
             if let Ok(rows) = result {
                 ROWS.with(|r| *r.borrow_mut() = rows.into_iter().map(|s| ((s.scope, s.scope_id), s)).collect());
@@ -60,7 +60,7 @@ pub(crate) fn get(scope: Scope, id: i64) -> NotificationSetting {
 
 /// Whether a server or channel is muted right now.
 pub(crate) fn muted(scope: Scope, id: i64) -> bool {
-    ns::is_muted(get(scope, id).muted_until, now_ms())
+    is_muted(get(scope, id).muted_until, now_ms())
 }
 
 /// Save a setting: shown at once, then sent; a refusal reloads them all.
@@ -79,7 +79,7 @@ pub(crate) fn set(s: NotificationSetting) {
     // everything on a refusal, and that reload re-anchors through
     // `load()` itself, so nothing here must run inside this caller's scope.
     runtime_core::driver::spawn_detached(async move {
-        if ns::set_notification_setting(s).await.is_err() {
+        if crate::backend::set_notification_setting(s).await.is_err() {
             load();
         }
     });

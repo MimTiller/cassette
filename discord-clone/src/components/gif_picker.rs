@@ -13,7 +13,7 @@
 //! 100 calls an hour is not spent one keystroke at a time.
 use crate::theme;
 use crate::style_helpers::{col, px, rounded};
-use discord_server::gifs::{Gif, GifPage, GifSearchInput};
+use discord_server::gifs::{Gif, GifPage};
 use icons_lucide::{SEARCH, VIDEO};
 use runtime_core::{
     after_ms_detached, component, icon, memo, signal, ui, AlignItems, Element,
@@ -39,7 +39,7 @@ const DEBOUNCE_MS: i32 = 400;
 /// emoji popover, when present — the DM composer passes `None`). Shared by
 /// the channel composer in `app/composer.rs` and the live DM composer in
 /// `live_dm_view.rs`.
-pub(crate) fn gif_button(on: Signal<bool>, close_others: Option<Signal<bool>>) -> Element {
+pub(crate) fn gif_button(on: Signal<bool>, close_others: Vec<Signal<bool>>) -> Element {
     let hovered = signal(false);
     ui! {
         // GIF = open/close the GIF picker (closing the emoji picker's
@@ -58,7 +58,7 @@ pub(crate) fn gif_button(on: Signal<bool>, close_others: Option<Signal<bool>>) -
         .on_hover(move |on_| hovered.set(on_))
         .on_touch(move |ev| {
             if ev.phase == TouchPhase::Ended {
-                if let Some(other) = close_others {
+                for other in &close_others {
                     other.set(false);
                 }
                 on.set(!on.get());
@@ -108,7 +108,7 @@ fn fetch(alive: &runtime_core::ScopeAlive, query: String, offset: u32, results: 
     if offset == 0 {
         results.set(Results { status: "Loading…".to_string(), ..Default::default() });
     }
-    runtime_core::spawn_then_in(alive, discord_server::gifs::gif_search(GifSearchInput { query, offset }), move |answer| {
+    runtime_core::spawn_then_in(alive, crate::backend::gif_search(query, offset), move |answer| {
         if gen.get() != mine {
             return;
         }
@@ -119,10 +119,9 @@ fn fetch(alive: &runtime_core::ScopeAlive, query: String, offset: u32, results: 
                 r.next = next_offset;
                 r.status = if r.gifs.is_empty() { "No GIFs found".to_string() } else { String::new() };
             }
-            Err(e) => {
+            Err(msg) => {
                 r.next = None;
-                let msg = e.to_string();
-                r.status = msg.strip_prefix("server fn failed: ").unwrap_or(&msg).to_string();
+                r.status = msg;
             }
         }
         results.set(r);
@@ -179,7 +178,7 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
                     background: Some(col(theme::BG_PRIMARY)),
                     overflow: Some(Overflow::Hidden),
                     ..rounded(6.0)
-                }) {
+                }, test_id = "gif-tile") {
                     image(
                         src = src,
                         alt = alt,
@@ -305,6 +304,7 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
                     value = query,
                     on_change = on_change,
                     placeholder = "Search GIPHY",
+                    test_id = "gif-search-input",
                     style = StyleRules {
                         flex_grow: Some(Tokenized::Literal(1.0)),
                         color: Some(col(theme::TEXT_STRONG)),

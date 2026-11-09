@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="discord-clone/icons/sunset.svg" width="112" alt="Cassette logo: a black cassette tape with an orange label">
+  <img src="discord-clone/icons/sunset.svg" width="112" alt="RWND logo: a black cassette tape with an orange label">
 </p>
 
-# Cassette
+# RWND
 
 Discord, but it lives on your own box.
 
-Cassette is a group chat you host yourself. If you've used Discord you
+RWND (once called Cassette) is a group chat you host yourself. If you've used Discord you
 already know your way around: servers down the left, channels next to them,
 the conversation in the middle, and everyone who's online on the right. The
 difference is where it runs. The whole thing is one server process and one
@@ -20,13 +20,13 @@ REST API for the two sides to drift apart on. Anything live, like new
 messages, typing and who's online, comes in over a WebSocket.
 
 <p align="center">
-  <img src="docs/screenshot.png" width="900" alt="Cassette's main chat view: a server called Late Night Coders with its channel list, a conversation in #general with role-coloured names, an @mention, reactions and inline code, and the member list showing who's online">
+  <img src="docs/screenshot.png" width="900" alt="RWND's main chat view: a server called Late Night Coders with its channel list, a conversation in #general with role-coloured names, an @mention, reactions and inline code, and the member list showing who's online">
 </p>
 
 ## Where it's heading
 
-Cassette is being renamed **RWND** ([rwnd.chat](https://rwnd.chat)), and it's
-becoming the front end for [idea-chat](https://github.com/IdealystIO/idea-chat),
+It was called Cassette; it's now **RWND** ([rwnd.chat](https://rwnd.chat)),
+and it's becoming the front end for [idea-chat](https://github.com/IdealystIO/idea-chat),
 a chat and calling backend built on the same idealyst framework.
 
 - **idea-chat brings the backend**: accounts, spaces, channels and messages,
@@ -69,7 +69,8 @@ a chat and calling backend built on the same idealyst framework.
   so moderators can't gang up on the owner
 
 **You**
-- A display name, avatar and "about me"
+- A display name, avatar and "about me", plus free avatar decorations (cat
+  ears, cassette reels, a halo and more) and animated profile card effects
 - Online, Idle, Do Not Disturb or Invisible
 - Friends, DMs and group DMs, plus a block button for when you need it
 - Browser notifications that you control per server and per channel: ping

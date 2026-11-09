@@ -10,7 +10,7 @@ pub(super) struct GatewayEffectsParts {
 }
 
 pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
-    let ShellState { active_live_channel, active_live_server, friends_snap, gateway, has_more_earlier, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_members, live_mention_rev, live_mentioned, live_messages, live_presence, live_presence_rev, live_revision, live_typing, live_typing_rev, live_unread, live_unread_rev, load_busy, notif_level, notif_toast_body, notif_toast_title, notif_toast_visible, reaction_rev, reactions, send_failed, user_status, .. } = s.clone();
+    let ShellState { active_live_channel, active_live_server, friends_snap, gateway, has_more_earlier, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_members, live_mention_rev, live_mentioned, live_messages, live_presence, live_presence_rev, live_revision, live_servers, live_typing, live_typing_rev, live_unread, live_unread_rev, load_busy, notif_level, notif_toast_body, notif_toast_title, notif_toast_visible, reaction_rev, reactions, send_failed, user_status, .. } = s.clone();
     // Realtime gateway: the signed session token authenticates the connect
     // (the backend verifies it). Declared above (before the auto-enter
     // effect) so that effect can send the restored channel's initial
@@ -28,7 +28,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
     // state. The socket auto-reconnects (`message_gateway` owns the loop), so
     // this is a passive "you're disconnected" indicator, not a retry button.
     let _conn_lost_banner = switch(
-        move || format!("{:?}", gateway.status()),
+        move || format!("{:?}", gateway.connection_status()),
         move |status: &String| {
             let lost = status == "Closed" || status == "Error";
             if !lost {
@@ -126,6 +126,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 author_id,
                 author_username,
                 author_avatar,
+                author_decoration,
                 content,
                 created_at,
                 edited_at,
@@ -135,9 +136,12 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 reactions,
                 attachments,
                 embeds,
+                sticker,
                 seq: _,
             }) = frame
             {
+                // A sticker message has no text: its row shows the sticker.
+                let content = &crate::sticker_msgs::channel_body(*message_id, sticker.as_ref(), content);
                 crate::embeds::set(*message_id, embeds.clone());
                 let me = crate::auth::CURRENT_USER_ID.load(std::sync::atomic::Ordering::SeqCst);
                 crate::mentions::mark_message(*message_id, me != 0 && mentioned_user_ids.contains(&me));
@@ -149,6 +153,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 // avatar chip and the member list can draw it.
                 let label = author_username.clone();
                 crate::auth::remember_avatar(label.as_str(), author_avatar.clone());
+                crate::auth::remember_avatar_decoration(label.as_str(), author_decoration.clone());
                 // Push the full 6-tuple: the wire `message_id` + the optional
                 // `edited_at` (epoch millis -> secs, like `created_at`) ride
                 // along so the row's edit affordance and "(edited)" marker can
@@ -499,7 +504,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                     let sid = *server_id;
                     runtime_core::spawn_then_in(
                         &crate::app::shell_alive(),
-                        crate::moderation::list_members(sid),
+                        crate::backend::list_members(sid),
                         move |members| {
                             if let Ok(members) = members {
                                 crate::mentions::members_loaded(sid, &members);
@@ -521,7 +526,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                     let sid = *server_id;
                     runtime_core::spawn_then_in(
                         &crate::app::shell_alive(),
-                        crate::servers::list_channels(sid),
+                        crate::backend::list_channels(sid),
                         move |channels| {
                             if let Ok(channels) = channels {
                                 if let Some(open) = active_live_channel.get() {
@@ -535,19 +540,36 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                     );
                 }
             }
+            // A server was renamed or its icon set/cleared: every member
+            // re-fetches the server list so the rail and sidebar show the
+            // new name/icon live (the frame names the server only for
+            // filtering; the whole list is the source of truth).
+            if let Some(discord_server::server_settings::WsServerMsg::ServerSettingsChanged { .. }) = frame {
+                runtime_core::spawn_then_in(
+                    &crate::app::shell_alive(),
+                    crate::backend::list_servers(),
+                    move |servers| {
+                        if let Ok(servers) = servers {
+                            live_servers.set(servers);
+                        }
+                    },
+                );
+            }
             if let Some(discord_server::server_settings::WsServerMsg::ProfileChanged {
                 username,
                 display_name,
+                avatar_decoration,
                 ..
             }) = frame
             {
                 crate::auth::remember_display_name(username, display_name.clone());
+                crate::auth::remember_avatar_decoration(username, avatar_decoration.clone());
                 crate::mentions::names_changed();
                 live_revision.set(live_revision.get() + 1);
                 if let Some(sid) = member_server.get() {
                     runtime_core::spawn_then_in(
                         &crate::app::shell_alive(),
-                        crate::moderation::list_members(sid),
+                        crate::backend::list_members(sid),
                         move |fresh| {
                             if let Ok(fresh) = fresh {
                                 member_roster.set(fresh);
@@ -565,7 +587,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                 if member_server.get() == Some(server_id) {
                     runtime_core::spawn_then_in(
                         &crate::app::shell_alive(),
-                        crate::moderation::list_members(server_id),
+                        crate::backend::list_members(server_id),
                         move |fresh| {
                             if let Ok(fresh) = fresh {
                                 member_roster.set(fresh);
@@ -586,7 +608,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             if let Some(discord_server::server_settings::WsServerMsg::FriendChanged { .. }) = frame {
                 runtime_core::spawn_then_in(
                     &crate::app::shell_alive(),
-                    crate::friends::list_friends(),
+                    crate::backend::list_friends(),
                     move |list| {
                         if let Ok(list) = list {
                             friends_snap.set(crate::friends_view::snapshot(list));
@@ -681,7 +703,7 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
                     // Detached: the mark-read's result isn't read by the screen, so
                     // the RPC must finish even after the row rebuilds.
                     runtime_core::driver::spawn_detached(async move {
-                        let _ = crate::servers::mark_read(cid, last_id).await;
+                        let _ = crate::backend::mark_read(cid, last_id).await;
                     });
                 }
             }

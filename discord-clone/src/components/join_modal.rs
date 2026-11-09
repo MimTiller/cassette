@@ -137,8 +137,8 @@ pub fn JoinServerModal(
         runtime_core::spawn_then_in(
             &crate::app::shell_alive(),
             async move {
-                let joined = crate::invite::redeem_invite(&code_owned).await;
-                let list = crate::servers::list_servers().await.ok().unwrap_or_else(Vec::new);
+                let joined = crate::backend::redeem_invite(code_owned).await;
+                let list = crate::backend::list_servers().await.ok().unwrap_or_else(Vec::new);
                 (joined, list)
             },
             move |(joined, list)| {

@@ -220,12 +220,17 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         }
     };
     let live_dm_open_chk = live_dm_mode.clone();
+    // On a desktop the DM screen starts after the 72px server rail, so the
+    // rail stays on screen and a server tile switches back (as in Discord).
+    // A phone shows it full-screen.
     let live_dm_wrap = move || StyleRules {
         position: Some(Position::Absolute),
-        left: Some(px(0.0)),
+        left: Some(px(if crate::app::mobile::is_phone() { 0.0 } else { 72.0 })),
         top: Some(px(0.0)),
-        width: Some(if live_dm_open_chk.get() { pct(100.0) } else { px(0.0) }),
-        height: Some(if live_dm_open_chk.get() { pct(100.0) } else { px(0.0) }),
+        right: live_dm_open_chk.get().then(|| px(0.0)),
+        bottom: live_dm_open_chk.get().then(|| px(0.0)),
+        width: (!live_dm_open_chk.get()).then(|| px(0.0)),
+        height: (!live_dm_open_chk.get()).then(|| px(0.0)),
         background: Some(col(theme::OVERLAY)),
         flex_direction: Some(FlexDirection::Column),
         overflow: Some(Overflow::Hidden),
@@ -246,7 +251,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
 
     // --- Live "Invite People" overlay (real backend) ----------------------
     // The live channel header's `USER_PLUS` action opens this: it mints a
-    // REAL invite via `invite::create_invite` against `active_live_server`
+    // REAL invite via `crate::backend::create_invite` against `active_live_server`
     // (the only context with a real backend `server_id`) and shows the resulting
     // code in `InviteLinkDisplay`, whose Copy button now writes the link to the
     // system clipboard. `live_invite_expiry` is the expiry the user picked
@@ -346,7 +351,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
             // Anchored on the app shell: the invite code and error live there,
             // and this handler rebuilds the overlay it is inside.
             &crate::app::shell_alive(),
-            crate::invite::create_invite(sid, expires_at, None),
+            crate::backend::create_invite(sid, expires_at, None),
             move |invited| {
                 match invited {
                     Ok(inv) => code.set(Some(inv.code)),

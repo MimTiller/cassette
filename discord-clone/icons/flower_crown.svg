@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 140" class="still">
+  <style>
+    @keyframes sway{0%,100%{transform:rotate(0)}25%{transform:rotate(-3deg)}75%{transform:rotate(3deg)}}
+    @keyframes nod{0%,100%{transform:rotate(0)}50%{transform:rotate(16deg)}}
+    @keyframes drop{0%{opacity:0;transform:translateY(0) rotate(0)}15%{opacity:1}100%{opacity:0;transform:translateY(62px) rotate(220deg)}}
+    .crown{transform-origin:70px 70px}
+    .petal{opacity:0}
+    .moving .crown{animation:sway 2.4s ease-in-out infinite}
+    .once .crown{animation:sway 2.4s ease-in-out}
+    .moving .bloom{animation:nod 1.2s ease-in-out infinite}
+    .once .bloom{animation:nod 1.2s ease-in-out 2}
+    .moving .petal{animation:drop 2.4s ease-in infinite}
+    .once .petal{animation:drop 2.4s ease-in}
+    @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+  </style>
+  <defs>
+    <radialGradient id="rose" cx=".5" cy="1" r="1"><stop offset="0" stop-color="#d9477f"/><stop offset=".6" stop-color="#f487ad"/><stop offset="1" stop-color="#ffc2d6"/></radialGradient>
+    <radialGradient id="cream" cx=".5" cy="1" r="1"><stop offset="0" stop-color="#e8c9a0"/><stop offset=".55" stop-color="#fff6e6"/><stop offset="1" stop-color="#ffffff"/></radialGradient>
+    <radialGradient id="peach" cx=".5" cy="1" r="1"><stop offset="0" stop-color="#ec7f4f"/><stop offset=".6" stop-color="#fbb48a"/><stop offset="1" stop-color="#ffdcc4"/></radialGradient>
+    <linearGradient id="leaf" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3f7a45"/><stop offset="1" stop-color="#8cc06a"/></linearGradient>
+    <ellipse id="p" cy="-5.6" rx="4.5" ry="6" stroke="#8b3c5d" stroke-opacity=".35" stroke-width=".4"/>
+    <g id="blossom">
+      <use href="#p"/><use href="#p" transform="rotate(72)"/><use href="#p" transform="rotate(144)"/><use href="#p" transform="rotate(216)"/><use href="#p" transform="rotate(288)"/>
+      <circle r="2.8" fill="#ffd34f" stroke="#c98a1e" stroke-width=".5"/>
+    </g>
+    <path id="petalArt" d="M0-4C3-3 4-.5 2.6 1.8C1.4 3.6-.8 4-1.8 3C-3.4 1.4-2.8-2.6 0-4Z"/>
+  </defs>
+  <g class="crown">
+    <path d="M22 52C34 18 106 18 118 52" fill="none" stroke="#4f7d43" stroke-width="2.2" stroke-linecap="round"/>
+    <path fill="url(#leaf)" transform="translate(27 44) rotate(-60)" d="M0 0C3-4 9-5 13-2C9 2 3 3 0 0Z"/>
+    <path fill="url(#leaf)" transform="translate(40 33) rotate(-35)" d="M0 0C3-4 9-5 13-2C9 2 3 3 0 0Z"/>
+    <path fill="url(#leaf)" transform="translate(60 27) rotate(-15)" d="M0 0C3-4 9-5 13-2C9 2 3 3 0 0Z"/>
+    <path fill="url(#leaf)" transform="translate(80 27) rotate(195)" d="M0 0C3-4 9-5 13-2C9 2 3 3 0 0Z"/>
+    <path fill="url(#leaf)" transform="translate(100 33) rotate(215)" d="M0 0C3-4 9-5 13-2C9 2 3 3 0 0Z"/>
+    <path fill="url(#leaf)" transform="translate(113 44) rotate(240)" d="M0 0C3-4 9-5 13-2C9 2 3 3 0 0Z"/>
+    <path fill="url(#leaf)" transform="translate(70 22) rotate(-80)" d="M0 0C3-4 9-5 13-2C9 2 3 3 0 0Z"/>
+    <path fill="url(#leaf)" transform="translate(70 22) rotate(260)" d="M0 0C3-4 9-5 13-2C9 2 3 3 0 0Z"/>
+    <g transform="translate(22 52) scale(0.8)"><g class="bloom"><use href="#blossom" fill="url(#peach)"/></g></g>
+    <g transform="translate(107.3 37.6) scale(1)"><g class="bloom"><use href="#blossom" fill="url(#rose)"/></g></g>
+    <g transform="translate(32.7 37.6) scale(1)"><g class="bloom"><use href="#blossom" fill="url(#rose)"/></g></g>
+    <g transform="translate(118 52) scale(0.8)"><g class="bloom"><use href="#blossom" fill="url(#peach)"/></g></g>
+    <g transform="translate(49.2 29.5) scale(0.85)"><g class="bloom"><use href="#blossom" fill="url(#cream)"/></g></g>
+    <g transform="translate(90.8 29.5) scale(0.85)"><g class="bloom"><use href="#blossom" fill="url(#cream)"/></g></g>
+    <g transform="translate(70 26.5) scale(1.25)"><g class="bloom"><use href="#blossom" fill="url(#rose)"/></g></g>
+  </g>
+  <g transform="translate(40 42)"><g class="petal" style="animation-delay:0s"><use href="#petalArt" fill="url(#rose)"/></g></g>
+  <g transform="translate(92 36)"><g class="petal" style="animation-delay:.5s"><use href="#petalArt" fill="url(#peach)"/></g></g>
+  <g transform="translate(66 34)"><g class="petal" style="animation-delay:1s"><use href="#petalArt" fill="url(#cream)"/></g></g>
+</svg>

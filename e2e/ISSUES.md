@@ -1,9 +1,15 @@
-# App issues found by the e2e suite
+# App issues found by the robot suite
 
-Worst first. Each one is marked KNOWN in the suite, so the suite stays green
-until it's fixed; when it is, flip the `known_bug` back to a `check`.
-Screenshots are in `/root/discord-ref/e2e-issues-2026-10-31/` on the dev box.
+Each open one is marked KNOWN in the suite (via `crate::support::known_bug`),
+so the suite stays green until it is fixed; when it is, flip the `known_bug`
+back to an assertion and drop the entry here. A run's `[KNOWN]` lines name the
+check and reason; screenshots are listed as `[shot] label: path` lines in the
+run's output.
 
-Also seen: the page carries hidden demo components
-(overlays.rs, components/delete_message_confirm.rs, a moderation gallery)
-whose texts duplicate real controls, which is what tripped earlier test runs.
+No open bugs: a full run prints no `[KNOWN]` lines (last run: 32 passed, 0
+failed).
+
+Also seen: the page carries hidden demo components whose texts duplicate real
+controls (overlays.rs, components/delete_message_confirm.rs, a moderation
+gallery). Locator "no match"/"mounted but not visible" failures often mean a
+hidden copy, not a missing one.

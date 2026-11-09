@@ -16,7 +16,7 @@
 
 use robot_test::{json, robot_test, App, Value};
 
-use crate::support::{Account, fresh_name, sign_in_as, sign_out, signed_out};
+use crate::support::{Account, eventually, fresh_name, sign_in_as, sign_out, signed_out};
 use crate::support::WAIT;
 use crate::users::open_browser;
 
@@ -134,7 +134,99 @@ fn do_not_disturb_reaches_the_other_user_as_red(app: &mut App) {
 }
 
 #[robot_test]
-fn the_appearance_picker_offers_cassette_icons(app: &mut App) {
+fn cat_ears_reach_the_other_browser_and_come_off_again(app: &mut App) {
+    let crew = crew("ears");
+
+    signed_out(app);
+    sign_in_as(app, &crew.a);
+    app.text(&crew.server).assert_visible();
+    app.text("general").click();
+    app.set_timeout(WAIT);
+
+    // B is already connected and watching A's member row.
+    let mut other = open_browser(&fresh_name("earswatch"));
+    sign_in_as(&mut other.app, &crew.b);
+    other.app.text(&crew.server).assert_visible();
+    other.app.set_timeout(WAIT);
+    assert!(!other.app.test_id("avatar-decoration").is_visible(), "nobody starts with ears");
+
+    // A picks cat ears: the preview wears them, and so does A's row on B's rail.
+    open_user_settings(app);
+    app.test_id("settings-nav-profile-effects").click();
+    app.test_id("profile-decoration-cat-ears").click();
+    app.test_id("avatar-decoration").assert_visible();
+    shot(app, "ears1-preview");
+    other.app.test_id("avatar-decoration").assert_visible();
+    shot(&mut other.app, "ears2-b-sees-them");
+    app.press_key("Escape");
+
+    // The ears take no presses: the avatar under them still opens its menu.
+    app.test_id("user-panel-avatar").click();
+    app.test_id("status-menu").assert_visible();
+    shot(app, "ears3-status-menu");
+    app.press_key("Escape");
+
+    // A takes them off again, and they leave B's rail without a reload.
+    open_user_settings(app);
+    app.test_id("settings-nav-profile-effects").click();
+    app.test_id("profile-decoration-none").click();
+    let gone = eventually(10, || !other.app.test_id("avatar-decoration").is_visible());
+    assert!(gone, "B still sees the ears A took off");
+    app.press_key("Escape");
+    sign_out(app);
+}
+
+#[robot_test]
+fn a_profile_effect_shows_on_the_card_and_comes_off_again(app: &mut App) {
+    let crew = crew("fx");
+    signed_out(app);
+    sign_in_as(app, &crew.a);
+    app.text(&crew.server).assert_visible();
+    app.text("general").click();
+    app.set_timeout(WAIT);
+
+    // A picks an effect: the preview draws it straight away, and every other
+    // decoration in the catalog can go on beside it.
+    open_user_settings(app);
+    app.test_id("settings-nav-profile-effects").click();
+    assert!(!app.test_id("profile-effect-preview").is_visible(), "nobody starts with an effect");
+    app.test_id("profile-effect-starfield").click();
+    app.test_id("profile-effect-preview").assert_visible();
+    for tile in ["cassette-reels", "halo", "flower-crown", "sparkles"] {
+        app.test_id(&format!("profile-decoration-{tile}")).click();
+        app.test_id("avatar-decoration").assert_visible();
+    }
+    shot(app, "fx1-preview");
+    app.press_key("Escape");
+
+    // B opens A's card and finds the saved effect on it. Every member row
+    // carries `member-row-name`, so take A by name.
+    let mut other = open_browser(&fresh_name("fxwatch"));
+    sign_in_as(&mut other.app, &crew.b);
+    other.app.text(&crew.server).assert_visible();
+    other.app.set_timeout(WAIT);
+    other.app.text(&crew.a.name).click();
+    other.app.text("Member since").assert_visible();
+    other.app.test_id("profile-effect").assert_visible();
+    shot(&mut other.app, "fx2-b-sees-the-card");
+    other.app.press_key("Escape");
+
+    // A takes it off again, and the next look at the card has none.
+    open_user_settings(app);
+    app.test_id("settings-nav-profile-effects").click();
+    app.test_id("profile-effect-none").click();
+    let gone = eventually(10, || !app.test_id("profile-effect-preview").is_visible());
+    assert!(gone, "the preview still shows the effect A took off");
+    app.test_id("profile-decoration-none").click();
+    app.press_key("Escape");
+    other.app.text(&crew.a.name).click();
+    other.app.text("Member since").assert_visible();
+    assert!(!other.app.test_id("profile-effect").is_visible(), "B still sees the effect A took off");
+    sign_out(app);
+}
+
+#[robot_test]
+fn the_appearance_picker_offers_rwnd_icons(app: &mut App) {
     signed_out(app);
     let account = Account::new("icon");
     sign_in_as(app, &account);
@@ -144,7 +236,7 @@ fn the_appearance_picker_offers_cassette_icons(app: &mut App) {
     let before = robot_string(app.call_function("cassette.app_icon", json!({})));
 
     app.test_id("settings-nav-appearance").click();
-    // The Appearance section offers a card per cassette icon.
+    // The Appearance section offers a card per app icon.
     app.test_id("icon-card-miami").assert_visible();
     app.test_id("icon-card-miami").click();
 
@@ -153,7 +245,7 @@ fn the_appearance_picker_offers_cassette_icons(app: &mut App) {
         after = robot_string(app.call_function("cassette.app_icon", json!({})));
         after == "miami"
     });
-    assert!(changed && before != "miami", "picking a cassette should change the app icon (before {before}, after {after})");
+    assert!(changed && before != "miami", "picking an icon should change the app icon (before {before}, after {after})");
     shot(app, "prof4-icon");
 }
 

@@ -197,6 +197,11 @@ pub struct Message {
     /// `dm_messages` rows.
     #[serde(default)]
     pub attachments: Vec<Attachment>,
+    /// The sticker copied onto this message at send time (the `sticker_*`
+    /// columns of `0033_server_stickers.sql`); `None` = a text message. The
+    /// copy survives a sticker's deletion, so history still renders.
+    #[serde(default)]
+    pub sticker: Option<crate::server_settings::StickerCopy>,
 }
 
 /// One image attached to a channel message (migration

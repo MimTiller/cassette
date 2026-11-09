@@ -19,14 +19,8 @@
 /// `None` to clear, or a `data:image/{png,jpeg,webp,gif};base64,` URL (≤256 KB)
 /// to set; the backend validates the prefix and size and its rejection comes
 /// back as the `Err` string. Self-only: the acting user is the bearer token.
-pub async fn set_avatar(avatar: Option<String>) -> Result<Option<String>, String> {
-    let input = discord_server::auth::SetAvatarInput {
-        avatar_url: avatar,
-    };
-    discord_server::auth::set_avatar(input)
-        .await
-        .map(|r| r.avatar_url)
-        .map_err(|e| crate::errors::friendly(&e))
+pub async fn update_avatar(avatar: Option<String>) -> Result<Option<String>, String> {
+    crate::backend::set_avatar(avatar).await.map(|r| r.avatar_url)
 }
 
 // Sign-in (`login`), sign-up, password change/reset and logout live in
@@ -50,18 +44,14 @@ pub async fn set_avatar(avatar: Option<String>) -> Result<Option<String>, String
 /// Returns `Err(message)` for any failure — a duplicate handle, a missing
 /// session (not logged in), or a transport-level `ServerError`.
 /// The message is user-facing text from `errors::friendly`.
-pub async fn change_username(new_username: &str) -> Result<String, String> {
-    let input = discord_server::auth::ChangeUsernameInput {
-        new_username: new_username.to_string(),
-    };
-
-    match discord_server::auth::change_username(input).await {
+pub async fn rename_handle(new_username: &str) -> Result<String, String> {
+    match crate::backend::change_username(new_username.to_string()).await {
         Ok(result) => {
             *CURRENT_USERNAME.lock().unwrap_or_else(|p| p.into_inner()) =
                 result.username.clone();
             Ok(result.username)
         }
-        Err(error) => Err(crate::errors::friendly(&error)),
+        Err(error) => Err(error),
     }
 }
 
@@ -177,6 +167,31 @@ pub(crate) fn avatar_for(username: &str) -> Option<String> {
     map.iter()
         .find(|(u, _)| *u == username)
         .map(|(_, url)| url.clone())
+}
+
+/// Avatar decorations by username, for every user the client has heard about
+/// (members, friends, DM partners, message authors).
+pub(crate) static DECORATION_MAP: std::sync::Mutex<Vec<(String, String)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Record the decoration `username` wears, or forget it with `None`.
+pub(crate) fn remember_avatar_decoration(username: &str, decoration: Option<String>) {
+    if username.is_empty() {
+        return;
+    }
+    let mut map = DECORATION_MAP.lock().unwrap_or_else(|p| p.into_inner());
+    map.retain(|(u, _)| *u != username);
+    if let Some(id) = decoration {
+        map.push((username.to_string(), id));
+    }
+}
+
+/// The catalog id of the decoration `username` wears.
+pub(crate) fn avatar_decoration_for(username: &str) -> Option<String> {
+    let map = DECORATION_MAP.lock().unwrap_or_else(|p| p.into_inner());
+    map.iter()
+        .find(|(u, _)| *u == username)
+        .map(|(_, id)| id.clone())
 }
 
 /// The page's own origin on the web target (the bundle is served same-origin

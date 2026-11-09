@@ -2,6 +2,7 @@
 //! Split out of `app.rs`; `use super::*` keeps app.rs's imports and shared
 //! colors/helpers in scope.
 
+use crate::avatar_chip::AvatarFrame;
 use crate::theme;
 use super::*;
 
@@ -33,7 +34,7 @@ pub(super) fn user_panel(
     muted: Signal<bool>,
     deafened: Signal<bool>,
     status_menu: Signal<bool>,
-    gateway: server::UseSocket<discord_server::server_settings::WsServerMsg, discord_server::server_settings::WsClientMsg>,
+    gateway: crate::backend::Gateway,
 ) -> Element {
     switch(
         move || (user_status.get(), joined_voice.get()),
@@ -70,7 +71,11 @@ pub(super) fn user_panel(
             let row_style = StyleRules {
                 min_height: Some(px(32.0)),
                 gap: Some(px(8.0)),
-                flex_direction: Some(FlexDirection::Row),
+                // A phone's panel sits in the narrow 72px rail: stacked as a
+                // column, the avatar, the readable name/status line and the
+                // icon buttons each get their own line; on a desktop sidebar
+                // the row has room for all of them side by side.
+                flex_direction: Some(if crate::app::mobile::is_phone() { FlexDirection::Column } else { FlexDirection::Row }),
                 align_items: Some(AlignItems::Center),
                 ..Default::default()
             };
@@ -94,20 +99,27 @@ pub(super) fn user_panel(
             // The shared 10px presence dot, ring cut out in the panel's own
             // fill — the one convention used on every avatar surface.
             let dot = crate::avatar_chip::presence_dot(status.color(), USER_BAR);
-            let text_stack = StyleRules {
+            let text_stack = move || StyleRules {
                 flex_direction: Some(FlexDirection::Column),
-                flex_grow: Some(grow(1.0)),
-                // Only this column absorbs row shrinkage (the avatar and the
-                // icon buttons are fixed): the name must keep ~40px so "you"
-                // renders in full instead of clipping to "yo".
-                min_width: Some(px(40.0)),
+                // A phone's panel is the narrow 72px rail: nothing absorbs the
+                // row, so the avatar, the name/status stack and each icon
+                // button wrap onto their own lines inside it. The stack keeps
+                // its natural width — the status line ("Online") stays
+                // readable and the name clamps to one line.
+                flex_grow: Some(grow(if crate::app::mobile::is_phone() { 0.0 } else { 1.0 })),
                 overflow: Some(Overflow::Hidden),
                 ..Default::default()
             };
-            let name_style = StyleRules {
+            // On a phone the row is the whole window less the rail: an
+            // unshrunk name would push the three icon buttons off the
+            // right edge. `max_lines` clamps the label to one line AND
+            // lets it shrink below its natural width (the header's
+            // server-name idiom), so the buttons keep their tap size.
+            let name_style = move || StyleRules {
                 font_size: Some(px(14.0)),
                 font_weight: Some(FontWeight::SemiBold),
                 color: Some(col(TEXT)),
+                max_lines: crate::app::mobile::is_phone().then_some(1u32),
                 ..Default::default()
             };
             let initial = display_name.chars().next().unwrap_or(' ').to_string();
@@ -185,50 +197,46 @@ pub(super) fn user_panel(
             // its own region while connected.
             let menu_toggle = status_menu;
             // When the signed-in account has an uploaded avatar, the image
-            // sits under the status dot (same 32px circle, cover-cropped);
-            // the initial-circle branch renders exactly as before.
-            let avatar = if let Some(url) = avatar_img {
+            // takes the place of the initial circle (same 32px circle,
+            // cover-cropped). Either one sits under the status dot.
+            let chip = if let Some(url) = avatar_img {
                 ui! {
-                    view(style = StyleRules {
-                        width: Some(px(32.0)),
-                        height: Some(px(32.0)),
-                        position: Some(Position::Relative),
-                        flex_shrink: Some(grow(0.0)),
-                        ..rounded(16.0)
-                    }, test_id = "user-panel-avatar") {
-                        { dot }
-                        image(
-                            src = crate::auth::media_url(url.clone()),
-                            alt = "Your avatar",
-                            style = StyleRules {
-                                width: Some(px(32.0)),
-                                height: Some(px(32.0)),
-                                flex_shrink: Some(grow(0.0)),
-                                object_fit: Some(ObjectFit::Cover),
-                                ..rounded(16.0)
-                            },
-                        )
-                    }
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            menu_toggle.set(!menu_toggle.get());
-                        }
-                        TouchResponse::CONSUMED
-                    })
+                    image(
+                        src = crate::auth::media_url(url.clone()),
+                        alt = "Your avatar",
+                        style = StyleRules {
+                            width: Some(px(32.0)),
+                            height: Some(px(32.0)),
+                            flex_shrink: Some(grow(0.0)),
+                            object_fit: Some(ObjectFit::Cover),
+                            ..rounded(16.0)
+                        },
+                    )
                 }
             } else {
                 ui! {
-                    view(style = avatar_style, test_id = "user-panel-avatar") {
+                    view(style = avatar_style) {
                         text(style = initial_style) { initial }
-                        { dot }
                     }
-                    .on_touch(move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            menu_toggle.set(!menu_toggle.get());
-                        }
-                        TouchResponse::CONSUMED
-                    })
                 }
+            };
+            let avatar = ui! {
+                view(style = StyleRules {
+                    width: Some(px(32.0)),
+                    height: Some(px(32.0)),
+                    position: Some(Position::Relative),
+                    flex_shrink: Some(grow(0.0)),
+                    ..rounded(16.0)
+                }, test_id = "user-panel-avatar") {
+                    AvatarFrame(name = username.get(), size = 32.0_f32) { chip }
+                    { dot }
+                }
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        menu_toggle.set(!menu_toggle.get());
+                    }
+                    TouchResponse::CONSUMED
+                })
             };
             // Mic / deafen / settings icon buttons (Discord's user-panel
             // voice actions). The signals are created in `app_shell` and
@@ -292,6 +300,11 @@ pub(super) fn user_panel(
                 }
                 .on_touch(move |ev| {
                     if ev.phase == TouchPhase::Ended {
+                        // A phone shows one settings screen at a time: the
+                        // gear re-opens it on its section list, so the Log
+                        // Out row is reachable even after a test (or a user)
+                        // left a section open.
+                        crate::app::mobile::show_settings_nav(true);
                         notif_open.set(true);
                     }
                     TouchResponse::CONSUMED
@@ -343,7 +356,7 @@ fn status_menu_view(
     open: Signal<bool>,
     user_status: Signal<Status>,
     profile_mode: Signal<bool>,
-    gateway: server::UseSocket<discord_server::server_settings::WsServerMsg, discord_server::server_settings::WsClientMsg>,
+    gateway: crate::backend::Gateway,
 ) -> Element {
     switch(
         move || open.get(),
@@ -369,9 +382,7 @@ fn status_menu_view(
                 status_menu_row(st.name(), Some(st.color()), st.hint(), st == current, test_id, move || {
                     open.set(false);
                     set_status(user_status, st);
-                    gateway.send(discord_server::server_settings::WsClientMsg::SetStatus {
-                        status: st.wire().to_string(),
-                    });
+                    gateway.set_status(st.wire().to_string());
                 })
             };
             ui! {

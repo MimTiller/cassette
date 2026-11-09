@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 140" class="still">
+  <style>
+    @keyframes flick{0%,28%,100%{transform:rotate(0)}5%{transform:rotate(-15deg)}10%{transform:rotate(4deg)}15%{transform:rotate(-8deg)}20%{transform:rotate(2deg)}}
+    @keyframes wiggle{0%,32%,100%{transform:rotate(0)}6%{transform:rotate(14deg)}12%{transform:rotate(-12deg)}18%{transform:rotate(8deg)}25%{transform:rotate(-4deg)}}
+    .ear{transform-origin:37px 40px}
+    .w1{transform-origin:31px 71px}
+    .w2{transform-origin:31px 75px}
+    .w3{transform-origin:31px 79px}
+    .moving .ear,.once .ear{animation:flick 2.6s ease-in-out}
+    .moving .w,.once .w{animation:wiggle 2.6s ease-in-out}
+    .moving .ear,.moving .w{animation-iteration-count:infinite}
+    .ear.late{animation-delay:.14s}
+    .w.w2{animation-delay:.05s}
+    .w.w3{animation-delay:.1s}
+    @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+  </style>
+  <defs>
+    <linearGradient id="fur" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".7" stop-color="#fff5f0"/>
+      <stop offset="1" stop-color="#f3e0d8"/>
+    </linearGradient>
+    <radialGradient id="pink" gradientUnits="userSpaceOnUse" cx="34" cy="30" r="24">
+      <stop offset="0" stop-color="#f9cddc"/>
+      <stop offset=".6" stop-color="#e99cbf"/>
+      <stop offset="1" stop-color="#cf7fae"/>
+    </radialGradient>
+    <clipPath id="outside">
+      <path clip-rule="evenodd" d="M0 0H140V140H0ZM20.5 70A49.5 49.5 0 1 0 119.5 70A49.5 49.5 0 1 0 20.5 70Z"/>
+    </clipPath>
+    <g id="ear">
+      <g fill="url(#fur)" stroke="#a5797f" stroke-width=".9" stroke-linejoin="round">
+        <path d="M23 46C18 46 15.5 49.5 17.5 52.5C14.5 54 15 58 18.5 58.6C17.8 61.5 21 63.5 24 62L30 52Z"/>
+        <path d="M62 31C53 23 43 17 34 13C27 10 19.5 11.5 18 19C16 29 16.5 44 23 60L50 50Z"/>
+      </g>
+      <path fill="url(#pink)" stroke="#b86f9c" stroke-width=".7" d="M56 33C48 27 40 22 33 18.5C27.5 16 23.5 17.5 22.6 22.5C21.4 31 22.5 43 27 53L50 50Z"/>
+      <path fill="url(#fur)" stroke="#d6a2bb" stroke-width=".7" stroke-linejoin="round" d="M24.5 43.75Q24.7 38.3 29.8 36.25Q30.9 30.9 36.25 29.8Q38.3 24.7 43.75 24.5Q46.6 19.9 52 20.7L60 40L30 60Z"/>
+    </g>
+    <path id="whisker1" d="M31 71C26 67.8 19 67.4 13 69.2C19 72 25 73.2 31 71Z"/>
+    <path id="whisker2" d="M31 75C25 72.8 18 74.8 11 78.6C18 78.8 25 77.6 31 75Z"/>
+    <path id="whisker3" d="M31 79C26 79 19.6 83.6 14.4 90C21.8 87.6 27.6 83.2 31 79Z"/>
+  </defs>
+  <g clip-path="url(#outside)">
+    <g class="ear"><use href="#ear"/></g>
+    <g transform="matrix(-1 0 0 1 140 0)"><g class="ear late"><use href="#ear"/></g></g>
+  </g>
+  <g fill="#17110f" stroke="#17110f" stroke-width=".4" stroke-linejoin="round">
+    <g class="w w1"><use href="#whisker1"/></g>
+    <g class="w w2"><use href="#whisker2"/></g>
+    <g class="w w3"><use href="#whisker3"/></g>
+    <g transform="matrix(-1 0 0 1 140 0)">
+      <g class="w w1"><use href="#whisker1"/></g>
+      <g class="w w2"><use href="#whisker2"/></g>
+      <g class="w w3"><use href="#whisker3"/></g>
+    </g>
+  </g>
+</svg>

@@ -161,9 +161,9 @@ pub fn CreateChannelModal(
         runtime_core::spawn_then_in(
             &crate::app::shell_alive(),
             async move {
-                let created = crate::servers::create_channel(sid0, &trimmed, &kind0, None, private0).await;
+                let created = crate::backend::create_channel(sid0, trimmed, kind0, None, private0).await;
                 let list = match created {
-                    Ok(_) => crate::servers::list_channels(sid0).await.ok(),
+                    Ok(_) => crate::backend::list_channels(sid0).await.ok(),
                     Err(_) => None,
                 };
                 (created, list)
