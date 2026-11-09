@@ -271,6 +271,22 @@ pub trait PermissionsApi {
 /// above for this type.
 pub struct CassetteBackend;
 
+/// The SECOND implementation of every area trait above, talked to over the
+/// idea-chat wire (see `docs/idea-chat-wire.md`). Selected at build time
+/// below by the `idea-chat` feature; RWND-only areas answer
+/// `Err("not supported on this server")`.
+#[cfg(feature = "idea-chat")]
+pub struct IdeaChatBackend;
+
+/// THE ONE SWITCH POINT: what `Backend` means this build. With the
+/// `idea-chat` feature off (the default) the accessors below compile
+/// against CassetteBackend exactly as today; with it on they compile
+/// against IdeaChatBackend instead. No call site changes.
+#[cfg(not(feature = "idea-chat"))]
+type Backend = CassetteBackend;
+#[cfg(feature = "idea-chat")]
+type Backend = IdeaChatBackend;
+
 // --- the realtime handle ----------------------------------------------------
 
 /// The event-stream handle: what the UI holds after [`connect`]. Cheap to
@@ -279,6 +295,8 @@ pub struct CassetteBackend;
 /// yields every frame the backend pushes and [`connection_status`] reports
 /// the connection. The UI only calls these — it never builds a frame or
 /// connects itself.
+/// Cassette flavor: the live gateway socket, typed at both ends.
+#[cfg(not(feature = "idea-chat"))]
 #[derive(Clone, Copy)]
 pub struct Gateway {
     handle: server::UseSocket<WsServerMsg, WsClientMsg>,
@@ -346,13 +364,13 @@ mod permissions_impl;
 /// Open the realtime stream: the signed session token authenticates the
 /// connect (an empty token gets no working socket).
 pub fn connect(token: String) -> Gateway {
-    CassetteBackend::connect(token)
+    Backend::connect(token)
 }
 
 // --- the server and channel accessors ---------------------------------------
 
 pub async fn list_servers() -> Result<Vec<ServerSummary>, String> {
-    CassetteBackend::list_servers().await.map_err(|e| crate::errors::friendly(&e))
+    Backend::list_servers().await.map_err(|e| crate::errors::friendly(&e))
 }
 
 // --- the invite accessors ---------------------------------------------------
@@ -362,21 +380,21 @@ pub async fn create_invite(
     expires_at: Option<i64>,
     max_uses: Option<i64>,
 ) -> Result<Invite, String> {
-    CassetteBackend::create_invite(server_id, expires_at, max_uses)
+    Backend::create_invite(server_id, expires_at, max_uses)
         .await
         .map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn redeem_invite(code: String) -> Result<RedeemResult, String> {
-    CassetteBackend::redeem_invite(code).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::redeem_invite(code).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn create_server(name: String) -> Result<ServerSummary, String> {
-    CassetteBackend::create_server(name).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::create_server(name).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn list_channels(server_id: i64) -> Result<Vec<ChannelSummary>, String> {
-    CassetteBackend::list_channels(server_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::list_channels(server_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn create_channel(
@@ -386,7 +404,7 @@ pub async fn create_channel(
     parent_channel_id: Option<i64>,
     private: bool,
 ) -> Result<ChannelResult, String> {
-    CassetteBackend::create_channel(server_id, name, kind, parent_channel_id, private)
+    Backend::create_channel(server_id, name, kind, parent_channel_id, private)
         .await
         .map_err(|e| crate::errors::friendly(&e))
 }
@@ -396,7 +414,7 @@ pub async fn rename_channel(
     channel_id: i64,
     new_name: String,
 ) -> Result<ChannelResult, String> {
-    CassetteBackend::rename_channel(server_id, channel_id, new_name)
+    Backend::rename_channel(server_id, channel_id, new_name)
         .await
         .map_err(|e| crate::errors::friendly(&e))
 }
@@ -405,7 +423,7 @@ pub async fn delete_channel(
     server_id: i64,
     channel_id: i64,
 ) -> Result<ChannelResult, String> {
-    CassetteBackend::delete_channel(server_id, channel_id)
+    Backend::delete_channel(server_id, channel_id)
         .await
         .map_err(|e| crate::errors::friendly(&e))
 }
@@ -414,7 +432,7 @@ pub async fn rename_server(
     server_id: i64,
     new_name: String,
 ) -> Result<ServerSettingsResult, String> {
-    CassetteBackend::rename_server(server_id, new_name)
+    Backend::rename_server(server_id, new_name)
         .await
         .map_err(|e| crate::errors::friendly(&e))
 }
@@ -423,7 +441,7 @@ pub async fn set_server_icon(
     server_id: i64,
     icon: Option<String>,
 ) -> Result<ServerSettingsResult, String> {
-    CassetteBackend::set_server_icon(server_id, icon)
+    Backend::set_server_icon(server_id, icon)
         .await
         .map_err(|e| crate::errors::friendly(&e))
 }
@@ -432,13 +450,13 @@ pub async fn transfer_server_ownership(
     server_id: i64,
     new_owner_id: i64,
 ) -> Result<ServerSettingsResult, String> {
-    CassetteBackend::transfer_server_ownership(server_id, new_owner_id)
+    Backend::transfer_server_ownership(server_id, new_owner_id)
         .await
         .map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn leave_server(server_id: i64) -> Result<(), String> {
-    CassetteBackend::leave_server(server_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::leave_server(server_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 // --- the message accessors --------------------------------------------------
@@ -446,35 +464,35 @@ pub async fn leave_server(server_id: i64) -> Result<(), String> {
 // becomes friendly text (`Result<_, String>`), so the UI shows the server's
 // own message verbatim.
 pub async fn mark_read(channel_id: i64, message_id: i64) -> Result<MarkReadResult, String> {
-    CassetteBackend::mark_read(channel_id, message_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::mark_read(channel_id, message_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn unread_counts(server_id: i64) -> Result<Vec<UnreadCount>, String> {
-    CassetteBackend::unread_counts(server_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::unread_counts(server_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn pin_message(message_id: i64) -> Result<PinResult, String> {
-    CassetteBackend::pin_message(message_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::pin_message(message_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn unpin_message(message_id: i64) -> Result<PinResult, String> {
-    CassetteBackend::unpin_message(message_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::unpin_message(message_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn list_pinned(channel_id: i64) -> Result<Vec<PinnedMessage>, String> {
-    CassetteBackend::list_pinned(channel_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::list_pinned(channel_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn pinned_count(channel_id: i64) -> Result<i64, String> {
-    CassetteBackend::pinned_count(channel_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::pinned_count(channel_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn add_reaction(message_id: i64, emoji: String) -> Result<ReactionResult, String> {
-    CassetteBackend::add_reaction(message_id, emoji).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::add_reaction(message_id, emoji).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn remove_reaction(message_id: i64, emoji: String) -> Result<ReactionResult, String> {
-    CassetteBackend::remove_reaction(message_id, emoji).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::remove_reaction(message_id, emoji).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 // --- the direct-message accessors -------------------------------------------
@@ -496,13 +514,13 @@ fn remember_dm_avatars(dms: Vec<Dm>) {
 }
 
 pub async fn list_dms() -> Result<Vec<Dm>, String> {
-    let list = CassetteBackend::list_dms().await.map_err(|e| crate::errors::friendly(&e))?;
+    let list = Backend::list_dms().await.map_err(|e| crate::errors::friendly(&e))?;
     remember_dm_avatars(list.clone());
     Ok(list)
 }
 
 pub async fn start_dm(user_id: i64) -> Result<Dm, String> {
-    let dm = CassetteBackend::start_dm(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
+    let dm = Backend::start_dm(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
     for p in dm.participants.iter() {
         crate::auth::remember_avatar(p.username.as_str(), p.avatar_url.clone());
         crate::auth::remember_avatar_decoration(p.username.as_str(), p.avatar_decoration.clone());
@@ -516,12 +534,12 @@ pub async fn start_dm(user_id: i64) -> Result<Dm, String> {
 /// included), so the caller does NOT append the reply itself — the
 /// [`incoming`] feed renders it.
 pub async fn send_dm_message(channel_id: i64, content: String, sticker_id: Option<i64>) -> Result<DmMessage, String> {
-    let result = CassetteBackend::send_dm_message(channel_id, content, sticker_id).await.map_err(|e| crate::errors::friendly(&e))?;
+    let result = Backend::send_dm_message(channel_id, content, sticker_id).await.map_err(|e| crate::errors::friendly(&e))?;
     Ok(result.message)
 }
 
 pub async fn list_dm_messages(channel_id: i64, limit: Option<i64>) -> Result<Vec<DmMessage>, String> {
-    let history = CassetteBackend::list_dm_messages(channel_id, limit).await.map_err(|e| crate::errors::friendly(&e))?;
+    let history = Backend::list_dm_messages(channel_id, limit).await.map_err(|e| crate::errors::friendly(&e))?;
     for m in history.iter() {
         crate::auth::remember_avatar(m.author_username.as_str(), m.author_avatar.clone());
         crate::auth::remember_avatar_decoration(m.author_username.as_str(), m.author_decoration.clone());
@@ -530,25 +548,25 @@ pub async fn list_dm_messages(channel_id: i64, limit: Option<i64>) -> Result<Vec
 }
 
 pub async fn create_group_dm(user_ids: Vec<i64>, name: String) -> Result<Dm, String> {
-    CassetteBackend::create_group_dm(user_ids, name).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::create_group_dm(user_ids, name).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn add_group_dm_member(dm_id: i64, user_id: i64) -> Result<Dm, String> {
-    CassetteBackend::add_group_dm_member(dm_id, user_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::add_group_dm_member(dm_id, user_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn remove_group_dm_member(dm_id: i64, user_id: i64) -> Result<(), String> {
-    CassetteBackend::remove_group_dm_member(dm_id, user_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::remove_group_dm_member(dm_id, user_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn rename_group_dm(dm_id: i64, name: String) -> Result<Dm, String> {
-    CassetteBackend::rename_group_dm(dm_id, name).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::rename_group_dm(dm_id, name).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 // --- the friends and blocks accessors ---------------------------------------
 
 pub async fn list_friends() -> Result<FriendList, String> {
-    let list = CassetteBackend::list_friends().await.map_err(|e| crate::errors::friendly(&e))?;
+    let list = Backend::list_friends().await.map_err(|e| crate::errors::friendly(&e))?;
     remember_friend_avatars(list.clone());
     Ok(list)
 }
@@ -573,118 +591,118 @@ fn remember_friend_avatars(list: FriendList) {
 /// Send a friend request, then answer with the actor's refreshed list — the
 /// backend's `FriendChanged` frame only reaches the other user.
 pub async fn send_friend_request(username: String) -> Result<FriendList, String> {
-    CassetteBackend::send_friend_request(username).await.map_err(|e| crate::errors::friendly(&e))?;
+    Backend::send_friend_request(username).await.map_err(|e| crate::errors::friendly(&e))?;
     list_friends().await
 }
 
 pub async fn accept_friend_request(user_id: i64) -> Result<FriendList, String> {
-    CassetteBackend::accept_friend_request(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
+    Backend::accept_friend_request(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
     list_friends().await
 }
 
 pub async fn decline_or_cancel(user_id: i64) -> Result<FriendList, String> {
-    CassetteBackend::decline_or_cancel(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
+    Backend::decline_or_cancel(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
     list_friends().await
 }
 
 pub async fn remove_friend(user_id: i64) -> Result<FriendList, String> {
-    CassetteBackend::remove_friend(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
+    Backend::remove_friend(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
     list_friends().await
 }
 
 pub async fn list_blocked() -> Result<Vec<BlockedUser>, String> {
-    CassetteBackend::list_blocked().await.map_err(|e| crate::errors::friendly(&e))
+    Backend::list_blocked().await.map_err(|e| crate::errors::friendly(&e))
 }
 
 /// Block (or, with `block` false, unblock) `user_id`, then answer with the
 /// refreshed blocked list so the message list can re-filter.
 pub async fn set_blocked(user_id: i64, block: bool) -> Result<Vec<BlockedUser>, String> {
     if block {
-        CassetteBackend::block_user(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
+        Backend::block_user(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
     } else {
-        CassetteBackend::unblock_user(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
+        Backend::unblock_user(user_id).await.map_err(|e| crate::errors::friendly(&e))?;
     }
-    CassetteBackend::list_blocked().await.map_err(|e| crate::errors::friendly(&e))
+    Backend::list_blocked().await.map_err(|e| crate::errors::friendly(&e))
 }
 
 // --- the account accessors --------------------------------------------------
 
 pub async fn login(username: String, password: String) -> Result<LoginResult, String> {
-    CassetteBackend::login(username, password).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::login(username, password).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn signup(username: String, password: String) -> Result<SignupResult, String> {
-    CassetteBackend::signup(username, password).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::signup(username, password).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn logout() -> Result<LogoutResult, String> {
-    CassetteBackend::logout().await.map_err(|e| crate::errors::friendly(&e))
+    Backend::logout().await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn logout_everywhere() -> Result<LogoutResult, String> {
-    CassetteBackend::logout_everywhere().await.map_err(|e| crate::errors::friendly(&e))
+    Backend::logout_everywhere().await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn change_password(current_password: String, new_password: String) -> Result<ChangePasswordResult, String> {
-    CassetteBackend::change_password(current_password, new_password).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::change_password(current_password, new_password).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn change_username(new_username: String) -> Result<ChangeUsernameResult, String> {
-    CassetteBackend::change_username(new_username).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::change_username(new_username).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn reset_password(token: String, new_password: String) -> Result<String, String> {
-    CassetteBackend::reset_password(token, new_password).await
+    Backend::reset_password(token, new_password).await
         .map(|r| r.username)
         .map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn set_avatar(avatar_url: Option<String>) -> Result<AvatarResult, String> {
-    CassetteBackend::set_avatar(avatar_url).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::set_avatar(avatar_url).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn get_user_profile(user_id: i64, server_id: Option<i64>) -> Result<UserProfile, String> {
-    CassetteBackend::get_user_profile(user_id, server_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::get_user_profile(user_id, server_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn set_profile(display_name: String, about: String) -> Result<ProfileFields, String> {
-    CassetteBackend::set_profile(display_name, about).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::set_profile(display_name, about).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn set_avatar_decoration(decoration: Option<String>) -> Result<Option<String>, String> {
-    CassetteBackend::set_avatar_decoration(decoration).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::set_avatar_decoration(decoration).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn set_profile_effect(effect: Option<String>) -> Result<Option<String>, String> {
-    CassetteBackend::set_profile_effect(effect).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::set_profile_effect(effect).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn notification_settings(server_id: Option<i64>) -> Result<Vec<NotificationSetting>, String> {
-    CassetteBackend::notification_settings(server_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::notification_settings(server_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn set_notification_setting(setting: NotificationSetting) -> Result<NotificationSetting, String> {
-    CassetteBackend::set_notification_setting(setting).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::set_notification_setting(setting).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn list_server_emoji(server_id: i64) -> Result<Vec<ServerEmoji>, String> {
-    CassetteBackend::list_server_emoji(server_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::list_server_emoji(server_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn upload_emoji(server_id: i64, name: String, data_url: String) -> Result<ServerEmoji, String> {
-    CassetteBackend::upload_emoji(server_id, name, data_url).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::upload_emoji(server_id, name, data_url).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn rename_emoji(emoji_id: i64, name: String) -> Result<ServerEmoji, String> {
-    CassetteBackend::rename_emoji(emoji_id, name).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::rename_emoji(emoji_id, name).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn delete_emoji(emoji_id: i64) -> Result<(), String> {
-    CassetteBackend::delete_emoji(emoji_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::delete_emoji(emoji_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn list_stickers(server_id: i64) -> Result<Vec<Sticker>, String> {
-    CassetteBackend::list_stickers(server_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::list_stickers(server_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn upload_sticker(
@@ -694,7 +712,7 @@ pub async fn upload_sticker(
     related_emoji: String,
     data_url: String,
 ) -> Result<Sticker, String> {
-    CassetteBackend::upload_sticker(server_id, name, description, related_emoji, data_url).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::upload_sticker(server_id, name, description, related_emoji, data_url).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn edit_sticker(
@@ -703,25 +721,25 @@ pub async fn edit_sticker(
     description: String,
     related_emoji: String,
 ) -> Result<Sticker, String> {
-    CassetteBackend::edit_sticker(sticker_id, name, description, related_emoji).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::edit_sticker(sticker_id, name, description, related_emoji).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn delete_sticker(sticker_id: i64) -> Result<(), String> {
-    CassetteBackend::delete_sticker(sticker_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::delete_sticker(sticker_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn gif_search(query: String, offset: u32) -> Result<GifPage, String> {
-    CassetteBackend::gif_search(query, offset).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::gif_search(query, offset).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn search_messages(server_id: i64, query: String, tz_offset_minutes: i64, offset: i64) -> Result<SearchResults, String> {
-    CassetteBackend::search_messages(server_id, query, tz_offset_minutes, offset).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::search_messages(server_id, query, tz_offset_minutes, offset).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 // --- members, roles and permissions -----------------------------------------
 
 pub async fn list_members(server_id: i64) -> Result<Vec<MemberInfo>, String> {
-    let members = CassetteBackend::list_members(server_id).await.map_err(|e| crate::errors::friendly(&e))?;
+    let members = Backend::list_members(server_id).await.map_err(|e| crate::errors::friendly(&e))?;
     // The roster is authoritative for avatars: register (or wipe) every row
     // so the member panels, message rows and DMs draw the real image.
     for m in members.iter() {
@@ -732,57 +750,57 @@ pub async fn list_members(server_id: i64) -> Result<Vec<MemberInfo>, String> {
 }
 
 pub async fn add_member(server_id: i64, user_id: i64) -> Result<MemberResult, String> {
-    CassetteBackend::add_member(server_id, user_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::add_member(server_id, user_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn remove_member(server_id: i64, user_id: i64) -> Result<MemberResult, String> {
-    CassetteBackend::remove_member(server_id, user_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::remove_member(server_id, user_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn ban_member(server_id: i64, user_id: i64, reason: Option<String>) -> Result<MemberResult, String> {
-    CassetteBackend::ban_member(server_id, user_id, reason).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::ban_member(server_id, user_id, reason).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn timeout_member(server_id: i64, user_id: i64, duration_secs: i64) -> Result<MemberResult, String> {
-    CassetteBackend::timeout_member(server_id, user_id, duration_secs).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::timeout_member(server_id, user_id, duration_secs).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn server_roles(server_id: i64) -> Result<RolesSnapshot, String> {
-    CassetteBackend::server_roles(server_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::server_roles(server_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn create_role(server_id: i64, name: String, color: String, mentionable: bool) -> Result<CustomRole, String> {
-    CassetteBackend::create_role(server_id, name, color, mentionable).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::create_role(server_id, name, color, mentionable).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn update_role(role_id: i64, name: String, color: String, mentionable: bool, permissions: Option<Permissions>) -> Result<CustomRole, String> {
-    CassetteBackend::update_role(role_id, name, color, mentionable, permissions).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::update_role(role_id, name, color, mentionable, permissions).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn move_role(role_id: i64, position: i64) -> Result<CustomRole, String> {
-    CassetteBackend::move_role(role_id, position).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::move_role(role_id, position).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn delete_role(role_id: i64) -> Result<(), String> {
-    CassetteBackend::delete_role(role_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::delete_role(role_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn assign_role(role_id: i64, user_id: i64, assigned: bool) -> Result<(), String> {
-    CassetteBackend::assign_role(role_id, user_id, assigned).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::assign_role(role_id, user_id, assigned).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn my_permissions(server_id: i64) -> Result<MyPermissions, String> {
-    CassetteBackend::my_permissions(server_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::my_permissions(server_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn channel_overwrites(channel_id: i64) -> Result<Vec<Overwrite>, String> {
-    CassetteBackend::channel_overwrites(channel_id).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::channel_overwrites(channel_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn set_channel_overwrite(channel_id: i64, target: Target, allow: Permissions, deny: Permissions) -> Result<Vec<Overwrite>, String> {
-    CassetteBackend::set_channel_overwrite(channel_id, target, allow, deny).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::set_channel_overwrite(channel_id, target, allow, deny).await.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn set_everyone_permissions(server_id: i64, permissions: Permissions) -> Result<Permissions, String> {
-    CassetteBackend::set_everyone_permissions(server_id, permissions).await.map_err(|e| crate::errors::friendly(&e))
+    Backend::set_everyone_permissions(server_id, permissions).await.map_err(|e| crate::errors::friendly(&e))
 }

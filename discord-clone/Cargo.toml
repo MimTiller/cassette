@@ -37,6 +37,10 @@ sidecar = ["dep:dev-server"]
 # `idealyst dev` pulls in through these features, instead of cargo resolving
 # them from the registry on every dev build.
 dev-session = ["idealyst/hot-reload", "idealyst/hydrate", "idealyst/robot", "idealyst/ui-overlay", "runtime-core/dev"]
+# `idea-chat`: build the second backend — IdeaChatBackend — instead of
+# CassetteBackend. Off by default; with it off the app is byte-for-byte
+# today's build.
+idea-chat = ["dep:chat-model", "dep:idea-state", "dep:serde_json", "dep:uuid", "dep:net"]
 
 [dependencies]
 # The platform surface, used by `src/main.rs` only. It carries whatever
@@ -116,6 +120,28 @@ storage = { version = "=3.0.0", registry = "idealyst", features = ["reactive"] }
 # and the httpOnly session cookie the `login` server fn sets carries the
 # session instead (the credentials README's BFF pattern).
 credentials = { version = "=1.5.3", registry = "idealyst" }
+
+# Only with the `idea-chat` feature: the vocabulary of the second backend.
+# The chat-model crate (from the idea-chat repo, pinned to the commit the
+# wire study documents) only needs serde, uuid and idea-state, so it stays
+# light; the chat-api crate it sits beside is built on idealyst server 3.0
+# and RWND never links it. serde_json/uuid are pulled as feature-gated
+# direct deps only because IdeaChatBackend's codec speaks JSON and Uuid
+# directly; the rest of the crate stays free of them. The pinned rev's repo
+# is a workspace whose members live in `crates/<name>` — cargo resolves
+# each member by name from the git URL, so no subdirectory key is needed.
+chat-model = { git = "https://github.com/IdealystIO/idea-chat", rev = "643790136ce86eeb8e38b12cf3909e22af1154d7", optional = true }
+# The reducer's frame enums (`Down`/`Up`/`Cursor`) that chat-model re-exports as
+# its `idea_state` dep — pulled at the SAME pinned rev, so it is the identical
+# crate instance chat-model already links (shared git cache; no new download).
+idea-state = { git = "https://github.com/IdealystIO/idea-chat", rev = "643790136ce86eeb8e38b12cf3909e22af1154d7", optional = true }
+serde_json = { version = "1", optional = true }
+uuid = { version = "1", features = ["serde"], optional = true }
+# The cross-platform HTTP/WebSocket SDK: IdeaChatBackend speaks the idea-chat
+# server's `/_srv/` routes and live socket itself (chat-api's transport is
+# `server` 3.0, so the framework's `#[server]` stubs cannot reach it). Same
+# pin as the `server` SDK's own `net` dep, so one crate instance.
+net = { version = "=1.7.4", registry = "idealyst", optional = true }
 
 # No backend deps: `register_scene_extensions` is generic over the scene
 # `Host` (this scaffold registers no third-party SDKs), so the app crate
