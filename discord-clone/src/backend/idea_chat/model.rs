@@ -108,9 +108,8 @@ pub struct SignedUp {
 /// Decode an idea-chat error body (`{"e":{"<kind>":{"message":…}}}`) into a
 /// `ServerError` the accessors can render. Unknown kinds become `failed`.
 pub(crate) fn decode_error(body: serde_json::Value) -> ServerError {
-    let Some(variants) = body.get("e");
-    let Some(object) = variants.as_object();
-    match object.iter().next() {
+    match body.get("e").and_then(|variants| variants.as_object()).and_then(|object| object.iter().next()) {
+        None => ServerError::failed("the server refused the request"),
         Some((kind, detail)) => {
             if kind == "incompatible_version" {
                 return ServerError::failed("the server speaks a different schema");
@@ -121,7 +120,6 @@ pub(crate) fn decode_error(body: serde_json::Value) -> ServerError {
             };
             ServerError::failed(message.to_string())
         }
-        None => ServerError::failed("the server refused the request"),
     }
 }
 

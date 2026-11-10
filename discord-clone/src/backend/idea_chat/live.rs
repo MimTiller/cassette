@@ -46,7 +46,7 @@ pub(crate) fn snapshot() -> State {
 /// Fold one event per the per-connection sequence. Apply advances and returns
 /// true; a Duplicate returns false; a Gap drops the state (untrustworthy) and
 /// returns false, so the client waits for the next snapshot.
-pub(crate) fn fold(mut event: Event, seq: u64) -> bool {
+pub(crate) fn fold(event: Event, seq: u64) -> bool {
     let mut cur = cursor().lock().unwrap_or_else(move |p| p.into_inner());
     match cur.step(seq) {
         Step::Apply => {
@@ -63,7 +63,7 @@ pub(crate) fn fold(mut event: Event, seq: u64) -> bool {
 }
 
 /// Replace the state wholesale and set the cursor to the snapshot's sequence.
-pub(crate) fn take_snapshot(mut world: State, seq: u64) {
+pub(crate) fn take_snapshot(world: State, seq: u64) {
     *state().lock().unwrap_or_else(move |p| p.into_inner()) = world;
     *cursor().lock().unwrap_or_else(move |p| p.into_inner()) = Cursor::at(seq);
 }
@@ -88,9 +88,9 @@ pub(crate) fn see(uuid: Id) -> i64 {
 /// The wire UUID behind an i64 the UI holds.
 pub(crate) fn wire_of(id: i64) -> Id {
     let raw = idmap::uuid_of(account(), id).unwrap_or_default();
-    match Id::from_str(raw) {
-        Some(parsed) => parsed,
-        None => Id::nil(),
+    match Id::parse_str(&raw) {
+        Ok(parsed) => parsed,
+        Err(_) => Id::nil(),
     }
 }
 
@@ -100,19 +100,19 @@ fn uuid_to_string(id: Id) -> String {
 
 pub(crate) fn presence_word(status: Presence) -> String {
     match status {
-        Presence::Online => "online",
-        Presence::Idle => "idle",
-        Presence::Busy => "dnd",
-        Presence::Offline => "offline",
+        Presence::Online => "online".to_string(),
+        Presence::Idle => "idle".to_string(),
+        Presence::Busy => "dnd".to_string(),
+        Presence::Offline => "offline".to_string(),
     }
 }
 
 /// chat-model has three ranks; RWND's "moderator" is chat-model's `Admin`.
 pub(crate) fn role_word(role: Role) -> String {
     match role {
-        Role::Owner => "owner",
-        Role::Admin => "moderator",
-        Role::Member => "member",
+        Role::Owner => "owner".to_string(),
+        Role::Admin => "moderator".to_string(),
+        Role::Member => "member".to_string(),
     }
 }
 
@@ -120,10 +120,10 @@ pub(crate) fn role_word(role: Role) -> String {
 /// speak. RWND names the four states exactly as chat-model orders them.
 pub(crate) fn relation_word(relation: Relation) -> String {
     match relation {
-        Relation::Friend => "friends",
-        Relation::Incoming => "incoming",
-        Relation::Outgoing => "outgoing",
-        Relation::Blocked => "blocked",
+        Relation::Friend => "friends".to_string(),
+        Relation::Incoming => "incoming".to_string(),
+        Relation::Outgoing => "outgoing".to_string(),
+        Relation::Blocked => "blocked".to_string(),
     }
 }
 
@@ -134,7 +134,7 @@ pub(crate) fn millis_at(at: Millis) -> i64 {
 // --- events → the UI's frame vocabulary ----------------------------------
 
 /// Translate one applied live event into the frames the UI listens to.
-pub(crate) fn frames_for(mut event: Event) -> Vec<WsServerMsg> {
+pub(crate) fn frames_for(event: Event) -> Vec<WsServerMsg> {
     let mut out: Vec<WsServerMsg> = Vec::new();
     match event {
         Event::UserUpdated { user } => out.push(profile_frame(user.clone())),
@@ -149,13 +149,13 @@ pub(crate) fn frames_for(mut event: Event) -> Vec<WsServerMsg> {
                 out.push(profile_frame(user.clone()));
             }
         },
-        Event::SpaceRenamed { space } => out.push(settings_changed(space)),
+        Event::SpaceRenamed { space, .. } => out.push(settings_changed(space)),
         Event::SpaceRemoved { space } => out.push(settings_changed(space)),
-        Event::MemberJoined { space, user } => out.push(member_changed(space, user, true)),
-        Event::MemberRole { space } => out.push(roles_changed(space)),
+        Event::MemberJoined { space, user, .. } => out.push(member_changed(space, user.id, true)),
+        Event::MemberRole { space, .. } => out.push(roles_changed(space)),
         Event::MemberLeft { space, user } => out.push(member_changed(space, user, false)),
-        Event::CategoriesChanged { space } => out.push(settings_changed(space)),
-        Event::SpaceOrder { spaces } => out.push(settings_changed(space_order_first(spaces))),
+        Event::CategoriesChanged { space, .. } => out.push(settings_changed(space)),
+        Event::SpaceOrder { spaces } => out.push(settings_changed(space_order_first(spaces.clone()))),
         Event::ChannelUpserted { channel } => out.push(channel_arrived(channel.clone())),
         Event::MessageCreated { message } => out.push(message_row(message.clone(), true)),
         Event::MessageEdited { message } => out.push(edited(message.clone())),
@@ -180,22 +180,24 @@ pub(crate) fn frames_for(mut event: Event) -> Vec<WsServerMsg> {
         Event::MutedChanged { target, muted } => {},
         Event::DevicesChanged { devices } => {},
         Event::Resync => drop_state(),
+        Event::ChannelRemoved { .. } => {},
     }
     out
 }
 
-fn space_order_first(mut spaces: Vec<Id>) -> Id {
+fn space_order_first(spaces: Vec<Id>) -> Id {
     match spaces.first() {
-        Some(id) => id,
+        Some(id) => *id,
         None => Id::nil(),
     }
 }
 
 pub(crate) fn profile_frame(user: User) -> WsServerMsg {
+    let display = display_of(user.clone());
     WsServerMsg::ProfileChanged {
         user_id: see(user.id),
         username: user.handle,
-        display_name: display_of(user),
+        display_name: display,
         avatar_decoration: None,
         seq: next_frame_seq(),
     }
@@ -235,7 +237,7 @@ pub(crate) fn typing(channel: Id, user: Id) -> WsServerMsg {
 pub(crate) fn friend(user: Id, relation: Option<Relation>) -> WsServerMsg {
     let action = match relation {
         Some(other) => relation_word(other),
-        None => "removed",
+        None => "removed".to_string(),
     };
     WsServerMsg::FriendChanged { friend_id: see(user), action, seq: next_frame_seq() }
 }
@@ -263,7 +265,7 @@ pub(crate) fn edited(message: Message) -> WsServerMsg {
         channel_id: see(message.channel),
         content: message.body,
         edited_at: millis_at(message.edited_at.unwrap_or(message.at)),
-        mentioned_user_ids: message.mentions.iter().map(move |u| see(u)).collect(),
+        mentioned_user_ids: message.mentions.iter().map(move |u| see(*u)).collect(),
         seq: next_frame_seq(),
     }
 }
@@ -287,20 +289,20 @@ pub(crate) fn message_row(message: Message, new: bool) -> WsServerMsg {
         None => message.author,
     };
     let author_username = match world.users.get(&message.author) {
-        Some(user) => user.handle,
+        Some(user) => user.handle.clone(),
         None => uuid_to_string(message.author),
     };
     let mut reactions: Vec<(String, u32, bool)> = Vec::new();
     for entry in message.reactions.iter() {
-        reactions.push((entry.emoji, entry.users.len() as u32, entry.users.iter().any(move |u| u == viewer)));
+        reactions.push((entry.emoji.clone(), entry.users.len() as u32, entry.users.iter().any(move |u| *u == viewer)));
     }
     let mut attachments: Vec<MessageAttachment> = Vec::new();
     for file in message.attachments.iter() {
         attachments.push(MessageAttachment {
             id: see(file.id),
-            filename: file.name,
-            mime: file.content_type,
-            url: file.url,
+            filename: file.name.clone(),
+            mime: file.content_type.clone(),
+            url: file.url.clone(),
             width: file.width,
             height: file.height,
         });
@@ -323,7 +325,7 @@ pub(crate) fn message_row(message: Message, new: bool) -> WsServerMsg {
             None => None,
         },
         new,
-        mentioned_user_ids: message.mentions.iter().map(move |u| see(u)).collect(),
+        mentioned_user_ids: message.mentions.iter().map(move |u| see(*u)).collect(),
         reply_to_message_id: match message.reply_to {
             Some(reply) => Some(see(reply.id)),
             None => None,
@@ -424,7 +426,7 @@ impl GatewayHandle {
 async fn client_send(channel_id: i64, content: String, reply_to_message_id: Option<i64>, attachments: Vec<AttachmentInput>, sticker_id: Option<i64>) -> Result<Message, ServerError> {
     let mut uploads: Vec<Id> = Vec::new();
     for input in attachments.iter() {
-        match upload_data_url(input.filename, input.data, model::Purpose::Message) {
+        match upload_data_url(input.filename.clone(), input.data.clone(), model::Purpose::Message).await {
             Err(e) => return Err(e),
             Ok(id) => uploads.push(id),
         }
@@ -434,14 +436,14 @@ async fn client_send(channel_id: i64, content: String, reply_to_message_id: Opti
     args.push(client::arg(content));
     args.push(match reply_to_message_id {
         Some(id) => client::arg(wire_of(id)),
-        None => Value::null,
+        None => Value::Null,
     });
     args.push(client::arg(uploads));
     // Stickers are RWND-only: a sticker send has no idea-chat counterpart and
     // the server refuses an empty body, so a sticker-only send fails there.
     match sticker_id {
         Some(_) => Err(model::not_supported()),
-        None => client::call_as::<Message>("send", args),
+        None => client::call_as::<Message>("send", args).await,
     }
 }
 
@@ -449,20 +451,20 @@ async fn client_edit(message_id: i64, content: String) -> Result<Message, Server
     let mut args = Vec::new();
     args.push(client::arg(wire_of(message_id)));
     args.push(client::arg(content));
-    client::call_as::<Message>("edit", args)
+    client::call_as::<Message>("edit", args).await
 }
 
 async fn client_delete(message_id: i64) -> Result<(), ServerError> {
     let mut args = Vec::new();
     args.push(client::arg(wire_of(message_id)));
-    match client::post("delete", args) {
+    match client::post("delete", args).await {
         Err(e) => Err(e),
         Ok(_) => Ok(()),
     }
 }
 
 async fn client_set_status(status: String) -> Result<Me, ServerError> {
-    let presence = match status {
+    let presence = match status.as_str() {
         "idle" => Presence::Idle,
         "away" => Presence::Idle,
         "dnd" => Presence::Busy,
@@ -472,7 +474,7 @@ async fn client_set_status(status: String) -> Result<Me, ServerError> {
     };
     let mut args = Vec::new();
     args.push(client::arg(Status { presence, text: None }));
-    client::call_as::<Me>("set_status", args)
+    client::call_as::<Me>("set_status", args).await
 }
 
 pub(crate) async fn history(channel_id: i64, before_id: Option<i64>) -> Result<Page, ServerError> {
@@ -483,7 +485,7 @@ pub(crate) async fn history(channel_id: i64, before_id: Option<i64>) -> Result<P
     let mut args = Vec::new();
     args.push(client::arg(wire_of(channel_id)));
     args.push(client::arg(window));
-    client::call_as::<Page>("history", args)
+    client::call_as::<Page>("history", args).await
 }
 
 pub(crate) fn reason(e: ServerError) -> String {
@@ -495,42 +497,42 @@ pub(crate) fn reason(e: ServerError) -> String {
 /// attachment form; on this server the bytes go through the presigned slot
 /// instead. Answers the upload id the `send` / `set_avatar` / `set_space_icon`
 /// calls take.
-pub(crate) async fn upload_data_url(mut name: String, data_url: String, purpose: model::Purpose) -> Result<Id, ServerError> {
+pub(crate) async fn upload_data_url(name: String, data_url: String, purpose: model::Purpose) -> Result<Id, ServerError> {
     if !data_url.starts_with("data:") {
         return Err(ServerError::failed("only inline image data uploads on this server"));
     }
     let Some(sep) = data_url.find(";base64,") else {
         return Err(ServerError::failed("the upload data is malformed"));
     };
-    let mime = data_url[5 .. sep];
-    let raw = data_url[sep + 8 ..];
+    let mime = &data_url[5 .. sep];
+    let raw = &data_url[sep + 8 ..];
     let bytes = match crate::profile_settings::b64_decode(raw) {
         Ok(bytes) => bytes,
         Err(why) => return Err(ServerError::Codec(why)),
     };
-    upload_bytes(name, bytes, mime.to_string(), purpose)
+    upload_bytes(name.to_string(), bytes, mime.to_string(), purpose).await
 }
 
-pub(crate) async fn upload_bytes(mut name: String, mut bytes: Vec<u8>, mut mime: String, purpose: model::Purpose) -> Result<Id, ServerError> {
+pub(crate) async fn upload_bytes(name: String, bytes: Vec<u8>, mime: String, purpose: model::Purpose) -> Result<Id, ServerError> {
     let mut args = Vec::new();
     args.push(client::arg(name));
     args.push(client::arg(bytes.len() as u64));
     args.push(client::arg(mime));
     args.push(client::arg(purpose));
-    let slot = match client::call_as::<model::Slot>("begin_upload", args) {
+    let slot = match client::call_as::<model::Slot>("begin_upload", args).await {
         Err(e) => return Err(e),
         Ok(slot) => slot,
     };
-    match client::put(slot.put_url, slot.content_type, bytes) {
+    match client::put(slot.put_url, slot.content_type, bytes).await {
         Err(e) => return Err(e),
         Ok(_) => {},
     }
     let upload_id = slot.id;
     let mut finish = Vec::new();
     finish.push(client::arg(upload_id));
-    finish.push(Value::null);
-    finish.push(Value::null);
-    match client::post("finish_upload", finish) {
+    finish.push(Value::Null);
+    finish.push(Value::Null);
+    match client::post("finish_upload", finish).await {
         Err(e) => Err(e),
         Ok(_) => Ok(upload_id),
     }
@@ -545,7 +547,7 @@ pub(crate) async fn upload_bytes(mut name: String, mut bytes: Vec<u8>, mut mime:
 /// `WsServerMsg` the Cassette socket carries. The session bearer/cookie
 /// authenticates `live_ticket` itself; the ticket rides the URL because a
 /// native WebSocket open carries no headers.
-pub(crate) fn connect(mut token: String) -> GatewayHandle {
+pub(crate) fn connect(token: String) -> GatewayHandle {
     let incoming: Signal<Option<WsServerMsg>> = signal(None);
     let status: Signal<SocketStatus> = signal(SocketStatus::Connecting);
     let sender: Signal<Option<SocketSender<Up>>> = signal(None);
@@ -553,7 +555,7 @@ pub(crate) fn connect(mut token: String) -> GatewayHandle {
     driver::spawn_detached(async move {
         let ticket = ticket().await;
         match ticket {
-            Err(why) => {
+            Err(_) => {
                 if alive.get() {
                     status.set(SocketStatus::Error);
                 }
@@ -561,7 +563,7 @@ pub(crate) fn connect(mut token: String) -> GatewayHandle {
             Ok(ticket) => {
                 let mut ticket_args = Vec::new();
                 ticket_args.push(client::arg(ticket));
-                let url = client::origin() + "/_srv/_ws/live?args=" + client::args_hex(to_string(ticket_args).unwrap_or_default());
+                let url = client::origin() + "/_srv/_ws/live?args=" + &client::args_hex(to_string(&ticket_args).unwrap_or_default());
                 match Socket::<Down, Up>::connect(&url).await {
                     Err(_) => {
                         if alive.get() {
@@ -593,7 +595,7 @@ pub(crate) fn connect(mut token: String) -> GatewayHandle {
                                         Down::Event { seq, event } => {
                                             if fold(event.clone(), seq) {
                                                 for frame in frames_for(event.clone()).iter() {
-                                                    incoming.set_always(Some(frame));
+                                                    incoming.set_always(Some(frame.clone()));
                                                 }
                                             }
                                         }
@@ -618,5 +620,5 @@ pub(crate) fn connect(mut token: String) -> GatewayHandle {
 /// one-connection ticket good for a minute, validated server-side before any
 /// frame is exchanged.
 async fn ticket() -> Result<String, ServerError> {
-    client::call_as::<String>("live_ticket", Vec::new())
+    client::call_as::<String>("live_ticket", Vec::new()).await
 }

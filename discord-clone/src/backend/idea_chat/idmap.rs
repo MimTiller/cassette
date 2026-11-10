@@ -47,7 +47,7 @@ fn store() -> std::sync::Arc<dyn storage::Storage> {
 }
 
 fn key(account: String) -> String {
-    KEY_PREFIX + account
+    KEY_PREFIX.to_owned() + &account
 }
 
 /// One account's table: the assigned ids in order, and both directions.
@@ -69,19 +69,22 @@ impl Table {
     }
 
     /// Assign `uuid` the next number, or answer the number it already holds.
-    fn number(mut self: Table, uuid: String) -> i64 {
+    /// Persists the table as it stands, so a reload's `load` re-seeds with
+    /// exactly these ids.
+    fn number(mut self: Table, account: String, uuid: String) -> i64 {
         if let Some(id) = self.uuid_to_i.get(&uuid) {
-            return id;
+            return *id;
         }
         let id = FIRST_ID + self.order.len() as i64;
-        self.order.push(uuid);
-        self.uuid_to_i.insert(uuid, id);
-        self.i_to_uuid.insert(id, uuid);
+        self.order.push(uuid.to_string());
+        self.uuid_to_i.insert(uuid.to_string(), id);
+        self.i_to_uuid.insert(id, uuid.to_string());
+        persist(account, self);
         id
     }
 
     /// The persisted view of this table.
-    fn persisted(mut self: Table) -> Persisted {
+    fn persisted(self: Table) -> Persisted {
         Persisted { uuids: self.order.clone() }
     }
 }
@@ -93,7 +96,7 @@ fn persist(account: String, table: Table) {
         return;
     }
     let payload = table.persisted();
-    let encoded = json_to_string(payload).unwrap_or_default();
+    let encoded = json_to_string(&payload).unwrap_or_default();
     let _ = store().set_now(&key(account), &encoded);
 }
 
@@ -107,16 +110,16 @@ fn load(account: String) -> Table {
 /// A table rebuilt from a persisted list: position plus `FIRST_ID` is the
 /// i64 a UUID first got. An absent or unreadable value starts a fresh table.
 fn persisted_table(held: String) -> Table {
-    let uuids = match json_from_str::<Persisted>(held) {
+    let uuids = match json_from_str::<Persisted>(&held) {
         Ok(parsed) => parsed.uuids,
         Err(_) => Vec::new(),
     };
-    let table = Table.empty();
+    let mut table = Table::empty();
     for (index, uuid) in uuids.iter().enumerate() {
-        table.order.push(uuid);
+        table.order.push(uuid.to_string());
         let id = FIRST_ID + index as i64;
-        table.uuid_to_i.insert(uuid, id);
-        table.i_to_uuid.insert(id, uuid);
+        table.uuid_to_i.insert(uuid.to_string(), id);
+        table.i_to_uuid.insert(id, uuid.to_string());
     }
     table
 }
@@ -124,21 +127,18 @@ fn persisted_table(held: String) -> Table {
 /// The i64 for `uuid` under `account`: first-seen-first-numbered, and a UUID
 /// this table has never seen is assigned and persisted here.
 pub(crate) fn see(account: String, uuid: String) -> i64 {
-    let table = load(account);
-    let id = table.number(uuid);
-    persist(account, table);
-    id
+    load(account.to_string()).number(account, uuid.to_string())
 }
 
 /// The UUID behind an i64 under `account`, or `None`. The reverse map the
 /// event-application path needs.
 pub(crate) fn uuid_of(account: String, id: i64) -> Option<String> {
-    load(account).i_to_uuid.get(id).clone()
+    load(account).i_to_uuid.get(&id).cloned()
 }
 
 /// The i64 behind a wire UUID under `account`, if this table has seen it.
 pub(crate) fn id_of(account: String, uuid: String) -> Option<i64> {
-    load(account).uuid_to_i.get(&uuid).clone()
+    load(account).uuid_to_i.get(&uuid).copied()
 }
 
 /// What `account`'s table currently holds: the UUIDs in assigned order.

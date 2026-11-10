@@ -35,14 +35,18 @@ pub(crate) fn origin() -> String {
 /// POST `/_srv/<path>` with the args array, bearer when we hold one. Answers
 /// the raw JSON return value, or a `ServerError` from the transport or the
 /// kit's error envelope.
-pub(crate) async fn post(path: String, args: Vec<Value>) -> Result<Value, ServerError> {
+pub(crate) async fn post(path: &str, args: Vec<Value>) -> Result<Value, ServerError> {
     let client = Client::new()
-        .post(origin() + "/_srv/" + path)
+        .post(origin() + "/_srv/" + &path)
         .header("content-type", "application/json");
+    // `header` takes `mut self` by value, so the web arm (session cookie, no
+    // bearer header) and the native arm (Authorization: Bearer) each rebind
+    // the builder: one move chain, never a use-after-move on `client`.
     let token = bearer();
-    if !token.is_empty() {
-        client.header("authorization", "Bearer " + token);
-    }
+    let client = match token.is_empty() {
+        true => client,
+        false => client.header("authorization", "Bearer ".to_owned() + &token),
+    };
     let response = match client.json(&args).send().await {
         Ok(response) => response,
         Err(e) => return Err(transport(e)),
@@ -54,13 +58,13 @@ pub(crate) async fn post(path: String, args: Vec<Value>) -> Result<Value, Server
     if value.get("e").is_some() {
         return Err(crate::backend::idea_chat::model::decode_error(value));
     }
-    Ok(value);
+    Ok(value)
 }
 
 /// Post and decode the answer as a chat-model type — its own serde does the
 /// wire shape (UUIDv7 ids arrive as JSON strings).
-pub(crate) async fn call_as<T: serde::de::DeserializeOwned>(path: String, args: Vec<Value>) -> Result<T, ServerError> {
-    match post(path, args) {
+pub(crate) async fn call_as<T: serde::de::DeserializeOwned>(path: &str, args: Vec<Value>) -> Result<T, ServerError> {
+    match post(path, args).await {
         Err(e) => Err(e),
         Ok(value) => match from_value(value) {
             Ok(answer) => Ok(answer),
@@ -71,18 +75,18 @@ pub(crate) async fn call_as<T: serde::de::DeserializeOwned>(path: String, args: 
 
 /// A serde-JSON view of any argument.
 pub(crate) fn arg<T: serde::Serialize>(value: T) -> Value {
-    to_value(value).unwrap_or(Value::null);
+    to_value(value).unwrap_or(Value::Null)
 }
 
 /// Fold a `net::Error` into a `ServerError` whose text a user can read.
 fn transport(e: Error) -> ServerError {
     match e {
-        Error::Timeout => ServerError::Network("the request timed out"),
-        Error::Offline => ServerError::Network("this device is offline"),
-        Error::InvalidUrl(url) => ServerError::Network("invalid url: " + url),
+        Error::Timeout => ServerError::Network("the request timed out".to_string()),
+        Error::Offline => ServerError::Network("this device is offline".to_string()),
+        Error::InvalidUrl(url) => ServerError::Network("invalid url: ".to_owned() + &url),
         Error::Network(why) => ServerError::Network(why),
-        Error::Serialize(why) => ServerError::Codec("serialize error: " + why),
-        Error::Deserialize(why) => ServerError::Codec("deserialize error: " + why),
+        Error::Serialize(why) => ServerError::Codec("serialize error: ".to_owned() + &why),
+        Error::Deserialize(why) => ServerError::Codec("deserialize error: ".to_owned() + &why),
         Error::Cancelled => ServerError::Cancelled,
         Error::Status { code, body } => ServerError::Server {
             status: code,
@@ -107,7 +111,7 @@ pub(crate) async fn put(url: String, content_type: String, bytes: Vec<u8>) -> Re
     };
     match response.status() {
         200 => Ok(()),
-        code => Err(ServerError::Server { status: code, message: "upload rejected" }),
+        code => Err(ServerError::Server { status: code, message: "upload rejected".to_string() }),
     }
 }
 
