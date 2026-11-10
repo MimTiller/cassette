@@ -19,14 +19,15 @@
 //! The only client-side gate is a non-empty name; all real rejection and its
 //! wording comes from the backend.
 //!
-//! Idioms: the states are one `switch` keyed on `error`; each arm builds its
+//! Idioms: the states are a `match` on `error` inside `ui!` (the macro lowers
+//! it to the reactive switch); each arm builds its
 //! own `Element` (`Element` is not `Copy`). `Signal` is `Copy`, so every
 //! `move` closure captures a copy and stays `Fn`. The Rename button carries an
 //! `.on_touch` chain built as a `let` binding (the `close_btn` idiom) so the
 //! method chain lives outside the `ui!` child position.
 use crate::theme;
 use runtime_core::{
-    component, switch, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
+    component, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
     Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
@@ -161,33 +162,32 @@ pub fn RenameChannelModal(
         );
     };
 
-    // --- Body: one switch keyed on `error` -----------------------------------
-    // Error > input. Each arm builds its own `Element`.
-    //
-    // The Rename button is built *inside* the render closure (not a pre-built
-    // `let` splatted in): `Element` is not `Copy`, and a pre-built one moved
-    // into an `Fn` render closure is gone after the first rebuild (E0507). The
-    // `on_rename` closure captures only `Copy` signals, so it is `Fn` + `Copy`.
-    let body = switch(
-        move || error.get().clone(),
-        move |err: &String| {
-            // Static label computed at build time (see `join_modal.rs`); the
-            // button is rebuilt per arm, so the label is pre-computed rather
-            // than an inline `if/else` (which `ui!` would parse as a structural
-            // child).
-            let rename_label = if b.get() { "Renaming…".to_string() } else { "Rename".to_string() };
-            let rename_btn = ui! {
-                view(style = rename_btn_style.clone(), test_id = "rename-channel-rename") {
-                    text(style = btn_label_style.clone()) { rename_label }
-                }
-                .on_touch(move |ev| {
-                    if ev.phase == TouchPhase::Ended {
-                        on_rename();
+    // --- Body: a match keyed on `error` --------------------------------------
+    // Error > input. `ui!` lowers the `match` to the reactive switch, so the
+    // key still re-runs the arm whenever `error` changes. Each arm builds its
+    // own `Element`, including the Rename button (Elements aren't `Copy`, so
+    // a pre-built one moved into an `Fn` render closure is gone after the
+    // first rebuild, E0507). The `on_rename` closure captures only `Copy`
+    // signals, so it is `Fn` + `Copy`.
+    let body = ui! {
+        match error.get().clone() {
+            err if !err.is_empty() => {{
+                // Static label computed at build time (see `join_modal.rs`);
+                // the button is rebuilt per arm, so the label is pre-computed
+                // rather than an inline `if/else` (which `ui!` would parse as
+                // a structural child).
+                let rename_label = if b.get() { "Renaming…".to_string() } else { "Rename".to_string() };
+                let rename_btn = ui! {
+                    view(style = rename_btn_style.clone(), test_id = "rename-channel-rename") {
+                        text(style = btn_label_style.clone()) { rename_label }
                     }
-                    TouchResponse::CONSUMED
-                })
-            };
-            if !err.is_empty() {
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            on_rename();
+                        }
+                        TouchResponse::CONSUMED
+                    })
+                };
                 let close_c = ui! { crate::controls::modal_close_button(move || close.set(false)) };
                 ui! {
                     view(style = card_style.clone()) {
@@ -209,7 +209,20 @@ pub fn RenameChannelModal(
                         { close_c }
                     }
                 }
-            } else {
+            }},
+            _ => {{
+                let rename_label = if b.get() { "Renaming…".to_string() } else { "Rename".to_string() };
+                let rename_btn = ui! {
+                    view(style = rename_btn_style.clone(), test_id = "rename-channel-rename") {
+                        text(style = btn_label_style.clone()) { rename_label }
+                    }
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            on_rename();
+                        }
+                        TouchResponse::CONSUMED
+                    })
+                };
                 let close_c = ui! { crate::controls::modal_close_button(move || close.set(false)) };
                 ui! {
                     view(style = card_style.clone()) {
@@ -227,9 +240,9 @@ pub fn RenameChannelModal(
                         { close_c }
                     }
                 }
-            }
-        },
-    );
+            }},
+        }
+    };
 
     // --- Full-screen backdrop + centered card --------------------------------
     // The card wrapper consumes its own touch so a tap on the card does NOT

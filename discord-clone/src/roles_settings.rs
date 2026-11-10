@@ -11,7 +11,7 @@ use discord_server::permissions::Rank;
 use crate::backend::CustomRole;
 use crate::backend::Permissions;
 use runtime_core::{
-    signal, switch, ui, AlignItems, Element, FlexDirection, FlexWrap, FontWeight, JustifyContent,
+    signal, ui, AlignItems, Element, FlexDirection, FlexWrap, FontWeight, JustifyContent,
     Signal, StyleRules, Tokenized, TouchPhase, TouchResponse,
 };
 
@@ -415,9 +415,8 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
     reload(sid, roles, everyone, alive.clone());
 
     let cx = RolesCx { sid, manage, roles, everyone, selected, draft, error, alive: alive.clone() };
-    let list = switch(
-        move || (roles.get(), everyone.get(), selected.get()),
-        move |(list, everyone_perms, sel): &(Vec<CustomRole>, Permissions, Option<Selected>)| {
+    let render_list =
+        move |(list, everyone_perms, sel): &(Vec<CustomRole>, Permissions, Option<Selected>)| -> Element {
             let (everyone_perms, sel) = (*everyone_perms, *sel);
             let cx = cx.clone();
             ui! {
@@ -428,14 +427,17 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                     { everyone_row(&cx, sel, everyone_perms) }
                 }
             }
-        },
-    );
+        };
+    let list = ui! {
+        match (roles.get(), everyone.get(), selected.get()) {
+            key => {{ (render_list)(&key) }},
+        }
+    };
 
     let al_editor = alive.clone();
     // The selected entry's permissions: one switch per flag, then Save.
-    let editor = switch(
-        move || (selected.get(), draft.get(), roles.get()),
-        move |(sel, perms, list): &(Option<Selected>, Permissions, Vec<CustomRole>)| {
+    let render_editor =
+        move |(sel, perms, list): &(Option<Selected>, Permissions, Vec<CustomRole>)| -> Element {
             let Some(sel) = *sel else {
                 return ui! { view {} };
             };
@@ -527,8 +529,12 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
                     }
                 }
             }
-        },
-    );
+        };
+    let editor = ui! {
+        match (selected.get(), draft.get(), roles.get()) {
+            key => {{ (render_editor)(&key) }},
+        }
+    };
 
     let create: Element = if manage {
         let al_create = alive.clone();

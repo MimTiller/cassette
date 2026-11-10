@@ -15,15 +15,16 @@
 //! (`app_shell`), which also resets them when the modal is opened so a
 //! re-open always starts fresh.
 //!
-//! Idioms: the three states are a `switch` keyed on `(created, created_err)`
-//! (the `switch(key, render)` pattern used throughout `app.rs`); each arm
+//! Idioms: the three states are a `match` on `(created.get()…, created_err.get())`
+//! inside `ui!` (the macro lowers it to the reactive `switch` throughout
+//! `app.rs`); each arm
 //! builds its own `Element` (Elements aren't `Copy`, so a pre-built one
-//! would be moved on the first rebuild). `Signal` is `Copy`, so every `move`
-//! closure captures a copy and stays `Fn`.
+//! would be moved on the first rebuild). `Signal` is `Copy`, so every arm
+//! block captures copies and stays fresh per rebuild.
 
 use crate::theme;
 use runtime_core::{
-    component, switch, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
+    component, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
     Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
@@ -149,31 +150,32 @@ pub fn InviteModal(
         }
     };
 
-    // --- Body: a switch keyed on (created, created_err) ---------------------
-    // Each arm builds its own `Element` (Elements aren't `Copy`). The create
-    // arm (created == None) shows the expiry selector + Create button; the
-    // code arm (created == Some) shows the `InviteLinkDisplay`; the error arm
-    // shows the backend's message.
-    let body = switch(
-        move || (created.get().map(|i| i.code.clone()), created_err.get().clone()),
-        move |(created, err): &(Option<String>, String)| {
-            if created.is_some() {
-                // Code arm: the real code from the backend.
-                let code = created.as_ref().unwrap().clone();
-                let wrap = StyleRules {
-                    padding_top: Some(px(16.0)),
-                    padding_bottom: Some(px(16.0)),
-                    padding_left: Some(px(16.0)),
-                    padding_right: Some(px(16.0)),
-                    ..Default::default()
-                };
+    // --- Body: a match keyed on (created, created_err) ----------------------
+    // `ui!` lowers the `match` to the reactive switch, so the key still
+    // re-runs the arm whenever `created` or `created_err` changes. Each arm
+    // builds its own `Element` (Elements aren't `Copy`, so a pre-built one
+    // would be moved on the first rebuild). The code arm matches `Some(code)`
+    // directly; the error arm is `(None, err)` guarded on a non-empty message,
+    // and the create arm is the remaining `(None, _)`.
+    let body = ui! {
+        match (created.get().map(|i| i.code.clone()), created_err.get().clone()) {
+            // Code arm: the real code from the backend.
+            (Some(code), _) => {{
+                let code = code.clone();
                 ui! {
-                    view(style = wrap) {
+                    view(style = StyleRules {
+                        padding_top: Some(px(16.0)),
+                        padding_bottom: Some(px(16.0)),
+                        padding_left: Some(px(16.0)),
+                        padding_right: Some(px(16.0)),
+                        ..Default::default()
+                    }) {
                         InviteLinkDisplay(code = code)
                     }
                 }
-            } else if !err.is_empty() {
-                // Error arm.
+            }},
+            // Error arm: the backend's rejection message.
+            (None, err) if !err.is_empty() => {{
                 ui! {
                     view(style = StyleRules {
                         padding_top: Some(px(16.0)),
@@ -185,12 +187,12 @@ pub fn InviteModal(
                         text(style = err_style.clone()) { err.clone() }
                     }
                 }
-            } else {
+            }},
+            (None, _) => {{
                 // Create arm: expiry selector; the Create button itself lives
                 // on the footer strip below (built fresh here). `on_create` is
                 // `Copy` (its captures are all `Copy` signals), so the arm
-                // closure captures copies and stays `Fn`.
-                let on_create = on_create;
+                // block can hand it to the button handler.
                 let expiry_sel = ui! {
                     InviteExpirySelector(value = expiry)
                 };
@@ -211,9 +213,9 @@ pub fn InviteModal(
                         }
                     }
                 }
-            }
-        },
-    );
+            }},
+        }
+    };
 
     // --- Card over a dim scrim (the shared modal shell) ----------------------
     // When `open` is false the scrim collapses to zero size; when true it

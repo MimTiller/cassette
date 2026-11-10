@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 use icons_lucide::{CROWN, LOG_OUT, X};
 use runtime_core::{
-    icon, signal, switch, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent, Overflow, Position,
+    icon, signal, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent, Overflow, Position,
     Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
@@ -183,9 +183,8 @@ pub(crate) fn picker_dialog(
     let name = signal(String::new());
     let error = signal(String::new());
     let busy = signal(false);
-    switch(
-        move || (picker.get(), friends.get(), selected.get(), error.get(), busy.get()),
-        move |(mode, friend_list, chosen, err, working): &(Option<Picker>, Vec<(i64, String)>, Vec<i64>, String, bool)| {
+    let render =
+        move |(mode, friend_list, chosen, err, working): &(Option<Picker>, Vec<(i64, String)>, Vec<i64>, String, bool)| -> Element {
             let Some(mode) = *mode else {
                 return ui! { view(style = StyleRules { width: Some(px(0.0)), height: Some(px(0.0)), ..Default::default() }) {} };
             };
@@ -340,8 +339,13 @@ pub(crate) fn picker_dialog(
                     }
                 }
             }
-        },
-    )
+        };
+
+    ui! {
+        match (picker.get(), friends.get(), selected.get(), error.get(), busy.get()) {
+            key => {{ (render)(&key) }},
+        }
+    }
 }
 
 /// One row in the members panel: avatar chip, name, owner crown, and a

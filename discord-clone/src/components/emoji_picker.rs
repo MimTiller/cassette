@@ -40,7 +40,7 @@ use crate::emoji_data;
 use crate::style_helpers::{col, px, rounded};
 use icons_lucide::SEARCH;
 use runtime_core::{
-    component, icon, memo, signal, switch, ui, AlignItems, Element, FlexDirection, FlexWrap,
+    component, icon, memo, signal, ui, AlignItems, Element, FlexDirection, FlexWrap,
     JustifyContent, Overflow, Position, Ref, ScrollViewHandle, Signal,
     StyleRules, TouchPhase, TouchResponse, Tokenized,
 };
@@ -416,44 +416,43 @@ pub fn EmojiPicker(on_pick: Option<Rc<dyn Fn(String)>>) -> Element {
     };
 
     // --- hover footer preview: big glyph + `:name:` of the hovered emoji ---
-    let footer = switch(
-        move || hovered.get(),
-        move |h: &Option<String>| {
+    let footer = ui! {
+        match hovered.get() {
             // Both states are the same fixed box (height, no shrink, the same
             // top border) so hovering never resizes the rail + grid above.
-            let Some(g) = h else {
-                return ui! {
-                    view(style = StyleRules {
-                        height: Some(px(52.0)),
-                        flex_shrink: Some(Tokenized::Literal(0.0)),
-                        border_top_width: Some(Tokenized::Literal(1.0)),
-                        border_top_color: Some(col(theme::BG_TERTIARY)),
-                        ..Default::default()
-                    }) {}
-                };
-            };
-            let em = emoji_data::find(g);
-            let big = g.clone();
-            let name = em.map(|e| format!(":{}:", e.name)).unwrap_or_else(|| g.clone());
-            ui! {
+            None => {{ ui! {
                 view(style = StyleRules {
-                    flex_direction: Some(FlexDirection::Row),
-                    align_items: Some(AlignItems::Center),
                     height: Some(px(52.0)),
                     flex_shrink: Some(Tokenized::Literal(0.0)),
-                    padding_left: Some(px(16.0)),
-                    padding_right: Some(px(16.0)),
-                    gap: Some(px(10.0)),
                     border_top_width: Some(Tokenized::Literal(1.0)),
                     border_top_color: Some(col(theme::BG_TERTIARY)),
                     ..Default::default()
-                }) {
-                    text(style = StyleRules { font_size: Some(px(28.0)), ..Default::default() }) { big }
-                    text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { name }
+                }) {}
+            } }},
+            Some(g) => {{
+                let em = emoji_data::find(g);
+                let big = g.clone();
+                let name = em.map(|e| format!(":{}:", e.name)).unwrap_or_else(|| g.clone());
+                ui! {
+                    view(style = StyleRules {
+                        flex_direction: Some(FlexDirection::Row),
+                        align_items: Some(AlignItems::Center),
+                        height: Some(px(52.0)),
+                        flex_shrink: Some(Tokenized::Literal(0.0)),
+                        padding_left: Some(px(16.0)),
+                        padding_right: Some(px(16.0)),
+                        gap: Some(px(10.0)),
+                        border_top_width: Some(Tokenized::Literal(1.0)),
+                        border_top_color: Some(col(theme::BG_TERTIARY)),
+                        ..Default::default()
+                    }) {
+                        text(style = StyleRules { font_size: Some(px(28.0)), ..Default::default() }) { big }
+                        text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { name }
+                    }
                 }
-            }
-        },
-    );
+            }},
+        }
+    };
 
     // --- the card: search field / rail + scrollable grid / hover footer ---
     ui! {

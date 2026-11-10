@@ -17,7 +17,7 @@ use discord_server::gifs::{Gif, GifPage};
 use icons_lucide::SEARCH;
 use crate::composer_icons::gif_url;
 use runtime_core::{
-    after_ms_detached, component, icon, memo, signal, switch, ui, AlignItems, Element,
+    after_ms_detached, component, icon, memo, signal, ui, AlignItems, Element,
     FlexDirection, JustifyContent, ObjectFit, Overflow, Signal, StyleRules,
     TouchPhase, TouchResponse, Tokenized,
 };
@@ -215,33 +215,35 @@ pub fn GifPicker(on_pick: Option<Rc<dyn Fn(Gif)>>) -> Element {
         gap: Some(px(GAP)),
         ..Default::default()
     };
-    let more = switch(
-        move || results.get().next,
-        move |next: &Option<u32>| match *next {
-            Some(next) => ui! {
-                view(style = StyleRules {
-                    height: Some(px(36.0)),
-                    margin_top: Some(px(GAP)),
-                    align_items: Some(AlignItems::Center),
-                    justify_content: Some(JustifyContent::Center),
-                    background: Some(col(theme::BG_PRIMARY)),
-                    ..rounded(6.0)
-                }) {
-                    text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { "Load more".to_string() }
-                }
-                .on_touch({
-                    let alive = alive.clone();
-                    move |ev| {
-                        if ev.phase == TouchPhase::Ended {
-                            fetch(&alive, query.get().trim().to_string(), next, results, gen);
-                        }
-                        TouchResponse::CONSUMED
+    let more = ui! {
+        match results.get().next {
+            Some(next) => {{
+                let next = *next;
+                ui! {
+                    view(style = StyleRules {
+                        height: Some(px(36.0)),
+                        margin_top: Some(px(GAP)),
+                        align_items: Some(AlignItems::Center),
+                        justify_content: Some(JustifyContent::Center),
+                        background: Some(col(theme::BG_PRIMARY)),
+                        ..rounded(6.0)
+                    }) {
+                        text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_STRONG)), ..Default::default() }) { "Load more".to_string() }
                     }
-                })
-            },
-            None => ui! { view {} },
-        },
-    );
+                    .on_touch({
+                        let alive = alive.clone();
+                        move |ev| {
+                            if ev.phase == TouchPhase::Ended {
+                                fetch(&alive, query.get().trim().to_string(), next, results, gen);
+                            }
+                            TouchResponse::CONSUMED
+                        }
+                    })
+                }
+            }},
+            None => { ui! { view {} } },
+        }
+    };
     let status = memo(move || results.get().status);
     let grid = ui! {
         view(style = StyleRules {

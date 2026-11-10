@@ -35,7 +35,7 @@ use std::rc::Rc;
 use runtime_core::{
     AlignItems, Element, FlexDirection, FontWeight, JustifyContent, KeyEvent,
     KeyOutcome, Overflow, Position, Signal, StyleRules, Tokenized,
-    TouchEvent, TouchPhase, TouchResponse, signal, switch, ui,
+    TouchEvent, TouchPhase, TouchResponse, signal, ui,
 };
 
 use crate::app::{format_when, message_row, same_group};
@@ -204,9 +204,8 @@ fn live_dm_find_row(
         font_size: Some(px(13.0)),
         ..crate::style_helpers::text_field_style()
     };
-    let results = switch(
-        move || query.get(),
-        move |q: &String| {
+    let render =
+        move |q: &String| -> Element {
             if q.trim().is_empty() {
                 return ui! { view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {} };
             }
@@ -236,8 +235,13 @@ fn live_dm_find_row(
                     }
                 }
             }
-        },
-    );
+        };
+
+    let results = ui! {
+        match query.get() {
+            key => {{ (render)(&key) }},
+        }
+    };
     ui! {
         view(style = StyleRules {
             flex_direction: Some(FlexDirection::Column),
@@ -501,11 +505,10 @@ fn live_dm_list(
         ..section_label()
     };
 
-    let list = switch(
-        move || (live_dms.get(), presence_rev.get()),
-        move |key: &(Vec<Dm>, u32)| {
+    let render =
+        move |key: &(Vec<Dm>, u32)| -> Element {
             let (dms, _rev) = key;
-            // `switch`'s render is `Fn` (called on every key change) — clone
+            // The render closure is `Fn` (called on every key change) — clone
             // the captured styles so the closure borrows them rather than
             // moving them out (the whiteboard idiom, cf. `app.rs`'s sidebar).
             let column_style = column_style.clone();
@@ -583,8 +586,13 @@ fn live_dm_list(
                     }
                 }
             }
-        },
-    );
+        };
+
+    let list = ui! {
+        match (live_dms.get(), presence_rev.get()) {
+            key => {{ (render)(&key) }},
+        }
+    };
     list
 }
 
@@ -671,13 +679,10 @@ fn live_dm_conversation(
     // `DmMessage` frame) — the same value-dedup `switch` key trick the live
     // channel list in `app.rs` uses. The whole pane (header + rows + composer)
     // is built inside this render, since the header name depends on `active`.
-    let body = switch(
-        move || {
-            let blocked_names: Vec<String> = blocked.get().into_iter().map(|b| b.username).collect();
-            (active.get(), rev.get(), live_dms.get(), members_open.get(), renaming.get(), blocked_names)
-        },
-        move |(_cid, _r, _dms, _members, _renaming, blocked_names): &(Option<i64>, u32, Vec<Dm>, bool, bool, Vec<String>)| {
-            // `switch`'s render is `Fn` (re-called on every key change) — clone
+    let render =
+        move |(_cid, _r, _dms, _members, _renaming, blocked_names):
+            &(Option<i64>, u32, Vec<Dm>, bool, bool, Vec<String>)| -> Element {
+            // The render closure is `Fn` (re-called on every key change) — clone
             // the captured styles so we borrow them rather than move them out.
             let pane_style = pane_style.clone();
             let composer_style = composer_style.clone();
@@ -736,14 +741,8 @@ fn live_dm_conversation(
             // float anchors to the composer strip (position: Relative on
             // `composer_style`) and floats above it, as in the channel
             // composer.
-            let gif_switch = switch(
-                move || gif_open.get(),
-                move |open: &bool| {
-                    if !*open {
-                        return ui! {
-                            view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
-                        };
-                    }
+            let gif_switch = ui! {
+                if gif_open.get() {{
                     let pick_cb: Rc<dyn Fn(discord_server::gifs::Gif)> =
                         Rc::new(move |gif: discord_server::gifs::Gif| {
                             gif_open.set(false);
@@ -770,18 +769,12 @@ fn live_dm_conversation(
                             GifPicker(on_pick = Some(pick_cb))
                         }
                     }
-                },
-            );
+                }}
+            };
             // Sticker picker float, the GIF float's twin. Picking sends the
             // sticker as its own DM and closes the picker.
-            let sticker_switch = switch(
-                move || sticker_open.get(),
-                move |open: &bool| {
-                    if !*open {
-                        return ui! {
-                            view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
-                        };
-                    }
+            let sticker_switch = ui! {
+                if sticker_open.get() {{
                     let pick_cb: Rc<dyn Fn(crate::backend::Sticker)> = Rc::new(move |s: crate::backend::Sticker| {
                         sticker_open.set(false);
                         let Some(cid) = active.get() else { return };
@@ -802,8 +795,8 @@ fn live_dm_conversation(
                             StickerPicker(on_pick = Some(pick_cb))
                         }
                     }
-                },
-            );
+                }}
+            };
             let composer_el = ui! {
                 view(style = composer_style) {
                     text_input(value = text, on_change = on_change, placeholder = "Message", style = input_style, test_id = "live-dm-composer").on_key_down(on_enter)
@@ -1101,8 +1094,14 @@ fn live_dm_conversation(
                     composer_el
                 }
             })
-        },
-    );
+        };
+
+    let body = ui! {
+        match (active.get(), rev.get(), live_dms.get(), members_open.get(), renaming.get(),
+               blocked.get().into_iter().map(|b| b.username).collect()) {
+            key => {{ (render)(&key) }},
+        }
+    };
 
     body
 }
@@ -1130,9 +1129,8 @@ pub fn dm_incoming_effect(
     let dm_buf = msgs.clone();
     let dm_rev = rev.clone();
     let dm_active = active.clone();
-    switch(
-        move || frame_seq.get(),
-        move |frame: &Option<discord_server::server_settings::WsServerMsg>| {
+    let render =
+        move |frame: &Option<discord_server::server_settings::WsServerMsg>| -> Element {
             if let Some(discord_server::server_settings::WsServerMsg::DmChanged { .. }) = frame {
                 crate::group_dm::refresh(live_dms, dm_active, dm_buf.clone(), dm_rev);
             }
@@ -1210,8 +1208,13 @@ pub fn dm_incoming_effect(
                     ..Default::default()
                 }) {}
             }
-        },
-    )
+        };
+
+    ui! {
+        match frame_seq.get() {
+            key => {{ (render)(&key) }},
+        }
+    }
 }
 
 // --- full-screen overlay -----------------------------------------------------
@@ -1256,12 +1259,11 @@ pub fn live_dm_screen(
     let conv_dms = live_dms.clone();
     let conv_active = active.clone();
     let conv_rev = rev.clone();
-    let main = switch(
-        move || friends_open.get(),
-        move |open: &bool| {
-            if *open {
-                (friends_panel)()
-            } else {
+    let main = ui! {
+        if friends_open.get() {
+            { (friends_panel)() }
+        } else {
+            {
                 live_dm_conversation(
                     conv_dms.clone(),
                     conv_active.clone(),
@@ -1272,8 +1274,8 @@ pub fn live_dm_screen(
                     blocked,
                 )
             }
-        },
-    );
+        }
+    };
     ui! {
         view(style = StyleRules {
             width: Some(pct(100.0)),

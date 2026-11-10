@@ -28,7 +28,7 @@
 //! position.
 use crate::theme;
 use runtime_core::{
-    component, switch, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
+    component, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
     Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
@@ -169,8 +169,10 @@ pub fn DeleteChannelModal(
         );
     };
 
-    // --- Body: one switch keyed on `error` -----------------------------------
-    // Error > confirm. Each arm builds its own `Element`.
+    // --- Body: a match keyed on (error, name) --------------------------------
+    // Error > confirm. `ui!` lowers the `match` to a reactive switch, so each
+    // arm re-runs whenever the error or the name changes. Each arm builds its
+    // own `Element`.
     //
     // The Cancel / Delete buttons are built *inside* the render closure (not
     // pre-built `let`s splatted in): `Element` is not `Copy`, and a pre-built
@@ -183,9 +185,9 @@ pub fn DeleteChannelModal(
     // inside the render closure of a name-blind key renders the stale load-
     // time name ("Delete ?"). Keying on the name re-keys (and re-renders) the
     // body the moment the name is set, and the closure uses the keyed value.
-    let body = switch(
-        move || (error.get().clone(), nm.get()),
-        move |(err, name): &(String, String)| {
+    // Both cards share the prelude, so it lives in a closure called fresh
+    // from each arm (Elements aren't `Copy`).
+    let card = move |err: String, name: String| -> Element {
             let cancel_btn = ui! {
                 view(style = cancel_btn_style.clone(), test_id = "delete-channel-cancel") {
                     text(style = btn_label_style.clone()) { "Cancel".to_string() }
@@ -246,8 +248,22 @@ pub fn DeleteChannelModal(
                     }
                 }
             }
-        },
-    );
+        };
+
+    let body = ui! {
+        match (error.get().clone(), nm.get()) {
+            // The name is in the key: it is set when the channel gear menu
+            // opens the dialog (possibly after a page load), so a name-blind
+            // key would render the stale load-time name.
+            (err, name) if !err.is_empty() => {{
+                card(err.clone(), name.clone())
+            }},
+            // No error: the input arm, keyed on the same name read.
+            (_, name) => {{
+                card(String::default(), name.clone())
+            }},
+        }
+    };
 
     // --- Full-screen backdrop + centered card --------------------------------
     let open_chk = open;

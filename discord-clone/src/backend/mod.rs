@@ -76,6 +76,12 @@ pub use discord_server::search::SearchResults;
 pub use discord_server::server_settings::{MemberInfo, MemberResult};
 pub use discord_server::server_roles::{RolesSnapshot, CustomRole};
 pub use discord_server::permissions::{Permissions, Target, MyPermissions, Overwrite};
+pub use discord_server::custom_themes::{
+    CustomTheme,
+    SaveCustomThemeInput,
+    RenameCustomThemeInput,
+    DeleteCustomThemeInput,
+};
 
 // --- the interface, by area -------------------------------------------------
 
@@ -278,6 +284,22 @@ pub trait PermissionsApi {
     async fn set_everyone_permissions(server_id: i64, permissions: Permissions) -> Result<Permissions, ServerError>;
 }
 
+/// Colour themes a person makes for themselves: the per-account store
+/// behind the custom-theme screens.
+pub trait ThemesApi {
+    async fn list_custom_themes() -> Result<Vec<CustomTheme>, ServerError>;
+    async fn save_custom_theme(
+        name: String,
+        base: String,
+        colors: Vec<String>,
+    ) -> Result<CustomTheme, ServerError>;
+    async fn rename_custom_theme(
+        from: String,
+        to: String,
+    ) -> Result<CustomTheme, ServerError>;
+    async fn delete_custom_theme(name: String) -> Result<(), ServerError>;
+}
+
 /// Today's backend: the implementation files below implement the areas
 /// above for this type.
 pub struct CassetteBackend;
@@ -432,6 +454,7 @@ mod members_impl;
 mod roles_impl;
 #[cfg(not(feature = "idea-chat"))]
 mod permissions_impl;
+mod themes_impl;
 
 // The SECOND backend's areas, talked to over the idea-chat wire.
 #[cfg(feature = "idea-chat")]
@@ -446,6 +469,22 @@ pub fn connect(token: String) -> Gateway {
 }
 
 // --- the server and channel accessors ---------------------------------------
+
+pub async fn list_custom_themes() -> Result<Vec<CustomTheme>, String> {
+    CassetteBackend::list_custom_themes().await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn save_custom_theme(name: String, base: String, colors: Vec<String>) -> Result<CustomTheme, String> {
+    CassetteBackend::save_custom_theme(name, base, colors).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn rename_custom_theme(from: String, to: String) -> Result<CustomTheme, String> {
+    CassetteBackend::rename_custom_theme(from, to).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn delete_custom_theme(name: String) -> Result<(), String> {
+    CassetteBackend::delete_custom_theme(name).await.map_err(|e| crate::errors::friendly(&e))
+}
 
 pub async fn list_servers() -> Result<Vec<ServerSummary>, String> {
     Backend::list_servers().await.map_err(|e| crate::errors::friendly(&e))

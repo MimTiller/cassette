@@ -23,11 +23,12 @@
 //!
 //! Idioms, each verified against this crate's `app.rs` (`emoji_popover` /
 //! `create_server_modal` / `reaction_picker_overlay`):
-//! - the show/hide is the `switch` primitive (`switch(|| visible.get(), …)`):
-//!   its branch closure is *plain Rust*, so the three `Rc` callbacks are
-//!   cloned there (branch-local, owned per evaluation) and moved into the
-//!   button `on_touch(move)` handlers — a `move` handler can only own a
-//!   branch-local handle, never a captured variable;
+//! - the show/hide is an `if visible.get()` inside `ui!` (the macro lowers it
+//!   to the reactive `switch`): its arm block is *plain Rust*, so the three
+//!   `Rc` callbacks are cloned there (branch-local, owned per evaluation) and
+//!   moved into the button `on_touch(move)` handlers — a `move` handler can
+//!   only own a branch-local handle, never a captured variable; the hidden
+//!   side is the macro's out-of-flow placeholder;
 //! - each icon button is a `view` + `.on_touch(|ev| …)` chain with the
 //!   `TouchPhase::Ended` guard — the app's standard click pattern (the
 //!   runtime's `button` helper takes a fixed `label` prop, which doesn't fit a
@@ -41,7 +42,7 @@ use std::rc::Rc;
 
 use crate::style_helpers::{col, px, rounded};
 use runtime_core::{
-    switch, ui, AlignItems, Element, FlexDirection, JustifyContent, Position, Signal, StyleRules,
+    ui, AlignItems, Element, FlexDirection, JustifyContent, Position, Signal, StyleRules,
     TouchPhase, TouchResponse,
 };
 
@@ -56,21 +57,8 @@ pub fn message_action_bar(
     on_reply: Rc<dyn Fn()>,
     on_more: Rc<dyn Fn()>,
 ) -> Element {
-    switch(
-        move || visible.get(),
-        move |show: &bool| {
-            // Collapsed while not hovered: a zero-size view so the branch
-            // unmounts the pill without affecting the row's layout (the
-            // `emoji_popover` idiom).
-            if !show {
-                return ui! {
-                    view(style = StyleRules {
-                        width: Some(px(0.0)),
-                        height: Some(px(0.0)),
-                        ..Default::default()
-                    }) {}
-                };
-            }
+    ui! {
+        if visible.get() {{
             // Clone each callback here (branch-local, owned per evaluation) so
             // its `move` handler can own it — a captured variable of this `Fn`
             // closure could not be moved out.
@@ -172,6 +160,6 @@ pub fn message_action_bar(
                     })
                 }
             }
-        },
-    )
+        }}
+    }
 }

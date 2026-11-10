@@ -7,7 +7,7 @@ use std::cell::Cell;
 
 use discord_server::permissions::{self, Overwrite, Permissions, Rank, Target};
 use runtime_core::{
-    signal, switch, ui, AlignItems, Element, FlexDirection, FlexWrap, FontWeight,
+    signal, ui, AlignItems, Element, FlexDirection, FlexWrap, FontWeight,
     JustifyContent, Overflow, Position, Signal, StyleRules, Tokenized, TouchPhase, TouchResponse,
 };
 
@@ -314,9 +314,9 @@ fn flag_row(channel_id: i64, target: Target, flag: Permissions, name: &str, abou
 /// The dialog, built once by `app_shell`; collapsed while closed.
 pub(crate) fn dialog() -> Element {
     let s = state();
-    let body = switch(
-        move || (s.open.get(), s.overwrites.get(), s.selected.get(), s.adding.get(), s.error.get()),
-        move |(open, list, selected, adding, error): &(Option<(i64, String)>, Vec<Overwrite>, Target, bool, String)| {
+    let render =
+        move |key: &(Option<(i64, String)>, Vec<Overwrite>, Target, bool, String)| -> Element {
+            let (open, list, selected, adding, error) = key;
             let Some((cid, name)) = open.clone() else {
                 return ui! { view {} };
             };
@@ -473,8 +473,13 @@ pub(crate) fn dialog() -> Element {
                     text(style = small(theme::DANGER)) { error }
                 }
             }
-        },
-    );
+        };
+
+    let body = ui! {
+        match (s.open.get(), s.overwrites.get(), s.selected.get(), s.adding.get(), s.error.get()) {
+            key => {{ (render)(&key) }},
+        }
+    };
 
     let open = s.open;
     let card = ui! {

@@ -1,5 +1,6 @@
-//! The app's colour themes: named colour roles, with three palettes (Dark,
-//! Light, Purple).
+//! The app's colour themes: named colour roles, with eleven palettes (Dark,
+//! Light, Purple, Sunset, Miami, Memphis, Bubblegum, Game Boy, Windows 95,
+//! VHS, Blockbuster).
 //!
 //! Every UI colour comes from a role here (`BG_PRIMARY`, `TEXT_MUTED`,
 //! `ACCENT`, …) instead of a per-file hex constant. A role's constant is its
@@ -198,23 +199,332 @@ const PURPLE: [&str; 30] = [
     "rgba(240, 178, 50, 0.1)", // mention row
 ];
 
+/// "Sunset": synthwave — deep indigo surfaces, magenta and orange accents,
+/// a warm pink mention pill.
+const SUNSET: [&str; 30] = [
+    "#241a3e", // bg primary
+    "#1c1433", // bg secondary
+    "#120c24", // bg tertiary
+    "#0c0819", // bg floating
+    "#2c2149", // bg input
+    "#171028", // bg user panel
+    "#2e2452", // bg hover
+    "#3a2e63", // bg selected
+    "#3d2454", // bg accent subtle
+    "#ffedf7", // text strong
+    "#e8dce9", // text normal
+    "#b0a3c0", // text muted
+    "#8a7e9a", // text faint
+    "#d8c6d8", // interactive
+    "#ff9cf0", // text link
+    "#ffffff", // text on accent
+    "#c93a86", // accent
+    "#a82e6e", // accent hover
+    "#3d2c55", // button secondary
+    "#332a4e", // divider
+    "#ff6b7a", // danger
+    "#d92e4f", // danger strong
+    "#3fae6c", // success
+    "#1e7547", // success strong
+    "#ff8d3d", // warning
+    "#000000", // shadow
+    "rgba(8, 4, 16, 0.65)", // overlay
+    "rgba(255, 110, 160, 0.25)", // mention bg
+    "#ffb3d1", // mention text
+    "rgba(255, 138, 77, 0.12)", // mention row
+];
+
+/// "Miami": Miami Vice — dark teal surfaces, hot pink accent and aqua
+/// secondary, white text.
+const MIAMI: [&str; 30] = [
+    "#0e3138", // bg primary
+    "#0a272e", // bg secondary
+    "#071d22", // bg tertiary
+    "#051519", // bg floating
+    "#14414a", // bg input
+    "#09252b", // bg user panel
+    "#16474f", // bg hover
+    "#1d5560", // bg selected
+    "#1a3a44", // bg accent subtle
+    "#ffffff", // text strong
+    "#e8f2f0", // text normal
+    "#8fb5b2", // text muted
+    "#6e8b89", // text faint
+    "#cfe9e6", // interactive
+    "#3ee3db", // text link
+    "#ffffff", // text on accent
+    "#d8127e", // accent
+    "#b00f66", // accent hover
+    "#22505c", // button secondary
+    "#1b4a52", // divider
+    "#ff6b7a", // danger
+    "#d12550", // danger strong
+    "#35b56e", // success
+    "#177f47", // success strong
+    "#ffd27a", // warning
+    "#000000", // shadow
+    "rgba(4, 12, 16, 0.65)", // overlay
+    "rgba(216, 18, 126, 0.3)", // mention bg
+    "#f9b9da", // mention text
+    "rgba(62, 227, 219, 0.12)", // mention row
+];
+
+/// "Memphis": 90s Memphis design — cream surfaces, bold primary accents
+/// (red accent, yellow warning, blue links), near-black text and outlines.
+const MEMPHIS: [&str; 30] = [
+    "#f7f1de", // bg primary
+    "#efe6cf", // bg secondary
+    "#e6dbbc", // bg tertiary
+    "#d8ccab", // bg floating
+    "#fdf9ec", // bg input
+    "#efe3c6", // bg user panel
+    "#ecdfc0", // bg hover
+    "#e2d4ac", // bg selected
+    "#f3d9c9", // bg accent subtle
+    "#1c1a17", // text strong
+    "#2c2925", // text normal
+    "#6d665c", // text muted
+    "#8a8178", // text faint
+    "#2e2a26", // interactive
+    "#1565c8", // text link
+    "#ffffff", // text on accent
+    "#c62828", // accent
+    "#9e1d1d", // accent hover
+    "#e4d9c0", // button secondary
+    "#5e5a52", // divider
+    "#b3181e", // danger
+    "#8c1115", // danger strong
+    "#157f3f", // success
+    "#0f5e2f", // success strong
+    "#d9a400", // warning
+    "#141210", // shadow
+    "rgba(28, 26, 23, 0.35)", // overlay
+    "rgba(240, 204, 92, 0.5)", // mention bg
+    "#4d3908", // mention text
+    "rgba(240, 204, 92, 0.25)", // mention row
+];
+
+/// "Bubblegum": a soft light theme in pastel pink and lavender with a deeper
+/// pink accent.
+const BUBBLEGUM: [&str; 30] = [
+    "#fae9f2", // bg primary
+    "#f5dfec", // bg secondary
+    "#efd4e5", // bg tertiary
+    "#e8daef", // bg floating
+    "#ffffff", // bg input
+    "#f7e4f2", // bg user panel
+    "#f1dbeb", // bg hover
+    "#ebd2ea", // bg selected
+    "#e6d7f0", // bg accent subtle
+    "#42213c", // text strong
+    "#533049", // text normal
+    "#7c5e75", // text muted
+    "#9a8295", // text faint
+    "#7c5a72", // interactive
+    "#7a4fae", // text link
+    "#ffffff", // text on accent
+    "#c9356b", // accent
+    "#a62a58", // accent hover
+    "#e4d2e8", // button secondary
+    "#c6a8c2", // divider
+    "#ba2f42", // danger
+    "#991f30", // danger strong
+    "#20794f", // success
+    "#175e3d", // success strong
+    "#8c6458", // warning
+    "#4b2545", // shadow
+    "rgba(66, 33, 60, 0.35)", // overlay
+    "rgba(236, 178, 220, 0.7)", // mention bg
+    "#4d1d40", // mention text
+    "rgba(236, 178, 220, 0.35)", // mention row
+];
+
+/// "Game Boy": the four-shade Game Boy green palette, a light scheme — the
+/// screen surface is the palest olive, the rail and dark fills the mid green,
+/// and all text the two dark shades.
+const GAMEBOY: [&str; 30] = [
+    "#9bbc0f", // bg primary (palest screen green)
+    "#8bac0f", // bg secondary
+    "#306230", // bg tertiary (the dark rail)
+    "#8bac0f", // bg floating
+    "#9bbc0f", // bg input (same pale screen so text reads)
+    "#8bac0f", // bg user panel
+    "#8bac0f", // bg hover (second-lightest so dark text reads)
+    "#8bac0f", // bg selected (light enough for dark selected text)
+    "#8bac0f", // bg accent subtle
+    "#0f380f", // text strong
+    "#0f380f", // text normal
+    "#306230", // text muted
+    "#306230", // text faint
+    "#0f380f", // interactive
+    "#0f380f", // text link
+    "#9bbc0f", // text on accent (pale on the dark fill)
+    "#0f380f", // accent (darkest line-art green)
+    "#306230", // accent hover (lighter dark green)
+    "#8bac0f", // button secondary
+    "#306230", // divider
+    "#0f380f", // danger
+    "#0f380f", // danger strong
+    "#306230", // success
+    "#0f380f", // success strong
+    "#306230", // warning
+    "#0f380f", // shadow
+    "rgba(15, 56, 15, 0.6)", // overlay
+    "rgba(48, 98, 48, 0.4)", // mention bg
+    "#0f380f", // mention text
+    "rgba(48, 98, 48, 0.15)", // mention row
+];
+
+/// "Windows 95": grey window panels on a teal desktop, navy title-bar
+/// accents, black text and grey bevel-like dividers.
+const WIN95: [&str; 30] = [
+    "#c0c0c0", // bg primary
+    "#c0c0c0", // bg secondary
+    "#008080", // bg tertiary (the teal desktop behind the app)
+    "#c0c0c0", // bg floating
+    "#ffffff", // bg input (classic white text fields)
+    "#a8a8a8", // bg user panel
+    "#d8d8d8", // bg hover
+    "#8fa8d0", // bg selected (the steel-blue selection wash)
+    "#c8d4e8", // bg accent subtle
+    "#000000", // text strong
+    "#000000", // text normal
+    "#595959", // text muted
+    "#707070", // text faint
+    "#595959", // interactive
+    "#000080", // text link (navy)
+    "#ffffff", // text on accent
+    "#000080", // accent (title-bar navy)
+    "#0000a0", // accent hover
+    "#a9a9a9", // button secondary
+    "#808080", // divider (bevel grey)
+    "#800000", // danger (maroon)
+    "#800000", // danger strong
+    "#004d00", // success
+    "#00393a", // success strong
+    "#7f6000", // warning
+    "#000000", // shadow
+    "rgba(0, 0, 0, 0.5)", // overlay
+    "rgba(0, 0, 128, 0.15)", // mention bg
+    "#000080", // mention text
+    "rgba(0, 0, 128, 0.08)", // mention row
+];
+
+/// "VHS": late-night tape — near-black surfaces, CRT-amber text and accents,
+/// and a REC red for danger and mentions.
+const VHS: [&str; 30] = [
+    "#0f0f13", // bg primary
+    "#141418", // bg secondary
+    "#08080a", // bg tertiary
+    "#101014", // bg floating
+    "#1a1a20", // bg input
+    "#0c0c10", // bg user panel
+    "#1c1c24", // bg hover
+    "#26262e", // bg selected
+    "#33270f", // bg accent subtle (amber tint)
+    "#ffc060", // text strong
+    "#ffb000", // text normal (CRT amber)
+    "#c89a4e", // text muted
+    "#8a6d3a", // text faint
+    "#e0a860", // interactive
+    "#7ec8e3", // text link (cold scanline blue)
+    "#101014", // text on accent (dark on amber fills)
+    "#ff9a3c", // accent (CRT amber-orange)
+    "#cc7d2e", // accent hover
+    "#3a3a42", // button secondary
+    "#2a2a30", // divider
+    "#ff4b4b", // danger (REC red)
+    "#c81f2d", // danger strong
+    "#47c75a", // success (phosphor green)
+    "#2f9a44", // success strong
+    "#ffcc55", // warning
+    "#000000", // shadow
+    "rgba(0, 0, 0, 0.65)", // overlay
+    "rgba(200, 31, 45, 0.25)", // mention bg (REC red)
+    "#ff8f8f", // mention text
+    "rgba(200, 31, 45, 0.12)", // mention row
+];
+
+/// "Blockbuster": video-store navy with ticket-stub yellow accents and cream
+/// text.
+const BLOCKBUSTER: [&str; 30] = [
+    "#002355", // bg primary (house navy)
+    "#001a40", // bg secondary
+    "#000f2b", // bg tertiary
+    "#000a20", // bg floating
+    "#002f66", // bg input
+    "#00173a", // bg user panel
+    "#002d6b", // bg hover
+    "#003a7f", // bg selected
+    "#0d2e52", // bg accent subtle
+    "#f5f0dc", // text strong (ticket cream)
+    "#e8dfc4", // text normal
+    "#9aa8b8", // text muted
+    "#72808e", // text faint
+    "#c9d6e2", // interactive
+    "#ffd700", // text link (stub yellow)
+    "#001a40", // text on accent (navy on yellow)
+    "#ffd700", // accent (ticket-stub yellow)
+    "#e0b400", // accent hover
+    "#0f2c55", // button secondary
+    "#00395f", // divider
+    "#ff5a5a", // danger
+    "#d92e4f", // danger strong
+    "#3fb86e", // success
+    "#2a8a52", // success strong
+    "#ff9d3b", // warning
+    "#000000", // shadow
+    "rgba(0, 0, 20, 0.65)", // overlay
+    "rgba(255, 215, 0, 0.25)", // mention bg
+    "#ffea9d", // mention text
+    "rgba(255, 215, 0, 0.10)", // mention row
+];
+
 /// The themes the user can pick.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ThemeName {
     Dark,
     Light,
     Purple,
+    Sunset,
+    Miami,
+    Memphis,
+    Bubblegum,
+    GameBoy,
+    Win95,
+    Vhs,
+    Blockbuster,
 }
 
 impl ThemeName {
-    pub const ALL: [ThemeName; 3] = [ThemeName::Dark, ThemeName::Light, ThemeName::Purple];
+    pub const ALL: [ThemeName; 11] = [
+        ThemeName::Dark,
+        ThemeName::Light,
+        ThemeName::Purple,
+        ThemeName::Sunset,
+        ThemeName::Miami,
+        ThemeName::Memphis,
+        ThemeName::Bubblegum,
+        ThemeName::GameBoy,
+        ThemeName::Win95,
+        ThemeName::Vhs,
+        ThemeName::Blockbuster,
+    ];
 
-    /// The stored name ("dark" / "light" / "purple").
+    /// The stored name ("dark" / "light" / "purple" / "sunset" / "miami" / "memphis" / "bubblegum" / "gameboy" / "win95" / "vhs" / "blockbuster").
     pub fn key(self) -> &'static str {
         match self {
             ThemeName::Dark => "dark",
             ThemeName::Light => "light",
             ThemeName::Purple => "purple",
+            ThemeName::Sunset => "sunset",
+            ThemeName::Miami => "miami",
+            ThemeName::Memphis => "memphis",
+            ThemeName::Bubblegum => "bubblegum",
+            ThemeName::GameBoy => "gameboy",
+            ThemeName::Win95 => "win95",
+            ThemeName::Vhs => "vhs",
+            ThemeName::Blockbuster => "blockbuster",
         }
     }
 
@@ -224,6 +534,14 @@ impl ThemeName {
             ThemeName::Dark => "Dark",
             ThemeName::Light => "Light",
             ThemeName::Purple => "Dark Purple",
+            ThemeName::Sunset => "Sunset",
+            ThemeName::Miami => "Miami",
+            ThemeName::Memphis => "Memphis",
+            ThemeName::Bubblegum => "Bubblegum",
+            ThemeName::GameBoy => "Game Boy",
+            ThemeName::Win95 => "Windows 95",
+            ThemeName::Vhs => "VHS",
+            ThemeName::Blockbuster => "Blockbuster",
         }
     }
 
@@ -236,6 +554,14 @@ impl ThemeName {
             ThemeName::Dark => &DARK,
             ThemeName::Light => &LIGHT,
             ThemeName::Purple => &PURPLE,
+            ThemeName::Sunset => &SUNSET,
+            ThemeName::Miami => &MIAMI,
+            ThemeName::Memphis => &MEMPHIS,
+            ThemeName::Bubblegum => &BUBBLEGUM,
+            ThemeName::GameBoy => &GAMEBOY,
+            ThemeName::Win95 => &WIN95,
+            ThemeName::Vhs => &VHS,
+            ThemeName::Blockbuster => &BLOCKBUSTER,
         }
     }
 

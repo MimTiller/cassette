@@ -30,6 +30,9 @@ mod keyboard_shortcuts_overlay;
 // (`settings_suite`).
 mod notify;
 mod app_icon;
+// Pairing themes with the cassette icons that share their name (the inline
+// offer in Appearance; dismissals on the `storage` SDK per account).
+mod cassette_pair;
 mod avatar_crop;
 mod mentions;
 mod roles_settings;

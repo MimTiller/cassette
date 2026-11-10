@@ -28,6 +28,8 @@ mod two_users;
 mod messages;
 #[path = "robot/dms_friends.rs"]
 mod dms_friends;
+#[path = "robot/themes.rs"]
+mod themes;
 #[path = "robot/notifications.rs"]
 mod notifications;
 #[path = "robot/coverage.rs"]

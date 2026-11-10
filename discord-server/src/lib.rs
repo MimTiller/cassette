@@ -75,6 +75,9 @@ pub mod link_previews;
 // Per-server and per-channel notification levels and mutes.
 pub mod notification_settings;
 
+// Custom colour themes: palettes a person made, kept per account.
+pub mod custom_themes;
+
 // Custom server emoji.
 pub mod server_emoji;
 

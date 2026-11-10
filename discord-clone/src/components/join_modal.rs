@@ -21,9 +21,9 @@
 //! newly-joined server appears in the rail's live section (re-fetched via the
 //! same `crate::servers::list_servers` RPC the rail already uses).
 //!
-//! Idioms: the three states are one `switch` keyed on `(result, error)`
-//! (the `switch(key, render)` pattern used throughout `app.rs`); each arm
-//! builds its own `Element` (Elements aren't `Copy`, so a pre-built one
+//! Idioms: the three states are a `match` on `(result…, error…)` inside `ui!`
+//! (the macro lowers it to the reactive control flow used throughout `app.rs`);
+//! each arm builds its own `Element` (Elements aren't `Copy`, so a pre-built one
 //! would be moved on the first rebuild). `Signal` is `Copy`, so every `move`
 //! closure captures a copy and stays `Fn`. Buttons that carry an `.on_touch`
 //! chain are built as `let` bindings (the `close_btn` idiom in
@@ -33,7 +33,7 @@ use crate::theme;
 use std::rc::Rc;
 
 use runtime_core::{
-    component, switch, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
+    component, ui, AlignItems, Element, FlexDirection, FontWeight, JustifyContent,
     Overflow, Position, Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
@@ -164,16 +164,17 @@ pub fn JoinServerModal(
         );
     });
 
-    // --- Body: one switch keyed on (result, error) ---------------------------
-    // Priority: success > error > input. Each arm builds its own `Element`
-    // inline (the `invite_modal.rs` idiom — `Element` is not `Copy`). Buttons
+    // --- Body: a match keyed on (result, error) -----------------------------
+    // Priority: success > error > input. `ui!` lowers the `match` to the
+    // reactive switch, so the key still re-runs the arm whenever `result`
+    // or `error` changes. Each arm builds its own `Element` inline
+    // (the `invite_modal.rs` idiom — `Element` is not `Copy`). Buttons
     // that carry an `.on_touch` chain are built as `let` bindings so the
     // method chain lives outside the `ui!` child position.
-    let body = switch(
-        move || (result.get().map(|r| r.server_id), error.get().clone()),
-        move |(res, err): &(Option<i64>, String)| {
-            if res.is_some() {
-                // --- Success arm: confirmation + Done --------------------------
+    let body = ui! {
+        match (result.get().map(|r| r.server_id), error.get().clone()) {
+            // --- Success arm: confirmation + Done --------------------------
+            (Some(_), _) => {{
                 let full = result.get();
                 let role = match full.as_ref() {
                     Some(rr) if rr.already_member => {
@@ -206,9 +207,10 @@ pub fn JoinServerModal(
                         }
                         { close_c }
                     }
-                }
-            } else if !err.is_empty() {
-                // --- Error arm: backend message + Try again --------------------
+                }}
+            },
+            // --- Error arm: backend message + Try again --------------------
+            (None, err) if !err.is_empty() => {{
                 let retry_btn = ui! {
                     view(style = btn_style.clone(), test_id = "join-server-retry") {
                         text(style = btn_label_style.clone()) { "Try again".to_string() }
@@ -235,9 +237,10 @@ pub fn JoinServerModal(
                         }
                         { close_c }
                     }
-                }
-            } else {
-                // --- Input arm: code field + Join button -----------------------
+                }}
+            },
+            // --- Input arm: code field + Join button -----------------------
+            (None, _) => {{
                 let close_c = ui! { crate::controls::modal_close_button(move || close.set(false)) };
                 let join_label = if busy.get() { "Joining…" } else { "Join" };
                 let join_fn = on_join.clone();
@@ -274,9 +277,9 @@ pub fn JoinServerModal(
                         }
                     }
                 }
-            }
-        },
-    );
+            }}
+        }
+    };
 
     // --- Full-screen backdrop + centered card ---------------------------------
     // The card is built as a `let` so its `.on_touch` (consume, so a tap on the
