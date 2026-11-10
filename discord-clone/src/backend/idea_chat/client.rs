@@ -11,14 +11,44 @@
 //!
 //! One open question, documented by the wire study: idea-chat gates calls on
 //! an `x-srv-schema` hash of the fn signature we cannot compute client-side
-//! (chat-api is not a dependency). The running build treats the header as
-//! optional, so we do not send it; a server that enforces it will need the
-//! value from a live handshake or from Nicho.
+//! (chat-api is not a dependency). We therefore keep it CONFIGURABLE — see
+//! [`set_srv_schema`] below, which the app can call once at startup (or
+//! Nicho can hand a value to after a live handshake). The header is sent
+//! ONLY when a value has been configured; with nothing configured we send
+//! no `x-srv-schema` at all, matching the build that treats it as optional.
 
 use net::{Client, Error};
 use serde_json::{Value, from_value, to_value};
 
 use server::{ServerError, base_url};
+
+/// The optional `x-srv-schema` value, set once at startup. Empty means
+/// "not configured": no `x-srv-schema` header is sent. Client config, not
+/// app state, so it rides the same process-wide holder `auth.rs` uses for
+/// the host and token (the kit's stubs read their config the same way).
+pub(crate) static SRV_SCHEMA: std::sync::Mutex<String> =
+    std::sync::Mutex::new(String::new());
+
+pub(crate) fn set_srv_schema(value: String) {
+    *SRV_SCHEMA.lock().unwrap_or_else(move |p| p.into_inner()) = value;
+}
+
+fn srv_schema() -> String {
+    SRV_SCHEMA.lock().map(move |s| s.clone()).unwrap_or_else(move |p| p.into_inner().clone())
+}
+
+/// Seed the schema value from persisted config (the browser's storage on web):
+/// Nicho's open question (wire doc §7) is whether a foreign client needs the
+/// header and who supplies the hash, so a future settings UI or handshake
+/// stores it under this key and the header rides every call. Nothing stores
+/// it today, so nothing is sent and the gate stays open.
+pub(crate) fn install_srv_schema() {
+    let saved = crate::auth::store().get_now("idea_chat.srv_schema").ok().flatten();
+    match saved {
+        Some(value) => set_srv_schema(value),
+        None => {},
+    }
+}
 
 /// The signed session bearer (`""` on web, where the browser's `session`
 /// cookie is the credential and the bearer header is not sent).
@@ -40,8 +70,15 @@ pub(crate) async fn post(path: &str, args: Vec<Value>) -> Result<Value, ServerEr
         .post(origin() + "/_srv/" + &path)
         .header("content-type", "application/json");
     // `header` takes `mut self` by value, so the web arm (session cookie, no
-    // bearer header) and the native arm (Authorization: Bearer) each rebind
+    // bearer header) and the native arm (Authorization: *** each rebind
     // the builder: one move chain, never a use-after-move on `client`.
+    // The x-srv-schema gate: sent only when a value was configured (see
+    // `set_srv_schema`), since we cannot compute the server's signature hash.
+    let schema = srv_schema();
+    let client = match schema.is_empty() {
+        true => client,
+        false => client.header("x-srv-schema", schema),
+    };
     let token = bearer();
     let client = match token.is_empty() {
         true => client,

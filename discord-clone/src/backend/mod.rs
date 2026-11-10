@@ -462,6 +462,14 @@ mod idea_chat;
 
 // --- the accessors (the single place the UI gets the backend) ---------------
 
+/// Seed the idea-chat client's schema config (the open question in wire doc
+/// §7: the `x-srv-schema` header is sent only when a value has been
+/// configured).
+#[cfg(feature = "idea-chat")]
+pub fn install_idea_chat_config() {
+    idea_chat::client::install_srv_schema();
+}
+
 /// Open the realtime stream: the signed session token authenticates the
 /// connect (an empty token gets no working socket).
 pub fn connect(token: String) -> Gateway {
