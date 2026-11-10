@@ -47,8 +47,14 @@ pub(crate) fn snapshot() -> State {
 /// true; a Duplicate returns false; a Gap drops the state (untrustworthy) and
 /// returns false, so the client waits for the next snapshot.
 pub(crate) fn fold(event: Event, seq: u64) -> bool {
-    let mut cur = cursor().lock().unwrap_or_else(move |p| p.into_inner());
-    match cur.step(seq) {
+    // The cursor lock is held only during `step`: `drop_state` and the
+    // state lock below re-take the same mutexes, and a non-recursive
+    // std mutex deadlocks if folded with the guard still in hand.
+    let step = {
+        let mut cur = cursor().lock().unwrap_or_else(move |p| p.into_inner());
+        cur.step(seq)
+    };
+    match step {
         Step::Apply => {
             let mut world = state().lock().unwrap_or_else(move |p| p.into_inner());
             world.apply(&event);
@@ -98,6 +104,11 @@ fn uuid_to_string(id: Id) -> String {
     id.to_string()
 }
 
+/// The presence word the UI draws. chat-model's `Busy` is "do not disturb"
+/// with a name, so RWND's dnd rides it rather than collapsing to online
+/// (the wire study's open question §9 asked what the policy should be once
+/// the server's vocabulary grows; invisible has no counterpart and rides
+/// offline in `client_set_status`).
 pub(crate) fn presence_word(status: Presence) -> String {
     match status {
         Presence::Online => "online".to_string(),
@@ -623,4 +634,186 @@ pub(crate) fn connect(_token: String) -> GatewayHandle {
 /// frame is exchanged.
 async fn ticket() -> Result<String, ServerError> {
     client::call_as::<String>("live_ticket", Vec::new()).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chat_model::{Id, User, Message, Presence, MessageKind, Relation, Me, Status};
+    use chat_model::live::{Event, State};
+
+    fn uid(n: u128) -> Id {
+        Id::from_u128(n)
+    }
+
+    #[test]
+    fn a_message_created_event_lands_as_one_message_frame() {
+        // Recorded `MessageCreated` JSON from the wire study: the reducer
+        // turns it into the `WsServerMsg::Message` the UI's frame watcher
+        // listens to, with history-page rows marked `new: false`.
+        let created = Event::MessageCreated {
+            message: Message {
+                id: uid(100),
+                channel: uid(10),
+                author: uid(7),
+                kind: MessageKind::Text,
+                body: "hello there".to_string(),
+                attachments: Vec::new(),
+                reply_to: None,
+                reactions: Vec::new(),
+                thread: None,
+                mentions: Vec::new(),
+                mentions_everyone: false,
+                at: 1_700_000_000_000,
+                edited_at: None,
+            }
+        };
+        let frames = frames_for(created);
+        assert_eq!(frames.len(), 1);
+        match frames.get(0) {
+            Some(WsServerMsg::Message { message_id, content, new, .. }) => {
+                assert_eq!(*content == "hello there".to_string(), true);
+                assert_eq!(*new, true);
+                let _ = message_id;
+            },
+            Some(other) => {
+                let _ = other;
+                panic!("a MessageCreated event answered the wrong frame");
+            },
+            None => panic!("no frame for a MessageCreated event"),
+        }
+    }
+
+    #[test]
+    fn an_edit_carries_the_fresh_body_and_edited_at() {
+        let edited = Event::MessageEdited {
+            message: Message {
+                id: uid(100),
+                channel: uid(10),
+                author: uid(7),
+                kind: MessageKind::Text,
+                body: "hello *there*".to_string(),
+                attachments: Vec::new(),
+                reply_to: None,
+                reactions: Vec::new(),
+                thread: None,
+                mentions: Vec::new(),
+                mentions_everyone: false,
+                at: 1_700_000_000_000,
+                edited_at: Some(1_700_000_005_000),
+            }
+        };
+        let frames = frames_for(edited);
+        match frames.get(0) {
+            Some(WsServerMsg::MessageEdited { content, edited_at, .. }) => {
+                assert_eq!(*content == "hello *there*".to_string(), true);
+                assert_eq!(*edited_at, 1_700_000_005_000);
+            },
+            Some(other) => {
+                let _ = other;
+                panic!("wrong frame for an edit");
+            },
+            None => panic!("no frame for an edit"),
+        }
+    }
+
+    #[test]
+    fn typing_and_presence_events_answer_the_ui_frames() {
+        // PresenceChanged carries chat-model's Busy; the UI word is RWND's
+        // "dnd" (the presence policy — chat-model has no Invisible, so
+        // invisible rides offline where the status is set).
+        let typed = Event::Typing { channel: uid(10), user: uid(7) };
+        let frames = frames_for(typed.clone());
+        assert_eq!(frames.len(), 1);
+        let frame = frames.get(0);
+        match frame {
+            Some(WsServerMsg::Typing { channel_id, user_id, .. }) => {
+                let _ = channel_id;
+                let _ = user_id;
+            },
+            Some(other) => {
+                let _ = other;
+                panic!("wrong frame for typing");
+            },
+            None => panic!("no frame for typing"),
+        }
+        assert_eq!(presence_word(Presence::Busy), "dnd".to_string());
+        assert_eq!(presence_word(Presence::Offline), "offline".to_string());
+    }
+
+    #[test]
+    fn relation_events_word_themselves_in_the_rwnd_vocab() {
+        let changed = Event::RelationChanged {
+            user: User { id: uid(7), handle: "al".to_string(), display_name: "Al".to_string(), avatar: None, bio: "".to_string() },
+            relation: Some(Relation::Friend),
+        };
+        let frames = frames_for(changed);
+        assert_eq!(frames.len(), 1);
+        match frames.get(0) {
+            Some(WsServerMsg::FriendChanged { action, .. }) => assert_eq!(*action == "friends".to_string(), true),
+            Some(other) => {
+                let _ = other;
+                panic!("wrong frame for a relation change");
+            },
+            None => panic!("no frame for a relation change"),
+        }
+    }
+
+    #[test]
+    fn read_events_fold_but_answer_no_frame() {
+        // `mark_read`'s fact lands in the reducer (unread counts read it)
+        // without a frame: RWND's own unread badge comes from the state.
+        assert_eq!(frames_for(Event::Read { channel: uid(10), last_read: uid(100) }).len(), 0);
+    }
+
+    #[test]
+    fn the_cursor_ignores_a_duplicate_and_drops_on_a_gap() {
+        // Per-connection seqs: apply 1,2; the replayed 2 is a Duplicate;
+        // 5 after 2 is a Gap, which drops the state until a fresh snapshot.
+        let mut world = State::default();
+        take_snapshot(world.clone(), 0);
+        let mut applied = 0;
+        if fold(Event::Typing { channel: uid(10), user: uid(7) }, 1) {
+            applied += 1;
+        }
+        if fold(Event::Typing { channel: uid(10), user: uid(7) }, 2) {
+            applied += 1;
+        }
+        assert_eq!(applied, 2);
+        // The overlap from a resnapshot at seq 2 replays the event and is
+        // ignored; a jump to 5 throws the world.
+        assert_eq!(fold(Event::Typing { channel: uid(10), user: uid(7) }, 2), false);
+        assert_eq!(fold(Event::Typing { channel: uid(10), user: uid(7) }, 5), false);
+        world = snapshot();
+        assert_eq!(world, State::default());
+    }
+
+    #[test]
+    fn history_paging_tags_the_window_with_the_wire_id() {
+        // `history(channel, Window::Before{id})`: the selector serde'd the
+        // chat-api way (tag `at`), the id as a UUID string.
+        let before = Window::before(uid(42));
+        let held = serde_json::to_string(&client::arg(before)).unwrap_or_default();
+        assert_eq!(held.contains("\"before\""), true);
+        assert_eq!(held.contains("00000000-0000-0000-0000-00000000002a"), true);
+    }
+
+    #[test]
+    fn a_status_choice_lands_as_the_viewers_frame() {
+        let updated = Event::MeUpdated {
+            me: Me {
+                user: User { id: uid(7), handle: "al".to_string(), display_name: "Al".to_string(), avatar: None, bio: "".to_string() },
+                email: "al@example.com".to_string(),
+                status: Status { presence: Presence::Idle, text: None },
+            }
+        };
+        match frames_for(updated).get(0) {
+            Some(WsServerMsg::StatusChoice { status, .. }) => assert_eq!(*status == "idle".to_string(), true),
+            Some(other) => {
+                let _ = other;
+                panic!("wrong frame for a status choice");
+            },
+            None => panic!("no frame for a status choice"),
+        }
+    }
 }

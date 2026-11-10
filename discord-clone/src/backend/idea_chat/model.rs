@@ -117,3 +117,68 @@ pub(crate) fn decode_error(body: serde_json::Value) -> ServerError {
 pub(crate) fn not_supported() -> ServerError {
     ServerError::failed("not supported on this server")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+    use chat_model::{Id};
+
+    fn uid(n: u128) -> Id {
+        Id::from_u128(n)
+    }
+
+    #[test]
+    fn a_window_pages_by_wire_ids() {
+        // `Window::before(id)` is what history paging sends: a `Before`
+        // window tagged `at`, the id serde'd as its UUID string.
+        let value = serde_json::to_value(Window::before(uid(42))).unwrap_or(Value::Null);
+        let held = serde_json::to_string(&value).unwrap_or_default();
+        assert_eq!(held.contains("\"before\""), true);
+        assert_eq!(held.contains("id"), true);
+        assert_eq!(Window::latest() == Window::Latest, true);
+    }
+
+    #[test]
+    fn a_round_trip_window_survives_the_wire() {
+        // Recorded JSON from a session: decode it back into the selector.
+        let text = "{\"at\":\"around\",\"id\":\"00000000-0000-0000-0000-00000000002a\"}";
+        let parsed = serde_json::from_str::<Window>(text).unwrap_or(Window::Latest);
+        assert_eq!(parsed == Window::Around { id: uid(42) }, true);
+    }
+
+    #[test]
+    fn a_slot_decodes_from_the_begin_upload_answer() {
+        // `begin_upload` answers `Slot{id, put_url, content_type}`.
+        let text = "{\"id\":\"00000000-0000-0000-0000-000000000007\",\"put_url\":\"https://files.example/presigned/abc\",\"content_type\":\"image/png\"}";
+        let slot = serde_json::from_str::<Slot>(text).unwrap_or(Slot {
+            id: Id::nil(),
+            put_url: "".to_string(),
+            content_type: "".to_string(),
+        });
+        assert_eq!(slot.put_url, "https://files.example/presigned/abc".to_string());
+        assert_eq!(slot.content_type, "image/png".to_string());
+        assert_eq!(slot.id == uid(7), true);
+    }
+
+    #[test]
+    fn an_unknown_error_kind_still_reads_as_a_refusal() {
+        // Wire study §1: errors ride {"e":{"<kind>":{"message":…}}} — an
+        // unlisted kind keeps the text rather than losing the answer.
+        let banned: Value = serde_json::from_str(
+            "{\"e\":{\"banned\":{\"message\":\"this account is off the roster\"}}}"
+        ).unwrap_or(serde_json::Value::Null);
+        let decoded = decode_error(banned);
+        assert_eq!(crate::errors::friendly(&decoded) == "this account is off the roster".to_string(), true);
+        let empty: Value = serde_json::from_str("{}").unwrap_or(serde_json::Value::Null);
+        assert_eq!(crate::errors::friendly(&decode_error(empty)) == "the server refused the request".to_string(), true);
+    }
+
+    #[test]
+    fn a_version_mismatch_names_itself() {
+        let body: Value = serde_json::from_str(
+            "{\"e\":{\"incompatible_version\":null}}"
+        ).unwrap_or(Value::Null);
+        assert_eq!(crate::errors::friendly(&decode_error(body)) == "the server speaks a different schema".to_string(), true);
+    }
+}
