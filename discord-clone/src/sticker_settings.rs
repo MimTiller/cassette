@@ -7,7 +7,7 @@ use crate::backend::{Sticker, STICKERS_MAX_PER_SERVER};
 use discord_server::stickers::{description_ok, name_ok, related_ok, MAX_BYTES};
 use file_picker::{FilePicker, MediaKind, PickOutcome, PickRequest};
 use runtime_core::{
-    signal, switch, ui, AlignItems, Element, FlexDirection, FontWeight, ObjectFit, Signal, StyleRules, Tokenized,
+    component, signal, ui, AlignItems, Element, FlexDirection, FontWeight, ObjectFit, Signal, StyleRules, Tokenized,
 };
 
 use crate::controls::{button_view, text_field, ButtonKind};
@@ -44,13 +44,23 @@ fn check(name: &str, description: &str, related: &str) -> Option<&'static str> {
     None
 }
 
-/// One sticker row: the image, draft fields for its name, related emoji and
-/// description, and Save/Delete buttons.
-fn sticker_row(s: Sticker, sid: i64, list: Signal<Vec<Sticker>>, error: Signal<String>) -> Element {
-    let id = s.id;
-    let name = signal(s.name.clone());
-    let related = signal(s.related_emoji.clone());
-    let description = signal(s.description.clone());
+#[component]
+fn StickerRow(
+    #[prop(static)] id: i64,
+    #[prop(static)] name: String,
+    #[prop(static)] related_emoji: String,
+    #[prop(static)] description: String,
+    #[prop(static)] image: String,
+    #[prop(static)] sid: i64,
+    list: Signal<Vec<Sticker>>,
+    error: Signal<String>,
+) -> Element {
+    // Props are moved out on every reactive rebuild; the signal handles are
+    // cloned once so the save/delete handlers can hold them.
+    let (list, error) = (list.clone(), error.clone());
+    let name = signal(name);
+    let related = signal(related_emoji);
+    let description = signal(description);
     let al_rows = runtime_core::ScopeAlive::current();
     let al_save = al_rows.clone();
     let save = move || {
@@ -78,8 +88,8 @@ fn sticker_row(s: Sticker, sid: i64, list: Signal<Vec<Sticker>>, error: Signal<S
     };
     let img = ui! {
         image(
-            src = crate::auth::media_url(s.image.clone()),
-            alt = s.name.clone(),
+            src = crate::auth::media_url(image),
+            alt = name.get(),
             style = StyleRules {
                 width: Some(px(64.0)),
                 height: Some(px(64.0)),
@@ -112,7 +122,8 @@ fn sticker_row(s: Sticker, sid: i64, list: Signal<Vec<Sticker>>, error: Signal<S
     }
 }
 
-pub fn sticker_section(server_id: Option<i64>) -> Element {
+#[component]
+pub fn StickerSection(#[prop(static)] server_id: Option<i64>) -> Element {
     let Some(sid) = server_id else {
         return ui! { view {} };
     };
@@ -175,26 +186,36 @@ pub fn sticker_section(server_id: Option<i64>) -> Element {
         );
     };
 
-    let rows = switch(
-        move || list.get(),
-        move |items: &Vec<Sticker>| {
-            let count = format!("{} of {STICKERS_MAX_PER_SERVER} used", items.len());
-            ui! {
-                view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) {
-                    text(style = StyleRules {
-                        font_size: Some(px(12.0)),
-                        font_weight: Some(FontWeight::Bold),
-                        color: Some(col(theme::TEXT_MUTED)),
-                        margin_bottom: Some(px(4.0)),
-                        ..Default::default()
-                    }) { count }
-                    for s in items.iter(), key = s.id {
-                        { sticker_row(s.clone(), sid, list, error) }
+    let rows = ui! {
+        match list.get() {
+            items => {{
+                let count = format!("{} of {STICKERS_MAX_PER_SERVER} used", items.len());
+                ui! {
+                    view(style = StyleRules { flex_direction: Some(FlexDirection::Column), ..Default::default() }) {
+                        text(style = StyleRules {
+                            font_size: Some(px(12.0)),
+                            font_weight: Some(FontWeight::Bold),
+                            color: Some(col(theme::TEXT_MUTED)),
+                            margin_bottom: Some(px(4.0)),
+                            ..Default::default()
+                        }) { count }
+                        for s in items.iter(), key = s.id {
+                            StickerRow(
+                                id = s.id,
+                                name = s.name.clone(),
+                                related_emoji = s.related_emoji.clone(),
+                                description = s.description.clone(),
+                                image = s.image.clone(),
+                                sid = sid,
+                                list = list.clone(),
+                                error = error.clone(),
+                            )
+                        }
                     }
                 }
-            }
-        },
-    );
+            }},
+        }
+    };
 
     ui! {
         view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(16.0)), max_width: Some(px(660.0)), ..Default::default() }) {

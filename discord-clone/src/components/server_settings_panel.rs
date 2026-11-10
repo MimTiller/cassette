@@ -542,7 +542,7 @@ pub fn ServerSettingsPanel(
                 // Named roles: create, list, delete (admins and the owner).
                 SECTION_ROLES => vec![crate::roles_settings::roles_section(sid.get())],
                 SECTION_EMOJI => vec![crate::emoji_settings::emoji_section(sid.get())],
-                SECTION_STICKERS => vec![crate::sticker_settings::sticker_section(sid.get())],
+                SECTION_STICKERS => vec![crate::sticker_settings::StickerSection(sid.get())],
                 _ => vec![add_row, transfer_el],
             };
             let title = SECTIONS.get(*tab).copied().unwrap_or_default().to_string();

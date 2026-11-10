@@ -11,7 +11,7 @@ use crate::style_helpers::{col, px, rounded};
 use crate::theme;
 use icons_lucide::{SEARCH, STICKER};
 use runtime_core::{
-    component, icon, memo, signal, switch, ui, AlignItems, Element, FlexDirection, FlexWrap, FontWeight,
+    component, icon, memo, signal, ui, AlignItems, Element, FlexDirection, FlexWrap, FontWeight,
     JustifyContent, ObjectFit, Overflow, Signal, StyleRules, TouchPhase, TouchResponse, Tokenized,
 };
 use std::rc::Rc;
@@ -32,7 +32,11 @@ struct Group {
 
 /// The sticker button: opens/closes the picker (closing the others first),
 /// beside the GIF and emoji buttons.
-pub(crate) fn sticker_button(on: Signal<bool>, close_others: Vec<Signal<bool>>) -> Element {
+#[component]
+pub(crate) fn StickerButton(
+    on: Signal<bool>,
+    #[prop(static)] close_others: Vec<Signal<bool>>,
+) -> Element {
     let hovered = signal(false);
     ui! {
         view(style = move || StyleRules {
@@ -59,12 +63,106 @@ pub(crate) fn sticker_button(on: Signal<bool>, close_others: Vec<Signal<bool>>) 
     }
 }
 
+
+
 /// Whether `s` matches the lower-cased search `q` (empty matches all).
 fn matches(s: &Sticker, q: &str) -> bool {
     q.is_empty()
         || s.name.to_lowercase().contains(q)
         || s.description.to_lowercase().contains(q)
         || s.related_emoji.to_lowercase().contains(q)
+}
+
+/// A server's header line: its name in bold muted text, on a full row of its
+/// own (the wide width forces the wrapping grid to break the line).
+#[component]
+fn StickerHeader(#[prop(static)] name: String) -> Element {
+    ui! {
+        view(style = StyleRules {
+            width: Some(px(CARD_W - 2.0 * PAD)),
+            align_items: Some(AlignItems::FlexStart),
+            ..Default::default()
+        }) {
+            text(style = StyleRules {
+                font_size: Some(px(12.0)),
+                font_weight: Some(FontWeight::Bold),
+                color: Some(col(theme::TEXT_MUTED)),
+                ..Default::default()
+            }) { name.to_uppercase() }
+        }
+    }
+}
+
+/// One tile of the grid: the sticker image, tap handing it to `on_pick`.
+/// `on_pick` is a static prop holding the shared `Rc`; each cell clones it
+/// into its own `on_touch`, like the emoji picker's cells.
+#[component]
+fn StickerTile(
+    #[prop(static)] id: i64,
+    #[prop(static)] server_id: i64,
+    #[prop(static)] name: String,
+    #[prop(static)] description: String,
+    #[prop(static)] related_emoji: String,
+    #[prop(static)] image: String,
+    on_pick: Option<Rc<dyn Fn(Sticker)>>,
+) -> Element {
+    let (src, alt) = (crate::auth::media_url(image.clone()), name.clone());
+    ui! {
+        view(style = StyleRules {
+            width: Some(px(TILE)),
+            height: Some(px(TILE)),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(JustifyContent::Center),
+            ..rounded(6.0)
+        }, test_id = "sticker-tile") {
+            image(
+                src = src,
+                alt = alt,
+                style = StyleRules {
+                    width: Some(px(TILE - 8.0)),
+                    height: Some(px(TILE - 8.0)),
+                    object_fit: Some(ObjectFit::Contain),
+                    ..Default::default()
+                },
+            )
+        }
+        .on_touch({
+            let p = on_pick;
+            let (sid, server, nm, desc, related, img) = (id, server_id, name, description, related_emoji, image);
+            move |ev| {
+                if ev.phase == TouchPhase::Ended {
+                    if let Some(p) = &p {
+                        (p)(Sticker {
+                            id: sid,
+                            server_id: server,
+                            name: nm.clone(),
+                            description: desc.clone(),
+                            related_emoji: related.clone(),
+                            image: img.clone(),
+                        });
+                    }
+                }
+                TouchResponse::CONSUMED
+            }
+        })
+    }
+}
+
+/// One grid item: a server's header or one of its sticker cells, keyed so a
+/// search narrows or widens the list without rebuilding the cells that stay.
+#[derive(Clone, PartialEq)]
+enum GridItem {
+    Header { server_id: i64, name: String },
+    Cell { server_id: i64, sticker: Sticker },
+}
+
+impl GridItem {
+    fn key(&self) -> String {
+        match self {
+            GridItem::Header { server_id, .. } => format!("h:{server_id}"),
+            GridItem::Cell { sticker, .. } => format!("c:{}", sticker.id),
+        }
+    }
 }
 
 /// The groups in picker order: the open server first, then the rest as the
@@ -112,106 +210,79 @@ pub fn StickerPicker(on_pick: Option<Rc<dyn Fn(Sticker)>>) -> Element {
         })
     });
 
-    let tile = move |s: Sticker, pick: Option<Rc<dyn Fn(Sticker)>>| -> Element {
-        let src = crate::auth::media_url(s.image.clone());
-        let alt = s.name.clone();
-        ui! {
-            view(style = StyleRules {
-                width: Some(px(TILE)),
-                height: Some(px(TILE)),
-                align_items: Some(AlignItems::Center),
-                justify_content: Some(JustifyContent::Center),
-                ..rounded(6.0)
-            }, test_id = "sticker-tile") {
-                image(
-                    src = src,
-                    alt = alt,
-                    style = StyleRules {
-                        width: Some(px(TILE - 8.0)),
-                        height: Some(px(TILE - 8.0)),
-                        object_fit: Some(ObjectFit::Contain),
-                        ..Default::default()
-                    },
-                )
-            }
-            .on_touch(move |ev| {
-                if ev.phase == TouchPhase::Ended {
-                    if let Some(p) = &pick {
-                        (p)(s.clone());
-                    }
-                }
-                TouchResponse::CONSUMED
-            })
+    // The status line while loading or empty ("" when results show), and the
+    // groups to grid otherwise, so the keyed loops re-reconcile rows when a
+    // search narrows or widens the list.
+    let status = memo(move || -> String {
+        match shown.get() {
+            None => "Loading stickers…".to_string(),
+            Some(gs) if gs.is_empty() && query.get().trim().is_empty() =>
+                "No stickers yet. Server admins can add them in Server Settings → Stickers.".to_string(),
+            Some(gs) if gs.is_empty() => "No stickers match that search.".to_string(),
+            Some(_) => String::new(),
         }
-    };
-
-    let body = switch(
-        move || shown.get(),
-        move |gs: &Option<Vec<Group>>| {
-            let message = match gs {
-                None => Some("Loading stickers…".to_string()),
-                Some(gs) if gs.is_empty() && query.get().trim().is_empty() => Some(
-                    "No stickers yet. Server admins can add them in Server Settings → Stickers.".to_string(),
-                ),
-                Some(gs) if gs.is_empty() => Some("No stickers match that search.".to_string()),
-                Some(_) => None,
-            };
-            if let Some(m) = message {
-                return ui! {
-                    view(style = StyleRules {
-                        height: Some(px(200.0)),
-                        align_items: Some(AlignItems::Center),
-                        justify_content: Some(JustifyContent::Center),
-                        padding_left: Some(px(24.0)),
-                        padding_right: Some(px(24.0)),
-                        ..Default::default()
-                    }) {
-                        text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { m }
-                    }
-                };
-            }
-            // Built in plain Rust: each tile needs its own copy of `on_pick`.
-            let sections: Vec<Element> = gs
-                .clone()
-                .unwrap_or_default()
-                .into_iter()
-                .map(|g| {
-                    let tiles: Vec<Element> = g.stickers.iter().map(|s| tile(s.clone(), on_pick.clone())).collect();
-                    ui! {
-                        view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(4.0)), ..Default::default() }) {
-                            text(style = StyleRules {
-                                font_size: Some(px(12.0)),
-                                font_weight: Some(FontWeight::Bold),
-                                color: Some(col(theme::TEXT_MUTED)),
-                                ..Default::default()
-                            }) { g.name.to_uppercase() }
-                            view(style = StyleRules {
-                                flex_direction: Some(FlexDirection::Row),
-                                flex_wrap: Some(FlexWrap::Wrap),
-                                gap: Some(px(4.0)),
-                                ..Default::default()
-                            }) {
-                                { tiles }
-                            }
-                        }
-                    }
-                })
-                .collect();
-            ui! {
+    });
+    // The grid's status line and keyed items, so the keyed loop re-reconciles
+    // rows when a search narrows or widens the list (the emoji picker's flat
+    // header/cell idiom).
+    let grid_items = memo(move || -> Vec<GridItem> {
+        shown.get()
+            .unwrap_or_default()
+            .into_iter()
+            .flat_map(|g| {
+                let (sid, name, stickers) = (g.server_id, g.name, g.stickers);
+                std::iter::once(GridItem::Header { server_id: sid, name })
+                    .chain(stickers.into_iter().map(move |s| GridItem::Cell { server_id: sid, sticker: s }))
+            })
+            .collect()
+    });
+    let pick_wrap = on_pick.clone();
+    let grid = ui! {
+        view(style = StyleRules {
+            flex_direction: Some(FlexDirection::Column),
+            gap: Some(px(GAP)),
+            padding_left: Some(px(PAD)),
+            padding_right: Some(px(PAD)),
+            padding_bottom: Some(px(PAD)),
+            ..Default::default()
+        }) {
+            if !status.get().is_empty() {
                 view(style = StyleRules {
-                    flex_direction: Some(FlexDirection::Column),
-                    gap: Some(px(GAP)),
-                    padding_left: Some(px(PAD)),
-                    padding_right: Some(px(PAD)),
-                    padding_bottom: Some(px(PAD)),
+                    height: Some(px(200.0)),
+                    align_items: Some(AlignItems::Center),
+                    justify_content: Some(JustifyContent::Center),
+                    padding_left: Some(px(24.0)),
+                    padding_right: Some(px(24.0)),
                     ..Default::default()
                 }) {
-                    { sections }
+                    text(style = StyleRules { font_size: Some(px(14.0)), color: Some(col(theme::TEXT_MUTED)), ..Default::default() }) { move || status.get() }
                 }
             }
-        },
-    );
-
+            view(style = StyleRules {
+                flex_direction: Some(FlexDirection::Row),
+                flex_wrap: Some(FlexWrap::Wrap),
+                gap: Some(px(4.0)),
+                ..Default::default()
+            }) {
+                for item in grid_items, key = item.key() {
+                    {
+                        match item {
+                            GridItem::Header { name, .. } => crate::sticker_picker::StickerHeader(name.clone()),
+                            GridItem::Cell { server_id, sticker, .. } => crate::sticker_picker::StickerTile(
+                                sticker.id,
+                                server_id,
+                                sticker.name.clone(),
+                                sticker.description.clone(),
+                                sticker.related_emoji.clone(),
+                                sticker.image.clone(),
+                                pick_wrap.clone(),
+                            ),
+                        }
+                    }
+                }
+            }
+        }
+    };
     ui! {
         view(style = StyleRules {
             width: Some(px(CARD_W)),
@@ -250,7 +321,7 @@ pub fn StickerPicker(on_pick: Option<Rc<dyn Fn(Sticker)>>) -> Element {
                 min_height: Some(px(0.0)),
                 ..Default::default()
             }) {
-                body
+                grid
             }
         }
     }

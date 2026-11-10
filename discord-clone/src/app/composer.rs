@@ -4,7 +4,7 @@
 use crate::theme;
 use super::*;
 use crate::gif_picker::{GifPicker, gif_button};
-use crate::sticker_picker::{StickerPicker, sticker_button};
+use crate::sticker_picker::{StickerPicker, StickerButton};
 
 /// One staged-attachment chip on the composer strip: the thumbnail and an
 /// ✕ that unstages just this entry. Keyed by the staged entry's id.
@@ -725,7 +725,7 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                 // like the reference app). Chip shared with the DM composer.
                 gif_button(gif_open, vec![emoji_open, sticker_open])
                 // Sticker = open/close the sticker picker (closes the others).
-                sticker_button(sticker_open, vec![gif_open, emoji_open])
+                StickerButton(on = sticker_open, close_others = vec![gif_open, emoji_open])
                 view(style = move || StyleRules {
                     width: Some(px(28.0)),
                     height: Some(px(28.0)),

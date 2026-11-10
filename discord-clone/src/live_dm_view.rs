@@ -41,7 +41,7 @@ use runtime_core::{
 use crate::app::{format_when, message_row, same_group};
 use crate::dms::Dm;
 use crate::gif_picker::{GifPicker, gif_button};
-use crate::sticker_picker::{StickerPicker, sticker_button};
+use crate::sticker_picker::{StickerPicker, StickerButton};
 use crate::style_helpers::{col, pct, px, section_label, rounded};
 
 // --- palette -----------------------------------------------------------------
@@ -803,9 +803,9 @@ fn live_dm_conversation(
                     // GIF button: shared chip (style + toggle handler) with
                     // the channel composer.
                     gif_button(gif_open, vec![sticker_open])
-                    sticker_button(sticker_open, vec![gif_open])
                     { gif_switch }
                     { sticker_switch }
+                    StickerButton(on = sticker_open, close_others = vec![gif_open])
                 }
             };
 
