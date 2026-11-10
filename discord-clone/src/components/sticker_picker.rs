@@ -7,9 +7,10 @@
 //! once. Shared by the channel composer and the live DM composer.
 
 use crate::backend::Sticker;
+use crate::composer_icons::sticker_url;
 use crate::style_helpers::{col, px, rounded};
 use crate::theme;
-use icons_lucide::{SEARCH, STICKER};
+use icons_lucide::SEARCH;
 use runtime_core::{
     component, icon, memo, signal, ui, AlignItems, Element, FlexDirection, FlexWrap, FontWeight,
     JustifyContent, ObjectFit, Overflow, Signal, StyleRules, TouchPhase, TouchResponse, Tokenized,
@@ -48,7 +49,13 @@ pub(crate) fn StickerButton(
             background: Some(col(if hovered.get() { theme::BG_HOVER } else { "transparent" })),
             ..rounded(14.0)
         }, test_id = "sticker-button") {
-            icon(STICKER).color(move || theme::live(if hovered.get() { theme::INTERACTIVE } else { theme::TEXT_MUTED })).size(16.0)
+            image(
+                src = move || sticker_url(
+                    theme::live(if hovered.get() { theme::INTERACTIVE } else { theme::TEXT_MUTED }).0
+                ),
+                alt = "Sticker",
+                style = StyleRules { width: Some(px(24.0)), height: Some(px(24.0)), ..Default::default() },
+            )
         }
         .on_hover(move |on_| hovered.set(on_))
         .on_touch(move |ev| {

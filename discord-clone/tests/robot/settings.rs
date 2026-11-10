@@ -15,7 +15,7 @@
 
 use robot_test::{json, robot_test, App, Value};
 
-use crate::support::{fresh_name, known_bug, sign_up, signed_out};
+use crate::support::{fresh_name, sign_up, signed_out};
 use crate::support::WAIT;
 
 /// The suite screenshots the moment it names; matches the Python file names.
@@ -134,14 +134,8 @@ fn open_server_settings(app: &mut App) {
         app.test_id("mobile-back").click();
     }
     app.test_id("server-header").click();
-    if !app.test_id("menu-server-settings").is_visible() {
-        known_bug(
-            "the fresh server arms its permissions right away",
-            false,
-            "the dropdown lists no permission rows until a reload",
-        );
-        app.call_function("cassette.rearm_perms", json!({}));
-    }
+    // Entering a fresh server arms its permissions right away, so the
+    // owner's Server Settings row is in the dropdown with no reload.
     app.test_id("menu-server-settings").assert_visible();
     app.test_id("menu-server-settings").click();
     // The panel opens on Overview: its sidebar row is live.

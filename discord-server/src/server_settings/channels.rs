@@ -123,6 +123,14 @@ pub async fn create_channel(input: CreateChannelInput) -> Result<ChannelResult, 
     if input.private {
         permissions::make_private(&db, id, caller).map_err(ServerError::failed)?;
     }
+    // The new channel's permissions are part of every member's snapshot, so
+    // tell the server's members to refetch (they re-evaluate the composer's
+    // no-permission cover against the fresh channel).
+    crate::membership::access_changed(
+        &db,
+        input.server_id,
+        crate::membership::AccessChange::ChannelOverridesChanged { channel_id: id },
+    );
     Ok(ChannelResult { channel_id: id, server_id: input.server_id, name: Some(input.name) })
 }
 
@@ -142,9 +150,15 @@ pub async fn rename_channel(input: RenameChannelInput) -> Result<ChannelResult, 
 pub async fn delete_channel(input: DeleteChannelInput) -> Result<ChannelResult, ServerError> {
     let db = db_from_state()?;
     let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
-    ServerSettings::new(db)
+    ServerSettings::new(db.clone())
         .delete_channel(caller, input.server_id, input.channel_id)
         .map_err(ServerError::failed)?;
+    // A deleted channel changes what members can see and do: refetch.
+    crate::membership::access_changed(
+        &db,
+        input.server_id,
+        crate::membership::AccessChange::ChannelOverridesChanged { channel_id: input.channel_id },
+    );
     Ok(ChannelResult { channel_id: input.channel_id, server_id: input.server_id, name: None })
 }
 

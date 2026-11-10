@@ -248,6 +248,54 @@ fn a_custom_server_emoji_uploads_and_renders_in_a_message(app: &mut App) {
     eprintln!("[shot] cov-emoji-render: {shot}");
 }
 
+// ---- a JPEG server emoji uploads through the hook and renders in a message --
+
+#[robot_test]
+fn a_jpeg_server_emoji_uploads_and_renders_in_a_message(app: &mut App) {
+    signed_out(app);
+    let a = Account::new("covjpeg");
+    sign_in_as(app, &a);
+    let server = fresh_name("Cov Jpeg ");
+    create_and_enter(app, &server);
+
+    // Upload a real JPEG as a named server emoji. The settings panel's Upload
+    // Image button runs a native file picker the in-page robot cannot tap, so
+    // the hook feeds the same sniff → encode → upload path. The robot declares
+    // image/jpeg but the upload's encode_as_is re-sniffs the true format from
+    // the bytes, proving the JPEG is accepted from its magic number.
+    let jpg = "/9j/4AAQSkZJRgABAgAAAQABAAD//gAQTGF2YzYxLjE1LjEwMQD/2wBDAAgEBAQEBAUFBQUFBQYGBgYGBgYGBgYGBgYHBwcICAgHBwcGBgcHCAgICAkJCQgICAgJCQoKCgwMCwsODg4RERT/xABLAAEBAAAAAAAAAAAAAAAAAAAABgEBAAAAAAAAAAAAAAAAAAAABhABAAAAAAAAAAAAAAAAAAAAABEBAAAAAAAAAAAAAAAAAAAAAP/AABEIAAgACAMBIgACEQADEQD/2gAMAwEAAhEDEQA/AIsAVCX/2Q==";
+    app.call_function(
+        "cassette.upload_server_emoji",
+        json!({ "name": "covjpg", "mime": "image/jpeg", "data_b64": jpg }),
+    );
+
+    // The EmojiChanged frame refetches the server's emoji; wait until the
+    // client's table knows the new name before typing `:name:` (the composer
+    // encodes client-side).
+    let listed = eventually(
+        20,
+        || {
+            let reply = app.call_function("cassette.custom_emoji_names", json!({}));
+            match reply.get("Ok").unwrap_or(&reply) {
+                Value::Array(items) =>
+                    items.iter().any(|v| v.as_str().unwrap_or("") == "covjpg"),
+                _ => false,
+            }
+        },
+    );
+    assert!(listed, "the uploaded JPEG emoji never reached the emoji table");
+
+    let body = "jpeg :covjpg: here";
+    app.test_id("composer").fill(body);
+    app.test_id("composer").press_key("Enter");
+    app.test_id("msg-row").assert_visible();
+    // The shortname rendered as the uploaded image, not literal text.
+    app.test_id("emoji-image").assert_visible();
+    app.text(":covjpg:").assert_hidden();
+    let shot = app.screenshot();
+    eprintln!("[shot] cov-jpeg-emoji-render: {shot}");
+}
+
 // ---- a server rename + icon change show live for a second browser ---------
 
 #[robot_test]

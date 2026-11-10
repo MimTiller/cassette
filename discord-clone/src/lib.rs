@@ -48,6 +48,7 @@ mod styles;
 mod controls;
 mod custom_emoji;
 mod emoji_settings;
+mod emoji_upload;
 mod sticker_msgs;
 mod sticker_settings;
 mod notif_prefs;
@@ -129,6 +130,8 @@ pub mod emoji_picker;
 pub mod gif_picker;
 #[path = "components/sticker_picker.rs"]
 pub mod sticker_picker;
+#[path = "composer_icons.rs"]
+pub mod composer_icons;
 
 pub use app::app;
 pub use identity::{sign_in, sign_up};

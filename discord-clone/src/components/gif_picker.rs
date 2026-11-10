@@ -14,7 +14,8 @@
 use crate::theme;
 use crate::style_helpers::{col, px, rounded};
 use discord_server::gifs::{Gif, GifPage};
-use icons_lucide::{SEARCH, VIDEO};
+use icons_lucide::SEARCH;
+use crate::composer_icons::gif_url;
 use runtime_core::{
     after_ms_detached, component, icon, memo, signal, ui, AlignItems, Element,
     FlexDirection, JustifyContent, ObjectFit, Overflow, Signal, StyleRules,
@@ -33,8 +34,8 @@ const COL_W: f32 = (CARD_W - 2.0 * PAD - GAP) / 2.0;
 const DEBOUNCE_MS: i32 = 400;
 
 /// The composer's in-bar GIF icon button: a hover chip (transparent at rest,
-/// `BG_HOVER` while hovered, glyph `TEXT_MUTED` → `INTERACTIVE`) holding the
-/// Lucide video glyph, inside the rounded composer bar. An `on_touch`
+/// `BG_HOVER` while hovered, glyph `TEXT_MUTED` → `INTERACTIVE`) holding
+/// Discord's GIF badge, inside the rounded composer bar. An `on_touch`
 /// continuation toggles `on` on release (and closes `close_others`, e.g. the
 /// emoji popover, when present — the DM composer passes `None`). Shared by
 /// the channel composer in `app/composer.rs` and the live DM composer in
@@ -53,7 +54,13 @@ pub(crate) fn gif_button(on: Signal<bool>, close_others: Vec<Signal<bool>>) -> E
             background: Some(col(if hovered.get() { theme::BG_HOVER } else { "transparent" })),
             ..rounded(14.0)
         }, test_id = "gif-button") {
-            icon(VIDEO).color(move || theme::live(if hovered.get() { theme::INTERACTIVE } else { theme::TEXT_MUTED })).size(16.0)
+            image(
+                src = move || gif_url(
+                    theme::live(if hovered.get() { theme::INTERACTIVE } else { theme::TEXT_MUTED }).0
+                ),
+                alt = "GIF",
+                style = StyleRules { width: Some(px(24.0)), height: Some(px(24.0)), ..Default::default() },
+            )
         }
         .on_hover(move |on_| hovered.set(on_))
         .on_touch(move |ev| {

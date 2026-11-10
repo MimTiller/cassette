@@ -34,7 +34,7 @@ pub struct ServerEmojiInput {
 pub struct UploadEmojiInput {
     pub server_id: i64,
     pub name: String,
-    /// `data:image/png|gif|webp;base64,…`
+    /// `data:image/png|jpeg|gif|webp;base64,…`
     pub data_url: String,
 }
 
@@ -121,8 +121,8 @@ pub fn upload(
         return Err(format!("a server can have at most {MAX_PER_SERVER} emoji"));
     }
     let (mime, bytes) = crate::media::decode_data_image_url(&input.data_url).ok_or("not an image")?;
-    if !matches!(mime.as_str(), "image/png" | "image/gif" | "image/webp") {
-        return Err("emoji must be PNG, GIF or WebP".into());
+    if !matches!(mime.as_str(), "image/png" | "image/jpeg" | "image/gif" | "image/webp") {
+        return Err("emoji must be PNG, JPEG, GIF or WebP".into());
     }
     if bytes.len() > MAX_BYTES {
         return Err("emoji images can be at most 256 KB".into());
@@ -224,6 +224,11 @@ mod tests {
 
     const MIGRATIONS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/migrations");
     const PNG: &str = "data:image/png;base64,iVBORw0KGgo=";
+    /// A real 8×8 JPEG, a real GIF, and a real 2-frame ANIMATED WebP,
+    /// produced by ffmpeg/`cwebp` on the host: the upload path must accept all
+    /// three from the bytes, not the declared MIME.
+    const JPEG: &str = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAgAAAQABAAD//gAQTGF2YzYxLjE1LjEwMQD/2wBDAAgEBAQEBAUFBQUFBQYGBgYGBgYGBgYGBgYHBwcICAgHBwcGBgcHCAgICAkJCQgICAgJCQoKCgwMCwsODg4RERT/xABLAAEBAAAAAAAAAAAAAAAAAAAABgEBAAAAAAAAAAAAAAAAAAAABhABAAAAAAAAAAAAAAAAAAAAABEBAAAAAAAAAAAAAAAAAAAAAP/AABEIAAgACAMBIgACEQADEQD/2gAMAwEAAhEDEQA/AIsAVCX/2Q==";
+    const WEBP_ANIM: &str = "data:image/webp;base64,UklGRsAAAABXRUJQVlA4WAoAAAACAAAABwAABwAAQU5JTQYAAAD/////AABBTk1GSAAAAAAAAAAAAAcAAAcAAMgAAAJWUDggMAAAANABAJ0BKggACAACADQloAJ0ugH4AAOwAP7w6Pf/ILlhdcjX/yA/4yp8ZU/48gAAAEFOTUZEAAAAAAAAAAAABwAABwAAyAAAAFZQOCAsAAAAlAEAnQEqCAAIAAAANCWgAnS6AAOYAP75k2//kB//kB//kB//ID/iF3sgMAA=";
 
     /// alice (1) owns server 1; bob (2) is a member; carol (3) holds a role
     /// with Manage Expressions.
@@ -273,17 +278,35 @@ mod tests {
         assert_eq!(list(&db, 1).len(), 1);
     }
 
+    /// `upload` whose store runs the real media store in `dir` (magic-byte
+    /// sniffing + decode), so these tests exercise the bytes' true format.
+    fn up_real(db: &Db, dir: &std::path::Path, caller: i64, name: &str, data_url: &str) -> Result<ServerEmoji, String> {
+        let input = UploadEmojiInput { server_id: 1, name: name.into(), data_url: data_url.into() };
+        upload(db, caller, input, 1, move |bytes, mime| crate::media::store_in(dir.to_path_buf(), &bytes, mime, MAX_BYTES))
+    }
+
     #[test]
     fn uploads_are_validated() {
         let (_dir, db) = setup();
-        assert!(up(&db, 1, "jpeg", "data:image/jpeg;base64,/9j/4AA=").is_err(), "no JPEG");
         assert!(up(&db, 1, "junk", "not a data url").is_err());
         assert!(up(&db, 1, "x", PNG).is_err(), "name too short");
         up(&db, 1, "Same", PNG).unwrap();
         assert!(up(&db, 1, "same", PNG).unwrap_err().contains("already"), "names are unique ignoring case");
         let big = format!("data:image/png;base64,{}", "A".repeat(MAX_BYTES * 4 / 3 + 8));
         assert!(up(&db, 1, "big", &big).is_err(), "over 256 KB");
-        for i in 0..MAX_PER_SERVER - 1 {
+        // The real image library accepts a JPEG and a 2-frame ANIMATED WebP,
+        // sniffed from the bytes (not the declared MIME).
+        let tdir = tempfile::tempdir().unwrap();
+        let media = tdir.path();
+        let j = up_real(&db, media, 1, "jpeg", JPEG).expect("a JPEG upload succeeds");
+        assert!(j.image.ends_with(".jpg"), "stored under its real extension");
+        let w = up_real(&db, media, 1, "anim", WEBP_ANIM).expect("an animated WebP upload succeeds");
+        assert!(w.image.ends_with(".webp"), "stored under its real extension");
+        // Non-image bytes are refused by the sniffing store even under a valid
+        // declared MIME.
+        let junk = format!("data:image/png;base64,{}", "AAAAAAAA".to_string());
+        assert!(up_real(&db, media, 1, "junk", &junk).unwrap_err().contains("not recognized"), "not a decodable image");
+        for i in 0..MAX_PER_SERVER - 3 {
             up(&db, 1, &format!("e{i}"), PNG).unwrap();
         }
         assert!(up(&db, 1, "one_too_many", PNG).unwrap_err().contains("at most"));

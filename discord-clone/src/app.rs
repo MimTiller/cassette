@@ -48,7 +48,7 @@ use runtime_core::primitives::portal::{AnchorTarget, ElementAlign, ElementSide};
 use file_picker::{FilePicker, PickRequest, PickOutcome, MediaKind};
 use icons_lucide::{
     CHEVRON_DOWN, CHEVRON_RIGHT, HASH, HEADPHONES,
-    MIC, MIC_OFF, PIN, PLUS, SETTINGS, SMILE, SMILE_PLUS,
+    MIC, MIC_OFF, PIN, PLUS, SETTINGS, SMILE_PLUS,
     USER_PLUS, USERS, VOLUME_2, MENU, LOCK, BELL_OFF,
 };
 use crate::server_settings_panel::ServerSettingsPanel;
@@ -277,6 +277,11 @@ pub fn app() -> Element {
     // Runs once per process (the `app()` entry), so no "only once" guard is
     // needed.
     crate::auth::configure_server();
+    #[cfg(feature = "idea-chat")]
+    // The idea-chat wire's schema gate is an open question (wire doc §7):
+    // seed any persisted `x-srv-schema` value so the header rides calls only
+    // when it has actually been configured.
+    crate::backend::install_idea_chat_config();
     // Root-level document font: publish a system-sans stack so web text does
     // NOT fall back to the browser's serif default (Times). Without this the
     // whole app renders in serif — the single biggest "off" feel vs real
