@@ -40,7 +40,7 @@ dev-session = ["idealyst/hot-reload", "idealyst/hydrate", "idealyst/robot", "ide
 # `idea-chat`: build the second backend — IdeaChatBackend — instead of
 # CassetteBackend. Off by default; with it off the app is byte-for-byte
 # today's build.
-idea-chat = ["dep:chat-model", "dep:idea-state", "dep:serde_json", "dep:uuid", "dep:net"]
+idea-chat = ["dep:chat-model", "dep:idea-state", "dep:serde_json", "dep:serde", "dep:uuid", "dep:net"]
 
 [dependencies]
 # The platform surface, used by `src/main.rs` only. It carries whatever
@@ -136,6 +136,11 @@ chat-model = { git = "https://github.com/IdealystIO/idea-chat", rev = "643790136
 # crate instance chat-model already links (shared git cache; no new download).
 idea-state = { git = "https://github.com/IdealystIO/idea-chat", rev = "643790136ce86eeb8e38b12cf3909e22af1154d7", optional = true }
 serde_json = { version = "1", optional = true }
+# Restate-a-few chat-api wire types (`Window`, `Session`, …) need serde derives
+# in this crate, and serde comes along only transitively otherwise — pull it
+# explicitly at the SAME pin the `discord-server` crate and the pinned
+# chat-model use, so every serde trait instance is the identical one.
+serde = { version = "1", features = ["derive"], optional = true }
 uuid = { version = "1", features = ["serde"], optional = true }
 # The cross-platform HTTP/WebSocket SDK: IdeaChatBackend speaks the idea-chat
 # server's `/_srv/` routes and live socket itself (chat-api's transport is

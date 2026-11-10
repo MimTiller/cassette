@@ -33,9 +33,13 @@ pub use discord_server::server_settings::{
     ReactionResult,
     ServerSettingsResult,
     UnreadCount,
-    WsClientMsg,
     WsServerMsg,
 };
+/// The gateway's CLIENT frame type: only the Cassette socket's verbs speak it,
+/// so the idea-chat build (whose `Gateway` posts RPCs instead of frames) leaves
+/// it out, keeping that build warning-free.
+#[cfg(not(feature = "idea-chat"))]
+pub use discord_server::server_settings::WsClientMsg;
 pub use discord_server::dms::{Dm, DmMessage, SendDmMessageResult};
 pub use discord_server::servers::{ChannelSummary, ServerSummary};
 pub use discord_server::invites::{Invite, RedeemResult};
@@ -51,16 +55,23 @@ pub use discord_server::auth::{
 };
 pub use discord_server::password_resets::ResetPasswordResult;
 pub use discord_server::profiles::{ProfileFields, UserProfile};
+pub use discord_server::notification_settings::NotificationSetting;
+/// Notification rows the settings screens draw: RWND's own vocabulary, so
+/// only the Cassette build reads them.
+#[cfg(not(feature = "idea-chat"))]
 pub use discord_server::notification_settings::{
     Level,
-    NotificationSetting,
     Scope,
     MUTED_UNTIL_TURNED_OFF,
     is_muted,
 };
-pub use discord_server::server_emoji::{ServerEmoji, MAX_PER_SERVER};
+pub use discord_server::server_emoji::ServerEmoji;
+#[cfg(not(feature = "idea-chat"))]
+pub use discord_server::server_emoji::MAX_PER_SERVER;
 pub use discord_server::stickers::{Sticker, MAX_PER_SERVER as STICKERS_MAX_PER_SERVER};
-pub use discord_server::gifs::{GifPage, gif_body, gif_message};
+pub use discord_server::gifs::GifPage;
+#[cfg(not(feature = "idea-chat"))]
+pub use discord_server::gifs::{gif_body, gif_message};
 pub use discord_server::search::SearchResults;
 pub use discord_server::server_settings::{MemberInfo, MemberResult};
 pub use discord_server::server_roles::{RolesSnapshot, CustomRole};
@@ -302,6 +313,7 @@ pub struct Gateway {
     handle: server::UseSocket<WsServerMsg, WsClientMsg>,
 }
 
+#[cfg(not(feature = "idea-chat"))]
 impl Gateway {
     pub fn request_history(self: Gateway, channel_id: i64, before_id: Option<i64>) {
         self.handle.send(WsClientMsg::History { channel_id, before_id });
@@ -342,22 +354,88 @@ impl Gateway {
     }
 }
 
+/// The idea-chat flavor: the same handle shape, backed by the second backend's
+/// live connection ([`crate::backend::idea_chat::realtime`]). Its verbs post the
+/// idea-chat RPCs (send / edit / delete are calls, not frames — the facts they
+/// cause arrive as live events) and only `announce_typing` is a socket Action;
+/// [`incoming`] yields the `WsServerMsg` frames the live loop synthesizes from
+/// those events.
+#[cfg(feature = "idea-chat")]
+#[derive(Clone, Copy)]
+pub struct Gateway {
+    handle: crate::backend::idea_chat::live::GatewayHandle,
+}
+
+#[cfg(feature = "idea-chat")]
+impl Gateway {
+    pub fn request_history(self: Gateway, channel_id: i64, before_id: Option<i64>) {
+        self.handle.request_history(channel_id, before_id);
+    }
+    pub fn send_message(
+        self: Gateway,
+        channel_id: i64,
+        content: String,
+        reply_to_message_id: Option<i64>,
+        attachments: Vec<AttachmentInput>,
+        sticker_id: Option<i64>,
+    ) {
+        self.handle.send_message(channel_id, content, reply_to_message_id, attachments, sticker_id);
+    }
+    pub fn edit_message(self: Gateway, message_id: i64, content: String) {
+        self.handle.edit_message(message_id, content);
+    }
+    pub fn delete_message(self: Gateway, message_id: i64) {
+        self.handle.delete_message(message_id);
+    }
+    pub fn announce_typing(self: Gateway, channel_id: i64) {
+        self.handle.announce_typing(channel_id);
+    }
+    pub fn set_status(self: Gateway, status: String) {
+        self.handle.set_status(status);
+    }
+    pub fn incoming(self: Gateway) -> Signal<Option<WsServerMsg>> {
+        self.handle.incoming()
+    }
+    pub fn connection_status(self: Gateway) -> SocketStatus {
+        self.handle.connection_status()
+    }
+}
+
 // The areas' implementations, with today's server behind them.
+#[cfg(not(feature = "idea-chat"))]
 mod messages_impl;
+#[cfg(not(feature = "idea-chat"))]
 mod dms_impl;
+#[cfg(not(feature = "idea-chat"))]
 mod invites_impl;
+#[cfg(not(feature = "idea-chat"))]
 mod realtime;
+#[cfg(not(feature = "idea-chat"))]
 mod servers_impl;
+#[cfg(not(feature = "idea-chat"))]
 mod social_impl;
+#[cfg(not(feature = "idea-chat"))]
 mod account_impl;
+#[cfg(not(feature = "idea-chat"))]
 mod notif_impl;
+#[cfg(not(feature = "idea-chat"))]
 mod emoji_impl;
+#[cfg(not(feature = "idea-chat"))]
 mod stickers_impl;
+#[cfg(not(feature = "idea-chat"))]
 mod gif_impl;
+#[cfg(not(feature = "idea-chat"))]
 mod search_impl;
+#[cfg(not(feature = "idea-chat"))]
 mod members_impl;
+#[cfg(not(feature = "idea-chat"))]
 mod roles_impl;
+#[cfg(not(feature = "idea-chat"))]
 mod permissions_impl;
+
+// The SECOND backend's areas, talked to over the idea-chat wire.
+#[cfg(feature = "idea-chat")]
+mod idea_chat;
 
 // --- the accessors (the single place the UI gets the backend) ---------------
 
