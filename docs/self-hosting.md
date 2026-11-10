@@ -4,6 +4,23 @@ One server process, one SQLite file, one web bundle. Everything below is what
 the repo actually does today; the in-app configuration screens (Instance
 Settings and the first-run wizard) are landing in parallel.
 
+## Quick install
+
+```bash
+sh deploy/install.sh
+```
+
+[`deploy/install.sh`](../deploy/README.md) sets all of this up in one run:
+it asks where to install, for the public URL, and the port (or takes
+`--public-url/--port/--with-livekit/--yes` for non-interactive use),
+generates the session secret, writes the env file, and installs
+`rwnd.service` as a `systemd --user` unit — no root needed. With
+`--with-livekit` it also downloads the pinned LiveKit release
+(sha256-verified), generates keys, writes `livekit.yaml`, installs
+`rwnd-livekit.service`, and puts `CALL_PROVIDER`/`LIVEKIT_*` in the env
+file. Read on for what everything means, and see
+[deploy/README.md](../deploy/README.md) for the flag table.
+
 ## Requirements
 
 - Rust (stable) with the WASM target: `rustup target add wasm32-unknown-unknown`

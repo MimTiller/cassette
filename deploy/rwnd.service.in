@@ -1,0 +1,14 @@
+# systemd --user unit for the RWND server. deploy/install.sh fills the
+# __PLACEHOLDERS__ below and writes ~/.config/systemd/user/rwnd.service.
+[Unit]
+Description=RWND server (installed by deploy/install.sh)
+After=network-online.target
+
+[Service]
+EnvironmentFile=__PREFIX__/env
+ExecStart=__PREFIX__/bin/server
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

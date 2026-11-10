@@ -1,0 +1,16 @@
+# LiveKit config written by deploy/install.sh (mode 0600 — it holds the API
+# secret). __PLACEHOLDERS__ are filled per install; ports are the livekit URL's
+# port, +1 (ICE/TCP) and +2 (ICE/UDP), so forwarding three consecutive ports
+# covers voice.
+port: __PORT__
+bind_addresses:
+  - 0.0.0.0
+rtc:
+  tcp_port: __TCP_PORT__
+  udp_port: __UDP_PORT__
+  use_external_ip: false
+  node_ip: __NODE_IP__
+keys:
+  __API_KEY__: __API_SECRET__
+logging:
+  level: info
