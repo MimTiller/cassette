@@ -65,10 +65,6 @@ impl SearchScope {
     pub fn space(id: Id) -> SearchScope {
         SearchScope::Space { id }
     }
-
-    pub fn conversations() -> SearchScope {
-        SearchScope::Conversations
-    }
 }
 
 /// An upload's use. Restated from `chat-api/src/files.rs` at the pinned rev.
@@ -97,12 +93,6 @@ pub struct Slot {
 pub struct Session {
     pub token: Option<String>,
     pub me: Me,
-}
-
-/// Signup finished; a verification code is on its way to `email`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SignedUp {
-    pub email: String,
 }
 
 /// Decode an idea-chat error body (`{"e":{"<kind>":{"message":…}}}`) into a

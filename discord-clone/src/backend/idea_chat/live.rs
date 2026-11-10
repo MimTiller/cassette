@@ -169,16 +169,16 @@ pub(crate) fn frames_for(event: Event) -> Vec<WsServerMsg> {
         // behind this backend yet; the state still folds them, the frames stay
         // out. A server-internal restate: this client waits for a fresh
         // snapshot.
-        Event::Read { channel, last_read } => {},
-        Event::VoiceJoined { state } => {},
-        Event::VoiceUpdated { state } => {},
-        Event::VoiceLeft { channel, user } => {},
-        Event::RingUpdated { ring } => {},
-        Event::RingEnded { channel } => {},
-        Event::KeyRequested { request } => {},
-        Event::KeyDelivered { key } => {},
-        Event::MutedChanged { target, muted } => {},
-        Event::DevicesChanged { devices } => {},
+        Event::Read { .. } => {},
+        Event::VoiceJoined { .. } => {},
+        Event::VoiceUpdated { .. } => {},
+        Event::VoiceLeft { .. } => {},
+        Event::RingUpdated { .. } => {},
+        Event::RingEnded { .. } => {},
+        Event::KeyRequested { .. } => {},
+        Event::KeyDelivered { .. } => {},
+        Event::MutedChanged { .. } => {},
+        Event::DevicesChanged { .. } => {},
         Event::Resync => drop_state(),
         Event::ChannelRemoved { .. } => {},
     }
@@ -547,7 +547,9 @@ pub(crate) async fn upload_bytes(name: String, bytes: Vec<u8>, mime: String, pur
 /// `WsServerMsg` the Cassette socket carries. The session bearer/cookie
 /// authenticates `live_ticket` itself; the ticket rides the URL because a
 /// native WebSocket open carries no headers.
-pub(crate) fn connect(token: String) -> GatewayHandle {
+// The socket authenticates itself with `live_ticket`, so the caller's bearer
+// is not carried here.
+pub(crate) fn connect(_token: String) -> GatewayHandle {
     let incoming: Signal<Option<WsServerMsg>> = signal(None);
     let status: Signal<SocketStatus> = signal(SocketStatus::Connecting);
     let sender: Signal<Option<SocketSender<Up>>> = signal(None);

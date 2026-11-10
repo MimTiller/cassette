@@ -176,7 +176,6 @@ impl SearchApi for IdeaChatBackend {
                     if (index as i64) < offset {
                         continue
                     }
-                    let row = world.users.get(&message.author);
                     hits.push(SearchHit {
                         message_id: live::see(message.id),
                         channel_id: live::see(message.channel),
@@ -261,8 +260,7 @@ fn terms_of(query: String) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chat_model::{Id, Message, ChannelKind};
-    use discord_server::search::{Query, SearchHit};
+    use chat_model::{Id};
 
     fn uid(n: u128) -> Id {
         Id::from_u128(n)

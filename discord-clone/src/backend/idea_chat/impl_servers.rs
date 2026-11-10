@@ -5,7 +5,7 @@
 
 use crate::backend::*;
 use crate::backend::idea_chat::{client, live, model};
-use chat_model::{Channel, ChannelKind, Id, Role, Space};
+use chat_model::{Channel, ChannelKind, Id, Role};
 use runtime_shared::time::epoch_millis;
 
 impl ServersApi for IdeaChatBackend {

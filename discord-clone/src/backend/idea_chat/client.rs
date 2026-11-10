@@ -115,18 +115,6 @@ pub(crate) async fn put(url: String, content_type: String, bytes: Vec<u8>) -> Re
     }
 }
 
-/// GET one URL's raw bytes — the answer to a GET-only route.
-pub(crate) async fn get_bytes(url: String) -> Result<Vec<u8>, ServerError> {
-    let response = match Client::new().get(url).send().await {
-        Ok(response) => response,
-        Err(e) => return Err(transport(e)),
-    };
-    match response.body().await {
-        Ok(bytes) => Ok(bytes),
-        Err(e) => Err(transport(e)),
-    }
-}
-
 /// Hex-encode open args for the `/_srv/_ws/live?args=` URL convention: the
 /// args JSON array, then one hex byte per character.
 pub(crate) fn args_hex(args: String) -> String {

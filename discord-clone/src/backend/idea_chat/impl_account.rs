@@ -3,7 +3,7 @@
 
 use crate::backend::*;
 use crate::backend::idea_chat::{client, live, model};
-use chat_model::{Id, User, Relation};
+use chat_model::{User, Relation};
 
 impl AccountApi for IdeaChatBackend {
     // RWND signs in by username; idea-chat by email. On this server's account
@@ -247,6 +247,7 @@ fn optional_text(text: String) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chat_model::Id;
 
     #[test]
     fn a_session_decodes_from_the_wires_answer() {

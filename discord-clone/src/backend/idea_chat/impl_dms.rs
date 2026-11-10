@@ -4,7 +4,7 @@
 
 use crate::backend::*;
 use crate::backend::idea_chat::{client, live, model};
-use chat_model::{Channel, ChannelKind, Id, Message, User, Role, Relation};
+use chat_model::{Channel, ChannelKind, Id, Message, Role};
 use discord_server::dms::{DmParticipant};
 use serde_json::Value;
 

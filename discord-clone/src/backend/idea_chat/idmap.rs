@@ -136,12 +136,4 @@ pub(crate) fn uuid_of(account: String, id: i64) -> Option<String> {
     load(account).i_to_uuid.get(&id).cloned()
 }
 
-/// The i64 behind a wire UUID under `account`, if this table has seen it.
-pub(crate) fn id_of(account: String, uuid: String) -> Option<i64> {
-    load(account).uuid_to_i.get(&uuid).copied()
-}
 
-/// What `account`'s table currently holds: the UUIDs in assigned order.
-pub(crate) fn order(account: String) -> Vec<String> {
-    load(account).order.clone()
-}
