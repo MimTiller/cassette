@@ -85,7 +85,9 @@ pub enum CallTicket {
 }
 
 /// One connected user's display card in a voice roster: who to draw under
-/// the channel row, without the client looking anyone up.
+/// the channel row, without the client looking anyone up. Mute/deafen live
+/// on the server (a browser's own toggle is invisible to peers) so every
+/// client draws the same icons, and the flags ride the whole-list frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VoiceUser {
     pub user_id: i64,
@@ -93,6 +95,12 @@ pub struct VoiceUser {
     /// Their avatar (a `/media/…` path), `None` = default initial circle.
     #[serde(default)]
     pub avatar_url: Option<String>,
+    /// Their mic is off (published audio is suppressed).
+    #[serde(default)]
+    pub muted: bool,
+    /// Their incoming audio is off (they hear nobody).
+    #[serde(default)]
+    pub deafened: bool,
 }
 
 /// Join the voice channel `channel_id`.
@@ -123,11 +131,25 @@ pub struct VoiceStateInput {
     pub channel_id: i64,
 }
 
+/// Set the caller's mute/deafen flags for the voice channel they are in.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VoiceFlagsInput {
+    pub channel_id: i64,
+    pub muted: bool,
+    pub deafened: bool,
+}
+
 /// The voice-state answer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VoiceStateResult {
     pub provider: String,
     pub ticket: Option<CallTicket>,
+    /// The caller's own mute/deafen flags for this channel, so a fresh
+    /// browser restores its icons without a new click.
+    #[serde(default)]
+    pub muted: bool,
+    #[serde(default)]
+    pub deafened: bool,
 }
 
 // ── the provider config ────────────────────────────────────────────────────
@@ -309,6 +331,46 @@ fn roster_ids(channel_id: i64) -> Vec<i64> {
     ids
 }
 #[cfg(feature = "server")]
+/// Per-user mute/deafen flags for their current voice connection: process
+/// state like the roster itself, cleared when they leave the channel. LiveKit
+/// only ever sees one browser's own toggles, so the flags live server-side
+/// and ride every VoiceRoster frame — that is what lets a peer draw the
+/// muted icon, and what a fresh client restores from `voice_state`.
+static VOICE_FLAGS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<i64, (bool, bool)>>> =
+    std::sync::OnceLock::new();
+#[cfg(feature = "server")]
+fn flags_of(user_id: i64) -> (bool, bool) {
+    let m = VOICE_FLAGS.get_or_init(new_voice_map_flags)
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    m.get(&user_id).copied().unwrap_or((false, false))
+}
+#[cfg(feature = "server")]
+fn new_voice_map_flags() -> std::sync::Mutex<std::collections::HashMap<i64, (bool, bool)>> {
+    std::sync::Mutex::new(std::collections::HashMap::new())
+}
+
+#[cfg(feature = "server")]
+/// The (user, muted, deafened) cards for `channel_id`, ordered by user id
+/// (a stable display order): the pure read both the roster frames and the
+/// tests go through.
+pub fn roster_entries(db: Db, channel_id: i64) -> Vec<VoiceUser> {
+    roster_ids(channel_id)
+        .into_iter()
+        .map(move |uid| {
+            let (muted, deafened) = flags_of(uid);
+            VoiceUser {
+                user_id: uid,
+                username: db.user_by_id(uid).map(|(_, u)| u).unwrap_or_default(),
+                avatar_url: db.user_avatar(uid),
+                muted,
+                deafened,
+            }
+        })
+        .collect::<Vec<VoiceUser>>()
+}
+
+#[cfg(feature = "server")]
 /// Make `user_id`'s voice channel `channel_id` (`None` clears it) and push
 /// the whole rosters of the old and new channels to their viewers, so every
 /// client that can see them - the user's own socket included - replaces the
@@ -324,6 +386,15 @@ pub fn set_voice(db: Db, user_id: i64, channel_id: Option<i64>) {
         }
         old
     };
+    if channel_id.is_none() {
+        // Leaving drops the connection entirely: the flags go with it, so a
+        // later join starts unmuted.
+        VOICE_FLAGS
+            .get_or_init(new_voice_map_flags)
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&user_id);
+    }
     if old == channel_id {
         return;
     }
@@ -338,19 +409,11 @@ pub fn set_voice(db: Db, user_id: i64, channel_id: Option<i64>) {
 /// must be able to drop stale rows.
 pub fn announce_roster(db: Db, channel_id: i64) {
     let audience = channel_audience(&db, channel_id);
-    let entries = roster_ids(channel_id)
-        .into_iter()
-        .map(move |uid| VoiceUser {
-            user_id: uid,
-            username: db.user_by_id(uid).map(|(_, u)| u).unwrap_or_default(),
-            avatar_url: db.user_avatar(uid),
-        })
-        .collect::<Vec<VoiceUser>>();
     hub().publish(
         &audience,
         &WsServerMsg::VoiceRoster {
             channel_id,
-            entries,
+            entries: roster_entries(db, channel_id),
             seq: next_frame_seq(),
         },
     );
@@ -448,6 +511,24 @@ impl VoiceService {
         ticket
     }
 
+    /// Set the caller's mute/deafen flags for `channel_id` (they must be in
+    /// it) and rebroadcast the channel's roster, so every viewer's copy shows
+    /// the icons. Mute gates publishing, deafen gates playback; with both the
+    /// connection stays and no audio moves either way.
+    pub fn set_flags(&self, caller: i64, channel_id: i64, muted: bool, deafened: bool) -> Result<(), String> {
+        if voice_of(caller) != Some(channel_id) {
+            return Err("not connected to this voice channel".into());
+        }
+        let _perms = self.authorize(caller, channel_id)?;
+        VOICE_FLAGS
+            .get_or_init(new_voice_map_flags)
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(caller, (muted, deafened));
+        announce_roster(self.db.clone(), channel_id);
+        Ok(())
+    }
+
     /// Leave: clear the caller's voice entry if they are in this channel.
     pub fn leave(&self, caller: i64, channel_id: i64) -> Result<LeaveVoiceResult, String> {
         let was_in = voice_of(caller) == Some(channel_id);
@@ -505,6 +586,18 @@ pub async fn leave_voice(input: LeaveVoiceInput) -> Result<LeaveVoiceResult, Ser
     Ok(left)
 }
 
+/// Set the caller's mute/deafen flags for the voice channel they are in and
+/// rebroadcast the channel's roster, so every viewer draws the same icons.
+#[server]
+pub async fn set_voice_flags(input: VoiceFlagsInput) -> Result<(), ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    VoiceService::new(db.clone())
+        .set_flags(caller, input.channel_id, input.muted, input.deafened)
+        .map_err(ServerError::failed)?;
+    Ok(())
+}
+
 /// The server's voice state: its enabled call provider, plus the ticket for
 /// `channel_id` when the caller is already in it, so a fresh client restores
 /// its voice bar without a new click. Never leaks provider secrets.
@@ -515,13 +608,15 @@ pub async fn voice_state(input: VoiceStateInput) -> Result<VoiceStateResult, Ser
     let config = CallConfig::from_env();
     let service = VoiceService::new(db.clone());
     let provider = service.provider();
+    let connected = Some(input.channel_id) == voice_of(caller);
     let ticket =
-        if Some(input.channel_id) == voice_of(caller) {
+        if connected {
             service.ticket(caller, input.channel_id, config).ok()
         } else {
             None
         };
-    Ok(VoiceStateResult { provider, ticket })
+    let (muted, deafened) = if connected { flags_of(caller) } else { (false, false) };
+    Ok(VoiceStateResult { provider, ticket, muted, deafened })
 }
 
 #[cfg(all(test, feature = "server"))]
@@ -687,6 +782,28 @@ mod tests {
         let sig = jwt_sign(body.as_bytes(), "secret".as_bytes());
         let rebuilt = format!("{body}.{sig}");
         assert_eq!(rebuilt, token, "the HMAC of the body is the token");
+    }
+
+    #[test]
+    fn set_voice_flags_makes_the_roster_show_it() {
+        // Allowed caller: joining then muting lands the flag on the roster
+        // cards; a caller who is not connected to the channel is refused
+        // with a plain sentence, and so is one whose channel differs.
+        let (_dir, db) = fixture();
+        let svc = VoiceService::new(db.clone());
+        assert!(svc.join(4, 20, live_config()).is_ok(), "dave joins");
+        assert!(svc.set_flags(4, 20, true, false).is_ok(), "dave mutes");
+        let cards = roster_entries(db.clone(), 20);
+        assert_eq!(cards.len(), 1, "one entry");
+        assert!(cards[0].muted, "the card carries the mute");
+        assert!(!cards[0].deafened, "deafened untouched");
+        assert_eq!(
+            svc.set_flags(1, 20, true, true).unwrap_err(),
+            "not connected to this voice channel",
+            "alice never joined"
+        );
+        assert!(svc.leave(4, 20).unwrap().was_in, "dave leaves");
+        assert!(roster_entries(db, 20).is_empty(), "the roster is gone");
     }
 
     #[test]
