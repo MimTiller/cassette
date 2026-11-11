@@ -24,6 +24,7 @@ mod messages;
 mod dms;
 mod friends;
 mod invites;
+mod instance;
 
 #[cfg(feature = "server")]
 pub use password::{hash_password, password_needs_rehash,

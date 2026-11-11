@@ -181,6 +181,7 @@ pub struct VoiceStateResult {
 /// credentials when it does. Read from the environment on every join, so
 /// a server can't be steered by its clients.
 #[cfg(feature = "server")]
+#[derive(Clone)]
 pub struct CallConfig {
     /// `livekit` | `none` (| `idea-chat`, reserved).
     pub provider: String,
@@ -583,7 +584,7 @@ impl VoiceService {
     /// The server's call provider name - `livekit` | `none` - for clients
     /// that ask, so secret material is never handed out.
     pub fn provider(&self) -> String {
-        CallConfig::from_env().provider
+        crate::instance::current_call_config().provider
     }
 }
 
@@ -612,7 +613,7 @@ pub async fn join_voice(input: JoinVoiceInput) -> Result<CallTicket, ServerError
     let db = db_from_state()?;
     let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
     let ticket = VoiceService::new(db.clone())
-        .join(caller, input.channel_id, CallConfig::from_env())
+        .join(caller, input.channel_id, crate::instance::current_call_config())
         .map_err(ServerError::failed)?;
     Ok(ticket)
 }
@@ -654,7 +655,7 @@ pub async fn set_voice_flags(input: VoiceFlagsInput) -> Result<(), ServerError> 
 pub async fn voice_state(input: VoiceStateInput) -> Result<VoiceStateResult, ServerError> {
     let db = db_from_state()?;
     let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
-    let config = CallConfig::from_env();
+    let config = crate::instance::current_call_config();
     let service = VoiceService::new(db.clone());
     let provider = service.provider();
     let connected = Some(input.channel_id) == voice_of(caller);
@@ -849,6 +850,7 @@ mod tests {
 
     #[test]
     fn set_voice_flags_makes_the_roster_show_it() {
+        let _guard = crate::e2e_lock::guard();
         // Allowed caller: joining then muting lands the flag on the roster
         // cards; a caller who is not connected to the channel is refused
         // with a plain sentence, and so is one whose channel differs.
@@ -873,6 +875,7 @@ mod tests {
 
     #[test]
     fn camera_and_share_follow_speak() {
+        let _guard = crate::e2e_lock::guard();
         // Publishing a camera or a screen share is gated like publishing
         // audio: Speak. Channel 22 denies Speak to @everyone, so dave may
         // join and mute there but any tap that turns video on is refused
@@ -904,6 +907,10 @@ mod tests {
 
     #[test]
     fn join_records_and_leave_clears_the_roster() {
+        // The roster is process-wide static keyed by user id, and every voice
+        // fixture reuses dave (4), so the roster-mutating tests serialize on
+        // the shared guard rather than clobber each other's entry mid-run.
+        let _guard = crate::e2e_lock::guard();
         let (_dir, db) = fixture();
         let svc = VoiceService::new(db.clone());
         assert!(svc.join(4, 20, live_config()).is_ok(), "dave joins the open room");

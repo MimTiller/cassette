@@ -98,6 +98,8 @@ pub mod realtime;
 #[cfg(feature = "server")]
 pub mod membership;
 pub mod voice;
+// Instance-wide settings the host admin configures (see `src/instance.rs`).
+pub mod instance;
 #[cfg(feature = "server")]
 pub mod rate_limit;
 #[cfg(feature = "server")]

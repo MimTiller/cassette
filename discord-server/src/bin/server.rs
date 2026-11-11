@@ -124,6 +124,26 @@ async fn main() {
     let db = discord_server::db::Db::migrate(&db_path, &migrations)
         .unwrap_or_else(|e| panic!("failed to open/migrate database at {db_path:?}: {e}"));
 
+    // Instance admins: INSTANCE_ADMINS names existing accounts (comma-
+    // separated usernames) that may manage the instance store. Bootstrap
+    // only marks accounts present now — an instance with no admin yet is
+    // set up by the setup flow, never by auto-promoting a first registrant.
+    match std::env::var("INSTANCE_ADMINS") {
+        Err(_) => (),
+        Ok(list) =>
+            for name in list.split(",") {
+                let name = name.trim();
+                if name.is_empty() {
+                    continue;
+                }
+                match db.user_by_username(name) {
+                    None => eprintln!("INSTANCE_ADMINS names no account: {name}"),
+                    Some((id, _)) =>
+                        db.grant_instance_admin(id).unwrap_or_else(|e| panic!("instance admin {id}: {e}")),
+                }
+            },
+    }
+
     if let Some(username) = reset_user {
         use discord_server::password_resets::{now_ms, ResetService, URL_PARAM};
         match ResetService::new(db).issue(&username, now_ms()) {
