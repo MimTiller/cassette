@@ -67,12 +67,14 @@ pub fn create_server_modal(
         font_size: Some(px(18.0)),
         font_weight: Some(FontWeight::Bold),
         color: Some(col(theme::TEXT_STRONG)),
+        flex_shrink: Some(Tokenized::Literal(0.0)),
         ..Default::default()
     };
     let sub_style = StyleRules {
         font_size: Some(px(13.0)),
         color: Some(col(theme::TEXT_MUTED)),
         margin_top: Some(px(4.0)),
+        flex_shrink: Some(Tokenized::Literal(0.0)),
         ..Default::default()
     };
     let input_style = StyleRules {
