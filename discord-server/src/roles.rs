@@ -182,4 +182,33 @@ mod tests {
         assert!(!fake.is_owner, "ownership is servers.owner_id, not the stored string");
         assert_eq!(fake.server, ctx.everyone(), "the 'owner' string on a non-owner row adds nothing");
     }
+
+    #[test]
+    fn role_strings_parse_to_their_level_and_only_owner_grants_rank() {
+        assert_eq!(Role::from_db_str(Role::Admin.db_str()), Some(Role::Admin));
+        assert_eq!(Role::from_db_str(Role::Moderator.db_str()), Some(Role::Moderator));
+        assert_eq!(Role::from_db_str(Role::Owner.db_str()), Some(Role::Owner));
+        assert_eq!(Role::from_db_str(Role::Member.db_str()), Some(Role::Member));
+    }
+
+    #[test]
+    fn a_corrupt_role_string_is_rejected_by_the_schema() {
+        let (_dir, db) = setup();
+        db.lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO users (id, username, email, created_at) VALUES (1,'owner','o@x',1);
+                 INSERT INTO users (id, username, email, created_at) VALUES (9,'corrupt','c@x',1);
+                 INSERT INTO servers (id, name, owner_id, icon_url, created_at) VALUES (1,'S1',1,NULL,1);
+                 INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES (1,1,'owner',1);",
+            )
+            .unwrap();
+        let r = db.lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES (1,9,'OWNER',1)".into(),
+                (),
+            );
+        assert!(r.is_err(), "the schema CHECK rejects an unknown role string outright");
+    }
 }

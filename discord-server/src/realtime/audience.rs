@@ -162,4 +162,33 @@ mod audience_tests {
         ).unwrap();
         assert_eq!(presence_audience(&db, 2), vec![2, 3], "alice no longer hears bob");
     }
+
+    #[test]
+    fn audience_of_a_missing_channel_is_empty() {
+        let (_dir, db) = setup();
+        assert!(channel_audience(&db, 99).is_empty(), "no channel 99: nobody hears it");
+    }
+
+    #[test]
+    fn announce_membership_follows_the_audience_rule() {
+        let _guard = crate::e2e_lock::guard();
+        let (_dir, db) = setup();
+        let hub = crate::realtime::hub();
+        hub.reset();
+        let (_, mut bob_rx) = hub.register(2);
+        let (_, mut ghost_rx) = hub.register(4);
+        crate::membership::access_changed(
+            &db,
+            1,
+            crate::membership::AccessChange::MemberJoined { user_id: 2 },
+        );
+        assert!(
+            matches!(
+                bob_rx.try_recv(),
+                Ok(crate::server_settings::WsServerMsg::MemberChanged { server_id: 1, .. })
+            ),
+            "bob is in the audience"
+        );
+        assert!(ghost_rx.try_recv().is_err(), "the non-member got nothing");
+    }
 }
