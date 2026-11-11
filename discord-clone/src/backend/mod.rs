@@ -76,6 +76,7 @@ pub use discord_server::search::SearchResults;
 pub use discord_server::server_settings::{MemberInfo, MemberResult};
 pub use discord_server::server_roles::{RolesSnapshot, CustomRole};
 pub use discord_server::permissions::{Permissions, Target, MyPermissions, Overwrite};
+pub use discord_server::voice::{CallTicket, LeaveVoiceResult, VoiceStateResult};
 pub use discord_server::custom_themes::{
     CustomTheme,
     SaveCustomThemeInput,
@@ -284,6 +285,18 @@ pub trait PermissionsApi {
     async fn set_everyone_permissions(server_id: i64, permissions: Permissions) -> Result<Permissions, ServerError>;
 }
 
+/// Voice calls: joining a voice channel asks the backend for the server's
+/// provider-agnostic call ticket, leaving clears the roster entry, and the
+/// state query says which provider is enabled (and re-issues the ticket
+/// when the caller is already in the channel, so a fresh browser restores
+/// its voice bar without a new click). The UI treats a ticket as opaque
+/// provider data and never talks to a provider directly.
+pub trait CallApi {
+    async fn join_voice(channel_id: i64) -> Result<CallTicket, ServerError>;
+    async fn leave_voice(channel_id: i64) -> Result<LeaveVoiceResult, ServerError>;
+    async fn voice_state(channel_id: i64) -> Result<VoiceStateResult, ServerError>;
+}
+
 /// Colour themes a person makes for themselves: the per-account store
 /// behind the custom-theme screens.
 pub trait ThemesApi {
@@ -454,6 +467,8 @@ mod members_impl;
 mod roles_impl;
 #[cfg(not(feature = "idea-chat"))]
 mod permissions_impl;
+#[cfg(not(feature = "idea-chat"))]
+mod voice_impl;
 mod themes_impl;
 
 // The SECOND backend's areas, talked to over the idea-chat wire.
@@ -928,4 +943,18 @@ pub async fn set_channel_overwrite(channel_id: i64, target: Target, allow: Permi
 
 pub async fn set_everyone_permissions(server_id: i64, permissions: Permissions) -> Result<Permissions, String> {
     Backend::set_everyone_permissions(server_id, permissions).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+// --- the call accessors ------------------------------------------------------
+
+pub async fn join_voice(channel_id: i64) -> Result<CallTicket, String> {
+    Backend::join_voice(channel_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn leave_voice(channel_id: i64) -> Result<LeaveVoiceResult, String> {
+    Backend::leave_voice(channel_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn voice_state(channel_id: i64) -> Result<VoiceStateResult, String> {
+    Backend::voice_state(channel_id).await.map_err(|e| crate::errors::friendly(&e))
 }

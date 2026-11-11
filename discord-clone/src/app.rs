@@ -437,6 +437,16 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // in a voice channel. Drives the voice-row membership lists AND the
     // profile strip's voice-connection bar.
     let joined_voice: Signal<Option<(u32, u32)>> = signal(None);
+    // Who is connected to each live voice channel, per the `VoiceRoster`
+    // frames the backend pushes on every join/leave: a whole-list per channel
+    // buffer (like the presence buffer) redrawn via `live_voice_rev`, so the
+    // sidebar's voice rows drop stale names when the roster arrives.
+    let live_voice_roster: Rc<RefCell<HashMap<i64, Vec<discord_server::voice::VoiceUser>>>> =
+        Rc::new(RefCell::new(HashMap::new()));
+    let live_voice_rev: Signal<u32> = signal(0);
+    // The backend's refusal from the last voice join attempt, painted under
+    // the channel row in red (user-facing text, shown verbatim).
+    let voice_error: Signal<Option<(i64, String)>> = signal(None);
     // The signed-in user's live presence status, as a signal because the
     // profile strip can change it; the member panel renders the user under
     // this status, so a change regroups them there too.
@@ -785,6 +795,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let lkick = live_kick_confirm.clone();
         let lbcm = live_ban_confirm.clone();
         let ltcm = live_timeout_confirm.clone();
+        let jv_restore = joined_voice.clone();
         let lunread = rail_unread.clone();
         let lunread_rev = live_unread_rev.clone();
         // The live list's scroll state re-arms for the restored channel exactly
@@ -838,14 +849,41 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 };
                 let channels = crate::backend::list_channels(sid).await;
                 let members = crate::backend::list_members(sid).await;
-                (Some(servers), Some((sid, counts, channels, members, saved)))
+                // A fresh browser restores an in-progress voice call without a
+                // new click: ask the backend, for each of the server's voice
+                // channels, whether this caller is already connected (voice_state
+                // re-issues the ticket only then) and record the join below.
+                let voice_restored: i64 = {
+                    let mut restored = 0;
+                    match &channels {
+                        Ok(cs) => {
+                            for c in cs {
+                            if c.kind != "voice" {
+                                    continue;
+                            }
+                            let state = crate::backend::voice_state(c.id).await;
+                            let connected = match state {
+                                Ok(v) => v.ticket.is_some(),
+                                Err(_) => false,
+                            };
+                            if connected {
+                                restored = c.id;
+                                break;
+                            }
+                        }
+                        }
+                        Err(_) => {}
+                    };
+                    restored
+                };
+                (Some(servers), Some((sid, counts, channels, members, saved, voice_restored)))
             },
             move |fetched| {
                 let (servers_opt, payload) = fetched;
                 if let Some(servers) = servers_opt {
                     ls.set(servers);
                 }
-                let Some((sid, counts, channels, members, saved)) = payload else { return; };
+                let Some((sid, counts, channels, members, saved, voice_restored)) = payload else { return; };
                 {
                     let buf = lunread.clone();
                     buf.borrow_mut()
@@ -890,6 +928,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 if let Ok(fresh) = members {
                     crate::mentions::members_loaded(sid, &fresh);
                     lmbrs.set(fresh);
+                }
+                if voice_restored != 0 {
+                    jv_restore.set(Some((sid as u32, voice_restored as u32)));
                 }
                 als.set(Some(sid));
             },
@@ -1355,6 +1396,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
         invite_expiry: invite_expiry.clone(),
         invite_mode: invite_mode.clone(),
         joined_voice: joined_voice.clone(),
+        live_voice_roster: live_voice_roster.clone(),
+        live_voice_rev: live_voice_rev.clone(),
+        voice_error: voice_error.clone(),
         live_at_bottom: live_at_bottom.clone(),
         live_attachments: live_attachments.clone(),
         live_ban_confirm: live_ban_confirm.clone(),

@@ -10,7 +10,7 @@ pub(super) struct GatewayEffectsParts {
 }
 
 pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
-    let ShellState { active_live_channel, active_live_server, friends_snap, gateway, has_more_earlier, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_members, live_mention_rev, live_mentioned, live_messages, live_presence, live_presence_rev, live_revision, live_servers, live_typing, live_typing_rev, live_unread, live_unread_rev, load_busy, notif_level, notif_toast_body, notif_toast_title, notif_toast_visible, reaction_rev, reactions, send_failed, user_status, .. } = s.clone();
+    let ShellState { active_live_channel, active_live_server, friends_snap, gateway, joined_voice, has_more_earlier, live_attachments, live_channels, live_delete_confirm, live_edit_text, live_editing, live_members, live_mention_rev, live_mentioned, live_messages, live_presence, live_presence_rev, live_revision, live_servers, live_typing, live_typing_rev, live_unread, live_unread_rev, live_voice_roster, live_voice_rev, load_busy, notif_level, notif_toast_body, notif_toast_title, notif_toast_visible, reaction_rev, reactions, send_failed, user_status, .. } = s.clone();
     // Realtime gateway: the signed session token authenticates the connect
     // (the backend verifies it). Declared above (before the auto-enter
     // effect) so that effect can send the restored channel's initial
@@ -110,6 +110,14 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
     // remote change (the pre-fix gap: those only ever re-fetched on the
     // local user's own action). Captured as clones so the `move` render
     // closure owns them, mirroring `presence_buf` / `presence_rev` above.
+    // Voice rosters: the backend pushes `WsServerMsg::VoiceRoster` whole-list
+    // frames for a channel on every join/leave (and with the initial state on
+    // connect). Record the list per channel and bump `live_voice_rev`, the
+    // sidebar key that redraws the connected names under the voice rows.
+    let voice_roster_buf = live_voice_roster.clone();
+    let voice_rev_sig = live_voice_rev.clone();
+    let joined_voice_sig = joined_voice.clone();
+    let me_uid = my_id;
     let member_server = active_live_server.clone();
     let member_roster = live_members.clone();
     let notif_level_sig = notif_level.clone();
@@ -644,6 +652,24 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             // set `send_failed` so the "Failed to send - Retry" banner above the
             // composer shows. A successful send is echoed as a `Message` frame
             // (handled above), so only a real failure flips this.
+            // The channel's whole voice roster just changed: record it so the
+            // sidebar draws the connected names under the row, and if the acting
+            // user dropped from the roster of the voice channel they are shown
+            // in, clear their join flag so the profile strip drops its line.
+            if let Some(discord_server::server_settings::WsServerMsg::VoiceRoster {
+                channel_id,
+                entries,
+                seq: _,
+            }) = frame {
+                let still_in = entries.into_iter().any(|u| u.user_id == me_uid);
+                voice_roster_buf.borrow_mut().insert(*channel_id, entries.clone());
+                voice_rev_sig.set(voice_rev_sig.get() + 1);
+                match joined_voice_sig.get() {
+                    Some((_, ch)) if (ch as i64) == *channel_id && !still_in =>
+                        joined_voice_sig.set(None),
+                    _ => {},
+                }
+            }
             if let Some(discord_server::server_settings::WsServerMsg::Error { .. }) = frame {
                 send_failed_sig.set(true);
             }

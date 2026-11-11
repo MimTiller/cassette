@@ -34,3 +34,5 @@ mod themes;
 mod notifications;
 #[path = "robot/coverage.rs"]
 mod coverage;
+#[path = "robot/voice.rs"]
+mod voice;

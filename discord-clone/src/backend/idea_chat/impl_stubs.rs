@@ -131,6 +131,20 @@ impl PermissionsApi for IdeaChatBackend {
     }
 }
 
+impl CallApi for IdeaChatBackend {
+    async fn join_voice(_channel_id: i64) -> Result<CallTicket, ServerError> {
+        Err(model::not_supported())
+    }
+
+    async fn leave_voice(_channel_id: i64) -> Result<LeaveVoiceResult, ServerError> {
+        Err(model::not_supported())
+    }
+
+    async fn voice_state(_channel_id: i64) -> Result<VoiceStateResult, ServerError> {
+        Err(model::not_supported())
+    }
+}
+
 impl ThemesApi for IdeaChatBackend {
     // Custom colour themes are RWND's own per-account store; nothing on this
     // server's model carries them.
