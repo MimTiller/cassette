@@ -142,4 +142,44 @@ mod tests {
         assert_eq!(Role::from_db_str("ADMIN"), None);
         assert_eq!(ChannelKind::from_db_str("stage"), None);
     }
+
+    #[test]
+    fn a_legacy_moderator_string_grants_nothing() {
+        let (_dir, db) = setup();
+        db.lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO users (id, username, email, created_at) VALUES (1,'owner','o@x',1);
+                 INSERT INTO users (id, username, email, created_at) VALUES (7,'legacy','l@x',1);
+                 INSERT INTO servers (id, name, owner_id, icon_url, created_at) VALUES (1,'S1',1,NULL,1);
+                 INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES (1,1,'member',1);
+                 INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES (1,7,'moderator',1);",
+            )
+            .unwrap();
+        let ctx = ServerContext::load(&db, 1).unwrap();
+        let everyone = ctx.everyone();
+        let legacy = ctx.member(7).unwrap();
+        assert!(!legacy.is_owner, "the owner string on the wrong row is not checked via role text");
+        assert_eq!(legacy.server, everyone, "a stored 'moderator' string grants nothing");
+        assert_eq!(legacy.rank, Rank::Everyone, "it sets no rank");
+    }
+
+    #[test]
+    fn an_owner_string_on_a_non_owner_row_grants_no_owner_power() {
+        let (_dir, db) = setup();
+        db.lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO users (id, username, email, created_at) VALUES (1,'real','r@x',1);
+                 INSERT INTO users (id, username, email, created_at) VALUES (8,'fake','f@x',1);
+                 INSERT INTO servers (id, name, owner_id, icon_url, created_at) VALUES (1,'S1',1,NULL,1);
+                 INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES (1,1,'member',1);
+                 INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES (1,8,'owner',1);",
+            )
+            .unwrap();
+        let ctx = ServerContext::load(&db, 1).unwrap();
+        let fake = ctx.member(8).unwrap();
+        assert!(!fake.is_owner, "ownership is servers.owner_id, not the stored string");
+        assert_eq!(fake.server, ctx.everyone(), "the 'owner' string on a non-owner row adds nothing");
+    }
 }
