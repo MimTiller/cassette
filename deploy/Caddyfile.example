@@ -1,0 +1,40 @@
+# Caddy reverse-proxy config for serving RWND over HTTPS.
+#
+# Caddy obtains the certificates itself (via ACME) when the domains below
+# really point at this machine, so no certbot/ssl_cert lines are needed.
+# Both the app and the LiveKit signalling socket get their own vhost so the
+# page and the wss:// signalling can sit on different origins.
+#
+#   caddy validate --config deploy/Caddyfile.example --adapter caddyfile
+#   caddy -c deploy/Caddyfile.example
+#
+# Replace chat.example.com / livekit.example.com with your domains (e.g.
+# rwnd.mimtiller.com) and the ports with the ones your install picked.
+
+chat.example.com {
+	# The RWND server: the web app at /, its pkg/ bundle, /media, the API and
+	# the chat gateway WebSocket. Caddy upgrades WebSockets automatically.
+	reverse_proxy 127.0.0.1:3000
+}
+
+livekit.example.com {
+	# LiveKit signalling: the WebSocket on 7880. With this vhost in front,
+	# set LIVEKIT_URL=wss://livekit.example.com in the RWND env.
+	# Caddy auto-upgrades, so no upgrade stanza is needed.
+	reverse_proxy 127.0.0.1:7880
+}
+
+# What Caddy does NOT reach, and must be forwarded some other way when you
+# run your own LiveKit server (it binds 0.0.0.0 on these ports):
+#   UDP 7882        ICE/UDP — the actual audio/video traffic (the common path)
+#   TCP 7881        ICE/TCP fallback — only needed when UDP is blocked
+#   TCP 5349        TURN-over-TLS relay — only if you enabled `turn:` in
+#                   livekit.yaml; it needs TLS, which Caddy can serve for a
+#                   third vhost if you point DNS at this machine.
+#   (dtls / socat / a port-forward through ssh -R or your router), or skip
+#   them entirely with LiveKit Cloud, which handles media for you and only
+#   needs the wss signalling URL.
+#
+# TRUSTED_PROXIES: Caddy runs on this machine, so set
+#   TRUSTED_PROXIES=127.0.0.1,::1
+# in the RWND env so per-IP rate limits still work off X-Forwarded-For.

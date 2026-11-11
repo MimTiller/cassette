@@ -7,11 +7,14 @@ Settings and the first-run wizard) are landing in parallel.
 ## Quick install
 
 ```bash
-cd discord-clone && idealyst build --web && cd ..   # the web app (see Building)
-sh deploy/install.sh --web-dist <the bundle's dist dir>
+sh deploy/install.sh   # with --repo or from a checkout, it builds the app too
 ```
 
-Without `--web-dist` the server runs the API only and serves no app.
+With a repo and no `--web-dist`, install.sh runs `idealyst build --web
+discord-clone` itself (needs the idealyst CLI, see Requirements) and installs
+the bundle into `$PREFIX/web`, so the server it starts serves the app at
+`/`. `--web-dist <dir>` takes a bundle you built already, e.g.
+`discord-clone/dist/web`.
 
 [`deploy/install.sh`](../deploy/README.md) sets all of this up in one run:
 it asks where to install, for the public URL, and the port (or takes
@@ -163,6 +166,54 @@ with nothing installed or forwarded: set `LIVEKIT_URL` to your project's
 `deploy/install.sh --livekit-url ... --livekit-key ... --livekit-secret ...`
 without `--with-livekit`) and you're done. UDP/TURN/TLS all become their
 problem.
+
+## HTTPS
+
+Browsers gate the microphone and camera: `getUserMedia` only works on a
+`https://` page or `localhost`. An https page also refuses to open a `ws://`
+socket, so once the app is on https, the LiveKit signalling must be `wss://`
+too — plain `ws://localhost:7880` stops working the moment the page is on a
+domain. This is what you need when RWND sits on your own domain (voice over a
+bare `http://` host is blocked by the browser regardless of LiveKit).
+
+Caddy is the short path: it fetches certificates itself (ACME) when the
+domains' DNS points at the machine, and upgrades WebSockets automatically.
+[`deploy/Caddyfile.example`](../deploy/Caddyfile.example) is a validated
+(`caddy validate --config deploy/Caddyfile.example --adapter caddyfile`) two-
+vhost setup — the app on one domain, LiveKit signalling on another — with
+comments on which ports (UDP 7882 media, TCP 7881 ICE/TCP, 5349 TURN/TLS)
+still must be forwarded directly, since Caddy only proxies HTTP/WebSocket.
+With it, set `LIVEKIT_URL=wss://livekit.example.com`.
+
+nginx needs the WebSocket upgrade stanza explicitly on the LiveKit vhost:
+
+```nginx
+map $http_upgrade $connection_upgrade {
+  default upgrade;
+  ''      close;
+}
+server {
+  server_name livekit.example.com;
+  # ssl_cert/ssl_pem or certbot; Caddy gets certs itself, nginx doesn't.
+  location / {
+    proxy_pass http://127.0.0.1:7880;   # LiveKit's ws signalling endpoint
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+  }
+}
+```
+
+Two env settings complete the picture on any proxy: `TRUSTED_PROXIES` — the
+proxy's IP(s), so the server trusts its `X-Forwarded-For` for per-IP rate
+limits (`127.0.0.1,::1` when Caddy/nginx run on the same machine) — and
+`PUBLIC_URL=https://your.domain`, the address people actually use.
+
+A Cloudflare tunnel also serves https+wss, so both vhosts above collapse into
+it: point `PUBLIC_URL` at the tunnel URL and `LIVEKIT_URL` at a second tunnel
+in front of 7880 (`wss://<random>.trycloudflare.com`). The tunnel carries the
+app page and signalling; the ICE/UDP media ports don't go through it, so
+tunnel voice needs TURN (5349) or LiveKit Cloud — see the sections above.
 
 ## Reverse proxies and tunnels
 

@@ -6,8 +6,10 @@ choose plus `~/.config/systemd/user/`. It is idempotent — re-running with the
 same answers reuses the generated session secret and LiveKit keys, rewrites
 the units, and restarts them.
 
-Build the web app first (`cd discord-clone && idealyst build --web`) and pass
-its dist directory as `--web-dist`; without it the server serves the API only.
+With a repo (`--repo` or running the script from a checkout) and no
+`--web-dist`, install.sh builds the web app itself (`idealyst build --web`,
+needs the idealyst CLI) and installs it, so the quick install serves the app
+at `/`. `--web-dist <dir>` skips the build with a bundle you built already.
 
 ```bash
 sh deploy/install.sh                                # asks for everything
@@ -23,7 +25,7 @@ Flags:
 | `--public-url URL` | The address people use to reach the site (default `http://localhost:<port>`). |
 | `--port N` | Port the RWND server binds (127.0.0.1 only: put a reverse proxy or tunnel in front; default 3000). |
 | `--server-bin PATH` / `--repo DIR` | Use an already-built server binary, or build one from a repo checkout with cargo. |
-| `--web-dist DIR` | A built web bundle (`idealyst build --web`'s dist dir); when given the server serves the app at `/`. |
+| `--web-dist DIR` | A built web bundle (`idealyst build --web`'s dist dir); when given the server serves the app at `/`. When omitted with a repo, install.sh builds the bundle itself. |
 | `--with-livekit` | Also install the LiveKit voice server: pinned 1.13.11 release binary (sha256-checked against the release's checksums file), generated keys, `livekit.yaml`, and a `rwnd-livekit` unit. |
 | `--livekit-url/--livekit-key/--livekit-secret` | Without `--with-livekit`: point the app at an existing LiveKit (yours or LiveKit Cloud) instead of installing one. With it: the URL and keys the installed server uses. |
 | `--livekit-bin PATH` | Use this LiveKit binary instead of downloading (testing). |

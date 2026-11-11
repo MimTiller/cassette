@@ -80,6 +80,22 @@ fi
 
 mkdir -p "$PREFIX/bin" "$PREFIX/data"
 
+if [ -z "$WEB_DIST" ] && [ -n "$REPO" ] && [ -d "$REPO/discord-clone" ]; then
+    # With the repo and no prebuilt bundle, build the web app ourselves.
+    if command -v idealyst >/dev/null 2>&1; then
+        echo "Building the web app (idealyst build --web, a few minutes)..."
+        (cd "$REPO" && idealyst build --web discord-clone) || true
+        # The bundle lands in discord-clone/dist/web (index.html + pkg/).
+        [ -f "$REPO/discord-clone/dist/web/index.html" ] && WEB_DIST="$REPO/discord-clone/dist/web"
+    fi
+    [ -n "$WEB_DIST" ] || {
+        echo "install.sh: warning: no web app (no idealyst CLI or its build failed)," >&2
+        echo "  so the server runs the API only and serves no page at /." >&2
+        echo "  Install the idealyst CLI (https://github.com/IdealystIO/idealyst-native#installing-the-cli)" >&2
+        echo "  or build the client with 'idealyst build --web discord-clone' from the repo" >&2
+        echo "  and rerun with --web-dist discord-clone/dist/web." >&2
+    }
+fi
 if [ -n "$WEB_DIST" ]; then
     mkdir -p "$PREFIX/web"
     cp -r "$WEB_DIST/." "$PREFIX/web/"
@@ -88,8 +104,6 @@ if [ -n "$WEB_DIST" ]; then
 else
     cp -f "$SERVER_BIN" "$PREFIX/bin/server"
     WEBLINE=""
-    echo "install.sh: warning: no --web-dist, so the server runs the API only and serves no app." >&2
-    echo "  Build the client with 'cd discord-clone && idealyst build --web' and rerun with --web-dist <its dist dir>." >&2
 fi
 
 # Secrets: reuse what the env file already has so tokens/keys stay valid.
