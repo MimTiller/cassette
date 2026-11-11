@@ -376,4 +376,22 @@ mod tests {
         assert!(can_send(&db, 2, s.id, 0).is_ok(), "but a DM send needs only membership");
         assert!(can_send(&db, 2, s.id, 1).is_ok());
     }
+
+    #[test]
+    fn a_non_member_cannot_send_or_edit_a_sticker_by_id() {
+        let (_dir, db) = setup();
+        db.lock().unwrap().execute(
+            "INSERT INTO users (id, username, email, created_at) VALUES (9,'ghost','g@x',1)".into(),
+            (),
+        ).unwrap();
+        let s = up(&db, 1, "mine").unwrap();
+        // Even a DM send (channel 0) needs membership in the sticker's server.
+        assert!(can_send(&db, 9, s.id, 0).is_err(), "a non-member can't send it");
+        assert!(can_send(&db, 9, s.id, 1).is_err(), "nor in its own server");
+        // `one` finds the sticker by id (the endpoint layer must gate it), but
+        // edit/delete go through `require`, which rejects the non-member.
+        assert_eq!(edit(&db, 9, EditStickerInput { sticker_id: s.id, name: "hijack".into(), description: String::new(), related_emoji: "😭".into() }).unwrap_err(),
+            "you're not a member of this server");
+        assert_eq!(delete(&db, 9, s.id).unwrap_err(), "you're not a member of this server");
+    }
 }
