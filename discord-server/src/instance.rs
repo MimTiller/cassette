@@ -312,6 +312,51 @@ impl InstanceSettings {
 }
 
 #[cfg(feature = "server")]
+/// The first-claim setup path: while the instance has no admin, one
+/// authenticated account claims the instance (the setup flow). Once any
+/// admin exists, only admins grant more; a normal user gets the refusal.
+fn claim_admin_idempotent(db: &Db, caller_id: i64) -> Result<bool, String> {
+    if db.instance_admin(caller_id) {
+        return Ok(true);
+    }
+    if db.instance_admin_count() == 0 {
+        db.grant_instance_admin(caller_id).map_err(|e| e.to_string())?;
+        return Ok(true);
+    }
+    Err(NOT_ADMIN.into())
+}
+
+#[cfg(feature = "server")]
+/// An admin granting another account instance-admin power (promoting a
+/// co-host). Admin-only; `granted` false when the account was already one.
+fn promote_admin(db: &Db, caller_id: i64, user_id: i64) -> Result<bool, String> {
+    InstanceSettings::new(db.clone()).authorize(caller_id)?;
+    if db.instance_admin(user_id) {
+        return Ok(false);
+    }
+    db.grant_instance_admin(user_id).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[cfg(feature = "server")]
+/// The env bootstrap extended to accounts registered after startup: when
+/// `INSTANCE_ADMINS` names the username of a fresh signup, that account
+/// becomes an instance admin — headless deploys keep working without the
+/// UI setup flow.
+pub fn grant_env_admin(db: &Db, username: String) {
+    match std::env::var("INSTANCE_ADMINS") {
+        Err(_) => (),
+        Ok(list) =>
+            if list.split(",").any(|name| name.trim() == username.trim()) {
+                match db.user_by_username(&username) {
+                    None => (),
+                    Some((id, _)) => db.grant_instance_admin(id).unwrap_or_else(|e| panic!("env admin grant: {e}")),
+                }
+            },
+    }
+}
+
+#[cfg(feature = "server")]
 fn db_from_state() -> Result<Db, ServerError> {
     server::use_state::<Db>()
         .ok_or_else(|| ServerError::failed("database not installed"))
@@ -350,6 +395,222 @@ pub async fn get_instance_settings(_input: ()) -> Result<InstanceSettingsResult,
         .get(caller)
         .map_err(ServerError::failed)?;
     Ok(settings)
+}
+
+/// What the admin page typed into "Test connection": an empty field falls
+/// back to the saved (DB-over-env) value, so the test can run against
+/// values that were never saved.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TestCallInput {
+    pub call_provider: String,
+    pub livekit_url: String,
+    pub livekit_api_key: String,
+    pub livekit_api_secret: String,
+}
+
+/// The answer to "Test connection": never an error — a provider-side
+/// failure comes back as `ok: false` with the exact message, so the admin
+/// page can paint it red without the RPC itself having failed. Only the
+/// admin gate is an error.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CallTestResult {
+    pub ok: bool,
+    /// Rooms the provider reported (meaningful only when `ok`).
+    pub rooms: i64,
+    pub message: String,
+}
+
+#[cfg(feature = "server")]
+/// What "Test connection" resolves to: the typed values over the saved
+/// (DB-over-env) ones, field by field — so the admin can try credentials
+/// without saving them first. Admin-only.
+fn resolve_call_input(db: &Db, caller_id: i64, input: TestCallInput) -> Result<CallConfig, String> {
+    InstanceSettings::new(db.clone()).authorize(caller_id)?;
+    let pick = |typed: String, key: &'static str, env: &'static str, default: &'static str| {
+        if !typed.trim().is_empty() {
+            return typed.trim().to_string();
+        }
+        db_or_env(db, key, env, default).0
+    };
+    Ok(
+        CallConfig {
+            provider: pick(input.call_provider, "call_provider", "CALL_PROVIDER", PROVIDER_NONE),
+            livekit_url: pick(input.livekit_url, "livekit_url", "LIVEKIT_URL", ""),
+            livekit_api_key: pick(input.livekit_api_key, "livekit_api_key", "LIVEKIT_API_KEY", ""),
+            livekit_api_secret: pick(input.livekit_api_secret, "livekit_api_secret", "LIVEKIT_API_SECRET", ""),
+        }
+    )
+}
+
+#[cfg(feature = "server")]
+fn test_call_error(message: String) -> CallTestResult {
+    CallTestResult { ok: false, rooms: 0, message: message.to_string() }
+}
+
+#[cfg(feature = "server")]
+fn test_call_ok(rooms: i64) -> CallTestResult {
+    CallTestResult { ok: true, rooms, message: "the provider answered".to_string() }
+}
+
+#[cfg(feature = "server")]
+/// Ask the LiveKit provider directly: `POST <http(s) url>/twirp/livekit.
+/// RoomService/ListRooms` with a Bearer JWT carrying only the `video.roomList`
+/// grant (what LiveKit's `EnsureListPermission` checks). A ws/wss URL is the
+/// socket the app would join; the API sits on the same address over http/https.
+/// A provider-side failure is `ok: false` plus the exact message — never an
+/// RPC error — so the admin page paints one red line. No SSRF guard: the URL
+/// is one the instance host typed about their own infrastructure.
+async fn test_livekit(cfg: CallConfig) -> CallTestResult {
+    let url = cfg.livekit_url.trim();
+    if url.is_empty() || cfg.livekit_api_key.is_empty() || cfg.livekit_api_secret.is_empty() {
+        return test_call_error("livekit is configured but its URL, API key or API secret is missing".to_string());
+    }
+    let http =
+        if url.starts_with("ws://") {
+            url.replace("ws://", "http://")
+        } else if url.starts_with("wss://") {
+            url.replace("wss://", "https://")
+        } else {
+            url.to_string()
+        };
+    let base = http.trim_end();
+    if !(base.starts_with("http://") || base.starts_with("https://")) {
+        return test_call_error(format!("the LiveKit URL is not usable: {url}"));
+    }
+    let trimmed = base.trim_end_matches(['/']);
+    let endpoint = format!("{trimmed}/twirp/livekit.RoomService/ListRooms");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(1_000);
+    let token = crate::voice::room_list_token(cfg.livekit_api_key, cfg.livekit_api_secret, now);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .unwrap_or_else(|e| panic!("test_livekit client: {e}"));
+    let resp = match client
+        .post(endpoint)
+        .bearer_auth(token)
+        .header("content-type", "application/json")
+        .body("{}".to_string())
+        .send()
+        .await
+    {
+        Ok(resp) => resp,
+        Err(e) =>
+            return test_call_error(
+                if e.is_timeout() {
+                    "the provider did not answer within 8 seconds: wrong URL, or unreachable from this instance".to_string()
+                } else if e.is_connect() {
+                    "the provider could not be reached: connection refused (a TLS failure answers the same way)".to_string()
+                } else {
+                    "the provider request failed".to_string()
+                }
+            )
+    };
+    let ok = resp.status().is_success();
+    let status = resp.status().as_u16();
+    let body = match resp.text().await {
+        Ok(text) => text.trim().to_string(),
+        Err(e) => return test_call_error(format!("the provider's reply could not be read: {e}")),
+    };
+    if ok {
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(&body);
+        let rooms = parsed.ok().and_then(|v| v.get("rooms").and_then(|r| r.as_array().map(|a| a.len() as i64)));
+        match rooms {
+            Some(n) => test_call_ok(n),
+            None => test_call_error("the provider answered 200 but not a room list".to_string()),
+        }
+    } else if status == 401 {
+        if body.contains("signature is invalid") {
+            test_call_error("the API secret is wrong: the provider could not verify the token signature".to_string())
+        } else if body.contains("API key") {
+            test_call_error("the provider does not know this API key".to_string())
+        } else {
+            test_call_error(format!("the provider refused the credentials: {body}"))
+        }
+    } else {
+        test_call_error(format!("the provider answered HTTP {status}: {body}"))
+    }
+}
+
+#[cfg(feature = "server")]
+/// The admin page's "Test connection": never saves anything — it resolves
+/// the effective config (admin-gated) and asks the provider named by it.
+async fn test_call_with(db: &Db, caller_id: i64, input: TestCallInput) -> Result<CallTestResult, String> {
+    let cfg = resolve_call_input(db, caller_id, input)?;
+    match call_test_answer(cfg.clone()) {
+        Some(answer) => Ok(answer),
+        None => Ok(test_livekit(cfg).await),
+    }
+}
+
+#[cfg(feature = "server")]
+/// The answer for a provider that has no live test to run (or the provider
+/// picker is unknown); `None` means LiveKit, which reaches the network.
+/// Pure so the routing is unit-testable without HTTP.
+fn call_test_answer(cfg: CallConfig) -> Option<CallTestResult> {
+    match cfg.provider.trim() {
+        "livekit" => None,
+        CALL_IDEA_CHAT => Some(test_call_error("idea-chat calls are not available yet".to_string())),
+        PROVIDER_NONE => Some(test_call_error("no call provider is selected".to_string())),
+        other => Some(test_call_error(format!("unknown call provider: {other}"))),
+    }
+}
+
+/// Test the call provider with the typed (or saved) values: asks LiveKit's
+/// Twirp ListRooms and reports what happened. Admin-only; never saves.
+#[server]
+pub async fn test_call_provider(input: TestCallInput) -> Result<CallTestResult, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let outcome = match test_call_with(&db, caller, input).await {
+        Ok(result) => result,
+        Err(reason) => return Err(ServerError::failed(reason)),
+    };
+    Ok(outcome)
+}
+
+
+/// Claim instance-admin power for the signed-in account: allowed only while
+/// the instance has no admin at all (the setup flow). Once an admin exists,
+/// only an admin can grant more, through `promote_instance_admin`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ClaimAdminResult {
+    pub is_instance_admin: bool,
+}
+
+#[server]
+pub async fn claim_instance_admin(_input: ()) -> Result<ClaimAdminResult, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let claimed = match claim_admin_idempotent(&db, caller) {
+        Ok(done) => done,
+        Err(reason) => return Err(ServerError::failed(reason)),
+    };
+    Ok(ClaimAdminResult { is_instance_admin: claimed })
+}
+
+/// Give an account instance-admin power (promote a co-host). Admin-only.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PromoteAdminInput {
+    pub user_id: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PromoteAdminResult {
+    pub promoted: bool,
+}
+
+#[server]
+pub async fn promote_instance_admin(input: PromoteAdminInput) -> Result<PromoteAdminResult, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let promoted = match promote_admin(&db, caller, input.user_id) {
+        Ok(done) => done,
+        Err(reason) => return Err(ServerError::failed(reason)),
+    };
+    Ok(PromoteAdminResult { promoted })
 }
 
 /// Save instance settings (empty fields keep the old values, including
@@ -424,6 +685,66 @@ mod db_tests {
         let again = svc.save(1, empty).unwrap();
         assert_eq!(again.call_provider, "livekit", "an empty field keeps the old value");
         assert_eq!(again.livekit_api_secret.last4, "cret", "and keeps the secret (its tail proves it)");
+    }
+
+    #[test]
+    fn the_instance_admin_gate_covers_test_claim_and_promote() {
+        let (_d, db) = setup();
+        db.lock().unwrap().execute_batch(
+            "INSERT INTO users (id, username, email, created_at) VALUES
+                (1, 'alice', 'a@x', 1), (2, 'bob', 'b@x', 1), (3, 'carol', 'c@x', 1);",
+        ).unwrap();
+        db.grant_instance_admin(1).unwrap();
+        // alice is an admin: testing works, and she can promote carol.
+        let cfg = resolve_call_input(&db, 1, TestCallInput {
+            call_provider: "none".to_string(), livekit_url: "".to_string(),
+            livekit_api_key: "".to_string(), livekit_api_secret: "".to_string(),
+        }).unwrap();
+        let answer = call_test_answer(cfg);
+        match &answer {
+            Some(t) => {
+                assert_eq!(t.message, "no call provider is selected".to_string(), "the admin reaches the test with a clear answer");
+                assert_eq!(t.ok, false, "no provider means no live test ran");
+            }
+            None => panic!("the admin's 'none' pick routed to a live test"),
+        };
+        assert_eq!(promote_admin(&db, 1, 3).unwrap(), true, "the admin promotes a co-host");
+        assert_eq!(db.instance_admin(3), true, "carol is an admin now");
+        // bob is not: every instance op refuses him with the same sentence.
+        assert_eq!(
+            match resolve_call_input(
+                &db,
+                2,
+                TestCallInput {
+                    call_provider: "".to_string(),
+                    livekit_url: "".to_string(),
+                    livekit_api_key: "".to_string(),
+                    livekit_api_secret: "".to_string(),
+                },
+            ) {
+                Err(reason) => reason,
+                Ok(_) => panic!("a normal user resolved a test config"),
+            },
+            NOT_ADMIN,
+            "a normal user cannot even test",
+        );
+        assert_eq!(promote_admin(&db, 2, 3).unwrap_err(), NOT_ADMIN, "or promote");
+        assert_eq!(claim_admin_idempotent(&db, 2).unwrap_err(), NOT_ADMIN, "or claim once an admin exists");
+        // alice re-claiming is a no-op success (she is already one).
+        assert_eq!(claim_admin_idempotent(&db, 1).unwrap(), true, "re-claiming keeps the flag");
+    }
+
+    #[test]
+    fn the_first_admin_claims_once_then_claims_are_refused() {
+        let (_d, db) = setup();
+        db.lock().unwrap().execute_batch(
+            "INSERT INTO users (id, username, email, created_at) VALUES
+                (1, 'alice', 'a@x', 1), (2, 'bob', 'b@x', 1);",
+        ).unwrap();
+        assert_eq!(db.instance_admin_count(), 0, "the store starts adminless");
+        assert_eq!(claim_admin_idempotent(&db, 2).unwrap(), true, "the first account claims the instance");
+        assert_eq!(claim_admin_idempotent(&db, 1).unwrap_err(), NOT_ADMIN, "the second gets the plain refusal");
+        assert_eq!(db.instance_admin(2), true, "only the claimer holds the power");
     }
 
     #[test]

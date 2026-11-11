@@ -304,6 +304,24 @@ pub fn issue_access_token_at(
     format!("{body}.{sig}")
 }
 
+/// A token for the media server's `ListRooms` endpoint: the same JWT shape
+/// as the join token but carrying only the `roomList` grant inside `video`
+/// (what the server's `EnsureListPermission` checks), so the Instance
+/// Settings test can ask the provider how many rooms it has without being
+/// able to join or publish anywhere.
+#[cfg(feature = "server")]
+pub fn room_list_token(api_key: String, secret: String, now: i64) -> String {
+    let exp = now + TOKEN_TTL_SECS;
+    let nbf = now - TOKEN_TTL_SECS;
+    let claims = format!(
+        "{{\"iss\":\"{api_key}\",\"sub\":\"\",\"iat\":{now},\"nbf\":{nbf},\"exp\":{exp},\"video\":{{\"roomList\":true}}}}"
+    );
+    let claims_b64 = b64url(claims.as_bytes());
+    let body = format!("{JWT_HEADER}.{claims_b64}");
+    let sig = jwt_sign(body.as_bytes(), secret.as_bytes());
+    format!("{body}.{sig}")
+}
+
 /// A LiveKit access token, live now.
 #[cfg(feature = "server")]
 pub fn issue_access_token(
