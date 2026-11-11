@@ -97,6 +97,7 @@ pub mod media;
 pub mod realtime;
 #[cfg(feature = "server")]
 pub mod membership;
+pub mod voice;
 #[cfg(feature = "server")]
 pub mod rate_limit;
 #[cfg(feature = "server")]
