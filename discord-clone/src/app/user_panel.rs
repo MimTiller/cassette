@@ -33,6 +33,8 @@ pub(super) fn user_panel(
     notif_mode: Signal<bool>,
     muted: Signal<bool>,
     deafened: Signal<bool>,
+    camera: Signal<bool>,
+    screen_share: Signal<bool>,
     voice_error: Signal<Option<(i64, String)>>,
     status_menu: Signal<bool>,
     gateway: crate::backend::Gateway,
@@ -239,20 +241,22 @@ pub(super) fn user_panel(
                     TouchResponse::CONSUMED
                 })
             };
-            // Mic / deafen / settings icon buttons (Discord's user-panel
-            // voice actions). The signals are created in `app_shell` and
-            // owned here — pure local UI state, no backend call. The mic
-            // swaps to a slashed glyph when muted; Lucide has no
-            // headphones-off, so deafened colors the icon red instead.
+            // Mic / Video / Share Screen / deafen / settings icon buttons
+            // (Discord's user-panel voice actions). The signals are created
+            // in `app_shell` and owned here — they post through the seam
+            // when connected. The mic swaps to a slashed glyph when muted;
+            // Lucide has no headphones-off, so deafened colors the icon red
+            // instead, and Video / Share Screen light in the accent tone
+            // while on.
             // 18px icons: the single row must fit the avatar, the name
-            // column and the three icon buttons in the 224px the 240px
+            // column and five icon buttons in the 224px the 240px
             // sidebar leaves after the panel's 8px side padding.
             let icon_btn_style = move || StyleRules {
                 // 18px icons fit the desktop sidebar's 224px row (avatar +
-                // name + three buttons); a phone's sidebar is the whole
+                // name + five buttons); a phone's sidebar is the whole
                 // window, so the buttons grow to a comfortable tap size.
-                width: Some(px(if crate::app::mobile::is_phone() { 28.0 } else { 18.0 })),
-                height: Some(px(if crate::app::mobile::is_phone() { 28.0 } else { 18.0 })),
+                width: Some(px(if crate::app::mobile::is_phone() { 24.0 } else { 18.0 })),
+                height: Some(px(if crate::app::mobile::is_phone() { 24.0 } else { 18.0 })),
                 align_items: Some(AlignItems::Center),
                 justify_content: Some(JustifyContent::Center),
                 flex_shrink: Some(grow(0.0)),
@@ -266,6 +270,8 @@ pub(super) fn user_panel(
             let muted_state = muted.clone();
             let joined_for_flags = joined_voice.clone();
             let err_for_flags = voice_error.clone();
+            let cam_for_mic = camera.clone();
+            let share_for_mic = screen_share.clone();
             let mic_btn = ui! {
                 view(style = icon_btn_style.clone(), test_id = "user-mic") {
                     if muted_state.get() {
@@ -285,6 +291,8 @@ pub(super) fn user_panel(
                                         ch as i64,
                                         m2,
                                         deafened.get(),
+                                        cam_for_mic.get(),
+                                        share_for_mic.get(),
                                     ),
                                     move |result| {
                                         match result {
@@ -304,6 +312,8 @@ pub(super) fn user_panel(
                 })
             };
             let deafened_state = deafened.clone();
+            let cam_for_deafen = camera.clone();
+            let share_for_deafen = screen_share.clone();
             let deafen_btn = ui! {
                 view(style = icon_btn_style.clone(), test_id = "user-deafen") {
                     if deafened_state.get() {
@@ -323,6 +333,8 @@ pub(super) fn user_panel(
                                         ch as i64,
                                         muted.get(),
                                         d2,
+                                        cam_for_deafen.get(),
+                                        share_for_deafen.get(),
                                     ),
                                     move |result| {
                                         match result {
@@ -336,6 +348,92 @@ pub(super) fn user_panel(
                                 );
                             }
                             None => deafened_state.set(d2),
+                        }
+                    }
+                    TouchResponse::CONSUMED
+                })
+            };
+            // The Video and Share Screen buttons (Discord's camera and
+            // screen-share toggles in the voice bar). Publishing video is
+            // server-gated like audio — the seam's refusal paints in the
+            // same error line. The icons light in ACCENT while on and show
+            // their off glyph while off.
+            let camera_state = camera.clone();
+            let cam_btn = ui! {
+                view(style = icon_btn_style.clone(), test_id = "user-camera") {
+                    if camera_state.get() {
+                        icon(VIDEO).color(|| theme::live(theme::ACCENT)).size(15.0)
+                    } else {
+                        icon(VIDEO_OFF).color(|| theme::live(TEXT_MUTED)).size(15.0)
+                    }
+                }
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        let c2 = !camera_state.get();
+                        match joined_for_flags.get() {
+                            Some((_, ch)) => {
+                                runtime_core::spawn_then_in(
+                                    &crate::app::shell_alive(),
+                                    crate::backend::set_voice_flags(
+                                        ch as i64,
+                                        muted.get(),
+                                        deafened.get(),
+                                        c2,
+                                        share_for_deafen.get(),
+                                    ),
+                                    move |result| {
+                                        match result {
+                                            Ok(_) => {
+                                                camera_state.set(c2);
+                                                err_for_flags.set(None);
+                                            }
+                                            Err(msg) => err_for_flags.set(Some((ch as i64, msg))),
+                                        }
+                                    },
+                                );
+                            }
+                            None => camera_state.set(c2),
+                        }
+                    }
+                    TouchResponse::CONSUMED
+                })
+            };
+            let share_state = screen_share.clone();
+            let cam_for_share = camera.clone();
+            let share_btn = ui! {
+                view(style = icon_btn_style.clone(), test_id = "user-share") {
+                    if share_state.get() {
+                        icon(SCREEN_SHARE).color(|| theme::live(theme::ACCENT)).size(15.0)
+                    } else {
+                        icon(SCREEN_SHARE).color(|| theme::live(theme::TEXT_FAINT)).size(15.0)
+                    }
+                }
+                .on_touch(move |ev| {
+                    if ev.phase == TouchPhase::Ended {
+                        let s2 = !share_state.get();
+                        match joined_for_flags.get() {
+                            Some((_, ch)) => {
+                                runtime_core::spawn_then_in(
+                                    &crate::app::shell_alive(),
+                                    crate::backend::set_voice_flags(
+                                        ch as i64,
+                                        muted.get(),
+                                        deafened.get(),
+                                        cam_for_share.get(),
+                                        s2,
+                                    ),
+                                    move |result| {
+                                        match result {
+                                            Ok(_) => {
+                                                share_state.set(s2);
+                                                err_for_flags.set(None);
+                                            }
+                                            Err(msg) => err_for_flags.set(Some((ch as i64, msg))),
+                                        }
+                                    },
+                                );
+                            }
+                            None => share_state.set(s2),
                         }
                     }
                     TouchResponse::CONSUMED
@@ -385,6 +483,8 @@ pub(super) fn user_panel(
                             btn
                         }
                         mic_btn
+                        cam_btn
+                        share_btn
                         deafen_btn
                         settings_btn
                     }

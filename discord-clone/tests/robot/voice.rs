@@ -20,6 +20,17 @@ use crate::support::{Account, eventually, fresh_name, sign_in_as, signed_out};
 use crate::support::WAIT;
 use crate::users::open_browser;
 
+/// Sign the caller out through the login screen; when they are still in a
+/// voice call their panel reads "Voice Connected" instead of "Online", so
+/// leaving the call first is what lets `signed_out` find the settings gear.
+pub fn signed_out_off_call(app: &mut App) {
+    if app.text("Voice Connected").count() > 0 {
+        app.test_id("live-voice-row").click();
+        app.set_timeout(WAIT);
+    }
+    signed_out(app);
+}
+
 /// Is this run's dev server configured for livekit calls? The wrapper's
 /// `--env` reaches the test binary and the server sidecar alike, so the
 /// suite branches instead of pretending a provider that is not there — the
@@ -74,7 +85,7 @@ fn voice_crew(app: &mut App, prefix: &str) -> Account {
 
 #[robot_test]
 fn joining_the_voice_row_goes_through_the_backend_seam(app: &mut App) {
-    signed_out(app);
+    signed_out_off_call(app);
     let live = livekit_configured();
     voice_crew(app, "voicetap");
 
@@ -92,12 +103,12 @@ fn joining_the_voice_row_goes_through_the_backend_seam(app: &mut App) {
         app.text("voice is not enabled on this server").assert_visible();
         app.text("Voice Connected").assert_hidden();
     }
-    signed_out(app);
+    signed_out_off_call(app);
 }
 
 #[robot_test]
 fn leaving_a_live_call_clears_the_roster_and_the_line(app: &mut App) {
-    signed_out(app);
+    signed_out_off_call(app);
     let live = livekit_configured();
     let a = voice_crew(app, "voiceleave");
     let name = a.name.clone();
@@ -121,12 +132,98 @@ fn leaving_a_live_call_clears_the_roster_and_the_line(app: &mut App) {
         app.set_timeout(WAIT);
         app.text("Voice Connected").assert_hidden();
     }
-    signed_out(app);
+    signed_out_off_call(app);
+}
+
+/// A fresh account plus a fresh server it owns with one voice channel named
+/// `meet`; like `voice_crew`, but returns the server id too so a second
+/// browser can be invited onto the same server.
+fn voice_crew_with_sid(app: &mut App, prefix: &str) -> (Account, i64) {
+    let a = Account::new(prefix);
+    sign_in_as(app, &a);
+    let server = fresh_name("VCrewSid ");
+    create_and_enter(app, server.clone());
+    let sid = server_of(&a, server);
+    a.call("create_channel", json!({ "server_id": sid, "name": "meet", "kind": "voice" }));
+    app.text("meet").assert_visible();
+    (a, sid)
+}
+
+/// Redeem an invite code through the rail's join modal (the coverage.rs
+/// steps, kept local so this module stays independent).
+fn redeem_invite(app: &mut App, code: &str) {
+    app.test_id("rail-create-server").click();
+    app.text("Add a Server").assert_visible();
+    app.test_id("create-server-join-link").click();
+    app.text("Join a Server").assert_visible();
+    app.test_id("join-server-code-input").fill(code);
+    app.test_id("join-server-join").click();
+    app.set_timeout(WAIT);
+}
+
+/// Fake-media camera test: A turns their camera on through the user panel's
+/// Video button (the seam broadcasts the roster frame), and B — in the same
+/// server and channel from its own browser — paints a video tile carrying
+/// A's name. The robot cannot drive a real provider socket, so the tile is
+/// the observable, not actual pixels.
+#[robot_test]
+fn a_camera_on_shows_a_video_tile_to_the_other_browser(app: &mut App) {
+    signed_out_off_call(app);
+    assert!(livekit_configured(), "camera tiles only render with a live provider");
+    let (a, sid) = voice_crew_with_sid(app, "camerab");
+    let name_a = a.name.clone();
+
+    // A joins the voice channel.
+    app.test_id("live-voice-row").click();
+    app.set_timeout(WAIT);
+    app.text("Voice Connected").assert_visible();
+
+    // B joins the same server through a minted invite. @everyone gets
+    // Connect + Speak (bit 0 view + 16 connect + 17 speak) before B's
+    // join arms its permission snapshot, so B can join the voice row too.
+    let inv = a.call("create_invite", json!({ "server_id": sid }));
+    let granted = a.call("set_everyone_permissions", json!({ "server_id": sid, "permissions": 196609 }));
+    assert!(granted.as_i64().unwrap_or(0) >= 196609, "granted no perms: {granted:?}");
+    let code = inv.get("code").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    assert!(!code.is_empty(), "minted no invite: {inv:?}");
+    let mut second = open_browser("cam");
+    second.app.set_timeout(WAIT);
+    let b = Account::new("cameraw");
+    sign_in_as(&mut second.app, &b);
+    redeem_invite(&mut second.app, &code);
+    second.app.text("Joined!").assert_visible();
+    second.app.test_id("join-server-done").click();
+    second.app.set_timeout(WAIT);
+    second.app.text("meet").assert_visible();
+
+    // A turns the camera on through the user panel's Video button.
+    app.test_id("user-camera").click();
+    app.set_timeout(WAIT);
+
+    // B joins too, and the roster frame shows A: a video tile with A's name.
+    second.app.test_id("live-voice-row").click();
+    second.app.set_timeout(WAIT);
+    assert!(
+        eventually(20, || second.app.test_id("voice-tile").count() > 0),
+        "B never got a video tile"
+    );
+    assert!(
+        eventually(20, || second.app.text(name_a.as_str()).count() > 0),
+        "the tile never carried A's name: {name_a}"
+    );
+    let shot = second.app.screenshot();
+    eprintln!("[shot] cam-tile-b: {shot}");
+
+    // Leave the call so A's panel reads "Online" again and the suite's
+    // signed-out cleanup applies.
+    app.test_id("live-voice-row").click();
+    app.set_timeout(WAIT);
+    signed_out_off_call(app);
 }
 
 #[robot_test]
 fn a_fresh_browser_restores_only_a_real_in_progress_call(app: &mut App) {
-    signed_out(app);
+    signed_out_off_call(app);
     let live = livekit_configured();
     let a = voice_crew(app, "voiceboot");
 
@@ -150,6 +247,6 @@ fn a_fresh_browser_restores_only_a_real_in_progress_call(app: &mut App) {
     } else {
         second.app.text("Voice Connected").assert_hidden();
     }
-    signed_out(&mut second.app);
-    signed_out(app);
+    signed_out_off_call(&mut second.app);
+    signed_out_off_call(app);
 }

@@ -50,6 +50,7 @@ use icons_lucide::{
     CHEVRON_DOWN, CHEVRON_RIGHT, HASH, HEADPHONES,
     MIC, MIC_OFF, PIN, PLUS, SETTINGS, SMILE_PLUS,
     USER_PLUS, USERS, VOLUME_2, MENU, LOCK, BELL_OFF,
+    VIDEO, VIDEO_OFF, SCREEN_SHARE,
 };
 use crate::server_settings_panel::ServerSettingsPanel;
 
@@ -460,11 +461,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // (the user resends to retry). Pure UI state — the gateway `send` itself is
     // fire-and-forget, so this is the app's signal for a failed send.
     let send_failed: Signal<bool> = signal(false);
-    // Mic-mute / deafen toggles for the user panel's voice-action icon row.
-    // Pure local UI state, owned here and passed into `user_panel`; the mic
-    // swaps to a slashed glyph when muted, deafen colors the icon red.
+    // Mic-mute / deafen / camera / screen-share toggles for the user panel's
+    // voice-action icon row. Pure local UI state, owned here and passed into
+    // `user_panel`; the mic swaps to a slashed glyph when muted, deafen
+    // colors the icon red, and camera/share draw their video-tile icons.
     let muted: Signal<bool> = signal(false);
     let deafened: Signal<bool> = signal(false);
+    let camera: Signal<bool> = signal(false);
+    let screen_share: Signal<bool> = signal(false);
     // Bumped on every send. `switch` dedups on its scrutinee VALUE (equal
     // re-fire keeps the mounted arm), so re-setting `active_channel` to its
     // current value does NOT rebuild the message list — this counter does.
@@ -1382,6 +1386,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
         dc_name: dc_name.clone(),
         dc_open: dc_open.clone(),
         deafened: deafened.clone(),
+        camera: camera.clone(),
+        screen_share: screen_share.clone(),
         emoji_open: emoji_open.clone(),
         friends_add_error: friends_add_error.clone(),
         friends_add_username: friends_add_username.clone(),

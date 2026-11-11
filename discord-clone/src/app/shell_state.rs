@@ -25,6 +25,8 @@ pub(super) struct ShellState {
     pub(super) dc_name: Signal<String>,
     pub(super) dc_open: Signal<bool>,
     pub(super) deafened: Signal<bool>,
+    pub(super) camera: Signal<bool>,
+    pub(super) screen_share: Signal<bool>,
     pub(super) emoji_open: Signal<bool>,
     pub(super) friends_add_error: Signal<String>,
     pub(super) friends_add_username: Signal<String>,

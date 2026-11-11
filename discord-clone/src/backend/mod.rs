@@ -299,7 +299,13 @@ pub trait CallApi {
     /// flags: LiveKit's own toggles are invisible to peers, so every client
     /// must see the same icons). Refuses unless the caller is connected to
     /// this channel.
-    async fn set_voice_flags(channel_id: i64, muted: bool, deafened: bool) -> Result<(), ServerError>;
+    async fn set_voice_flags(
+        channel_id: i64,
+        muted: bool,
+        deafened: bool,
+        camera: bool,
+        screen_share: bool,
+    ) -> Result<(), ServerError>;
 }
 
 /// Colour themes a person makes for themselves: the per-account store
@@ -964,6 +970,12 @@ pub async fn voice_state(channel_id: i64) -> Result<VoiceStateResult, String> {
     Backend::voice_state(channel_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
-pub async fn set_voice_flags(channel_id: i64, muted: bool, deafened: bool) -> Result<(), String> {
-    Backend::set_voice_flags(channel_id, muted, deafened).await.map_err(|e| crate::errors::friendly(&e))
+pub async fn set_voice_flags(
+    channel_id: i64,
+    muted: bool,
+    deafened: bool,
+    camera: bool,
+    screen_share: bool,
+) -> Result<(), String> {
+    Backend::set_voice_flags(channel_id, muted, deafened, camera, screen_share).await.map_err(|e| crate::errors::friendly(&e))
 }

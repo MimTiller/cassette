@@ -144,7 +144,13 @@ impl CallApi for IdeaChatBackend {
         Err(model::not_supported())
     }
 
-    async fn set_voice_flags(_channel_id: i64, _muted: bool, _deafened: bool) -> Result<(), ServerError> {
+    async fn set_voice_flags(
+        _channel_id: i64,
+        _muted: bool,
+        _deafened: bool,
+        _camera: bool,
+        _screen_share: bool,
+    ) -> Result<(), ServerError> {
         Err(model::not_supported())
     }
 }
