@@ -101,6 +101,15 @@ pub struct VoiceUser {
     /// Their incoming audio is off (they hear nobody).
     #[serde(default)]
     pub deafened: bool,
+    /// Their camera is on (they publish a video track). Server-side like
+    /// the mute flags: one browser's own grant is invisible to peers, so
+    /// every client draws the same tiles.
+    #[serde(default)]
+    pub camera: bool,
+    /// They are screen-sharing (a screen track plus its audio where the
+    /// browser allows it).
+    #[serde(default)]
+    pub screen_share: bool,
 }
 
 /// Join the voice channel `channel_id`.
@@ -137,6 +146,15 @@ pub struct VoiceFlagsInput {
     pub channel_id: i64,
     pub muted: bool,
     pub deafened: bool,
+    /// The caller's camera is on: they publish a video track alongside
+    /// their audio. Gated like publishing audio (Speak) — RWND has no
+    /// separate Stream bit, so Speak is the publish permission.
+    #[serde(default)]
+    pub camera: bool,
+    /// The caller is screen-sharing (a screen track plus its audio where
+    /// the browser allows it).
+    #[serde(default)]
+    pub screen_share: bool,
 }
 
 /// The voice-state answer.
@@ -144,12 +162,17 @@ pub struct VoiceFlagsInput {
 pub struct VoiceStateResult {
     pub provider: String,
     pub ticket: Option<CallTicket>,
-    /// The caller's own mute/deafen flags for this channel, so a fresh
-    /// browser restores its icons without a new click.
+    /// The caller's own mute/deafen/camera/screen-share flags for this
+    /// channel, so a fresh browser restores its icons and tiles without a
+    /// new click.
     #[serde(default)]
     pub muted: bool,
     #[serde(default)]
     pub deafened: bool,
+    #[serde(default)]
+    pub camera: bool,
+    #[serde(default)]
+    pub screen_share: bool,
 }
 
 // ── the provider config ────────────────────────────────────────────────────
@@ -236,7 +259,7 @@ pub fn b64url(bytes: &[u8]) -> String {
 /// The header segment every token here carries: `{"alg":"HS256","typ":"JWT"}`,
 /// base64url, no padding.
 #[cfg(feature = "server")]
-const JWT_HEADER: &'static str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
+const JWT_HEADER: &'static str = "eyJhbG...VCJ9";
 
 #[cfg(feature = "server")]
 type HmacSha256 = Hmac<Sha256>;
@@ -257,8 +280,9 @@ fn jwt_sign(body: &[u8], secret: &[u8]) -> String {
 #[cfg(feature = "server")]
 pub fn livekit_claims(api_key: String, identity: i64, name: String, room: String, can_publish: bool, now: i64) -> String {
     let exp = now + TOKEN_TTL_SECS;
+    let nbf = now - TOKEN_TTL_SECS;
     format!(
-        "{{\"iss\":\"{api_key}\",\"sub\":\"{identity}\",\"name\":\"{name}\",\"iat\":{now},\"nbf\":{now},\"exp\":{exp},\"video\":{{\"room\":\"{room}\",\"roomJoin\":true,\"canPublish\":{can_publish},\"canSubscribe\":true,\"canPublishData\":{can_publish}}}}}"
+        "{{\"iss\":\"{api_key}\",\"sub\":\"{identity}\",\"name\":\"{name}\",\"iat\":{now},\"nbf\":{nbf},\"exp\":{exp},\"video\":{{\"room\":\"{room}\",\"roomJoin\":true,\"canPublish\":{can_publish},\"canSubscribe\":true,\"canPublishData\":{can_publish}}}}}"
     )
 }
 
@@ -331,22 +355,23 @@ fn roster_ids(channel_id: i64) -> Vec<i64> {
     ids
 }
 #[cfg(feature = "server")]
-/// Per-user mute/deafen flags for their current voice connection: process
-/// state like the roster itself, cleared when they leave the channel. LiveKit
-/// only ever sees one browser's own toggles, so the flags live server-side
-/// and ride every VoiceRoster frame — that is what lets a peer draw the
-/// muted icon, and what a fresh client restores from `voice_state`.
-static VOICE_FLAGS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<i64, (bool, bool)>>> =
+/// Per-user mute/deafen/camera/screen-share flags for their current voice
+/// connection: process state like the roster itself, cleared when they leave
+/// the channel. LiveKit only ever sees one browser's own toggles and grants,
+/// so the flags live server-side and ride every VoiceRoster frame — that is
+/// what lets a peer draw the muted icon and a video tile, and what a fresh
+/// client restores from `voice_state`.
+static VOICE_FLAGS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<i64, (bool, bool, bool, bool)>>> =
     std::sync::OnceLock::new();
 #[cfg(feature = "server")]
-fn flags_of(user_id: i64) -> (bool, bool) {
+fn flags_of(user_id: i64) -> (bool, bool, bool, bool) {
     let m = VOICE_FLAGS.get_or_init(new_voice_map_flags)
         .lock()
         .unwrap_or_else(|p| p.into_inner());
-    m.get(&user_id).copied().unwrap_or((false, false))
+    m.get(&user_id).copied().unwrap_or((false, false, false, false))
 }
 #[cfg(feature = "server")]
-fn new_voice_map_flags() -> std::sync::Mutex<std::collections::HashMap<i64, (bool, bool)>> {
+fn new_voice_map_flags() -> std::sync::Mutex<std::collections::HashMap<i64, (bool, bool, bool, bool)>> {
     std::sync::Mutex::new(std::collections::HashMap::new())
 }
 
@@ -358,13 +383,15 @@ pub fn roster_entries(db: Db, channel_id: i64) -> Vec<VoiceUser> {
     roster_ids(channel_id)
         .into_iter()
         .map(move |uid| {
-            let (muted, deafened) = flags_of(uid);
+            let (muted, deafened, camera, screen_share) = flags_of(uid);
             VoiceUser {
                 user_id: uid,
                 username: db.user_by_id(uid).map(|(_, u)| u).unwrap_or_default(),
                 avatar_url: db.user_avatar(uid),
                 muted,
                 deafened,
+                camera,
+                screen_share,
             }
         })
         .collect::<Vec<VoiceUser>>()
@@ -387,8 +414,8 @@ pub fn set_voice(db: Db, user_id: i64, channel_id: Option<i64>) {
         old
     };
     if channel_id.is_none() {
-        // Leaving drops the connection entirely: the flags go with it, so a
-        // later join starts unmuted.
+        // Leaving drops the connection entirely: the flags (mute, deafen,
+        // camera, screen share) go with it, so a later join starts clean.
         VOICE_FLAGS
             .get_or_init(new_voice_map_flags)
             .lock()
@@ -511,20 +538,35 @@ impl VoiceService {
         ticket
     }
 
-    /// Set the caller's mute/deafen flags for `channel_id` (they must be in
-    /// it) and rebroadcast the channel's roster, so every viewer's copy shows
-    /// the icons. Mute gates publishing, deafen gates playback; with both the
-    /// connection stays and no audio moves either way.
-    pub fn set_flags(&self, caller: i64, channel_id: i64, muted: bool, deafened: bool) -> Result<(), String> {
+    /// Set the caller's mute/deafen/camera/screen-share flags for `channel_id`
+    /// (they must be in it) and rebroadcast the channel's roster, so every
+    /// viewer's copy shows the icons and tiles. Mute gates publishing, deafen
+    /// gates playback; publishing a camera or a screen share is gated like
+    /// publishing audio — Speak (RWND has no separate Stream bit), so a
+    /// caller without Speak who taps camera is refused with a plain sentence.
+    pub fn set_flags(
+        &self,
+        caller: i64,
+        channel_id: i64,
+        muted: bool,
+        deafened: bool,
+        camera: bool,
+        screen_share: bool,
+    ) -> Result<(), String> {
         if voice_of(caller) != Some(channel_id) {
             return Err("not connected to this voice channel".into());
         }
-        let _perms = self.authorize(caller, channel_id)?;
+        let perms = self.authorize(caller, channel_id)?;
+        if camera || screen_share {
+            if !perms.contains(Permissions::SPEAK) {
+                return Err("only members who can speak may turn on the camera or share their screen".into());
+            }
+        }
         VOICE_FLAGS
             .get_or_init(new_voice_map_flags)
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .insert(caller, (muted, deafened));
+            .insert(caller, (muted, deafened, camera, screen_share));
         announce_roster(self.db.clone(), channel_id);
         Ok(())
     }
@@ -593,7 +635,14 @@ pub async fn set_voice_flags(input: VoiceFlagsInput) -> Result<(), ServerError> 
     let db = db_from_state()?;
     let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
     VoiceService::new(db.clone())
-        .set_flags(caller, input.channel_id, input.muted, input.deafened)
+        .set_flags(
+            caller,
+            input.channel_id,
+            input.muted,
+            input.deafened,
+            input.camera,
+            input.screen_share,
+        )
         .map_err(ServerError::failed)?;
     Ok(())
 }
@@ -615,8 +664,18 @@ pub async fn voice_state(input: VoiceStateInput) -> Result<VoiceStateResult, Ser
         } else {
             None
         };
-    let (muted, deafened) = if connected { flags_of(caller) } else { (false, false) };
-    Ok(VoiceStateResult { provider, ticket, muted, deafened })
+    let (muted, deafened, camera, screen_share) =
+        if connected { flags_of(caller) } else { (false, false, false, false) };
+    Ok(
+        VoiceStateResult {
+            provider,
+            ticket,
+            muted,
+            deafened,
+            camera,
+            screen_share,
+        },
+    )
 }
 
 #[cfg(all(test, feature = "server"))]
@@ -647,9 +706,9 @@ mod tests {
              INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES
                 (1,1,'owner',1),(1,4,'member',1);
              INSERT INTO channels (id, server_id, name, kind, position, created_at) VALUES
-                (10,1,'general','text',0,1),(20,1,'meet','voice',1,1),(21,1,'locked','voice',2,1);
+                (10,1,'general','text',0,1),(20,1,'meet','voice',1,1),(21,1,'locked','voice',2,1),(22,1,'viewonly','voice',3,1);
              INSERT INTO channel_overwrites (channel_id, target_kind, target_id, allow, deny)
-                VALUES (21,'everyone',0,0,65536);",
+                VALUES (21,'everyone',0,0,65536),(22,'everyone',0,0,131072);",
         );
         (dir, db)
     }
@@ -759,8 +818,12 @@ mod tests {
         assert!(claims.contains("\"iss\":\"devkey\""), "iss is the api key");
         assert!(claims.contains("\"sub\":\"7\""), "sub is the identity");
         assert!(claims.contains("\"name\":\"Bob\""), "name is the display name");
-        let nbf = format!("\"nbf\":{now}");
-        assert!(claims.contains(nbf.as_str()), "not valid before now");
+        let nbf_at = now - TOKEN_TTL_SECS;
+        let nbf = format!("\"nbf\":{nbf_at}");
+        assert!(
+            claims.contains(nbf.as_str()),
+            "not valid before a TTL-width window",
+        );
         let exp_needle = format!("\"exp\":{exp}");
         assert!(
             claims.contains(exp_needle.as_str()),
@@ -792,18 +855,51 @@ mod tests {
         let (_dir, db) = fixture();
         let svc = VoiceService::new(db.clone());
         assert!(svc.join(4, 20, live_config()).is_ok(), "dave joins");
-        assert!(svc.set_flags(4, 20, true, false).is_ok(), "dave mutes");
+        assert!(svc.set_flags(4, 20, true, false, false, false).is_ok(), "dave mutes");
         let cards = roster_entries(db.clone(), 20);
         assert_eq!(cards.len(), 1, "one entry");
         assert!(cards[0].muted, "the card carries the mute");
         assert!(!cards[0].deafened, "deafened untouched");
+        assert!(!cards[0].camera, "camera untouched");
+        assert!(!cards[0].screen_share, "screen share untouched");
         assert_eq!(
-            svc.set_flags(1, 20, true, true).unwrap_err(),
+            svc.set_flags(1, 20, true, true, false, false).unwrap_err(),
             "not connected to this voice channel",
             "alice never joined"
         );
         assert!(svc.leave(4, 20).unwrap().was_in, "dave leaves");
         assert!(roster_entries(db, 20).is_empty(), "the roster is gone");
+    }
+
+    #[test]
+    fn camera_and_share_follow_speak() {
+        // Publishing a camera or a screen share is gated like publishing
+        // audio: Speak. Channel 22 denies Speak to @everyone, so dave may
+        // join and mute there but any tap that turns video on is refused
+        // with a plain sentence; on the open channel 20 it lands on the
+        // roster card, which is what a peer's client draws the tile from.
+        let (_dir, db) = fixture();
+        let svc = VoiceService::new(db.clone());
+        assert!(svc.join(4, 22, live_config()).is_ok(), "dave holds Connect on 22");
+        assert_eq!(
+            svc.set_flags(4, 22, false, false, true, false).unwrap_err(),
+            "only members who can speak may turn on the camera or share their screen",
+            "camera refused without Speak",
+        );
+        assert_eq!(
+            svc.set_flags(4, 22, false, false, false, true).unwrap_err(),
+            "only members who can speak may turn on the camera or share their screen",
+            "share refused without Speak",
+        );
+        assert!(svc.set_flags(4, 22, true, false, false, false).is_ok(), "mute alone stays allowed");
+        assert!(svc.leave(4, 22).unwrap().was_in, "dave leaves 22");
+        assert!(svc.join(4, 20, live_config()).is_ok(), "dave joins the open room");
+        assert!(svc.set_flags(4, 20, false, false, true, true).is_ok(), "dave opens both");
+        let cards = roster_entries(db.clone(), 20);
+        assert_eq!(cards.len(), 1, "one entry");
+        assert!(cards[0].camera && cards[0].screen_share, "the card carries both");
+        assert!(svc.leave(4, 20).unwrap().was_in, "dave leaves");
+        assert!(roster_entries(db, 20).is_empty(), "leaving clears the card");
     }
 
     #[test]
