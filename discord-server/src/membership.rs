@@ -259,6 +259,59 @@ mod tests {
         );
     }
 
+    /// A ban removes the membership before the change goes through `access_changed`,
+    /// so the audience is recomputed without the banned user: they get no
+    /// frame at all, and nothing further from that server.
+    #[test]
+    fn a_banned_member_hears_nothing_from_their_old_server() {
+        let _guard = crate::e2e_lock::guard();
+        let (_d, db) = setup();
+        db.lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO users (id, username, email, created_at) VALUES (1,'alice','a@x',1),(2,'bob','b@x',1);
+                 INSERT INTO servers (id, name, owner_id, created_at) VALUES (1,'S1',1,1);
+                 INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES (1,1,'owner',1),(1,2,'member',1);",
+            )
+            .unwrap();
+        let hub = crate::realtime::hub();
+        hub.reset();
+        let (_id, mut bob_rx) = hub.register(2);
+        db.lock()
+            .unwrap()
+            .execute("DELETE FROM server_memberships WHERE server_id = 1 AND user_id = 2".into(), ())
+            .unwrap();
+        access_changed(&db, 1, AccessChange::MemberBanned { user_id: 2 });
+        access_changed(&db, 1, AccessChange::EveryoneChanged);
+        assert!(collect(&mut bob_rx).is_empty(), "the banned member got no frames at all");
+    }
+
+    /// Leaving on one's own is the same audience rule as a removal: after the
+    /// row is deleted the leaver hears nothing more from that server.
+    #[test]
+    fn a_member_who_left_on_their_own_hears_nothing_further() {
+        let _guard = crate::e2e_lock::guard();
+        let (_d, db) = setup();
+        db.lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO users (id, username, email, created_at) VALUES (1,'alice','a@x',1),(2,'bob','b@x',1);
+                 INSERT INTO servers (id, name, owner_id, created_at) VALUES (1,'S1',1,1);
+                 INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES (1,1,'owner',1),(1,2,'member',1);",
+            )
+            .unwrap();
+        let hub = crate::realtime::hub();
+        hub.reset();
+        let (_id, mut bob_rx) = hub.register(2);
+        db.lock()
+            .unwrap()
+            .execute("DELETE FROM server_memberships WHERE server_id = 1 AND user_id = 2".into(), ())
+            .unwrap();
+        access_changed(&db, 1, AccessChange::MemberLeft { user_id: 2 });
+        access_changed(&db, 1, AccessChange::EveryoneChanged);
+        assert!(collect(&mut bob_rx).is_empty(), "the leaver got no frames at all");
+    }
+
     fn collect(rx: &mut tokio::sync::mpsc::Receiver<WsServerMsg>) -> Vec<WsServerMsg> {
         let mut out: Vec<WsServerMsg> = vec![];
         loop {
