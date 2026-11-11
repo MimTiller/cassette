@@ -124,6 +124,9 @@ pub fn sign_out(app: &mut App) {
 /// test that failed on one would otherwise fail every test after it.
 pub fn signed_out(app: &mut App) {
     app.set_timeout(WAIT);
+    // The merged app is large enough that a cold-booted first test can keep
+    // the app busy past the 8 s one-call ceiling while settling its layout.
+    app.set_io_timeout(WAIT);
     for _ in 0..3 {
         app.press_key("Escape");
     }
