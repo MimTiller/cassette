@@ -72,9 +72,9 @@ fi
 # Server binary: given, or built from the repo.
 if [ -z "$SERVER_BIN" ]; then
     [ -n "$REPO" ] && [ -d "$REPO/discord-server" ] || { echo "install.sh: no --server-bin and no --repo with discord-server/. Build it first, or pass --repo." >&2; exit 1; }
-    echo "Building the server binary (cargo, a few minutes)..."
-    (cd "$REPO/discord-server" && cargo build --features server --bin server)
-    SERVER_BIN="$REPO/discord-server/target/debug/server"
+    echo "Building the server binary (cargo --release, a few minutes)..."
+    (cd "$REPO/discord-server" && cargo build --release --features server --bin server)
+    SERVER_BIN="$REPO/discord-server/target/release/server"
 fi
 [ -x "$SERVER_BIN" ] || { echo "install.sh: server binary $SERVER_BIN not found or not executable." >&2; exit 1; }
 
@@ -88,12 +88,18 @@ if [ -n "$WEB_DIST" ]; then
 else
     cp -f "$SERVER_BIN" "$PREFIX/bin/server"
     WEBLINE=""
+    echo "install.sh: warning: no --web-dist, so the server runs the API only and serves no app." >&2
+    echo "  Build the client with 'cd discord-clone && idealyst build --web' and rerun with --web-dist <its dist dir>." >&2
 fi
 
 # Secrets: reuse what the env file already has so tokens/keys stay valid.
+# Read them all before the env file is rewritten below.
 getenv() { grep "^$1=" "$PREFIX/env" 2>/dev/null | tail -1 | cut -d= -f2- || true; }
 SECRET=$(getenv DISCORD_SESSION_SECRET)
 [ -n "$SECRET" ] || SECRET=$(openssl rand -hex 32)
+OLD_LK_URL=$(getenv LIVEKIT_URL)
+OLD_LK_KEY=$(getenv LIVEKIT_API_KEY)
+OLD_LK_SECRET=$(getenv LIVEKIT_API_SECRET)
 
 umask 077
 cat > "$PREFIX/env" <<EOF
@@ -141,8 +147,8 @@ if [ -n "$WITH_LIVEKIT" ]; then
         fi
     fi
     if [ -z "$LIVEKIT_KEY" ] || [ -z "$LIVEKIT_SECRET" ]; then
-        LIVEKIT_KEY=$(getenv LIVEKIT_API_KEY)
-        LIVEKIT_SECRET=$(getenv LIVEKIT_API_SECRET)
+        LIVEKIT_KEY=$OLD_LK_KEY
+        LIVEKIT_SECRET=$OLD_LK_SECRET
     fi
     if [ -z "$LIVEKIT_KEY" ] || [ -z "$LIVEKIT_SECRET" ]; then
         "$LIVEKIT_BIN" generate-keys > "$PREFIX/.livekit-keys"
@@ -166,7 +172,7 @@ if [ -n "$WITH_LIVEKIT" ]; then
     esac
     [ -n "$NODE_IP" ] || NODE_IP=$LKHOST
 
-    grep -q '^CALL_PROVIDER=' "$PREFIX/env" || cat >> "$PREFIX/env" <<EOF
+    cat >> "$PREFIX/env" <<EOF
 CALL_PROVIDER=livekit
 LIVEKIT_URL=$LIVEKIT_URL
 LIVEKIT_API_KEY=$LIVEKIT_KEY
@@ -180,17 +186,33 @@ EOF
     start_unit rwnd-livekit.service
     systemctl --user enable rwnd-livekit.service >/dev/null 2>&1 || true
     LK_NOTE="voice: $LKPORT (wss signalling), $((LKPORT + 1)) (ICE/TCP), $((LKPORT + 2)) (ICE/UDP)"
+else
+    # An existing LiveKit (yours, or LiveKit Cloud): point the app at it.
+    : "${LIVEKIT_URL:=$OLD_LK_URL}" "${LIVEKIT_KEY:=$OLD_LK_KEY}" "${LIVEKIT_SECRET:=$OLD_LK_SECRET}"
+    if [ -n "$LIVEKIT_URL" ] && [ -n "$LIVEKIT_KEY" ] && [ -n "$LIVEKIT_SECRET" ]; then
+        cat >> "$PREFIX/env" <<EOF
+CALL_PROVIDER=livekit
+LIVEKIT_URL=$LIVEKIT_URL
+LIVEKIT_API_KEY=$LIVEKIT_KEY
+LIVEKIT_API_SECRET=$LIVEKIT_SECRET
+EOF
+        systemctl --user restart rwnd.service
+        LK_NOTE="voice: using the LiveKit at $LIVEKIT_URL"
+    elif [ -n "$LIVEKIT_URL$LIVEKIT_KEY$LIVEKIT_SECRET" ]; then
+        echo "install.sh: --livekit-url, --livekit-key and --livekit-secret go together; voice left off." >&2
+    fi
 fi
 chmod 600 "$PREFIX/env" "$PREFIX/livekit.yaml" 2>/dev/null || chmod 600 "$PREFIX/env"
 
 echo
 echo "Installed under $PREFIX. Next steps:"
-echo "  1. Open $PUBLIC_URL in a browser. Not on this machine? Forward it:"
-echo "       ssh -L $PORT:127.0.0.1:$PORT user@thishost"
+echo "  1. The server listens on 127.0.0.1:$PORT. Put a reverse proxy (Caddy or nginx,"
+echo "     see docs/self-hosting.md) or a tunnel in front of it for $PUBLIC_URL;"
+echo "     to try it from another machine first: ssh -L $PORT:127.0.0.1:$PORT user@thishost"
 echo "  2. The first-run setup code, if the wizard shows one, is in the log:"
 echo "       journalctl --user -u rwnd.service -n 50"
-echo "  3. Ports to forward from this machine: $PORT for chat; $LK_NOTE"
+echo "  3. $LK_NOTE"
 echo "     (docs/self-hosting.md explains what each voice port carries)."
-echo "  4. If units stop after you log out, enable systemd linger:"
-echo "       sudo mkdir -p /var/lib/systemd/user/\$(id -un) && sudo systemctl restart systemd-logind"
+echo "  4. So the services keep running after you log out:"
+echo "       loginctl enable-linger \$(id -un)    (may need sudo)"
 echo "Logs: journalctl --user -u rwnd.service (add -u rwnd-livekit.service)."

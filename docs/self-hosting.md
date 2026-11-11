@@ -7,8 +7,11 @@ Settings and the first-run wizard) are landing in parallel.
 ## Quick install
 
 ```bash
-sh deploy/install.sh
+cd discord-clone && idealyst build --web && cd ..   # the web app (see Building)
+sh deploy/install.sh --web-dist <the bundle's dist dir>
 ```
+
+Without `--web-dist` the server runs the API only and serves no app.
 
 [`deploy/install.sh`](../deploy/README.md) sets all of this up in one run:
 it asks where to install, for the public URL, and the port (or takes
@@ -48,10 +51,10 @@ cd discord-clone && idealyst build --web
 
 # the server binary (also serves the API, the WebSocket gateway,
 # /media, and the bundle when WEB_DIST points at it)
-cd discord-server && cargo build --features server --bin server
+cd discord-server && cargo build --release --features server --bin server
 ```
 
-Run it as `target/debug/server` (or `--release`) with the env below; setting
+Run it as `target/release/server` with the env below; setting
 `WEB_DIST` to the built bundle's dist directory makes the binary serve the
 client at `/` and its `pkg/` at `/pkg`, so API and app share one origin.
 
@@ -87,7 +90,7 @@ binary, its own API key/secret pair.
 ```bash
 # grab the binary (linux_amd64 shown)
 tar xzf livekit_1.13.11_linux_amd64.tar.gz   # or download from LiveKit's releases
-./livekit-server generate-keys               # prints "key: secret"
+./livekit-server generate-keys               # prints "API Key: ..." and "API Secret: ..."
 ```
 
 Minimal `livekit.yaml` — port `7880` is the HTTP/WebSocket service,
@@ -102,7 +105,7 @@ rtc:
   tcp_port: 7881
   udp_port: 7882
   use_external_ip: false
-node_ip: <your public or LAN IP>   # the IP LiveKit advertises to clients
+  node_ip: <your public or LAN IP>   # the IP LiveKit advertises to clients
 keys:
   <generated-key>: <generated-secret>
 ```
@@ -136,28 +139,30 @@ environment or a gitignored file.
 
 TURN (relay over HTTPS) is the fallback for clients whose UDP media traffic
 can't reach the server — corporate networks, some proxies, tunnels. LiveKit
-has a built-in TURN relay; enable it by giving it a TLS cert and key and a
-domain:
+has a built-in TURN relay; turn it on and give it a domain and a TLS
+certificate for that domain:
 
 ```yaml
 turn:
-  domain: turn.yourhost.example   # an HTTPS-reachable hostname
+  enabled: true
+  domain: turn.yourhost.example   # DNS points at this server
+  tls_port: 5349                  # TURN over TLS
+  cert_file: /path/to/cert.pem
+  key_file: /path/to/key.pem
 ```
 
-```bash
-livekit-server --config livekit.yaml --turn-cert cert.pem --turn-key key.pem
-```
-
-(Those flags are `--turn-cert` / `--turn-key`, env `LIVEKIT_TURN_CERT` /
-`LIVEKIT_TURN_KEY`.) Then open/forward the TURN TLS port as you would the
-others.
+(The cert and key can also come from `--turn-cert` / `--turn-key`, env
+`LIVEKIT_TURN_CERT` / `LIVEKIT_TURN_KEY`.) Then open/forward TCP `5349` as
+you would the others.
 
 ### No-ops option: LiveKit Cloud
 
 [LiveKit Cloud](https://livekit.com) gives you a signalling URL and key/secret
-with nothing installed or forwarded: set `LIVEKIT_URL` to `wss://cdnwebrtc...`
-(their endpoint) plus your Cloud key/secret and you're done. UDP/TURN/TLS all
-become their problem.
+with nothing installed or forwarded: set `LIVEKIT_URL` to your project's
+`wss://<project>.livekit.cloud` URL plus your Cloud key/secret (or run
+`deploy/install.sh --livekit-url ... --livekit-key ... --livekit-secret ...`
+without `--with-livekit`) and you're done. UDP/TURN/TLS all become their
+problem.
 
 ## Reverse proxies and tunnels
 
@@ -168,13 +173,12 @@ Caddy (it upgrades WebSockets automatically, and does TLS):
 
 ```
 chat.example.com {
-  algs rs256
-  tls cert.pem key.pem
-  proxy / 127.0.0.1:3000 {
-    header X-Forwarded-For *IP
-  }
+  reverse_proxy 127.0.0.1:3000
 }
 ```
+
+Caddy gets the certificate itself and sets `X-Forwarded-For`; set
+`TRUSTED_PROXIES=127.0.0.1,::1` when it runs on the same host.
 
 nginx:
 
