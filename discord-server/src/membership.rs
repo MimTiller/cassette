@@ -200,6 +200,65 @@ mod tests {
         assert_eq!(collect(&mut alice_rx).len(), 2, "members get both refetch pings");
     }
 
+    /// A change in one server reaches only that server's members: members of
+    /// another server hear nothing, so roster pings can't be used to spy across
+    /// servers.
+    #[test]
+    fn a_servers_frames_never_reach_another_servers_members() {
+        let _guard = crate::e2e_lock::guard();
+        let (_d, db) = setup();
+        db.lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO users (id, username, email, created_at) VALUES (1,'alice','a@x',1);
+                 INSERT INTO users (id, username, email, created_at) VALUES (3,'carol','c@x',1);
+                 INSERT INTO servers (id, name, owner_id, icon_url, created_at) VALUES (1,'S1',1,NULL,1),(2,'S2',3,NULL,1);
+                 INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES (1,1,'owner',1),(2,3,'owner',1);",
+            )
+            .unwrap();
+        let hub = crate::realtime::hub();
+        hub.reset();
+        let (_id, mut alice_rx) = hub.register(1);
+        access_changed(&db, 2, AccessChange::EveryoneChanged);
+        access_changed(&db, 2, AccessChange::MemberJoined { user_id: 3 });
+        assert!(collect(&mut alice_rx).is_empty(), "server 1's member got no server 2 pings");
+    }
+
+    /// A member who left and was invited back starts receiving the server's
+    /// frames again: the audience is recomputed from the rows, not remembered.
+    #[test]
+    fn a_readded_member_hears_the_servers_frames_again() {
+        let _guard = crate::e2e_lock::guard();
+        let (_d, db) = setup();
+        db.lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO users (id, username, email, created_at) VALUES (1,'alice','a@x',1);
+                 INSERT INTO users (id, username, email, created_at) VALUES (2,'bob','b@x',1);
+                 INSERT INTO servers (id, name, owner_id, icon_url, created_at) VALUES (1,'S1',1,NULL,1);
+                 INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES (1,1,'owner',1),(1,2,'member',1);",
+            )
+            .unwrap();
+        let hub = crate::realtime::hub();
+        hub.reset();
+        let (_id, mut bob_rx) = hub.register(2);
+        db.lock()
+            .unwrap()
+            .execute("DELETE FROM server_memberships WHERE server_id = 1 AND user_id = 2".into(), ())
+            .unwrap();
+        access_changed(&db, 1, AccessChange::MemberRemoved { user_id: 2 });
+        db.lock()
+            .unwrap()
+            .execute("INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES (1,2,'member',2)".into(), ())
+            .unwrap();
+        access_changed(&db, 1, AccessChange::MemberJoined { user_id: 2 });
+        let frames = collect(&mut bob_rx);
+        assert!(
+            frames.iter().any(|m| matches!(m, WsServerMsg::MemberChanged { server_id: 1, user_id: 2, joined: true, .. })),
+            "the re-added member got the join frame"
+        );
+    }
+
     fn collect(rx: &mut tokio::sync::mpsc::Receiver<WsServerMsg>) -> Vec<WsServerMsg> {
         let mut out: Vec<WsServerMsg> = vec![];
         loop {
