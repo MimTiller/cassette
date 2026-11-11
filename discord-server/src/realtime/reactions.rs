@@ -182,4 +182,35 @@ mod tests {
             "the reaction fans out to the whole server, not just the reactor"
         );
     }
+
+    #[test]
+    fn one_reaction_per_user_per_emoji_and_no_leaks_to_outsiders() {
+        let _guard = crate::e2e_lock::guard();
+        let (_d, db) = setup();
+        let hub = crate::realtime::hub();
+        hub.reset();
+        let (_, mut bob_rx) = hub.register(2);
+        let (_, mut ghost_rx) = hub.register(4); // user 4 is in no server
+        let mid = db.insert_message(1, 1, "twice", 100, None).unwrap();
+
+        // One per user per emoji: re-adding the same emoji is ignored, the
+        // count stays 1.
+        add_channel_reaction(&db, 2, mid, "😎").unwrap();
+        add_channel_reaction(&db, 2, mid, "😎").unwrap();
+        assert_eq!(db.reactions_for_message(mid, 2), vec![("😎".to_string(), 1u32, true)]);
+
+        // A non-member of the channel's server cannot take a reaction back,
+        // and their own frame stream gets nothing from the channel.
+        assert_eq!(
+            remove_channel_reaction(&db, 4, mid, "😎").unwrap_err(),
+            "not a member of this server",
+            "refused remove needs VIEW_CHANNEL via membership"
+        );
+        assert!(ghost_rx.try_recv().is_err(), "no frames leak to the outsider");
+        let add = bob_rx.try_recv();
+        assert!(
+            matches!(add, Ok(WsServerMsg::ReactionAdd { channel_id, .. }) if channel_id == 1),
+            "the viewer's socket still gets the channel frames"
+        );
+    }
 }
