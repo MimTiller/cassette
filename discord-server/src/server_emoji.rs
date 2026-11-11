@@ -371,4 +371,26 @@ mod tests {
         assert!(rename(&db, 1, e.id, "no spaces").is_err());
         assert_eq!(list(&db, 1).len(), 1);
     }
+
+    /// The refetch ping goes to the server's members only: a user in no server
+    /// never learns about its emoji changing.
+    #[test]
+    fn an_emoji_ping_never_reaches_a_non_member() {
+        let _guard = crate::e2e_lock::guard();
+        let (_dir, db) = setup();
+        let hub = crate::realtime::hub();
+        hub.reset();
+        let (_, mut bob_rx) = hub.register(2);
+        let (_, mut ghost_rx) = hub.register(4);
+        up(&db, 1, "pinged", PNG).unwrap();
+        announce(&db, 1);
+        assert!(
+            matches!(
+                bob_rx.try_recv(),
+                Ok(crate::server_settings::WsServerMsg::EmojiChanged { server_id: 1, .. })
+            ),
+            "the member gets the ping"
+        );
+        assert!(ghost_rx.try_recv().is_err(), "the non-member gets nothing");
+    }
 }

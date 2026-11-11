@@ -394,4 +394,49 @@ mod tests {
             "you're not a member of this server");
         assert_eq!(delete(&db, 9, s.id).unwrap_err(), "you're not a member of this server");
     }
+
+    /// The refetch ping goes to the server's members only: a user in no server
+    /// never learns about its sticker collection changing.
+    #[test]
+    fn a_sticker_ping_never_reaches_a_non_member() {
+        let _guard = crate::e2e_lock::guard();
+        let (_dir, db) = setup();
+        let hub = crate::realtime::hub();
+        hub.reset();
+        let (_, mut bob_rx) = hub.register(2);
+        let (_, mut ghost_rx) = hub.register(9);
+        up(&db, 1, "pinged").unwrap();
+        announce(&db, 1);
+        assert!(
+            matches!(
+                bob_rx.try_recv(),
+                Ok(crate::server_settings::WsServerMsg::StickersChanged { server_id: 1, .. })
+            ),
+            "the member gets the ping"
+        );
+        assert!(ghost_rx.try_recv().is_err(), "the non-member gets nothing");
+    }
+
+    /// Editing rejects the same names, descriptions and chips as upload —
+    /// an edit can't smuggle a name the upload path would have refused.
+    #[test]
+    fn edit_rejects_bad_names_descriptions_and_chips() {
+        let (_dir, db) = setup();
+        let s = up(&db, 1, "target").unwrap();
+        let bad = EditStickerInput {
+            sticker_id: s.id,
+            name: "x".into(),
+            description: String::new(),
+            related_emoji: "😭".into(),
+        };
+        assert!(edit(&db, 1, bad).is_err());
+        let bad_desc = EditStickerInput {
+            sticker_id: s.id,
+            name: "fine".into(),
+            description: (&"x".repeat(101)).into(),
+            related_emoji: "😭".into(),
+        };
+        assert!(edit(&db, 1, bad_desc).is_err());
+        assert_eq!(list(&db, 1).len(), 1, "a refused edit leaves the sticker as it was");
+    }
 }
