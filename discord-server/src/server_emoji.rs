@@ -344,4 +344,31 @@ mod tests {
             "a non-member cannot delete a server emoji"
         );
     }
+
+    #[test]
+    fn a_non_member_cannot_upload_to_a_servers_emoji_by_id() {
+        let (_dir, db) = setup();
+        let input = UploadEmojiInput { server_id: 1, name: "x".into(), data_url: PNG.into() };
+        assert_eq!(
+            upload(&db, 4, input, 1, |_, mime| Ok("/media/x.png".into())).unwrap_err(),
+            "you're not a member of this server",
+        );
+    }
+
+    #[test]
+    fn owner_can_rename_or_delete_an_emoji_of_their_server() {
+        let (_dir, db) = setup();
+        let e = up(&db, 1, "owner_emoji", PNG).unwrap();
+        assert_eq!(rename(&db, 1, e.id, "renamed_owner").unwrap().name, "renamed_owner");
+        assert_eq!(delete(&db, 1, e.id).unwrap(), 1);
+    }
+
+    #[test]
+    fn rename_rejects_bad_names() {
+        let (_dir, db) = setup();
+        let e = up(&db, 1, "owner_emoji", PNG).unwrap();
+        assert!(rename(&db, 1, e.id, "x").is_err());
+        assert!(rename(&db, 1, e.id, "no spaces").is_err());
+        assert_eq!(list(&db, 1).len(), 1);
+    }
 }
