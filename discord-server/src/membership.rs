@@ -119,4 +119,95 @@ mod tests {
             );
         }
     }
+
+    /// The audience of a membership frame is the server's members recomputed
+    /// after the write, so a user whose row was just removed (ban, kick,
+    /// leave) hears nothing further from that server: their frames stop.
+    #[test]
+    fn a_removed_member_stops_receiving_the_servers_frames() {
+        let _guard = crate::e2e_lock::guard();
+        let (_d, db) = setup();
+        db.lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO users (id, username, email, created_at) VALUES (1,'alice','a@x',1);
+                 INSERT INTO users (id, username, email, created_at) VALUES (2,'bob','b@x',1);
+                 INSERT INTO servers (id, name, owner_id, icon_url, created_at) VALUES (1,'S1',1,NULL,1);
+                 INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES (1,1,'owner',1);
+                 INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES (1,2,'member',1);",
+            )
+            .unwrap();
+        let hub = crate::realtime::hub();
+        hub.reset();
+        let (_id, mut alice_rx) = hub.register(1);
+        let (_id2, mut bob_rx) = hub.register(2);
+
+        // Kick bob: the membership row goes first, then the access change.
+        db.lock()
+            .unwrap()
+            .execute("DELETE FROM server_memberships where server_id = 1 and user_id = 2", ())
+            .unwrap();
+        access_changed(&db, 1, AccessChange::MemberBanned { user_id: 2 });
+        let bob_frames = collect(&mut bob_rx);
+        assert!(
+            bob_frames.iter().all(|m| !matches!(m, WsServerMsg::MemberChanged { server_id: 1, user_id: 2, .. })),
+            "bob got the very frame announcing his own removal"
+        );
+        let alice_frames = collect(&mut alice_rx);
+        assert!(
+            alice_frames.iter().any(|m| matches!(m, WsServerMsg::MemberChanged { server_id: 1, user_id: 2, joined: false, .. })),
+            "alice is told bob left"
+        );
+        // Nothing further about that server reaches bob: another member joins.
+        db.lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO users (id, username, email, created_at) VALUES (9,'zoe','z@x',1);
+                 INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES (1,9,'member',1);",
+            )
+            .unwrap();
+        access_changed(&db, 1, AccessChange::MemberJoined { user_id: 9 });
+        assert!(collect(&mut bob_rx).is_empty(), "the ex-member receives nothing more");
+        assert!(
+            collect(&mut alice_rx).iter().any(|m| matches!(m, WsServerMsg::MemberChanged { server_id: 1, user_id: 9, joined: true, .. })),
+            "alice sees zoe join"
+        );
+    }
+
+    /// A user who never joined the server is not in its audience at all —
+    /// neither roster frames nor refetch pings.
+    #[test]
+    fn an_outsider_receives_nothing_from_the_server() {
+        let _guard = crate::e2e_lock::guard();
+        let (_d, db) = setup();
+        db.lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO users (id, username, email, created_at) VALUES (1,'alice','a@x',1);
+                 INSERT INTO users (id, username, email, created_at) VALUES (42,'ghost','g@x',1);
+                 INSERT INTO servers (id, name, owner_id, icon_url, created_at) VALUES (1,'S1',1,NULL,1);
+                 INSERT INTO server_memberships (server_id, user_id, role, joined_at) VALUES (1,1,'owner',1);",
+            )
+            .unwrap();
+        let hub = crate::realtime::hub();
+        hub.reset();
+        let (_id, mut alice_rx) = hub.register(1);
+        let (_id2, mut ghost_rx) = hub.register(42);
+
+        access_changed(&db, 1, AccessChange::EveryoneChanged);
+        access_changed(&db, 1, AccessChange::ChannelOverridesChanged { channel_id: 1 });
+        assert!(collect(&mut ghost_rx).is_empty(), "the outsider got nothing");
+        assert_eq!(collect(&mut alice_rx).len(), 2, "members get both refetch pings");
+    }
+
+    fn collect(rx: &mut tokio::sync::mpsc::Receiver<WsServerMsg>) -> Vec<WsServerMsg> {
+        let mut out: Vec<WsServerMsg> = vec![];
+        loop {
+            match rx.try_recv() {
+                Ok(m) => out.push(m),
+                Err(_) => break,
+            }
+        }
+        out
+    }
 }
