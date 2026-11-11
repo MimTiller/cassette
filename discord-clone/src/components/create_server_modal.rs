@@ -67,6 +67,9 @@ pub fn create_server_modal(
         font_size: Some(px(18.0)),
         font_weight: Some(FontWeight::Bold),
         color: Some(col(theme::TEXT_STRONG)),
+        // The card column is taller than its fixed-height backdrop: without
+        // this the title text flex-shrinks to zero height and disappears.
+        flex_shrink: Some(Tokenized::Literal(0.0)),
         ..Default::default()
     };
     let sub_style = StyleRules {
@@ -189,8 +192,8 @@ pub fn create_server_modal(
     let close_btn = ui! { crate::controls::modal_close_button(move || close.set(false)) };
     let card = ui! {
         view(style = card_style.clone()) {
-            text(style = title_style.clone()) { "Add a Server".to_string() }
-            text(style = sub_style.clone()) { "Enter a name for your new server".to_string() }
+            text(style = title_style.clone()) { move || "Add a Server".to_string() }
+            text(style = sub_style.clone()) { move || "Enter a name for your new server".to_string() }
             text_input(
                 value = name.clone(),
                 on_change = on_name_change,
