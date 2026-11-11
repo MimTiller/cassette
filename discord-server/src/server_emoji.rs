@@ -311,4 +311,37 @@ mod tests {
         }
         assert!(up(&db, 1, "one_too_many", PNG).unwrap_err().contains("at most"));
     }
+
+    #[test]
+    fn a_non_member_cannot_fetch_or_edit_a_servers_emoji_by_id() {
+        let (_dir, db) = setup();
+        // User 4 is in no server; uploading to server 1 is refused by the
+        // membership gate inside `require` (via `member_in`).
+        let input = UploadEmojiInput { server_id: 1, name: "x".into(), data_url: PNG.into() };
+        assert_eq!(
+            upload(&db, 4, input, 1, |_, mime| Ok("/media/x.png".into())).unwrap_err(),
+            "you're not a member of this server",
+        );
+
+        // Plant an emoji in server 1 (owner 1); user 4 is in no server and must
+        // not reach it through rename/delete — `require` re-checks membership
+        // in the emoji's OWN server, not just that the caller has some server.
+        let e1 = upload(
+            &db,
+            1,
+            UploadEmojiInput { server_id: 1, name: "hidden".into(), data_url: PNG.into() },
+            1,
+            |_, mime| Ok("/media/hidden.png".into()),
+        ).unwrap();
+        assert_eq!(
+            rename(&db, 4, e1.id, "hijacked").unwrap_err(),
+            "you're not a member of this server",
+            "a non-member cannot rename a server emoji"
+        );
+        assert_eq!(
+            delete(&db, 4, e1.id).unwrap_err(),
+            "you're not a member of this server",
+            "a non-member cannot delete a server emoji"
+        );
+    }
 }
