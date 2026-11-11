@@ -144,6 +144,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                     user_notif_mode,
                     muted,
                     deafened,
+                    voice_error,
                     status_menu,
                     gateway.clone(),
                 );
@@ -843,6 +844,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                         user_notif_mode,
                         muted,
                         deafened,
+                        voice_error,
                         status_menu,
                         gateway.clone(),
                     );

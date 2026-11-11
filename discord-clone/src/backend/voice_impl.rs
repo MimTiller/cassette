@@ -20,4 +20,10 @@ impl CallApi for CassetteBackend {
             discord_server::voice::VoiceStateInput { channel_id },
         ).await
     }
+
+    async fn set_voice_flags(channel_id: i64, muted: bool, deafened: bool) -> Result<(), ServerError> {
+        discord_server::voice::set_voice_flags(
+            discord_server::voice::VoiceFlagsInput { channel_id, muted, deafened },
+        ).await
+    }
 }

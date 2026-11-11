@@ -33,6 +33,7 @@ pub(super) fn user_panel(
     notif_mode: Signal<bool>,
     muted: Signal<bool>,
     deafened: Signal<bool>,
+    voice_error: Signal<Option<(i64, String)>>,
     status_menu: Signal<bool>,
     gateway: crate::backend::Gateway,
 ) -> Element {
@@ -257,18 +258,47 @@ pub(super) fn user_panel(
                 flex_shrink: Some(grow(0.0)),
                 ..Default::default()
             };
+            // The mute/deafen flags live on the server: a browser's own LiveKit
+            // toggle is invisible to peers, so the tap posts the pair through
+            // the seam (which also drives the client's LiveKit room) and the
+            // icons follow the answer. While not in a voice channel there is
+            // nothing to post, so the tap just flips the icon locally.
             let muted_state = muted.clone();
+            let joined_for_flags = joined_voice.clone();
+            let err_for_flags = voice_error.clone();
             let mic_btn = ui! {
                 view(style = icon_btn_style.clone(), test_id = "user-mic") {
                     if muted_state.get() {
-                        icon(MIC_OFF).color(|| theme::live(TEXT_MUTED)).size(15.0)
+                        icon(MIC_OFF).color(|| theme::live(theme::DANGER)).size(15.0)
                     } else {
                         icon(MIC).color(|| theme::live(TEXT_MUTED)).size(15.0)
                     }
                 }
                 .on_touch(move |ev| {
                     if ev.phase == TouchPhase::Ended {
-                        muted_state.set(!muted_state.get());
+                        let m2 = !muted_state.get();
+                        match joined_for_flags.get() {
+                            Some((_, ch)) => {
+                                runtime_core::spawn_then_in(
+                                    &crate::app::shell_alive(),
+                                    crate::backend::set_voice_flags(
+                                        ch as i64,
+                                        m2,
+                                        deafened.get(),
+                                    ),
+                                    move |result| {
+                                        match result {
+                                            Ok(_) => {
+                                                muted_state.set(m2);
+                                                err_for_flags.set(None);
+                                            }
+                                            Err(msg) => err_for_flags.set(Some((ch as i64, msg))),
+                                        }
+                                    },
+                                );
+                            }
+                            None => muted_state.set(m2),
+                        }
                     }
                     TouchResponse::CONSUMED
                 })
@@ -284,7 +314,29 @@ pub(super) fn user_panel(
                 }
                 .on_touch(move |ev| {
                     if ev.phase == TouchPhase::Ended {
-                        deafened_state.set(!deafened_state.get());
+                        let d2 = !deafened_state.get();
+                        match joined_for_flags.get() {
+                            Some((_, ch)) => {
+                                runtime_core::spawn_then_in(
+                                    &crate::app::shell_alive(),
+                                    crate::backend::set_voice_flags(
+                                        ch as i64,
+                                        muted.get(),
+                                        d2,
+                                    ),
+                                    move |result| {
+                                        match result {
+                                            Ok(_) => {
+                                                deafened_state.set(d2);
+                                                err_for_flags.set(None);
+                                            }
+                                            Err(msg) => err_for_flags.set(Some((ch as i64, msg))),
+                                        }
+                                    },
+                                );
+                            }
+                            None => deafened_state.set(d2),
+                        }
                     }
                     TouchResponse::CONSUMED
                 })

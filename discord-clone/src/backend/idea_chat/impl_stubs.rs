@@ -143,6 +143,10 @@ impl CallApi for IdeaChatBackend {
     async fn voice_state(_channel_id: i64) -> Result<VoiceStateResult, ServerError> {
         Err(model::not_supported())
     }
+
+    async fn set_voice_flags(_channel_id: i64, _muted: bool, _deafened: bool) -> Result<(), ServerError> {
+        Err(model::not_supported())
+    }
 }
 
 impl ThemesApi for IdeaChatBackend {
