@@ -109,7 +109,7 @@ tag field `"t"`, snake_case constructors):
 // server → client, first frame:
 {"t":"snapshot","seq":0,"state":{ ...chat_model::State... }}
 // then per change, seq numbered PER CONNECTION:
-{"t":"event","seq":7,"event":{"t":"message_created","message":{...}}}
+{"t":"event","seq":7,"event":{"e":"message_created","message":{...}}}
 // refusals and keepalive:
 {"t":"refused","reason":"…"}
 {"t":"pong"}
