@@ -45,7 +45,7 @@ use std::rc::Rc;
 // Discord dark palette (kept local so the component is self-contained).
 
 /// The sidebar's sections, in order (the `section` signal's index).
-const SECTIONS: [&str; 5] = ["Overview", "Roles", "Members", "Emoji", "Stickers"];
+const SECTIONS: [&str; 5] = ["Overview", "Roles", "Manage Members", "Emoji", "Stickers"];
 
 /// A text input bound two-way to `value`, carrying a `test_id` for the robot
 /// suite (the `controls::text_field` shape plus the id).
