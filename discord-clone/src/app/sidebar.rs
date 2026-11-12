@@ -6,17 +6,19 @@ use super::*;
 use runtime_core::{component, ui};
 
 /// One video tile in a voice row's grid: Discord's camera/screen-share
-/// panel — a fixed box with the person's avatar chip and name over it,
-/// ringed in the speaking tone when their mic is on and dim when they
-/// are muted (the ring follows the server's flags, so every client draws
-/// the same one). Screen shares get the taller box, cameras the letter
-/// box; the avatar stands in for the live feed while no real tracks
-/// paint in. `test_id = "voice-tile"` lets the robot count the grid.
+/// panel — the person's live video (or their avatar chip until a frame
+/// arrives) with their name, ringed in the speaking tone when their mic is
+/// on and dim when they are muted (the ring follows the server's flags, so
+/// every client draws the same one). Screen shares get the taller box and
+/// are letterboxed; cameras fill theirs. `test_id = "voice-tile"` lets the
+/// robot count the grid.
 #[component]
 pub(super) fn VoiceTile(
     #[prop(static)] name: String,
     #[prop(static)] muted: bool,
     #[prop(static)] screen_share: bool,
+    #[prop(static)] channel_id: i64,
+    #[prop(static)] user_id: i64,
 ) -> Element {
     let speaking = !muted;
     let ring = move || if speaking {
@@ -28,7 +30,24 @@ pub(super) fn VoiceTile(
     let chip_size = if screen_share { 40.0 } else { 28.0 };
     // `avatar_chip` and the label are free helpers, not `ui!` tags: built as
     // locals and splat in as braced children.
-    let chip = crate::avatar_chip::avatar_chip(name.as_str(), theme::ACCENT, chip_size);
+    // The live video when this tab has one for the person, the avatar otherwise.
+    let chip: Element = match crate::backend::video_feed(channel_id, user_id) {
+        Some(stream) => video_sdk::Video(video_sdk::VideoProps {
+            source: video_sdk::stream(stream),
+            autoplay: true,
+            // Sound comes through the call's audio elements, never the tile.
+            muted: true,
+            object_fit: if screen_share { video_sdk::ObjectFit::Contain } else { video_sdk::ObjectFit::Cover },
+            ..Default::default()
+        })
+        .with_style(StyleRules {
+            width: Some(px(100.0)),
+            height: Some(px(size - 20.0)),
+            ..Default::default()
+        })
+        .into(),
+        None => crate::avatar_chip::avatar_chip(name.as_str(), theme::ACCENT, chip_size),
+    };
     let label = ui! {
         text(style = StyleRules {
             font_size: Some(px(11.0)),
@@ -839,7 +858,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                             ..Default::default()
                                         }) {
                                             for u in video_users.iter(), key = u.user_id {
-                                                VoiceTile(name = u.username.clone(), muted = u.muted, screen_share = u.screen_share)
+                                                VoiceTile(name = u.username.clone(), muted = u.muted, screen_share = u.screen_share, channel_id = cid, user_id = u.user_id)
                                             }
                                         }
                                     }
@@ -1269,9 +1288,10 @@ fn watch_call(
         runtime_core::spawn_then_in(
             &crate::app::shell_alive(),
             async move {
-                let changed = crate::backend::refresh_speaking(cid).await;
+                let speaking = crate::backend::refresh_speaking(cid).await;
+                let videos = crate::backend::refresh_video_feeds(cid).await;
                 let blocked = crate::backend::call_audio_blocked(cid).await;
-                (changed, blocked)
+                (speaking || videos, blocked)
             },
             move |(changed, blocked)| {
                 if changed {

@@ -514,6 +514,7 @@ mod voice_impl;
 #[cfg(not(feature = "idea-chat"))]
 mod livekit;
 mod call_media;
+mod video_feeds;
 mod themes_impl;
 #[cfg(not(feature = "idea-chat"))]
 mod instance_impl;
@@ -1006,6 +1007,21 @@ pub fn clear_speaking() -> bool {
 /// Whether `user_id` was speaking at the last ask.
 pub fn is_speaking(user_id: i64) -> bool {
     SPEAKING.with(|s| s.borrow().contains(&user_id))
+}
+
+/// Refresh the call's videos for `channel_id`; true when the tiles must repaint.
+pub async fn refresh_video_feeds(channel_id: i64) -> bool {
+    call_media::refresh_videos(channel_id).await
+}
+
+/// The live video for `user_id` in `channel_id`, if this tab has one.
+pub fn video_feed(channel_id: i64, user_id: i64) -> Option<media_stream::MediaStream> {
+    video_feeds::feed(channel_id, user_id)
+}
+
+/// How many <video> elements on the page are painting (robot hook).
+pub fn playing_videos() -> u32 {
+    video_feeds::playing_videos()
 }
 
 /// Whether the browser is still holding the call's audio back.

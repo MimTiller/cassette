@@ -66,6 +66,11 @@ impl CallApi for CassetteBackend {
         // Screen share publishes before its flag goes up, so a cancelled
         // picker never leaves a share icon with nothing behind it; the track
         // comes down after the flag does.
+        if camera {
+            crate::backend::call_media::set_camera(channel_id, true)
+                .await
+                .map_err(|msg| server::ServerError::Failed(msg.into()))?;
+        }
         if screen_share {
             crate::backend::call_media::set_screen_share(channel_id, true)
                 .await
@@ -81,6 +86,9 @@ impl CallApi for CassetteBackend {
             },
         ).await?;
         crate::backend::call_media::apply_flags(channel_id, muted, deafened).await;
+        if !camera {
+            let _ = crate::backend::call_media::set_camera(channel_id, false).await;
+        }
         if !screen_share {
             let _ = crate::backend::call_media::set_screen_share(channel_id, false).await;
         }

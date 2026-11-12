@@ -39,6 +39,12 @@ mod lk {
     pub(crate) async fn is_screen_sharing(_channel_id: i64) -> bool {
         false
     }
+    pub(crate) async fn set_camera(_channel_id: i64, _on: bool) -> Result<(), String> {
+        Err(super::IDEA_CHAT_CALLS_PENDING.to_string())
+    }
+    pub(crate) async fn videos(_channel_id: i64) -> Vec<(i64, bool, String, crate::backend::video_feeds::RawStream)> {
+        Vec::new()
+    }
     pub(crate) async fn speaking_ids(_channel_id: i64) -> Vec<i64> {
         Vec::new()
     }
@@ -112,6 +118,7 @@ pub(crate) fn live_channels() -> Vec<i64> {
 pub(crate) async fn disconnect(channel_id: i64) -> bool {
     let provider = provider_of(channel_id);
     forget(channel_id);
+    crate::backend::video_feeds::drop_channel(channel_id);
     match provider {
         Some(Provider::IdeaChat) => false,
         // A channel the map does not know may still hold a LiveKit room from
@@ -136,6 +143,25 @@ pub(crate) async fn set_screen_share(channel_id: i64, on: bool) -> Result<(), St
         None if !on => Ok(()),
         None => Err(NOT_CONNECTED.to_string()),
     }
+}
+
+/// Turn this tab's camera on or off.
+pub(crate) async fn set_camera(channel_id: i64, on: bool) -> Result<(), String> {
+    match provider_of(channel_id) {
+        Some(Provider::LiveKit) => lk::set_camera(channel_id, on).await,
+        Some(Provider::IdeaChat) => Err(IDEA_CHAT_CALLS_PENDING.to_string()),
+        None if !on => Ok(()),
+        None => Err(NOT_CONNECTED.to_string()),
+    }
+}
+
+/// Refresh the videos this tab can show for `channel_id`; true when that changed.
+pub(crate) async fn refresh_videos(channel_id: i64) -> bool {
+    let raw = match provider_of(channel_id) {
+        Some(Provider::LiveKit) => lk::videos(channel_id).await,
+        _ => Vec::new(),
+    };
+    crate::backend::video_feeds::update(channel_id, raw)
 }
 
 /// Whether this tab is still sharing its screen in `channel_id`.

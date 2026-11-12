@@ -175,6 +175,13 @@ fn call_audio(channel_id: i64) -> Result<String, String> {
     Ok(crate::backend::call_audio_state(channel_id))
 }
 
+/// How many <video> elements on the page are painting a frame: a tile that
+/// shows a real camera or screen, not the avatar stand-in.
+#[runtime_core::robot_fn(name = "cassette.video_playing")]
+fn video_playing() -> Result<u32, String> {
+    Ok(crate::backend::playing_videos())
+}
+
 pub(crate) fn register() {
     runtime_vocabulary::robot_fn::register(theme_key::robot());
     runtime_vocabulary::robot_fn::register(jump_target::robot());
@@ -189,4 +196,5 @@ pub(crate) fn register() {
     runtime_vocabulary::robot_fn::register(upload_server_emoji::robot());
     runtime_vocabulary::robot_fn::register(upload_server_sticker::robot());
     runtime_vocabulary::robot_fn::register(call_audio::robot());
+    runtime_vocabulary::robot_fn::register(video_playing::robot());
 }

@@ -230,8 +230,43 @@ fn a_camera_on_shows_a_video_tile_to_the_other_browser(app: &mut App) {
         eventually(20, || second.app.text(name_a.as_str()).count() > 0),
         "the tile never carried A's name: {name_a}"
     );
+    // The tile is real video, not the avatar stand-in: LiveKit lists A's
+    // camera track, and B's page has a <video> painting frames.
+    let url = env::var("LIVEKIT_URL").unwrap_or_default();
+    let api_key = env::var("LIVEKIT_API_KEY").unwrap_or_default();
+    let secret = env::var("LIVEKIT_API_SECRET").unwrap_or_default();
+    let chans = a.call("list_channels", json!({ "server_id": sid }));
+    let chans = chans.get("Ok").unwrap_or(&chans).clone();
+    let cid = chans
+        .as_array()
+        .and_then(|list| list.iter().find(|c| c.get("kind").and_then(|v| v.as_str()) == Some("voice")))
+        .and_then(|c| c.get("id").and_then(|v| v.as_i64()))
+        .unwrap_or(0);
+    let room = format!("rwnd-ch-{cid}");
+    let me = a.id.to_string();
+    assert!(
+        eventually(20, || tracks_of(url.clone(), api_key.clone(), secret.clone(), room.clone(), me.clone())
+            .iter()
+            .any(|(kind, source)| kind == "VIDEO" && source == "CAMERA")),
+        "LiveKit never listed A's camera track in {room}"
+    );
+    assert!(
+        eventually(20, || second.app.call_function("cassette.video_playing", json!({})).as_u64()
+            .or_else(|| second.app.call_function("cassette.video_playing", json!({})).get("Ok").and_then(|v| v.as_u64()))
+            .unwrap_or(0) > 0),
+        "B's tile never painted a video frame"
+    );
     let shot = second.app.screenshot();
     eprintln!("[shot] cam-tile-b: {shot}");
+
+    // Camera off: the track leaves the room.
+    app.test_id("user-camera").click();
+    assert!(
+        eventually(20, || !tracks_of(url.clone(), api_key.clone(), secret.clone(), room.clone(), me.clone())
+            .iter()
+            .any(|(_, source)| source == "CAMERA")),
+        "A's camera track stayed in {room} after turning it off"
+    );
 
     // Leave the call through the seam so A's panel reads "Online" again and
     // the suite's signed-out cleanup applies.

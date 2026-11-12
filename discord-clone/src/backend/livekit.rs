@@ -286,6 +286,41 @@ const ADAPTER_SRC: &'static str = r#"
       }
       return true;
     },
+    // Turn this tab's camera on or off (a pending connect finishes first).
+    camera: async (ch, on) => {
+      const entry = ROOMS.get(ch);
+      if (!entry) throw new Error('not connected: ' + ch);
+      if (entry.ready) await entry.ready;
+      const lp = entry.room.localParticipant;
+      if (on) {
+        await lp.setCameraEnabled(true);
+      } else {
+        // Off means gone, not muted: unpublish so peers drop the tile and
+        // the camera light goes out.
+        const pub = lp.getTrackPublication(camera);
+        if (pub && pub.track) await lp.unpublishTrack(pub.track, true);
+      }
+      return true;
+    },
+    // Every video this tab can show for the room: other people's subscribed
+    // camera and screen tracks, and our own published ones, as
+    // [identity, isScreenShare, trackSid, MediaStream].
+    videos: async (ch) => {
+      const entry = ROOMS.get(ch);
+      if (!entry) return [];
+      const out = [];
+      const add = (identity, pub) => {
+        const t = pub.track;
+        if (!t || t.kind !== 'video' || !t.mediaStreamTrack) return;
+        out.push([identity, pub.source === 'screen_share', pub.trackSid || '', new MediaStream([t.mediaStreamTrack])]);
+      };
+      entry.room.remoteParticipants.forEach((rp) => {
+        rp.videoTrackPublications.forEach((pub) => { if (pub.isSubscribed) add(rp.identity, pub); });
+      });
+      const lp = entry.room.localParticipant;
+      lp.videoTrackPublications.forEach((pub) => add(lp.identity, pub));
+      return out;
+    },
     // Whether this tab is still sharing: the browser's own "Stop sharing"
     // bar ends the track without asking the app.
     sharing: async (ch) => {
@@ -613,6 +648,54 @@ pub(crate) fn audio_state(channel_id: i64) -> String {
         .unwrap_or_else(|| "[]".to_string())
 }
 
+/// Turn this tab's camera on or off in `channel_id`'s room.
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn set_camera(channel_id: i64, on: bool) -> Result<(), String> {
+    let args = [JsValue::from(channel_id.to_string()), JsValue::from(on)].to_vec();
+    let (value, raw_err) = call_adapter("camera", args).await;
+    if !raw_err.is_empty() {
+        return Err(camera_error(raw_err));
+    }
+    if !value.is_truthy() {
+        return Err("the call server could not be reached".to_string());
+    }
+    Ok(())
+}
+
+/// The videos this tab can show for `channel_id`'s room, as (user id, is a
+/// screen share, track sid, browser MediaStream).
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn videos(channel_id: i64) -> Vec<(i64, bool, String, crate::backend::video_feeds::RawStream)> {
+    let (value, raw_err) = call_adapter("videos", [JsValue::from(channel_id.to_string())].to_vec()).await;
+    if !raw_err.is_empty() || !Array::is_array(&value) {
+        return Vec::new();
+    }
+    let rows: Array = value.unchecked_into();
+    let mut out = Vec::new();
+    for row in rows.iter() {
+        if !Array::is_array(&row) {
+            continue;
+        }
+        let row: Array = row.unchecked_into();
+        let uid = match row.get(0).as_string().and_then(|s| s.parse::<i64>().ok()) {
+            Some(u) => u,
+            None => continue,
+        };
+        out.push((uid, row.get(1).is_truthy(), row.get(2).as_string().unwrap_or_default(), row.get(3)));
+    }
+    out
+}
+
+/// The status line for a camera failure: a refused or missing camera is not
+/// a microphone problem.
+pub(crate) fn camera_error(err: String) -> String {
+    let low = err.to_lowercase();
+    if low.contains("notallowed") || low.contains("permission") || low.contains("notfound") || low.contains("notreadable") {
+        return "the browser blocked the camera (or no camera was found)".to_string();
+    }
+    classify(err)
+}
+
 /// The status line for a screen-share failure: a cancelled or refused picker
 /// is not a microphone problem, so it gets its own sentence.
 pub(crate) fn share_error(err: String) -> String {
@@ -648,6 +731,14 @@ pub(crate) async fn is_screen_sharing(_channel_id: i64) -> bool {
     false
 }
 #[cfg(not(target_arch = "wasm32"))]
+pub(crate) async fn set_camera(_channel_id: i64, _on: bool) -> Result<(), String> {
+    Ok(())
+}
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) async fn videos(_channel_id: i64) -> Vec<(i64, bool, String, crate::backend::video_feeds::RawStream)> {
+    Vec::new()
+}
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) async fn speaking_ids(_channel_id: i64) -> Vec<i64> {
     Vec::new()
 }
@@ -677,6 +768,8 @@ mod tests {
         assert_eq!(share_error("NotAllowedError: Permission denied by user".to_string()),
                    "screen sharing was cancelled or blocked by the browser".to_string());
         assert_eq!(share_error("not connected: 7".to_string()), "you are not connected to this voice channel".to_string());
+        assert_eq!(camera_error("NotFoundError: Requested device not found".to_string()),
+                   "the browser blocked the camera (or no camera was found)".to_string());
     }
 
     #[test]
