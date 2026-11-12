@@ -83,6 +83,14 @@ impl CallApi for CassetteBackend {
             },
         ).await?;
         crate::backend::livekit::apply_flags(channel_id, muted, deafened).await;
+        // The camera and screen-share buttons publish real tracks: behind
+        // the same RPC (the server refused the flags without Speak before
+        // this ran), the browser moves exactly the camera/screen publications
+        // the flags name. A provider miss is like the mute miss: it affects
+        // this tab's tracks only, never the icons the roster carries.
+        if let Err(msg) = crate::backend::livekit::set_video(channel_id, camera, screen_share).await {
+            return Err(server::ServerError::Failed(crate::backend::livekit::classify(msg).into()));
+        }
         Ok(())
     }
 }

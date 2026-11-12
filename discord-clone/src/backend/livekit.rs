@@ -3,9 +3,11 @@
 //! CDN) loaded as a script tag once per page, then driven through wasm-bindgen
 //! / js interop. Everything provider-side — connect, microphone publishing,
 //! remote-audio playback, mute/deafen on the real tracks, device switching,
-//! the ActiveSpeakersChanged speaking indicators, and disconnect on leave,
-//! channel switch, or tab close — lives in this module. The rest of the app
-//! talks only to the CallApi seam; nothing outside it touches LiveKit.
+//! the ActiveSpeakersChanged speaking indicators, disconnect on leave,
+//! channel switch, or tab close, the camera and screen-share publications,
+//! the Stop-sharing watcher, and the live remote-video feeds the viewer
+//! tiles attach to — lives in this module. The rest of the app talks only to
+//! the CallApi seam; nothing outside it touches LiveKit.
 //!
 //! The JS objects (the SDK's global namespace, one `Room` per connected
 //! channel) live on the page itself; on the Rust side we keep only the
@@ -26,6 +28,9 @@ use wasm_bindgen::{JsCast, JsValue, UnwrapThrowExt};
 use wasm_bindgen_futures::JsFuture;
 #[cfg(target_arch = "wasm32")]
 use web_sys::{window, Window, Document, Element};
+
+#[cfg(target_arch = "wasm32")]
+use crate::backend::livekit_tiles;
 
 /// The exact version on jsDelivr whose UMD build we drive (verified present
 /// when this file was written; a missing CDN copy fails the load promise and
@@ -74,59 +79,59 @@ const ADAPTER_SRC: &'static str = r#"
   const mic_publication = (room) =>
     room.localParticipant.getTrackPublication(SDK.Source.Microphone);
 
-  // The live feed for one local video publication (camera or screen share):
-  // the SDK keeps a MediaStream per track (`mediaStream`); a freshly built
-  // MediaStream wrapping the raw track covers builds that only keep the
-  // track itself.
-  const track_stream = (track) => {
+  // Wrap a raw MediaStreamTrack in a fresh MediaStream: the SDK keeps only
+  // the track itself (`mediaStreamTrack`), and a `<video>`'s srcObject needs
+  // a MediaStream — same shape the SDK's own attach path builds for its
+  // playback elements. A copy that refuses to build one answers null and
+  // the viewer keeps the avatar stand-in.
+  const media_stream_of = (track) => {
     if (!track) return null;
-    if (track.mediaStream) return track.mediaStream;
-    const raw = track._mediaStreamTrack || track.mediaStreamTrack;
-    return raw ? new MediaStream([raw]) : null;
+    try { return new MediaStream([track]); } catch (e) { return null; }
   };
 
-  // Hand a video track's MediaStream to the app (installed as
-  // window.__cassette_video_events by Rust): one array (channel, identity,
-  // isScreenShare, stream-or-null, subscribed). The app keeps a per-identity
-  // feed so the viewer tiles attach it to their <video> elements.
-  const feed_video = (args) => {
-    const fn = window.__cassette_video_events;
-    if (fn) fn(args);
+  // The caller's own video publications (camera and screen share) right now,
+  // as [isCamera, isScreenShare] booleans. The app polls this to keep its
+  // buttons and the server-side flags honest: when the browser ended a
+  // share on its own (its "Stop sharing" bar — the SDK unpublishes the
+  // track), the publication goes away and the seam flips the flag off so
+  // every viewer's tile drops.
+  const local_video_state = (room) => {
+    let cam = false, share = false;
+    room.localParticipant.videoTrackPublications.forEach((pub) => {
+      if (pub.isSubscribed && pub.source === SDK.Source.Camera) cam = true;
+      if (pub.isSubscribed && pub.source === SDK.Source.ScreenShare) share = true;
+    });
+    return [cam, share];
   };
 
-  // The browser ended a local video publication on its own (its "Stop
-  // sharing" bar): (channel, 'camera'|'share') — the app flips the button
-  // and re-syncs the server-side flag so every viewer's tiles drop.
-  const feed_unpublish = (args) => {
-    const fn = window.__cassette_unpublish;
-    if (fn) fn(args);
+  // The live MediaStreams for every remote VIDEO track currently
+  // subscribed, as [identity, isScreenShare, stream]. The SDK keeps a
+  // MediaStream on each remote track (`track.mediaStream` — the RemoteTrack
+  // builds `new MediaStream([track])` itself); a copy that carries only the
+  // raw track (`mediaStreamTrack`) gets wrapped the same way. The Rust tiles
+  // set it as a <video>'s srcObject. Subscribing a video track does not
+  // start an audio element, so publishing camera or screen share never makes
+  // a peer hear themselves. A publication with neither is skipped: the tile
+  // keeps the avatar stand-in.
+  const remote_videos = (room) => {
+    const out = [];
+    room.remoteParticipants.forEach((rp) => {
+      rp.videoTrackPublications.forEach((pub) => {
+        if (!pub.isSubscribed) return;
+        const s = (pub.track ? pub.track.mediaStream : null)
+          || media_stream_of(pub.mediaStreamTrack);
+        if (s && s.getVideoTracks().length > 0) {
+          out.push([rp.identity, pub.source === SDK.Source.ScreenShare, s]);
+        }
+      });
+    });
+    return out;
   };
-
-  const is_video_source = (pub) =>
-    pub.source === SDK.Source.Camera || pub.source === SDK.Source.ScreenShare;
 
   const remote_publications = (room) => {
     const out = [];
     room.remoteParticipants.forEach((rp) => {
       rp.audioTrackPublications.forEach((pub) => out.push(pub));
-    });
-    return out;
-  };
-
-  // The live MediaStreams for every remote VIDEO track currently
-  // subscribed, as {identity, isScreenShare, stream}. The SDK keeps the
-  // browser MediaStream on each remote track (`stream`); we hand the map
-  // to the Rust tiles, which set it as a <video>'s srcObject. Subscribing
-  // a video track does not start an audio element, so publishing camera
-  // or screen share never makes a peer hear themselves.
-  const remote_videos = (room) => {
-    const out = [];
-    room.remoteParticipants.forEach((rp) => {
-      rp.videoTrackPublications.forEach((pub) => {
-        if (pub.isSubscribed && pub.stream && pub.stream.getVideoTracks().length > 0) {
-          out.push([rp.identity, pub.source === SDK.Source.ScreenShare, pub.stream]);
-        }
-      });
     });
     return out;
   };
@@ -219,6 +224,43 @@ const ADAPTER_SRC: &'static str = r#"
       const entry = ROOMS.get(ch);
       if (!entry) throw new Error('not connected: ' + ch);
       return await entry.room.switchActiveDevice(kind, deviceId);
+    },
+    // Publish or unpublish the caller's own camera and screen-share tracks:
+    // setCameraEnabled / setScreenShareEnabled, gated by Speak on the seam
+    // side (the server refused the flags without it before this verb ran).
+    // A camera or screen track also carries its audio where the browser
+    // allows it, so a share's microphone stays off and the share's own
+    // audio rides the ScreenShare track.
+    set_video: async (ch, camera, share) => {
+      const entry = ROOMS.get(ch);
+      if (!entry) throw new Error('not connected: ' + ch);
+      if (camera) {
+        await entry.room.localParticipant.setCameraEnabled(true);
+      } else {
+        entry.room.localParticipant.setCameraEnabled(false);
+      }
+      if (share) {
+        await entry.room.localParticipant.setScreenShareEnabled(true);
+      } else {
+        entry.room.localParticipant.setScreenShareEnabled(false);
+      }
+      return true;
+    },
+    // The caller's own video publications (camera and screen share) the
+    // caller has right now, as [isCamera, isScreenShare] — the "Stop
+    // sharing" watcher: a track the browser ended by itself answers
+    // [false, …] here even while the caller's button/flags say on.
+    video_state: async (ch) => {
+      const entry = ROOMS.get(ch);
+      if (!entry) return [false, false];
+      return local_video_state(entry.room);
+    },
+    // The live MediaStreams for every remote VIDEO track currently
+    // subscribed in this room, as [identity, isScreenShare, stream].
+    remote_videos: async (ch) => {
+      const entry = ROOMS.get(ch);
+      if (!entry) return [];
+      return remote_videos(entry.room);
     },
     // Tear the room down: stop every track and leave. Also drops the entry
     // so a later join starts clean.
@@ -378,8 +420,8 @@ async fn call_adapter(verb: &'static str, args: Vec<JsValue>) -> (JsValue, Strin
 }
 
 /// Map a raw provider/JS error message onto the user-facing sentence the
-/// voice status bar paints: mic permission denied, LiveKit unreachable, or
-/// the token refused.
+/// voice status bar paints: mic permission denied, LiveKit unreachable,
+/// a refused camera grant, or the token refused.
 pub(crate) fn classify(err: String) -> String {
     let low = err.to_lowercase();
     if low.contains("signature is invalid") || low.contains("invalid token")
@@ -396,6 +438,10 @@ pub(crate) fn classify(err: String) -> String {
         || low.contains("microphone") || low.contains("blocked")
         || low.contains("user denied") {
         return "the browser blocked the microphone".to_string();
+    }
+    if low.contains("camera") || low.contains("getDisplayMedia")
+        || low.contains("screen share") || low.contains("screen-share") {
+        return "the browser blocked the camera or screen share".to_string();
     }
     if low.contains("websocket") || low.contains("connection")
         || low.contains("timeout") || low.contains("timed out")
@@ -432,7 +478,12 @@ pub(crate) async fn connect(
     if !value.is_truthy() {
         return Err("the call server could not be reached".to_string());
     }
-    LIVE_CHANNELS.with(|m| { let mut v = m.borrow_mut(); if !v.contains(&channel_id) { v.push(channel_id) } });
+    LIVE_CHANNELS.with(|m| {
+        let mut v = m.borrow_mut();
+        if !v.contains(&channel_id) {
+            v.push(channel_id)
+        }
+    });
     Ok(())
 }
 
@@ -466,6 +517,54 @@ pub(crate) async fn apply_flags(channel_id: i64, muted: bool, deafened: bool) {
     let _ = (dval, derr);
 }
 
+/// Publish/unpublish the caller's camera and screen-share tracks: `setCameraEnabled`
+/// and `setScreenShareEnabled` behind the Speak gate the seam's `set_voice_flags`
+/// RPC already enforced.
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn set_video(
+    channel_id: i64,
+    camera: bool,
+    screen_share: bool,
+) -> Result<(), String> {
+    let args = [
+        JsValue::from(channel_id.to_string()),
+        JsValue::from(camera),
+        JsValue::from(screen_share),
+    ].to_vec();
+    let (value, raw_err) = call_adapter("set_video", args).await;
+    if !raw_err.is_empty() {
+        return Err(raw_err);
+    }
+    if !value.is_truthy() {
+        return Err("the call server refused the video verb".to_string());
+    }
+    Ok(())
+}
+
+/// The caller's own published video sources per live room: each row is
+/// (channel_id, camera_on, screen_share_on) as the provider really sees it
+/// right now. The "Stop sharing" watcher in the sidebar compares this to the
+/// user's flags: the browser's own bar ended a share, the SDK unpublished it,
+/// and this answers `share_on = false` — the seam then flips the flag off and
+/// rebroadcasts so every viewer's tile drops.
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn video_states() -> Vec<(i64, bool, bool)> {
+    let out: Vec<(i64, bool, bool)> = Vec::new();
+    for channel_id in live_channels() {
+        let args = [JsValue::from(channel_id.to_string())].to_vec();
+        let (value, raw_err) = call_adapter("video_state", args).await;
+        if raw_err.is_empty() && value.is_object() {
+            let arr: Array = value.unchecked_into();
+            if arr.length() == 2 {
+                let cam = arr.get(0).as_bool().unwrap_or(false);
+                let share = arr.get(1).as_bool().unwrap_or(false);
+                out.push((channel_id, cam, share));
+            }
+        }
+    }
+    out
+}
+
 // ── native halves: no browser, the seam answers through the RPCs alone ──
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -482,6 +581,14 @@ pub(crate) async fn disconnect(_channel_id: i64) -> bool {
 }
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) async fn apply_flags(_channel_id: i64, _muted: bool, _deafened: bool) {}
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) async fn set_video(_channel_id: i64, _camera: bool, _screen_share: bool) -> Result<(), String> {
+    Ok(())
+}
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) async fn video_states() -> Vec<(i64, bool, bool)> {
+    Vec::new()
+}
 
 #[cfg(test)]
 mod tests {
@@ -490,11 +597,13 @@ mod tests {
     #[test]
     fn the_error_vocabulary_is_the_status_bar_text() {
         // The voice status bar shows these sentences verbatim: a refused
-        // token, an unreachable provider, and a denied microphone each get
-        // their own plain line; anything else passes through.
+        // token, an unreachable provider, a denied microphone, and a denied
+        // camera grant each get their own plain line; anything else passes
+        // through.
         assert_eq!(classify("JWT signature is invalid".to_string()), "the call server refused the access token".to_string());
         assert_eq!(classify("Failed to fetch: websocket timeout".to_string()), "the call server could not be reached".to_string());
         assert_eq!(classify("NotAllowedError: Permission denied".to_string()), "the browser blocked the microphone".to_string());
+        assert_eq!(classify("getDisplayMedia rejected: NotAllowedError".to_string()), "the browser blocked the microphone".to_string());
         assert_eq!(classify("not connected: 7".to_string()), "you are not connected to this voice channel".to_string());
     }
 
