@@ -42,7 +42,7 @@ mod lk {
     pub(crate) async fn set_camera(_channel_id: i64, _on: bool) -> Result<(), String> {
         Err(super::IDEA_CHAT_CALLS_PENDING.to_string())
     }
-    pub(crate) async fn videos(_channel_id: i64) -> Vec<(i64, bool, String, crate::backend::video_feeds::RawStream)> {
+    pub(crate) async fn videos(_channel_id: i64) -> Vec<crate::backend::video_feeds::VideoFeed> {
         Vec::new()
     }
     pub(crate) async fn speaking_ids(_channel_id: i64) -> Vec<i64> {
@@ -156,12 +156,14 @@ pub(crate) async fn set_camera(channel_id: i64, on: bool) -> Result<(), String> 
 }
 
 /// Refresh the videos this tab can show for `channel_id`; true when that changed.
+/// Each provider reports framework `MediaStream`s: LiveKit wraps the browser's;
+/// idea-chat's call-video produces them per participant (wired with its calls).
 pub(crate) async fn refresh_videos(channel_id: i64) -> bool {
-    let raw = match provider_of(channel_id) {
+    let feeds = match provider_of(channel_id) {
         Some(Provider::LiveKit) => lk::videos(channel_id).await,
         _ => Vec::new(),
     };
-    crate::backend::video_feeds::update(channel_id, raw)
+    crate::backend::video_feeds::update(channel_id, feeds)
 }
 
 /// Whether this tab is still sharing its screen in `channel_id`.

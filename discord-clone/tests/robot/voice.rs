@@ -259,13 +259,20 @@ fn a_camera_on_shows_a_video_tile_to_the_other_browser(app: &mut App) {
     let shot = second.app.screenshot();
     eprintln!("[shot] cam-tile-b: {shot}");
 
-    // Camera off: the track leaves the room.
+    // Camera off: A's camera track leaves the room, and B's tile stops
+    // playing it.
     app.test_id("user-camera").click();
     assert!(
         eventually(20, || !tracks_of(url.clone(), api_key.clone(), secret.clone(), room.clone(), me.clone())
             .iter()
             .any(|(_, source)| source == "CAMERA")),
         "A's camera track stayed in {room} after turning it off"
+    );
+    assert!(
+        eventually(20, || second.app.call_function("cassette.video_playing", json!({})).as_u64()
+            .or_else(|| second.app.call_function("cassette.video_playing", json!({})).get("Ok").and_then(|v| v.as_u64()))
+            .unwrap_or(1) == 0),
+        "B kept playing A's camera after it was turned off"
     );
 
     // Leave the call through the seam so A's panel reads "Online" again and

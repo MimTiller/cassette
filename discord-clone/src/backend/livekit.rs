@@ -297,7 +297,7 @@ const ADAPTER_SRC: &'static str = r#"
       } else {
         // Off means gone, not muted: unpublish so peers drop the tile and
         // the camera light goes out.
-        const pub = lp.getTrackPublication(camera);
+        const pub = lp.getTrackPublication('camera');
         if (pub && pub.track) await lp.unpublishTrack(pub.track, true);
       }
       return true;
@@ -311,7 +311,7 @@ const ADAPTER_SRC: &'static str = r#"
       const out = [];
       const add = (identity, pub) => {
         const t = pub.track;
-        if (!t || t.kind !== 'video' || !t.mediaStreamTrack) return;
+        if (!t || t.kind !== 'video' || !t.mediaStreamTrack || pub.isMuted) return;
         out.push([identity, pub.source === 'screen_share', pub.trackSid || '', new MediaStream([t.mediaStreamTrack])]);
       };
       entry.room.remoteParticipants.forEach((rp) => {
@@ -662,10 +662,16 @@ pub(crate) async fn set_camera(channel_id: i64, on: bool) -> Result<(), String> 
     Ok(())
 }
 
-/// The videos this tab can show for `channel_id`'s room, as (user id, is a
-/// screen share, track sid, browser MediaStream).
+/// The videos this tab can show for `channel_id`'s room: other people's
+/// subscribed camera / screen tracks and our own, each browser MediaStream
+/// wrapped as the framework's `MediaStream` (its native source is the browser
+/// stream, which the `video` SDK's web leg plays).
 #[cfg(target_arch = "wasm32")]
-pub(crate) async fn videos(channel_id: i64) -> Vec<(i64, bool, String, crate::backend::video_feeds::RawStream)> {
+pub(crate) async fn videos(channel_id: i64) -> Vec<crate::backend::video_feeds::VideoFeed> {
+    use std::rc::Rc;
+    use web_glue::bridge::from_bindgen;
+    use web_glue::dom::MediaStream as WebMediaStream;
+
     let (value, raw_err) = call_adapter("videos", [JsValue::from(channel_id.to_string())].to_vec()).await;
     if !raw_err.is_empty() || !Array::is_array(&value) {
         return Vec::new();
@@ -677,11 +683,20 @@ pub(crate) async fn videos(channel_id: i64) -> Vec<(i64, bool, String, crate::ba
             continue;
         }
         let row: Array = row.unchecked_into();
-        let uid = match row.get(0).as_string().and_then(|s| s.parse::<i64>().ok()) {
+        let user_id = match row.get(0).as_string().and_then(|s| s.parse::<i64>().ok()) {
             Some(u) => u,
             None => continue,
         };
-        out.push((uid, row.get(1).is_truthy(), row.get(2).as_string().unwrap_or_default(), row.get(3)));
+        let web: WebMediaStream = from_bindgen(&row.get(3));
+        let (stream, writer) = media_stream::MediaStream::new();
+        stream.set_native_source(Rc::new(web));
+        out.push(crate::backend::video_feeds::VideoFeed {
+            user_id,
+            screen: row.get(1).is_truthy(),
+            track: row.get(2).as_string().unwrap_or_default(),
+            stream,
+            keep_alive: Some(Rc::new(writer)),
+        });
     }
     out
 }
@@ -735,7 +750,7 @@ pub(crate) async fn set_camera(_channel_id: i64, _on: bool) -> Result<(), String
     Ok(())
 }
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) async fn videos(_channel_id: i64) -> Vec<(i64, bool, String, crate::backend::video_feeds::RawStream)> {
+pub(crate) async fn videos(_channel_id: i64) -> Vec<crate::backend::video_feeds::VideoFeed> {
     Vec::new()
 }
 #[cfg(not(target_arch = "wasm32"))]
