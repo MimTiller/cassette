@@ -260,7 +260,7 @@ pub fn b64url(bytes: &[u8]) -> String {
 /// The header segment every token here carries: `{"alg":"HS256","typ":"JWT"}`,
 /// base64url, no padding.
 #[cfg(feature = "server")]
-const JWT_HEADER: &'static str = "eyJhbG...VCJ9";
+const JWT_HEADER: &'static str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
 
 #[cfg(feature = "server")]
 type HmacSha256 = Hmac<Sha256>;
