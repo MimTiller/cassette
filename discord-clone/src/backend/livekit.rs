@@ -391,6 +391,7 @@ pub(crate) async fn apply_flags(_channel_id: i64, _muted: bool, _deafened: bool)
 
 #[cfg(test)]
 mod tests {
+    use super::*;
 
     #[test]
     fn the_error_vocabulary_is_the_status_bar_text() {
