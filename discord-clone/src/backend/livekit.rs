@@ -39,6 +39,16 @@ const SDK_URL: &'static str =
 #[cfg(target_arch = "wasm32")]
 const ADAPTER_GLOBAL: &'static str = "__cassette_voice";
 
+/// The SDK's own global, which the adapter needs before it can run.
+#[cfg(target_arch = "wasm32")]
+const SDK_GLOBAL: &'static str = "LivekitClient";
+
+/// How long a call waits for the SDK script to load, and how often it looks.
+#[cfg(target_arch = "wasm32")]
+const SDK_WAIT_MS: i32 = 15_000;
+#[cfg(target_arch = "wasm32")]
+const SDK_POLL_MS: i32 = 100;
+
 /// The adapter script, injected as a `<script>` tag after the SDK loads: it
 /// lives in the page's own scope, so it sees the SDK global and every `Room`
 /// it creates; Rust reaches it by the `__cassette_voice` property alone.
@@ -235,34 +245,66 @@ thread_local! {
     static ADAPTER_READY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// Append the pinned SDK script tag and the adapter tag to the document
-/// head. The adapter bails while the SDK global is missing, and Rust
-/// re-appends it (once per call, below the first) until
-/// `__cassette_voice` exists — a CDN miss simply leaves the adapter absent,
-/// and the join answers through the seam's error line instead.
+/// Append the pinned SDK script tag once per page. It loads asynchronously,
+/// so the adapter is not appended with it: `ensure_adapter` injects the
+/// adapter once the SDK global exists (an inline adapter appended at the same
+/// time ran before the SDK arrived, bailed, and nothing ran it again).
 #[cfg(target_arch = "wasm32")]
-fn load_sdk_and_adapter() -> bool {
+fn load_sdk() {
     if SDK_APPENDED.with(|c| c.get()) {
-        return ADAPTER_READY.with(|c| c.get());
+        return;
     }
-    let win: Window = window().unwrap_throw();
-    let doc: Document = win.document().unwrap_throw();
-    // The pinned UMD and the adapter land on `head` when it exists (a page
-    // mid-parse may not have one: the Document itself takes the append).
-    let head: Option<Element> = doc.query_selector("head").unwrap_or(None);
+    let doc: Document = window().unwrap_throw().document().unwrap_throw();
     let script_sdk: Element = doc.create_element("script").unwrap_throw();
     let _ = script_sdk.set_attribute("src", SDK_URL);
+    append_to_head(&doc, &script_sdk);
+    SDK_APPENDED.with(|c| c.set(true));
+}
+
+/// Append to `head` when it exists (a page mid-parse may not have one: the
+/// Document itself takes the append).
+#[cfg(target_arch = "wasm32")]
+fn append_to_head(doc: &Document, el: &Element) {
+    match doc.query_selector("head").unwrap_or(None) {
+        Some(h) => {
+            let _ = h.append_with_node_1(el);
+        }
+        None => {
+            let _ = doc.append_with_node_1(el);
+        }
+    }
+}
+
+/// Inject the adapter once the SDK global is there (an inline script runs as
+/// it is appended). Answers whether the adapter is ready.
+#[cfg(target_arch = "wasm32")]
+fn ensure_adapter() -> bool {
+    if adapter_ready() {
+        return true;
+    }
+    let win: Window = window().unwrap_throw();
+    let sdk_loaded = Reflect::get(&win, &JsValue::from_str(SDK_GLOBAL))
+        .map(|v| v.is_truthy())
+        .unwrap_or(false);
+    if !sdk_loaded {
+        return false;
+    }
+    let doc: Document = win.document().unwrap_throw();
     let adapter: Element = doc.create_element("script").unwrap_throw();
     adapter.set_inner_html(ADAPTER_SRC);
-    if let Some(h) = head {
-        let _ = h.append_with_node_1(&script_sdk);
-        let _ = h.append_with_node_1(&adapter);
-    } else {
-        let _ = doc.append_with_node_1(&script_sdk);
-        let _ = doc.append_with_node_1(&adapter);
-    }
-    SDK_APPENDED.with(|c| c.set(true));
-    true
+    append_to_head(&doc, &adapter);
+    adapter_ready()
+}
+
+/// Resolve after `ms` milliseconds (a `setTimeout` Promise).
+#[cfg(target_arch = "wasm32")]
+async fn sleep_ms(ms: i32) {
+    let p = Promise::new(&mut |resolve, _reject| {
+        let _ = window()
+            .unwrap_throw()
+            .set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, ms);
+    });
+    let _ = JsFuture::from(p).await;
 }
 
 /// Whether the page's adapter object exists yet (the SDK script tag loads
@@ -297,11 +339,16 @@ fn js_err_msg(e: JsValue) -> String {
 /// `JsValue` (arrays/strings decoded by the caller).
 #[cfg(target_arch = "wasm32")]
 async fn call_adapter(verb: &'static str, args: Vec<JsValue>) -> (JsValue, String) {
-    if !load_sdk_and_adapter() {
-        return (JsValue::UNDEFINED, "the call server could not be reached".to_string());
-    }
-    if !adapter_ready() {
-        return (JsValue::UNDEFINED, "the call server could not be reached".to_string());
+    // The first call on a page waits for the SDK download; a CDN miss
+    // answers with the "unreachable" line after SDK_WAIT_MS.
+    load_sdk();
+    let mut waited = 0;
+    while !ensure_adapter() {
+        if waited >= SDK_WAIT_MS {
+            return (JsValue::UNDEFINED, "the call server could not be reached".to_string());
+        }
+        sleep_ms(SDK_POLL_MS).await;
+        waited += SDK_POLL_MS;
     }
     let win = window().unwrap_throw();
     let adapter = Reflect::get(&win, &JsValue::from_str(ADAPTER_GLOBAL));

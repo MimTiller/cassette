@@ -389,9 +389,16 @@ fn the_media_server_lists_the_joined_caller_with_published_audio(app: &mut App) 
     // A fresh crew whose server's voice channel fixes the room name the same
     // way the server derives it (rwnd-ch-<channel id>).
     let (a, sid) = voice_crew_with_sid(app, "provchk");
-    let created = a.call("create_channel", json!({ "server_id": sid, "name": "meetprov", "kind": "voice" }));
-    let cid = created.get("Ok").unwrap_or(&created).get("channel_id").and_then(|v| v.as_i64()).unwrap_or(0);
-    assert!(cid > 0, "no channel id echoed: {created:?}");
+    // The voice row the join clicks is the crew's "meet" channel, so that is
+    // the room to ask LiveKit about.
+    let chans = a.call("list_channels", json!({ "server_id": sid }));
+    let chans = chans.get("Ok").unwrap_or(&chans).clone();
+    let cid = chans
+        .as_array()
+        .and_then(|list| list.iter().find(|c| c.get("kind").and_then(|v| v.as_str()) == Some("voice")))
+        .and_then(|c| c.get("id").and_then(|v| v.as_i64()))
+        .unwrap_or(0);
+    assert!(cid > 0, "no voice channel listed: {chans:?}");
     // The room the server puts the channel in (`room_for(channel_id)`).
     let room = format!("rwnd-ch-{cid}");
 
@@ -411,7 +418,7 @@ fn the_media_server_lists_the_joined_caller_with_published_audio(app: &mut App) 
                         Vec::new()
                     };
                     p.get("identity").and_then(|v| v.as_str()).unwrap_or("") == caller_id
-                        && published.iter().any(|t: &Value| t.get("trackType").and_then(|v| v.as_str()).unwrap_or("") == "audio")
+                        && published.iter().any(|t: &Value| t.get("type").and_then(|v| v.as_str()).unwrap_or("") == "AUDIO")
                 })
             },
         ),
