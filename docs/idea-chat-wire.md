@@ -190,7 +190,7 @@ field for it); "adapt" = a call exists but shape or semantics differ.
 | `auth::signup` | `sign_up(email,password,handle,display_name)` | **adapt**: idea-chat needs an email + verification code |
 | `auth::logout`, `auth::logout_everywhere` | `sign_out`, `sign_out_everywhere` | clean |
 | `auth::change_password` | `change_password(current,password)` | clean |
-| `auth::change_username` | no rename call; handle fixed at signup | **RWND-only** (closest: `update_profile` display name) |
+| `auth::change_username` | `set_handle` (in the pinned rev's auth.rs; also `handle_available`) | **adapt**: renames the handle; display name via `update_profile` (study said RWND-only — stale, source wins) |
 | `auth::set_avatar` | `set_avatar(upload?)` + upload triplet | **adapt** (upload flow) |
 | `profiles::get_user_profile`, `profiles::set_profile` | `whoami()→Me` for self; profile fields ride `UserUpdated` events; no call for others' bios | **adapt** / partial: no profile-read RPC for arbitrary users |
 | `servers::create_server` | `create_space(name)` | clean-ish (no icon in args; icon via `set_space_icon`) |
@@ -249,8 +249,8 @@ channel permissions, unread counts).
 | `DmMessage`, gateway `Message` | `Message{author, body, reactions:Vec<ReactionTuple>, attachments, flags}` | RWND carries `mentioned_user_ids` (resolved server-side); chat-model has no mention field — client parses or event-derived; RWND carries `embeds`, chat-model has none |
 | `MemberInfo{user_id,username,display_name,role,avatar_url,presence}` | `Member{user_id,role:Role}` + `User{handle,display_name,bio,avatar}` + `presence()` derived | presence is a derived view in chat-model, not a member field |
 | `Invite`/`InvitePreview` | `Invite{id,space,code,creator,expires,max_uses,uses,preview}` | nearly 1:1 |
-| `Status` (online/idle/dnd/invisible) | chat-model `Status` (Online/Offline/Idle/Away — no DND, no Invisible) | **no RWND counterpart for dnd/invisible; no idea-chat status that hides a user** |
-| `Role` string (member's role name) | `Role` enum (Member/Moderator/Owner) | **RWND's free-text custom roles have no counterpart** |
+| `Status` (online/idle/dnd/invisible) | chat-model `Presence` (Online/Idle/Busy/Offline — `Busy` is do-not-disturb; no Invisible) | **fixes the study's §9**: pinned rev HAS a dnd state (`Busy`), so RWND's dnd rides it; invisible rides offline (policy in live.rs) |
+| `Role` string (member's role name) | `Role` enum (Member/Admin/Owner) | **RWND's free-text custom roles have no counterpart** |
 | attachments: base64 inline `AttachmentInput` (≤2 MB, ≤4/msg, server-resized `Image`) | upload triplet → `Attachment{url,width,height}`; `Flags` (spoof,nsfw) | RWND has no flag concept; idea-chat has no inline-bytes path |
 | reaction tuples `(emoji,count,mine)` | `ReactionTuple(emoji,count,mine)` | identical shape |
 | `WsServerMsg`/`WsClientMsg` (own framing, `seq` per frame from process-wide counter) | `idea_state::Down/Up` (seq per connection, gap detection → Resync) | frame vocabulary replaces per-socket queue; RWND's `History`-as-frames becomes API `history` replies |
