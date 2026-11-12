@@ -102,6 +102,8 @@ mod reply_preview_bar;
 mod reply_reference_strip;
 #[path = "components/server_icon_upload_placeholder.rs"]
 mod server_icon_upload_placeholder;
+#[path = "components/instance_settings_panel.rs"]
+mod instance_settings_panel;
 #[path = "components/spoiler_tag.rs"]
 mod spoiler_tag;
 #[path = "components/invite_link_display.rs"]
@@ -145,10 +147,15 @@ pub fn register_scene_extensions<H>(
     registry: &mut runtime_scene::Registry<H>,
 )
 where
-    H: runtime_vocabulary::style_attach::StyleServices + runtime_vocabulary::caps::TextOps + 'static,
+    H: runtime_vocabulary::style_attach::StyleServices
+        + runtime_vocabulary::caps::TextOps
+        + runtime_vocabulary::caps::ExternalOps
+        + 'static,
 {
     // The markdown SDK's payload handler — see `markdown::register` docs.
     markdown::register(registry);
+    // The video SDK's `<video>` mount handler (voice tiles with live feeds).
+    video_sdk::register(registry);
 }
 
 // Recorder-side registration seam for the runtime-server sidecar

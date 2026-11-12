@@ -36,7 +36,7 @@ use crate::cassette_pair::{CassetteOfferView, ThemeOfferView};
 use crate::style_helpers::{col, pct, px, rounded, section_label};
 use std::rc::Rc;
 use runtime_core::{
-    component, signal, ui, AlignItems, Element, FlexDirection, JustifyContent, Position,
+    component, signal, switch, ui, AlignItems, Element, FlexDirection, JustifyContent, Position,
     Signal, StyleRules, TouchPhase, TouchResponse,
 };
 
@@ -68,6 +68,7 @@ pub(crate) fn nav_id(label: &str) -> &'static str {
         "Appearance" => "settings-nav-appearance",
         "Notifications" => "settings-nav-notifications",
         "Keybinds" => "settings-nav-keybinds",
+        "Instance Settings" => "settings-nav-instance-settings",
         "Log Out" => "settings-nav-log-out",
         "Overview" => "settings-nav-overview",
         "Roles" => "settings-nav-roles",
@@ -81,7 +82,7 @@ pub(crate) fn nav_id(label: &str) -> &'static str {
 /// Build one radio-style option row (the `notification_settings` shape): a dot
 /// glyph (filled when `selected == idx`) and the label; pressing it sets
 /// `selected` to `idx`, deselecting the others.
-fn option_row(label: &str, idx: u32, selected: Signal<u32>, on_pick: Rc<dyn Fn(u32)>) -> Element {
+pub(crate) fn option_row(label: &str, idx: u32, selected: Signal<u32>, on_pick: Rc<dyn Fn(u32)>) -> Element {
     ui! {
         view(style = StyleRules {
             position: Some(Position::Relative),
@@ -805,6 +806,8 @@ pub fn UserSettings(
     active: Signal<usize>,
     on_close: Option<Rc<dyn Fn()>>,
     on_logout: Option<Rc<dyn Fn()>>,
+    instance_visible: Signal<bool>,
+    on_instance_settings: Option<Rc<dyn Fn()>>,
 ) -> Element {
     // The accent is owned here (the gateway doesn't read it) and seeded from
     // storage (default Discord blurple).
@@ -851,6 +854,24 @@ pub fn UserSettings(
         }
         nav.push(nav_row(label, false, nav_id(label), active, i, None));
     }
+    // The Instance Settings row: shown only to instance admins (and while
+    // no admin exists yet, the setup flow), so it switches itself in place.
+    let vis = instance_visible.clone();
+    let inst_row: Element = switch(
+        move || vis.get(),
+        move |on: &bool| {
+            if *on {
+                ui! {
+                    view(style = StyleRules { ..Default::default() }) {
+                        nav_row("Instance Settings", false, nav_id("Instance Settings"), active, usize::MAX, on_instance_settings.clone())
+                    }
+                }
+            } else {
+                ui! { view(style = StyleRules { width: Some(px(0.0)), height: Some(px(0.0)), ..Default::default() }) {} }
+            }
+        },
+    );
+    nav.push(inst_row);
     nav.push(nav_divider());
     nav.push(nav_row("Log Out", true, nav_id("Log Out"), active, usize::MAX, on_logout));
     settings_layout(nav, panel, on_close)

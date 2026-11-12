@@ -54,6 +54,12 @@ pub use discord_server::auth::{
     AvatarResult,
 };
 pub use discord_server::password_resets::ResetPasswordResult;
+pub use discord_server::instance::{
+    CallTestResult,
+    ClaimAdminResult,
+    InstanceInfo,
+    InstanceSettingsResult,
+};
 pub use discord_server::profiles::{ProfileFields, UserProfile};
 pub use discord_server::notification_settings::NotificationSetting;
 /// Notification rows the settings screens draw: RWND's own vocabulary, so
@@ -76,6 +82,7 @@ pub use discord_server::search::SearchResults;
 pub use discord_server::server_settings::{MemberInfo, MemberResult};
 pub use discord_server::server_roles::{RolesSnapshot, CustomRole};
 pub use discord_server::permissions::{Permissions, Target, MyPermissions, Overwrite};
+pub use discord_server::voice::{CallTicket, LeaveVoiceResult, VoiceStateResult};
 pub use discord_server::custom_themes::{
     CustomTheme,
     SaveCustomThemeInput,
@@ -284,6 +291,29 @@ pub trait PermissionsApi {
     async fn set_everyone_permissions(server_id: i64, permissions: Permissions) -> Result<Permissions, ServerError>;
 }
 
+/// Voice calls: joining a voice channel asks the backend for the server's
+/// provider-agnostic call ticket, leaving clears the roster entry, and the
+/// state query says which provider is enabled (and re-issues the ticket
+/// when the caller is already in the channel, so a fresh browser restores
+/// its voice bar without a new click). The UI treats a ticket as opaque
+/// provider data and never talks to a provider directly.
+pub trait CallApi {
+    async fn join_voice(channel_id: i64) -> Result<CallTicket, ServerError>;
+    async fn leave_voice(channel_id: i64) -> Result<LeaveVoiceResult, ServerError>;
+    async fn voice_state(channel_id: i64) -> Result<VoiceStateResult, ServerError>;
+    /// Mute and deafen the caller's own connection (the server owns the
+    /// flags: LiveKit's own toggles are invisible to peers, so every client
+    /// must see the same icons). Refuses unless the caller is connected to
+    /// this channel.
+    async fn set_voice_flags(
+        channel_id: i64,
+        muted: bool,
+        deafened: bool,
+        camera: bool,
+        screen_share: bool,
+    ) -> Result<(), ServerError>;
+}
+
 /// Colour themes a person makes for themselves: the per-account store
 /// behind the custom-theme screens.
 pub trait ThemesApi {
@@ -298,6 +328,31 @@ pub trait ThemesApi {
         to: String,
     ) -> Result<CustomTheme, ServerError>;
     async fn delete_custom_theme(name: String) -> Result<(), ServerError>;
+}
+
+/// The instance store: what the host's admin area configures without touching
+/// env files. `instance_info` is public (nothing secret, so a client can ask
+/// before signing in — including whether the CALLING user is an instance
+/// admin, which gates the settings gear); reads/writes/tests of the store
+/// itself are admin-only server-side and answer the plain refusal otherwise.
+pub trait InstanceApi {
+    async fn instance_info() -> Result<InstanceInfo, ServerError>;
+    async fn get_instance_settings() -> Result<InstanceSettingsResult, ServerError>;
+    async fn set_instance_settings(
+        call_provider: String,
+        livekit_url: String,
+        livekit_api_key: String,
+        livekit_api_secret: String,
+        chat_backend: String,
+        idea_chat_url: String,
+    ) -> Result<InstanceSettingsResult, ServerError>;
+    async fn test_call_provider(
+        call_provider: String,
+        livekit_url: String,
+        livekit_api_key: String,
+        livekit_api_secret: String,
+    ) -> Result<CallTestResult, ServerError>;
+    async fn claim_instance_admin() -> Result<ClaimAdminResult, ServerError>;
 }
 
 /// Today's backend: the implementation files below implement the areas
@@ -454,7 +509,13 @@ mod members_impl;
 mod roles_impl;
 #[cfg(not(feature = "idea-chat"))]
 mod permissions_impl;
+#[cfg(not(feature = "idea-chat"))]
+mod voice_impl;
+#[cfg(not(feature = "idea-chat"))]
+mod livekit;
 mod themes_impl;
+#[cfg(not(feature = "idea-chat"))]
+mod instance_impl;
 
 // The SECOND backend's areas, talked to over the idea-chat wire.
 #[cfg(feature = "idea-chat")]
@@ -928,4 +989,62 @@ pub async fn set_channel_overwrite(channel_id: i64, target: Target, allow: Permi
 
 pub async fn set_everyone_permissions(server_id: i64, permissions: Permissions) -> Result<Permissions, String> {
     Backend::set_everyone_permissions(server_id, permissions).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+// --- the call accessors ------------------------------------------------------
+
+pub async fn join_voice(channel_id: i64) -> Result<CallTicket, String> {
+    Backend::join_voice(channel_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn leave_voice(channel_id: i64) -> Result<LeaveVoiceResult, String> {
+    Backend::leave_voice(channel_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn voice_state(channel_id: i64) -> Result<VoiceStateResult, String> {
+    Backend::voice_state(channel_id).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn set_voice_flags(
+    channel_id: i64,
+    muted: bool,
+    deafened: bool,
+    camera: bool,
+    screen_share: bool,
+) -> Result<(), String> {
+    Backend::set_voice_flags(channel_id, muted, deafened, camera, screen_share).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+// --- the instance-store accessors -------------------------------------------
+
+pub async fn instance_info() -> Result<InstanceInfo, String> {
+    Backend::instance_info().await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn get_instance_settings() -> Result<InstanceSettingsResult, String> {
+    Backend::get_instance_settings().await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn set_instance_settings(
+    call_provider: String,
+    livekit_url: String,
+    livekit_api_key: String,
+    livekit_api_secret: String,
+    chat_backend: String,
+    idea_chat_url: String,
+) -> Result<InstanceSettingsResult, String> {
+    Backend::set_instance_settings(call_provider, livekit_url, livekit_api_key, livekit_api_secret, chat_backend, idea_chat_url).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn test_call_provider(
+    call_provider: String,
+    livekit_url: String,
+    livekit_api_key: String,
+    livekit_api_secret: String,
+) -> Result<CallTestResult, String> {
+    Backend::test_call_provider(call_provider, livekit_url, livekit_api_key, livekit_api_secret).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn claim_instance_admin() -> Result<ClaimAdminResult, String> {
+    Backend::claim_instance_admin().await.map_err(|e| crate::errors::friendly(&e))
 }

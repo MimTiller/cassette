@@ -3,13 +3,70 @@
 
 use crate::theme;
 use super::*;
+use runtime_core::{component, ui};
+
+/// One video tile in a voice row's grid: Discord's camera/screen-share
+/// panel — a fixed box with the person's avatar chip and name over it,
+/// ringed in the speaking tone when their mic is on and dim when they
+/// are muted (the ring follows the server's flags, so every client draws
+/// the same one). Screen shares get the taller box, cameras the letter
+/// box; the avatar stands in for the live feed while no real tracks
+/// paint in. `test_id = "voice-tile"` lets the robot count the grid.
+#[component]
+pub(super) fn VoiceTile(
+    #[prop(static)] name: String,
+    #[prop(static)] muted: bool,
+    #[prop(static)] screen_share: bool,
+) -> Element {
+    let speaking = !muted;
+    let ring = move || if speaking {
+        col(theme::SUCCESS)
+    } else {
+        col(theme::DIVIDER)
+    };
+    let size = if screen_share { 96.0 } else { 68.0 };
+    let chip_size = if screen_share { 40.0 } else { 28.0 };
+    // `avatar_chip` and the label are free helpers, not `ui!` tags: built as
+    // locals and splat in as braced children.
+    let chip = crate::avatar_chip::avatar_chip(name.as_str(), theme::ACCENT, chip_size);
+    let label = ui! {
+        text(style = StyleRules {
+            font_size: Some(px(11.0)),
+            color: Some(col(TEXT_MUTED)),
+            max_lines: Some(1u32),
+            ..Default::default()
+        }) { name }
+    };
+    ui! {
+        view(style = move || StyleRules {
+            width: Some(px(104.0)),
+            height: Some(px(size)),
+            background: Some(col(theme::BG_TERTIARY)),
+            align_items: Some(AlignItems::Center),
+            justify_content: Some(JustifyContent::Center),
+            flex_direction: Some(FlexDirection::Column),
+            border_top_width: Some(Tokenized::Literal(2.0)),
+            border_right_width: Some(Tokenized::Literal(2.0)),
+            border_bottom_width: Some(Tokenized::Literal(2.0)),
+            border_left_width: Some(Tokenized::Literal(2.0)),
+            border_top_color: Some(ring()),
+            border_right_color: Some(ring()),
+            border_bottom_color: Some(ring()),
+            border_left_color: Some(ring()),
+            ..rounded(6.0)
+        }, test_id = "voice-tile") {
+            { chip }
+            { label }
+        }
+    }
+}
 
 pub(super) struct SidebarParts {
     pub(super) sidebar: Element,
 }
 
 pub(super) fn build(s: &ShellState) -> SidebarParts {
-    let ShellState { active_live_channel, active_live_server, cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, create_busy, create_error, create_name, create_open, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, joined_voice, live_at_bottom, live_chan_menu, live_channels, live_collapsed, live_mention_rev, live_scroll_handle, live_servers, live_unread, live_unread_rev, member_panel_width, muted, notif_mode, profile_mode, rc_busy, rc_cid, rc_err, rc_name, rc_open, server_menu_open, sidebar_width, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, status_menu, user_status, .. } = s.clone();
+    let ShellState { active_live_channel, active_live_server, cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, create_busy, create_error, create_name, create_open, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, joined_voice, live_at_bottom, live_chan_menu, live_channels, live_collapsed, live_mention_rev, live_scroll_handle, live_servers, live_unread, live_unread_rev, live_voice_roster, live_voice_rev, member_panel_width, muted, notif_mode, profile_mode, camera, screen_share, rc_busy, rc_cid, rc_err, rc_name, rc_open, server_menu_open, sidebar_width, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, status_menu, user_status, voice_error, .. } = s.clone();
     // --- channel sidebar -------------------------------------------------
     // Width is driven by the `sidebar_width` signal (a thin drag handle on the
     // sidebar's right edge resizes it). A rules *closure* so the width
@@ -106,9 +163,15 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                 // Which channel row's management popup is open — in the key so
                 // a gear tap rebuilds the rows and mounts/unmounts the portal.
                 live_chan_menu.get(),
+                // The backend's last voice-join refusal (painted under the
+                // row), so a refusal rebuilds the rows.
+                voice_error.get(),
+                // Bumped on every VoiceRoster frame, so the roster rows under
+                // a voice channel rebuild when the connected list changes.
+                live_voice_rev.get(),
             )
         },
-        move |(_voice, _live_server, _live_fp, _mention_rev, _unread_rev, _cat_collapsed, _chan_menu): &(
+        move |(_voice, _live_server, _live_fp, _mention_rev, _unread_rev, _cat_collapsed, _chan_menu, _voice_status, _voice_rev): &(
             Option<(u32, u32)>,
             Option<i64>,
             Vec<(i64, String, String)>,
@@ -116,6 +179,8 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
             u32,
             Vec<(u32, bool)>,
             Option<i64>,
+            Option<(i64, String)>,
+            u32,
         )| {
             // `switch`'s render is `Fn` — clone the captured styles so the
             // closure borrows them rather than moving them out (whiteboard idiom).
@@ -136,6 +201,9 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                     user_notif_mode,
                     muted,
                     deafened,
+                    camera,
+                    screen_share,
+                    voice_error,
                     status_menu,
                     gateway.clone(),
                 );
@@ -669,8 +737,98 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                     .on_hover(move |on| hovered.set(on))
                                 }
                             } else {
+// Voice rows join/leave their channel: tapping joins (the backend
+                                // issues a call ticket the client treats as opaque) and tapping a
+                                // joined channel again leaves it. The backend refuses while no
+                                // provider is enabled, with its own user-facing sentence,
+                                // painted under the row in red.
+                                let joined_row = joined_voice.clone();
+                                let err_row = voice_error.clone();
+                                let roster_row = live_voice_roster.clone();
+                                let roster: Vec<discord_server::voice::VoiceUser> =
+                                    match roster_row.borrow().get(&cid) {
+                                        Some(v) => v.clone(),
+                                        None => Vec::new(),
+                                    };
+                                let roster_view: Element = if roster.is_empty() {
+                                    ui! {
+                                        view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
+                                    }
+                                } else {
+                                    ui! {
+                                        view(style = StyleRules {
+                                            padding_left: Some(px(8.0)),
+                                            gap: Some(px(4.0)),
+                                            ..Default::default()
+                                        }) {
+                                            for (uid, name) in roster.iter().map(|u| (u.user_id, u.username.clone())), key = uid {
+                                                text(style = StyleRules {
+                                                    font_size: Some(px(11.0)),
+                                                    color: Some(col(TEXT_MUTED)),
+                                                    max_lines: Some(1u32),
+                                                    flex_shrink: Some(grow(1.0)),
+                                                    ..Default::default()
+                                                }) { name }
+                                            }
+                                        }
+                                    }
+                                };
+                                let error_line = ui! {
+                                    text(style = StyleRules {
+                                        font_size: Some(px(11.0)),
+                                        color: Some(col(theme::DANGER)),
+                                        max_lines: Some(1u32),
+                                        flex_shrink: Some(grow(1.0)),
+                                        ..Default::default()
+                                    }) { move || match err_row.get() {
+                                        Some((c, msg)) if c == cid => msg,
+                                        _ => String::new(),
+                                    } }
+                                };
+                                // The video grid: while this caller is in the
+                                // channel, anyone publishing video (a camera
+                                // or a screen share) gets a Discord-style
+                                // tile here — screen shares larger than
+                                // cameras — ringed in the speaking tone
+                                // (mic on) or dim when muted, labelled with
+                                // the person's name. The tiles build straight
+                                // off the roster snapshot; the row's `switch`
+                                // key includes `live_voice_rev`, so a roster
+                                // frame repaints the grid.
+                                let joined_here = match joined_row.get() {
+                                    Some((_, ch)) => (ch as i64) == cid,
+                                    None => false,
+                                };
+                                let video_users: Vec<discord_server::voice::VoiceUser> =
+                                    if joined_here {
+                                        roster
+                                            .iter()
+                                            .filter(move |u| u.camera || u.screen_share)
+                                            .map(move |u| u.clone())
+                                            .collect::<Vec<discord_server::voice::VoiceUser>>()
+                                    } else {
+                                        Vec::new()
+                                    };
+                                let video_grid: Element = if video_users.is_empty() {
+                                    ui! {
+                                        view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {}
+                                    }
+                                } else {
+                                    ui! {
+                                        view(style = StyleRules {
+                                            flex_wrap: Some(FlexWrap::Wrap),
+                                            gap: Some(px(6.0)),
+                                            flex_shrink: Some(grow(1.0)),
+                                            ..Default::default()
+                                        }) {
+                                            for u in video_users.iter(), key = u.user_id {
+                                                VoiceTile(name = u.username.clone(), muted = u.muted, screen_share = u.screen_share)
+                                            }
+                                        }
+                                    }
+                                };
                                 ui! {
-                                    view(style = row_style) {
+                                    view(style = row_style, test_id = "live-voice-row") {
                                         icon(VOLUME_2)
                                             .color(|| theme::live(TEXT_MUTED))
                                             .size(18.0)
@@ -680,6 +838,9 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                         }
                                         { actions }
                                         { unread_pill }
+                                        { roster_view }
+                                        { video_grid }
+                                        { error_line }
                                     }
                                     .bind(row_ref)
                                     .on_hover(move |on| hovered.set(on))
@@ -688,6 +849,45 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                             && runtime_shared::touch::pointer_button().opens_context_menu()
                                         {
                                             chan_menu.set(Some(cid));
+                                            return TouchResponse::CONSUMED;
+                                        }
+                                        if ev.phase == TouchPhase::Ended {
+                                            let already_in = match joined_row.get() {
+                                                Some((_, ch)) => (ch as i64) == cid,
+                                                None => false,
+                                            };
+                                            if already_in {
+                                                runtime_core::spawn_then_in(
+                                                    &crate::app::shell_alive(),
+                                                    crate::backend::leave_voice(cid),
+                                                    move |result| {
+                                                        match result {
+                                                            Ok(_) => {}
+                                                            Err(msg) => err_row.set(Some((cid, msg))),
+                                                        }
+                                                        match joined_row.get() {
+                                                            Some((_, ch)) if (ch as i64) == cid => joined_row.set(None),
+                                                            _ => {}
+                                                        };
+                                                    },
+                                                );
+                                            } else {
+                                                runtime_core::spawn_then_in(
+                                                    &crate::app::shell_alive(),
+                                                    crate::backend::join_voice(cid),
+                                                    move |result| {
+                                                        match result {
+                                                            Ok(_) => {
+                                                                if let Some(sid) = live_sid.get() {
+                                                                    joined_row.set(Some((sid as u32, cid as u32)));
+                                                                }
+                                                                err_row.set(None);
+                                                            }
+                                                            Err(msg) => err_row.set(Some((cid, msg))),
+                                                        };
+                                                    },
+                                                );
+                                            }
                                         }
                                         TouchResponse::CONSUMED
                                     })
@@ -746,6 +946,9 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                         user_notif_mode,
                         muted,
                         deafened,
+                        camera,
+                        screen_share,
+                        voice_error,
                         status_menu,
                         gateway.clone(),
                     );

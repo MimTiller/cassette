@@ -143,6 +143,10 @@ impl AuthService {
     pub fn signup(&self, username: &str, password: &str) -> Result<SignupResult, String> {
         let user_id = PasswordProvider::new(self.db.clone())
             .register_account(username, password)?;
+        // The env bootstrap extended to fresh signups: an `INSTANCE_ADMINS`
+        // list names accounts that manage the instance store, including ones
+        // that register after startup (headless deploys stay workable).
+        crate::instance::grant_env_admin(&self.db, username.to_string());
         Ok(SignupResult {
             user_id,
             username: username.to_string(),

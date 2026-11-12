@@ -61,8 +61,12 @@ impl Permissions {
     pub const ADMINISTRATOR: Self = Self(1 << 14);
     /// Upload, rename and delete the server's custom emoji.
     pub const MANAGE_EXPRESSIONS: Self = Self(1 << 15);
+    /// Join a voice channel.
+    pub const CONNECT: Self = Self(1 << 16);
+    /// Publish audio in a voice channel they joined.
+    pub const SPEAK: Self = Self(1 << 17);
 
-    pub const ALL: Self = Self((1 << 16) - 1);
+    pub const ALL: Self = Self((1 << 18) - 1);
 
     /// What @everyone gets in a new server: read, write, react, attach and
     /// embed. Matches the column default in `0022_permissions.sql`.
@@ -84,7 +88,9 @@ impl Permissions {
             | Self::MENTION_EVERYONE.0
             | Self::MANAGE_MESSAGES.0
             | Self::CREATE_INVITE.0
-            | Self::MANAGE_CHANNELS.0,
+            | Self::MANAGE_CHANNELS.0
+            | Self::CONNECT.0
+            | Self::SPEAK.0,
     );
 
     /// Bits that do nothing without SEND_MESSAGES.
@@ -93,7 +99,7 @@ impl Permissions {
 
     /// Every permission with its display name and a one-line description,
     /// in the order a settings screen lists them.
-    pub const FLAGS: [(Self, &'static str, &'static str); 16] = [
+    pub const FLAGS: [(Self, &'static str, &'static str); 18] = [
         (Self::ADMINISTRATOR, "Administrator", "Every permission, in every channel. Grant with care."),
         (Self::MANAGE_SERVER, "Manage Server", "Rename the server, change its icon and what everyone can do."),
         (Self::MANAGE_ROLES, "Manage Roles", "Create, edit and hand out roles below their own."),
@@ -110,6 +116,8 @@ impl Permissions {
         (Self::EMBED_LINKS, "Embed Links", "Links they post show a preview."),
         (Self::MENTION_EVERYONE, "Mention @everyone", "Use @everyone, @here and roles that aren't mentionable."),
         (Self::MANAGE_MESSAGES, "Manage Messages", "Pin and unpin messages."),
+        (Self::CONNECT, "Connect to Voice", "Join this server's voice channels."),
+        (Self::SPEAK, "Speak in Voice", "Talk in the voice channels they join."),
     ];
 
     pub const fn contains(self, other: Self) -> bool {

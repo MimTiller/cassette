@@ -50,6 +50,7 @@ use icons_lucide::{
     CHEVRON_DOWN, CHEVRON_RIGHT, HASH, HEADPHONES,
     MIC, MIC_OFF, PIN, PLUS, SETTINGS, SMILE_PLUS,
     USER_PLUS, USERS, VOLUME_2, MENU, LOCK, BELL_OFF,
+    VIDEO, VIDEO_OFF, SCREEN_SHARE,
 };
 use crate::server_settings_panel::ServerSettingsPanel;
 
@@ -437,6 +438,16 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // in a voice channel. Drives the voice-row membership lists AND the
     // profile strip's voice-connection bar.
     let joined_voice: Signal<Option<(u32, u32)>> = signal(None);
+    // Who is connected to each live voice channel, per the `VoiceRoster`
+    // frames the backend pushes on every join/leave: a whole-list per channel
+    // buffer (like the presence buffer) redrawn via `live_voice_rev`, so the
+    // sidebar's voice rows drop stale names when the roster arrives.
+    let live_voice_roster: Rc<RefCell<HashMap<i64, Vec<discord_server::voice::VoiceUser>>>> =
+        Rc::new(RefCell::new(HashMap::new()));
+    let live_voice_rev: Signal<u32> = signal(0);
+    // The backend's refusal from the last voice join attempt, painted under
+    // the channel row in red (user-facing text, shown verbatim).
+    let voice_error: Signal<Option<(i64, String)>> = signal(None);
     // The signed-in user's live presence status, as a signal because the
     // profile strip can change it; the member panel renders the user under
     // this status, so a change regroups them there too.
@@ -450,11 +461,14 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // (the user resends to retry). Pure UI state — the gateway `send` itself is
     // fire-and-forget, so this is the app's signal for a failed send.
     let send_failed: Signal<bool> = signal(false);
-    // Mic-mute / deafen toggles for the user panel's voice-action icon row.
-    // Pure local UI state, owned here and passed into `user_panel`; the mic
-    // swaps to a slashed glyph when muted, deafen colors the icon red.
+    // Mic-mute / deafen / camera / screen-share toggles for the user panel's
+    // voice-action icon row. Pure local UI state, owned here and passed into
+    // `user_panel`; the mic swaps to a slashed glyph when muted, deafen
+    // colors the icon red, and camera/share draw their video-tile icons.
     let muted: Signal<bool> = signal(false);
     let deafened: Signal<bool> = signal(false);
+    let camera: Signal<bool> = signal(false);
+    let screen_share: Signal<bool> = signal(false);
     // Bumped on every send. `switch` dedups on its scrutinee VALUE (equal
     // re-fire keeps the mounted arm), so re-setting `active_channel` to its
     // current value does NOT rebuild the message list — this counter does.
@@ -785,6 +799,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         let lkick = live_kick_confirm.clone();
         let lbcm = live_ban_confirm.clone();
         let ltcm = live_timeout_confirm.clone();
+        let jv_restore = joined_voice.clone();
         let lunread = rail_unread.clone();
         let lunread_rev = live_unread_rev.clone();
         // The live list's scroll state re-arms for the restored channel exactly
@@ -838,14 +853,41 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 };
                 let channels = crate::backend::list_channels(sid).await;
                 let members = crate::backend::list_members(sid).await;
-                (Some(servers), Some((sid, counts, channels, members, saved)))
+                // A fresh browser restores an in-progress voice call without a
+                // new click: ask the backend, for each of the server's voice
+                // channels, whether this caller is already connected (voice_state
+                // re-issues the ticket only then) and record the join below.
+                let voice_restored: i64 = {
+                    let mut restored = 0;
+                    match &channels {
+                        Ok(cs) => {
+                            for c in cs {
+                            if c.kind != "voice" {
+                                    continue;
+                            }
+                            let state = crate::backend::voice_state(c.id).await;
+                            let connected = match state {
+                                Ok(v) => v.ticket.is_some(),
+                                Err(_) => false,
+                            };
+                            if connected {
+                                restored = c.id;
+                                break;
+                            }
+                        }
+                        }
+                        Err(_) => {}
+                    };
+                    restored
+                };
+                (Some(servers), Some((sid, counts, channels, members, saved, voice_restored)))
             },
             move |fetched| {
                 let (servers_opt, payload) = fetched;
                 if let Some(servers) = servers_opt {
                     ls.set(servers);
                 }
-                let Some((sid, counts, channels, members, saved)) = payload else { return; };
+                let Some((sid, counts, channels, members, saved, voice_restored)) = payload else { return; };
                 {
                     let buf = lunread.clone();
                     buf.borrow_mut()
@@ -890,6 +932,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
                 if let Ok(fresh) = members {
                     crate::mentions::members_loaded(sid, &fresh);
                     lmbrs.set(fresh);
+                }
+                if voice_restored != 0 {
+                    jv_restore.set(Some((sid as u32, voice_restored as u32)));
                 }
                 als.set(Some(sid));
             },
@@ -1341,6 +1386,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
         dc_name: dc_name.clone(),
         dc_open: dc_open.clone(),
         deafened: deafened.clone(),
+        camera: camera.clone(),
+        screen_share: screen_share.clone(),
         emoji_open: emoji_open.clone(),
         friends_add_error: friends_add_error.clone(),
         friends_add_username: friends_add_username.clone(),
@@ -1355,6 +1402,9 @@ fn app_shell(authed: Signal<bool>) -> Element {
         invite_expiry: invite_expiry.clone(),
         invite_mode: invite_mode.clone(),
         joined_voice: joined_voice.clone(),
+        live_voice_roster: live_voice_roster.clone(),
+        live_voice_rev: live_voice_rev.clone(),
+        voice_error: voice_error.clone(),
         live_at_bottom: live_at_bottom.clone(),
         live_attachments: live_attachments.clone(),
         live_ban_confirm: live_ban_confirm.clone(),
@@ -1459,7 +1509,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         overflow: Some(Overflow::Hidden),
         ..Default::default()
     };
-    let overlays::OverlaysParts { profile_region, notif_region, shortcuts_region, live_dm_region, live_invite_region } = overlays::build(&s);
+    let overlays::OverlaysParts { profile_region, instance_region, notif_region, shortcuts_region, live_dm_region, live_invite_region } = overlays::build(&s);
 
     // --- "jump to bottom" scroll tracking ---------------------------------
     // The floating "Jump to bottom" pill only appears while the reader has
@@ -1688,6 +1738,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // Painted last so it sits on top of everything when open.
             profile_region
             notif_region
+            instance_region
             shortcuts_region
             // Direct Messages (LIVE / backend): full-screen, same paint-last
             // idiom; an independent entry point (the mock DM screen is gone).

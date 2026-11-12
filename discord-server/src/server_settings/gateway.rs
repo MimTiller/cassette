@@ -268,6 +268,17 @@ pub enum WsServerMsg {
         #[serde(default)]
         seq: u64,
     },
+    /// The full voice roster of one channel: who is connected to it right
+    /// now, whole-list so one frame replaces the client's rows under the
+    /// channel. Sent to everyone who can see the channel on every change
+    /// (join/leave/reconnect/disconnect) and with the initial state on
+    /// connect.
+    VoiceRoster {
+        channel_id: i64,
+        entries: Vec<crate::voice::VoiceUser>,
+        #[serde(default)]
+        seq: u64,
+    },
     /// The user's own picked status ("online" / "idle" / "dnd" /
     /// "invisible"): sent on connect, and to each of their sockets when it
     /// changes.
@@ -439,6 +450,11 @@ pub async fn message_gateway(
 
     let hub = hub();
     let (conn_id, mut events) = hub.register(user_id);
+
+    // Voice: the user may still hold a voice channel from another live
+    // socket ("cleared when their last gateway connection closes"), so the
+    // new socket gets the channel's current roster as its initial state.
+    crate::voice::announce_voice_on_connect(db.clone(), user_id);
 
     // Presence: what others see follows the user's picked status and whether
     // they are active (`realtime::shown_presence`); active the moment the
@@ -630,10 +646,13 @@ pub async fn message_gateway(
     // Disconnect: the socket has closed (client went away, transport died, or
     // the loop broke on an error). When it was the user's last socket, mark
     // them 'offline' and tell their fellow server members.
-    if hub.unregister(user_id, conn_id)
-        && db.set_presence(user_id, "offline").is_ok_and(|changed| changed)
-    {
-        announce_presence(&db, user_id, "offline");
+    if hub.unregister(user_id, conn_id) {
+        // Last socket closed: their voice entry is cleared like their
+        // presence, so the channel's other viewers drop the row.
+        crate::voice::clear_voice_on_disconnect(db.clone(), user_id);
+        if db.set_presence(user_id, "offline").is_ok_and(|changed| changed) {
+            announce_presence(&db, user_id, "offline");
+        }
     }
     Ok(())
 }

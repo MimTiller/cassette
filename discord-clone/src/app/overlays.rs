@@ -6,6 +6,7 @@ use super::*;
 
 pub(super) struct OverlaysParts {
     pub(super) profile_region: Element,
+    pub(super) instance_region: Element,
     pub(super) notif_region: Element,
     pub(super) shortcuts_region: Element,
     pub(super) live_dm_region: Element,
@@ -13,12 +14,40 @@ pub(super) struct OverlaysParts {
 }
 
 pub(super) fn build(s: &ShellState) -> OverlaysParts {
+    // (Instance Settings installs its own area state above; see the
+    // `crate::instance_settings_panel::install()` block before the tabs.)
     let ShellState { active_live_server, authed, blocked_users,
         friends_add_error, friends_add_username, friends_entry, friends_open, friends_snap, friends_tab, gateway, live_dm_active, live_dm_messages, live_dm_mode, live_dm_new_id, live_dm_revision, live_dms, live_invite_code, live_invite_error, live_invite_mode, live_members, live_presence, live_presence_rev, live_revision, notif_level, notif_mode, on_dm_message, profile_mode, shortcuts_mode, .. } = s.clone();
 
     // User Settings: one full-window screen (see `settings_suite`), shown
     // while `notif_mode` is on. "Profile" (`profile_mode`) opens it at the
     // Profile section. Log Out signs out as the user panel's button did.
+    // Instance Settings: the area owns its state (the `notif_menu` thread-local
+    // idiom) so both the User Settings row and the full-screen region can
+    // reach it. Install once here in `app_shell` scope, then seed the gates
+    // at login from the public `instance_info` card; the admin additionally
+    // gets the saved read so the source labels are fresh when the row opens.
+    crate::instance_settings_panel::install();
+
+    runtime_core::spawn_then_in(
+        &crate::app::shell_alive(),
+        async move {
+            let info = crate::backend::instance_info().await;
+            let is_admin = matches!(&info, Ok(v) if v.is_instance_admin);
+            let saved = if is_admin { Some(crate::backend::get_instance_settings().await) } else { None };
+            (info, saved)
+        },
+        move |(info, saved)| {
+            if let Ok(v) = info {
+                crate::instance_settings_panel::seed(v.is_instance_admin, v.setup_complete);
+            }
+            if let Some(Ok(v)) = saved {
+                crate::instance_settings_panel::seed_saved(v);
+            }
+        },
+    );
+
+    let inst_action: Rc<dyn Fn()> = Rc::new(move || crate::instance_settings_panel::open_area());
     let settings_tab: Signal<usize> = signal(0);
     let profile_region = switch(
         move || profile_mode.get(),
@@ -61,6 +90,8 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
                 active = settings_tab,
                 on_close = Some(on_close),
                 on_logout = Some(on_logout),
+                instance_visible = crate::instance_settings_panel::entry_visible_view(),
+                on_instance_settings = Some(inst_action.clone()),
             )
         }
     };
@@ -426,5 +457,11 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         }
     };
 
-    OverlaysParts { profile_region, notif_region, shortcuts_region, live_dm_region, live_invite_region }
+    // Instance Settings: the full-screen admin area (same paint-last
+    // idiom) — the panel collapses to zero size while its open flag is off.
+    let instance_region: Element = ui! {
+        view { crate::instance_settings_panel::InstanceSettingsPanel() }
+    };
+
+    OverlaysParts { profile_region, instance_region, notif_region, shortcuts_region, live_dm_region, live_invite_region }
 }
