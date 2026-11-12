@@ -641,6 +641,7 @@ mod tests {
     use super::*;
     use chat_model::{Id, User, Message, Presence, MessageKind, Relation, Me, Status};
     use chat_model::live::{Event, State};
+    use chat_model::{Channel, ChannelKind, Role};
 
     fn uid(n: u128) -> Id {
         Id::from_u128(n)
@@ -814,6 +815,221 @@ mod tests {
                 panic!("wrong frame for a status choice");
             },
             None => panic!("no frame for a status choice"),
+        }
+    }
+
+    // --- the codec round-trips: frames in the wire format, through serde and
+    // the live-event translation, as the live connection sees them -----------
+    //
+    // Note the tags: the `Down` frame is tagged "t", but the event inside it
+    // is tagged "e" (chat-model fixes this; the wire study's §2 example
+    // printed "t" for the inner event — the source wins and the doc is fixed).
+    // `MessageKind` carries its own "k" tag; `Presence` is a plain string.
+
+    #[test]
+    fn a_send_frame_survives_the_codec_and_lands_as_a_message_row() {
+        // `Down::Event` of a `MessageCreated` — the recorded wire JSON for a
+        // `send`'s fact, exactly as idea_state/chat-model's serde shapes it.
+        let held = r#"{"t":"event","seq":3,"event":{"e":"message_created","message":{"id":"00000000-0000-0000-0000-000000000064","channel":"00000000-0000-0000-0000-00000000000a","author":"00000000-0000-0000-0000-000000000007","kind":{"k":"text"},"body":"hello there","attachments":[],"reply_to":null,"reactions":[],"thread":null,"mentions":[],"mentions_everyone":false,"at":1700000000000,"edited_at":null}}}"#;
+        let frame = serde_json::from_str::<Down>(held);
+        match frame {
+            Err(e) => panic!("the frame wire shape moved: {e:?}"),
+            Ok(frame) => {
+                // re-encode and decode back: the codec round-trips
+                let again = serde_json::to_string(&frame).unwrap_or_default();
+                match serde_json::from_str::<Down>(again.as_str()) {
+                    Err(e) => panic!("re-encode failed: {e:?}"),
+                    Ok(back) => assert_eq!(back == frame, true),
+                }
+                match frame {
+                    Down::Event { seq, event } => {
+                        assert_eq!(seq, 3);
+                        let frames = frames_for(event.clone());
+                        assert_eq!(frames.len(), 1);
+                        match frames.get(0) {
+                            Some(WsServerMsg::Message { content, new, .. }) => {
+                                assert_eq!(*content == "hello there".to_string(), true);
+                                assert_eq!(*new, true);
+                            },
+                            _ => panic!("a MessageCreated frame answered the wrong UI frame"),
+                        }
+                    },
+                    _ => panic!("the recorded wire frame was not an event"),
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn an_edit_and_a_delete_frame_round_trip_through_the_codec() {
+        // `edit`'s fact answers `MessageEdited` (the fresh body and edited_at);
+        // `delete`'s answers `MessageDeleted {channel, message}`.
+        let edit = r#"{"t":"event","seq":4,"event":{"e":"message_edited","message":{"id":"00000000-0000-0000-0000-000000000064","channel":"00000000-0000-0000-0000-00000000000a","author":"00000000-0000-0000-0000-000000000007","kind":{"k":"text"},"body":"hello *there*","attachments":[],"reply_to":null,"reactions":[],"thread":null,"mentions":[],"mentions_everyone":false,"at":1700000000000,"edited_at":1700000005000}}}"#;
+        let deleted = r#"{"t":"event","seq":5,"event":{"e":"message_deleted","channel":"00000000-0000-0000-0000-00000000000a","message":"00000000-0000-0000-0000-000000000064"}}"#;
+        let texts: Vec<String> = vec![edit.to_string(), deleted.to_string()];
+        for text in texts.iter() {
+            let frame = serde_json::from_str::<Down>(text.as_str());
+            match frame {
+                Err(why) => panic!("the frame wire shape moved: {why:?}"),
+                Ok(frame) => {
+                    let again = serde_json::to_string(&frame).unwrap_or_default();
+                    match serde_json::from_str::<Down>(again.as_str()) {
+                        Err(e) => panic!("re-encode failed: {e:?}"),
+                        Ok(back) => assert_eq!(back == frame, true),
+                    }
+                    match frame {
+                        Down::Event { seq, event } => {
+                            let frames = frames_for(event.clone());
+                            assert_eq!(frames.len(), 1);
+                            if seq == 4 {
+                                match frames.get(0) {
+                                    Some(WsServerMsg::MessageEdited { content, edited_at, .. }) => {
+                                        assert_eq!(*content == "hello *there*".to_string(), true);
+                                        assert_eq!(*edited_at, 1_700_000_005_000);
+                                    },
+                                    _ => panic!("an edit answered a wrong UI frame"),
+                                }
+                            }
+                            if seq == 5 {
+                                match frames.get(0) {
+                                    Some(WsServerMsg::MessageDeleted { .. }) => {},
+                                    _ => panic!("a delete answered a wrong UI frame"),
+                                }
+                            }
+                        },
+                        _ => panic!("recorded wires were not events"),
+                    }
+                },
+            }
+        }
+    }
+
+    #[test]
+    fn a_history_page_round_trips_through_the_codec() {
+        // The `history` RPC's answer is a chat_model::Page — messages oldest
+        // first with the older/present flags; its rows arrive as `new: false`.
+        let page = Page {
+            messages: vec![
+                Message {
+                    id: uid(100), channel: uid(10), author: uid(7),
+                    kind: MessageKind::Text, body: "one".to_string(),
+                    attachments: Vec::new(), reply_to: None, reactions: Vec::new(),
+                    thread: None, mentions: Vec::new(), mentions_everyone: false,
+                    at: 1_700_000_000_000, edited_at: None,
+                },
+                Message {
+                    id: uid(101), channel: uid(10), author: uid(8),
+                    kind: MessageKind::Text, body: "two".to_string(),
+                    attachments: Vec::new(), reply_to: None, reactions: Vec::new(),
+                    thread: None, mentions: Vec::new(), mentions_everyone: false,
+                    at: 1_700_000_001_000, edited_at: None,
+                },
+            ],
+            older: true,
+            present: false,
+        };
+        let held = serde_json::to_string(&page).unwrap_or_default();
+        let back = serde_json::from_str::<Page>(held.as_str());
+        match back {
+            Err(why) => panic!("the page wire shape moved: {why:?}"),
+            Ok(restored) => {
+                assert_eq!(restored, page);
+                let frames: Vec<WsServerMsg> = restored.messages.iter().map(move |m| message_row(m.clone(), false)).collect();
+                assert_eq!(frames.len(), 2);
+                match frames.get(0) {
+                    Some(WsServerMsg::Message { new, .. }) => assert_eq!(*new, false),
+                    _ => panic!("a history row answered a wrong UI frame"),
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn a_read_frame_folds_to_an_unread_count_of_zero() {
+        // `mark_read`'s fact on the wire, folded into a small world that has
+        // one channel sitting on one unread message: after the fold the badge
+        // is zero and the frame stays out (the state, not a frame, answers it).
+        let mut world = State::default();
+        world.channels.insert(uid(10), Channel {
+            id: uid(10),
+            kind: ChannelKind::Text,
+            space: Some(uid(1)),
+            name: "general".to_string(),
+            topic: "".to_string(),
+            category: None,
+            position: 0,
+            parent: None,
+            starter: None,
+            view: Role::Member,
+            post: Role::Member,
+            members: Vec::new(),
+            archived: false,
+            last_message: Some(uid(100)),
+            message_count: 1,
+            created_by: uid(2),
+            created_at: 0,
+        });
+        let read = r#"{"t":"event","seq":6,"event":{"e":"read","channel":"00000000-0000-0000-0000-00000000000a","last_read":"00000000-0000-0000-0000-000000000064"}}"#;
+        let frame = serde_json::from_str::<Down>(read);
+        match frame {
+            Err(why) => panic!("the read frame shape moved: {why:?}"),
+            Ok(frame) => {
+                match frame {
+                    Down::Event { seq, event } => {
+                        assert_eq!(seq, 6);
+                        assert_eq!(frames_for(event.clone()).len(), 0);
+                        world.apply(&event);
+                        let counts = crate::backend::idea_chat::impl_messages::unread_of(world.clone(), uid(1));
+                        assert_eq!(counts.len(), 1);
+                        match counts.get(0) {
+                            Some(row) => assert_eq!(row.count, 0),
+                            None => panic!("no unread row for the read channel"),
+                        }
+                    },
+                    _ => panic!("recorded read frame was not an event"),
+                }
+            },
+        }
+    }
+
+    #[test]
+    fn a_presence_round_trip_lands_both_ways() {
+        // Viewer side: `set_status`'s fresh `Me` event answers a StatusChoice;
+        // witness side: `PresenceChanged` answers a Presence frame.
+        let me_json = r#"{"t":"event","seq":7,"event":{"e":"me_updated","me":{"user":{"id":"00000000-0000-0000-0000-000000000007","handle":"al","display_name":"al","avatar":null,"bio":""},"email":"al","status":{"presence":"idle","text":null}}}}"#;
+        let presence_json = r#"{"t":"event","seq":8,"event":{"e":"presence_changed","user":"00000000-0000-0000-0000-000000000008","status":{"presence":"busy","text":null}}}"#;
+        let texts: Vec<(String, String)> = vec![
+            (me_json.to_string(), "idle".to_string()),
+            (presence_json.to_string(), "dnd".to_string()),
+        ];
+        for pair in texts.iter() {
+            let text = pair.0.clone();
+            let expect_word = pair.1.clone();
+            let is_me = pair.0 == me_json;
+            let frame = serde_json::from_str::<Down>(text.as_str());
+            match frame {
+                Err(why) => panic!("the presence frame shape moved: {why:?}"),
+                Ok(frame) => {
+                    let again = serde_json::to_string(&frame).unwrap_or_default();
+                    match serde_json::from_str::<Down>(again.as_str()) {
+                        Err(e) => panic!("re-encode failed: {e:?}"),
+                        Ok(back) => assert_eq!(back == frame, true),
+                    }
+                    match frame {
+                        Down::Event { seq, event } => {
+                            assert_eq!(seq, if is_me { 7 } else { 8 });
+                            let frames = frames_for(event.clone());
+                            assert_eq!(frames.len(), 1);
+                            match frames.get(0) {
+                                Some(WsServerMsg::StatusChoice { status, .. }) => assert_eq!(*status == expect_word, true),
+                                Some(WsServerMsg::Presence { status, .. }) => assert_eq!(*status == expect_word, true),
+                                _ => panic!("a presence event answered a wrong UI frame"),
+                            }
+                        },
+                        _ => panic!("recorded presence was not an event"),
+                    }
+                },
+            }
         }
     }
 }
