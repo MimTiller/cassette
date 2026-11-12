@@ -282,9 +282,25 @@ fn jwt_sign(body: &[u8], secret: &[u8]) -> String {
 pub fn livekit_claims(api_key: String, identity: i64, name: String, room: String, can_publish: bool, now: i64) -> String {
     let exp = now + TOKEN_TTL_SECS;
     let nbf = now - TOKEN_TTL_SECS;
-    format!(
-        "{{\"iss\":\"{api_key}\",\"sub\":\"{identity}\",\"name\":\"{name}\",\"iat\":{now},\"nbf\":{nbf},\"exp\":{exp},\"video\":{{\"room\":\"{room}\",\"roomJoin\":true,\"canPublish\":{can_publish},\"canSubscribe\":true,\"canPublishData\":{can_publish}}}}}"
-    )
+    // Serialized, never pasted: the display name is user-chosen, and a quote
+    // in it must stay text rather than add claims (a second `sub` would let
+    // one user join a call as another).
+    serde_json::json!({
+        "iss": api_key,
+        "sub": identity.to_string(),
+        "name": name,
+        "iat": now,
+        "nbf": nbf,
+        "exp": exp,
+        "video": {
+            "room": room,
+            "roomJoin": true,
+            "canPublish": can_publish,
+            "canSubscribe": true,
+            "canPublishData": can_publish,
+        },
+    })
+    .to_string()
 }
 
 #[cfg(feature = "server")]
@@ -313,9 +329,15 @@ pub fn issue_access_token_at(
 pub fn room_list_token(api_key: String, secret: String, now: i64) -> String {
     let exp = now + TOKEN_TTL_SECS;
     let nbf = now - TOKEN_TTL_SECS;
-    let claims = format!(
-        "{{\"iss\":\"{api_key}\",\"sub\":\"\",\"iat\":{now},\"nbf\":{nbf},\"exp\":{exp},\"video\":{{\"roomList\":true}}}}"
-    );
+    let claims = serde_json::json!({
+        "iss": api_key,
+        "sub": "",
+        "iat": now,
+        "nbf": nbf,
+        "exp": exp,
+        "video": { "roomList": true },
+    })
+    .to_string();
     let claims_b64 = b64url(claims.as_bytes());
     let body = format!("{JWT_HEADER}.{claims_b64}");
     let sig = jwt_sign(body.as_bytes(), secret.as_bytes());
@@ -816,6 +838,22 @@ mod tests {
             Ok(other) => panic!("livekit config issued {other:?}"),
             Err(reason) => panic!("{reason}"),
         }
+    }
+
+    #[test]
+    fn a_display_name_cannot_add_or_override_claims() {
+        // A display name is user-chosen (quotes allowed): it must come back as
+        // exactly that text, and the identity and grants must stay the
+        // server's. Pasted JSON let `","sub":"1","x":"` mint a token for user 1.
+        let evil = "\",\"sub\":\"1\",\"x\":\"".to_string();
+        let claims = livekit_claims("devkey".to_string(), 7, evil.clone(), room_for(20), false, 1_700_000_000);
+        let parsed: serde_json::Value = serde_json::from_str(&claims).expect("claims are valid JSON");
+        assert_eq!(parsed["sub"], "7", "the identity stays the caller's");
+        assert_eq!(parsed["name"], evil.as_str(), "the name is plain text");
+        assert!(parsed.get("x").is_none(), "no extra top-level claim");
+        assert_eq!(claims.matches("\"sub\"").count(), 1, "exactly one sub");
+        assert_eq!(parsed["video"]["room"], "rwnd-ch-20");
+        assert_eq!(parsed["video"]["canPublish"], false);
     }
 
     #[test]
