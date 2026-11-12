@@ -511,6 +511,8 @@ mod roles_impl;
 mod permissions_impl;
 #[cfg(not(feature = "idea-chat"))]
 mod voice_impl;
+#[cfg(not(feature = "idea-chat"))]
+mod livekit;
 mod themes_impl;
 #[cfg(not(feature = "idea-chat"))]
 mod instance_impl;
