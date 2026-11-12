@@ -207,32 +207,98 @@ fn clip(s: &str, max: usize) -> String {
 }
 
 #[cfg(feature = "server")]
-pub use fetch::{embeds_for, schedule};
+pub use fetch::{embeds_for, schedule, hop_allowed, all_addrs_allowed, chain_ok, throttle_previews};
 
 #[cfg(feature = "server")]
 mod fetch {
     use super::*;
     use crate::db::Db;
+    use crate::rate_limit::RateLimiter;
+    use std::sync::OnceLock;
     use std::time::Duration;
 
     const PAGE_LIMIT: usize = 512 * 1024;
     const IMAGE_LIMIT: usize = 2 * 1024 * 1024;
     const MAX_REDIRECTS: usize = 3;
     const CACHE_MS: i64 = 24 * 60 * 60 * 1000;
+    const PREVIEWS_PER_WINDOW: usize = 30;
+    const PREVIEW_WINDOW: Duration = Duration::from_secs(120);
+
+    /// Whether one URL of a redirect chain may be connected at all, checked
+    /// purely and before any DNS: `http`/`https` only, only on the scheme's
+    /// own standard port (a preview fetcher that honored arbitrary ports
+    /// could be aimed at daemons on any port a local box runs), no
+    /// credentials smuggled into the URL, and a host written as a literal
+    /// address must be public. Hostnames are covered by the resolver check
+    /// in [`guarded_get`].
+    pub fn hop_allowed(url: &reqwest::Url) -> bool {
+        if !matches!(url.scheme(), "http" | "https") {
+            return false;
+        }
+        if !url.username().is_empty() || url.password().is_some() {
+            return false;
+        }
+        let standard = if url.scheme() == "https" { 443 } else { 80 };
+        if url.port_or_known_default() != Some(standard) {
+            return false;
+        }
+        let Some(host) = url.host_str() else { return false };
+        host_literal_allowed(host)
+    }
+
+    /// A host written as an address — dotted IPv4, or IPv6 bracketed or
+    /// bare, including the IPv4-mapped forms reqwest normalizes to — must
+    /// be public per [`ip_allowed`]. A plain hostname isn't an address and
+    /// passes here; the resolver check covers it.
+    fn host_literal_allowed(host: &str) -> bool {
+        let h = if host.starts_with('[') && host.ends_with(']') {
+            &host[1..host.len() - 1]
+        } else {
+            host
+        };
+        h.parse::<IpAddr>().map(ip_allowed).unwrap_or(true)
+    }
+
+    /// The resolver's addresses are usable for a connect: at least one, and
+    /// every one public. A host that resolves to a mix is refused outright.
+    pub fn all_addrs_allowed(addrs: &[std::net::SocketAddr]) -> bool {
+        !addrs.is_empty() && addrs.iter().all(|a| ip_allowed(a.ip()))
+    }
+
+    /// A redirect chain from the requested URL to the final one: non-empty,
+    /// within the hop cap, and every hop re-allowed by [`hop_allowed`].
+    pub fn chain_ok(chain: &[reqwest::Url]) -> bool {
+        !chain.is_empty()
+            && chain.len() <= MAX_REDIRECTS + 1
+            && chain.iter().all(|u| hop_allowed(u))
+    }
+
+    /// Refuse a preview-fetch run once `key` (the message's author) has used
+    /// up its slice of the budget. The limiter is a parameter so tests can
+    /// drive a tiny budget; production uses [`preview_limiter`].
+    pub fn throttle_previews(limiter: &RateLimiter, key: &str) -> Result<(), String> {
+        crate::rate_limit::throttle(limiter, key)
+    }
+
+    fn preview_limiter() -> &'static RateLimiter {
+        static L: OnceLock<RateLimiter> = OnceLock::new();
+        L.get_or_init(|| RateLimiter::new(PREVIEWS_PER_WINDOW, PREVIEW_WINDOW))
+    }
 
     /// Fetch `url` and follow redirects by hand, checking every hop's
     /// addresses. Returns the final URL and the response, which is only
     /// returned when its content type starts with `want`.
     async fn guarded_get(url: &str, want: &str) -> Option<(reqwest::Url, reqwest::Response)> {
         let mut url = reqwest::Url::parse(url).ok()?;
+        if !hop_allowed(&url) {
+            return None;
+        }
+        let mut chain: Vec<reqwest::Url> = vec![url.clone()];
         for _ in 0..=MAX_REDIRECTS {
-            if !matches!(url.scheme(), "http" | "https") || !url.username().is_empty() || url.password().is_some() {
-                return None;
-            }
             let host = url.host_str()?.to_string();
             let port = url.port_or_known_default()?;
             let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host((host.as_str(), port)).await.ok()?.collect();
-            if addrs.is_empty() || addrs.iter().any(|a| !ip_allowed(a.ip())) {
+            if !all_addrs_allowed(&addrs) {
                 return None;
             }
             // Connect to the address just checked, so DNS can't change in
@@ -249,6 +315,10 @@ mod fetch {
             if resp.status().is_redirection() {
                 let next = resp.headers().get(reqwest::header::LOCATION)?.to_str().ok()?;
                 url = url.join(next).ok()?;
+                chain.push(url.clone());
+                if !chain_ok(&chain) {
+                    return None;
+                }
                 continue;
             }
             if !resp.status().is_success() {
@@ -397,6 +467,20 @@ mod fetch {
         if links.is_empty() && !had {
             return;
         }
+        // One author can't hammer the fetcher forever: the budget is per author,
+        // and a refusal just leaves the message without cards.
+        if !links.is_empty() {
+            let author = db.lock().ok().and_then(|c| {
+                c.query_row(
+                    "SELECT author_id FROM messages WHERE id = ?1",
+                    rusqlite::params![message_id],
+                    |r| r.get::<_, i64>(0),
+                ).ok()
+            }).unwrap_or(0);
+            if throttle_previews(preview_limiter(), &format!("preview-{author}")).is_err() {
+                return;
+            }
+        }
         let Ok(rt) = tokio::runtime::Handle::try_current() else { return };
         let db = db.clone();
         rt.spawn(async move {
@@ -483,5 +567,96 @@ mod tests {
     fn long_text_is_clipped() {
         let html = format!("<title>{}</title>", "x".repeat(300));
         assert_eq!(parse_html(&html).title.unwrap().chars().count(), MAX_TITLE);
+    }
+
+    #[cfg(feature = "server")]
+    fn url(s: &str) -> reqwest::Url {
+        reqwest::Url::parse(s).unwrap()
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn hop_refuses_non_http_schemes() {
+        for bad in ["file:///etc/passwd", "ftp://a.example/", "data:text/html,hi", "javascript:alert(1)"] {
+            assert!(!hop_allowed(&url(bad)), "{bad} must not be fetched");
+        }
+        assert!(hop_allowed(&url("http://8.8.8.8/")));
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn hop_refuses_nonstandard_ports() {
+        for bad in ["http://8.8.8.8:8080/", "https://8.8.8.8:8443/", "http://example.com:0/", "http://example.com:1024/"] {
+            assert!(!hop_allowed(&url(bad)), "a fetcher may not be aimed at an arbitrary port");
+        }
+        assert!(hop_allowed(&url("http://example.com:80/x")));
+        assert!(hop_allowed(&url("https://example.com:443/x")));
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn hop_refuses_credentials_in_the_url() {
+        for bad in ["http://user@127.0.0.1/", "http://user:pw@8.8.8.8/", "https://x:y@example.com/"] {
+            assert!(!hop_allowed(&url(bad)), "credentials smuggled into a preview URL are refused");
+        }
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn hop_refuses_literal_internal_hosts() {
+        for bad in ["http://169.254.169.254/", "http://127.0.0.1/", "http://0.0.0.0/",
+                    "http://255.255.255.255/", "http://[::1]/", "http://[0:0:0:0:0:0:0:1]/",
+                    "http://[fe80::1]/", "http://[fc00::1]/", "http://[::ffff:127.0.0.1]/",
+                    "http://[::ffff:127.0.0.1]/", "http://[::127.0.0.1]/", "http://[::]:80/"] {
+            assert!(!hop_allowed(&url(bad)), "an internal literal host must not connect");
+        }
+        for good in ["http://8.8.8.8/", "http://151.101.1.69/", "http://[::ffff:8.8.8.8]/"] {
+            assert!(hop_allowed(&url(good)), "{good} is a public literal host");
+        }
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn hop_accepts_plain_hostnames() {
+        assert!(hop_allowed(&url("http://localhost/")));
+        assert!(hop_allowed(&url("https://example.com/x")));
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn resolver_refuses_empty_or_mixed_addresses() {
+        use std::net::{Ipv4Addr, SocketAddr};
+        let a = |ip: (u8, u8, u8, u8), port: u16| SocketAddr::from((Ipv4Addr::new(ip.0, ip.1, ip.2, ip.3), port));
+        assert!(!all_addrs_allowed(&[]));
+        assert!(!all_addrs_allowed(&[a((127, 0, 0, 1), 80)]));
+        assert!(!all_addrs_allowed(&[a((8, 8, 8, 8), 80), a((10, 0, 0, 1), 80)]));
+        assert!(all_addrs_allowed(&[a((8, 8, 8, 8), 80), a((151, 101, 1, 69), 443)]));
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn chain_caps_hops_and_rechecks_each_one() {
+        let chain = [url("http://a.example/"), url("http://b.example/"), url("http://c.example/")];
+        assert!(chain_ok(&chain));
+        let too_long = [url("http://a.example/"), url("http://b.example/"),
+                        url("http://c.example/"), url("http://d.example/"), url("http://e.example/")];
+        assert!(!chain_ok(&too_long), "one hop over the cap is refused");
+        assert!(!chain_ok(&[]));
+        let poisoned = [url("http://a.example/"), url("http://169.254.169.254/")];
+        assert!(!chain_ok(&poisoned), "a redirect that lands on an internal host is refused");
+    }
+
+    #[cfg(feature = "server")]
+    #[test]
+    fn preview_budget_trips_and_slides() {
+        use crate::rate_limit::RateLimiter;
+        let limiter = RateLimiter::new(2, std::time::Duration::from_secs(60));
+        assert!(throttle_previews(&limiter, "author-1").is_ok());
+        assert!(throttle_previews(&limiter, "author-1").is_ok());
+        let e = throttle_previews(&limiter, "author-1").unwrap_err();
+        assert!(e.contains("seconds"), "{e} must be user-facing text");
+        limiter.set_now(std::time::Duration::from_secs(61));
+        assert!(throttle_previews(&limiter, "author-1").is_ok(), "the window slid past the oldest attempt");
+        assert!(throttle_previews(&limiter, "author-2").is_ok(), "another author has its own budget");
     }
 }
