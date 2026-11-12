@@ -1,9 +1,8 @@
-//! Today's voice calls: the `discord-server` voice RPCs, plus the browser's
-//! own LiveKit connection driven through the seam's provider entry points in
-//! `crate::backend::livekit`. The RPC owns the permission truth and the roster
-//! frame; the provider half is this client talking to the room, and it lives
-//! entirely in `livekit.rs` — nothing here re-implements it, and nothing outside
-//! the seam touches LiveKit.
+//! Today's voice calls: the `discord-server` voice RPCs, plus this tab's own
+//! media for the call, driven through `crate::backend::call_media`, which
+//! answers through the provider the ticket named (LiveKit in `livekit.rs`;
+//! idea-chat reserved). The RPC owns the permission truth and the roster
+//! frame; nothing here names a provider.
 
 use super::*;
 
@@ -16,13 +15,8 @@ impl CallApi for CassetteBackend {
         let ticket = discord_server::voice::join_voice(
             discord_server::voice::JoinVoiceInput { channel_id },
         ).await?;
-        match &ticket {
-            CallTicket::LiveKit { url, token, can_publish } => {
-                if let Err(msg) = crate::backend::livekit::connect(channel_id, url.clone(), token.clone(), *can_publish).await {
-                    return Err(server::ServerError::Failed(crate::backend::livekit::classify(msg).into()));
-                }
-            }
-            CallTicket::IdeaChat { .. } => {}
+        if let Err(msg) = crate::backend::call_media::connect(channel_id, &ticket).await {
+            return Err(server::ServerError::Failed(msg.into()));
         }
         Ok(ticket)
     }
@@ -34,12 +28,12 @@ impl CallApi for CassetteBackend {
         // Drop the browser's room for this channel; any other room this tab
         // still holds (a stale entry after a channel switch) gets torn down
         // too, so no orphan socket lingers behind the leave.
-        for stale in crate::backend::livekit::live_channels() {
+        for stale in crate::backend::call_media::live_channels() {
             if stale != channel_id {
-                let _ = crate::backend::livekit::disconnect(stale).await;
+                let _ = crate::backend::call_media::disconnect(stale).await;
             }
         }
-        let _ = crate::backend::livekit::disconnect(channel_id).await;
+        let _ = crate::backend::call_media::disconnect(channel_id).await;
         Ok(result)
     }
 
@@ -50,14 +44,10 @@ impl CallApi for CassetteBackend {
         // A fresh browser that the server reports as connected re-arms its own
         // provider state without a new click: the server re-issued the ticket,
         // so point this tab's room at the same one.
-        match &state.ticket {
-            Some(CallTicket::LiveKit { url, token, can_publish }) => {
-                if let Err(msg) = crate::backend::livekit::connect(channel_id, url.clone(), token.clone(), *can_publish).await {
-                    return Err(server::ServerError::Failed(crate::backend::livekit::classify(msg).into()));
-                }
+        if let Some(ticket) = &state.ticket {
+            if let Err(msg) = crate::backend::call_media::connect(channel_id, ticket).await {
+                return Err(server::ServerError::Failed(msg.into()));
             }
-            Some(CallTicket::IdeaChat { .. }) => {}
-            None => {}
         }
         Ok(state)
     }
@@ -77,7 +67,7 @@ impl CallApi for CassetteBackend {
         // picker never leaves a share icon with nothing behind it; the track
         // comes down after the flag does.
         if screen_share {
-            crate::backend::livekit::set_screen_share(channel_id, true)
+            crate::backend::call_media::set_screen_share(channel_id, true)
                 .await
                 .map_err(|msg| server::ServerError::Failed(msg.into()))?;
         }
@@ -90,9 +80,9 @@ impl CallApi for CassetteBackend {
                 screen_share,
             },
         ).await?;
-        crate::backend::livekit::apply_flags(channel_id, muted, deafened).await;
+        crate::backend::call_media::apply_flags(channel_id, muted, deafened).await;
         if !screen_share {
-            let _ = crate::backend::livekit::set_screen_share(channel_id, false).await;
+            let _ = crate::backend::call_media::set_screen_share(channel_id, false).await;
         }
         Ok(())
     }

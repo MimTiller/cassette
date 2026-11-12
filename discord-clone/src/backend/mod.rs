@@ -513,6 +513,7 @@ mod permissions_impl;
 mod voice_impl;
 #[cfg(not(feature = "idea-chat"))]
 mod livekit;
+mod call_media;
 mod themes_impl;
 #[cfg(not(feature = "idea-chat"))]
 mod instance_impl;
@@ -979,7 +980,7 @@ thread_local! {
 /// Ask the call who is speaking in `channel_id` now; true when that changed
 /// since the last ask (the caller repaints the voice rows then).
 pub async fn refresh_speaking(channel_id: i64) -> bool {
-    let mut now = livekit::speaking_ids(channel_id).await;
+    let mut now = call_media::speaking_ids(channel_id).await;
     now.sort_unstable();
     SPEAKING.with(|s| {
         let mut s = s.borrow_mut();
@@ -1009,18 +1010,18 @@ pub fn is_speaking(user_id: i64) -> bool {
 
 /// Whether the browser is still holding the call's audio back.
 pub async fn call_audio_blocked(channel_id: i64) -> bool {
-    livekit::audio_blocked(channel_id).await
+    call_media::audio_blocked(channel_id).await
 }
 
 /// The call's audio elements as JSON, for the robot hook.
 pub fn call_audio_state(channel_id: i64) -> String {
-    livekit::audio_state(channel_id)
+    call_media::audio_state(channel_id)
 }
 
 /// Whether this tab is still sharing its screen in a voice channel (the
 /// browser's own "Stop sharing" bar can end a share without the app).
 pub async fn screen_share_active(channel_id: i64) -> bool {
-    livekit::is_screen_sharing(channel_id).await
+    call_media::is_screen_sharing(channel_id).await
 }
 
 pub async fn assign_role(role_id: i64, user_id: i64, assigned: bool) -> Result<(), String> {
