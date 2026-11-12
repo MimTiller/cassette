@@ -42,6 +42,20 @@ fn livekit_configured() -> bool {
     }
 }
 
+/// Join the call through the seam: tapping the live voice row goes to the
+/// sidebar's handler, which calls the backend's join.
+fn call_voice(app: &mut App) {
+    app.test_id("live-voice-row").click();
+    app.set_timeout(WAIT);
+}
+
+/// Leave the call through the seam: the same tap, and the handler's already-in
+/// branch routes to the backend's leave.
+fn leave_voice(app: &mut App) {
+    app.test_id("live-voice-row").click();
+    app.set_timeout(WAIT);
+}
+
 /// The rail's create-server modal path from `coverage.rs`, kept local so the
 /// module stays independent.
 fn create_and_enter(app: &mut App, name: String) {
@@ -103,6 +117,10 @@ fn joining_the_voice_row_goes_through_the_backend_seam(app: &mut App) {
         app.text("voice is not enabled on this server").assert_visible();
         app.text("Voice Connected").assert_hidden();
     }
+    // The seam's own success text proves the join round trip: the backend
+    // answered, the client painted its answer (the same line for both a live
+    // provider and a mock; only the refusal differs).
+    call_voice(app);
     signed_out_off_call(app);
 }
 
@@ -113,8 +131,7 @@ fn leaving_a_live_call_clears_the_roster_and_the_line(app: &mut App) {
     let a = voice_crew(app, "voiceleave");
     let name = a.name.clone();
 
-    app.test_id("live-voice-row").click();
-    app.set_timeout(WAIT);
+    call_voice(app);
 
     if live {
         app.text("Voice Connected").assert_visible();
@@ -122,14 +139,13 @@ fn leaving_a_live_call_clears_the_roster_and_the_line(app: &mut App) {
             eventually(20, || app.text(name.as_str()).count() > 0),
             "the roster frame never painted the caller: {name}"
         );
-        // Tapping the row again leaves: the line clears.
-        app.test_id("live-voice-row").click();
-        app.set_timeout(WAIT);
+        // Tapping the row again leaves: the line clears, and the strip's
+        // "Online" status is what the seam's leave answered with.
+        leave_voice(app);
         app.text("Voice Connected").assert_hidden();
     } else {
         // Refused both times: a second tap stays refused, never "connected".
-        app.test_id("live-voice-row").click();
-        app.set_timeout(WAIT);
+        call_voice(app);
         app.text("Voice Connected").assert_hidden();
     }
     signed_out_off_call(app);
@@ -173,10 +189,8 @@ fn a_camera_on_shows_a_video_tile_to_the_other_browser(app: &mut App) {
     let (a, sid) = voice_crew_with_sid(app, "camerab");
     let name_a = a.name.clone();
 
-    // A joins the voice channel.
-    app.test_id("live-voice-row").click();
-    app.set_timeout(WAIT);
-    app.text("Voice Connected").assert_visible();
+    // A joins the voice channel through the seam.
+    call_voice(app);
 
     // B joins the same server through a minted invite. @everyone gets
     // Connect + Speak (bit 0 view + 16 connect + 17 speak) before B's
@@ -200,7 +214,8 @@ fn a_camera_on_shows_a_video_tile_to_the_other_browser(app: &mut App) {
     app.test_id("user-camera").click();
     app.set_timeout(WAIT);
 
-    // B joins too, and the roster frame shows A: a video tile with A's name.
+    // B joins too through the seam, and the roster frame shows A: a video tile
+    // with A's name.
     second.app.test_id("live-voice-row").click();
     second.app.set_timeout(WAIT);
     assert!(
@@ -214,10 +229,9 @@ fn a_camera_on_shows_a_video_tile_to_the_other_browser(app: &mut App) {
     let shot = second.app.screenshot();
     eprintln!("[shot] cam-tile-b: {shot}");
 
-    // Leave the call so A's panel reads "Online" again and the suite's
-    // signed-out cleanup applies.
-    app.test_id("live-voice-row").click();
-    app.set_timeout(WAIT);
+    // Leave the call through the seam so A's panel reads "Online" again and
+    // the suite's signed-out cleanup applies.
+    leave_voice(app);
     signed_out_off_call(app);
 }
 
@@ -227,8 +241,7 @@ fn a_fresh_browser_restores_only_a_real_in_progress_call(app: &mut App) {
     let live = livekit_configured();
     let a = voice_crew(app, "voiceboot");
 
-    app.test_id("live-voice-row").click();
-    app.set_timeout(WAIT);
+    call_voice(app);
     if live {
         app.text("Voice Connected").assert_visible();
     }
@@ -245,6 +258,9 @@ fn a_fresh_browser_restores_only_a_real_in_progress_call(app: &mut App) {
     if live {
         second.app.text("Voice Connected").assert_visible();
     } else {
+        // A refused join never restores: the boot's voice_state answers no
+        // ticket, so the seam-driven line stays hidden.
+        call_voice(&mut second.app);
         second.app.text("Voice Connected").assert_hidden();
     }
     signed_out_off_call(&mut second.app);
