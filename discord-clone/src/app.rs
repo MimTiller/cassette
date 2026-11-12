@@ -1509,7 +1509,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         overflow: Some(Overflow::Hidden),
         ..Default::default()
     };
-    let overlays::OverlaysParts { profile_region, notif_region, shortcuts_region, live_dm_region, live_invite_region } = overlays::build(&s);
+    let overlays::OverlaysParts { profile_region, instance_region, notif_region, shortcuts_region, live_dm_region, live_invite_region } = overlays::build(&s);
 
     // --- "jump to bottom" scroll tracking ---------------------------------
     // The floating "Jump to bottom" pill only appears while the reader has
@@ -1738,6 +1738,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
             // Painted last so it sits on top of everything when open.
             profile_region
             notif_region
+            instance_region
             shortcuts_region
             // Direct Messages (LIVE / backend): full-screen, same paint-last
             // idiom; an independent entry point (the mock DM screen is gone).

@@ -54,6 +54,12 @@ pub use discord_server::auth::{
     AvatarResult,
 };
 pub use discord_server::password_resets::ResetPasswordResult;
+pub use discord_server::instance::{
+    CallTestResult,
+    ClaimAdminResult,
+    InstanceInfo,
+    InstanceSettingsResult,
+};
 pub use discord_server::profiles::{ProfileFields, UserProfile};
 pub use discord_server::notification_settings::NotificationSetting;
 /// Notification rows the settings screens draw: RWND's own vocabulary, so
@@ -324,6 +330,31 @@ pub trait ThemesApi {
     async fn delete_custom_theme(name: String) -> Result<(), ServerError>;
 }
 
+/// The instance store: what the host's admin area configures without touching
+/// env files. `instance_info` is public (nothing secret, so a client can ask
+/// before signing in — including whether the CALLING user is an instance
+/// admin, which gates the settings gear); reads/writes/tests of the store
+/// itself are admin-only server-side and answer the plain refusal otherwise.
+pub trait InstanceApi {
+    async fn instance_info() -> Result<InstanceInfo, ServerError>;
+    async fn get_instance_settings() -> Result<InstanceSettingsResult, ServerError>;
+    async fn set_instance_settings(
+        call_provider: String,
+        livekit_url: String,
+        livekit_api_key: String,
+        livekit_api_secret: String,
+        chat_backend: String,
+        idea_chat_url: String,
+    ) -> Result<InstanceSettingsResult, ServerError>;
+    async fn test_call_provider(
+        call_provider: String,
+        livekit_url: String,
+        livekit_api_key: String,
+        livekit_api_secret: String,
+    ) -> Result<CallTestResult, ServerError>;
+    async fn claim_instance_admin() -> Result<ClaimAdminResult, ServerError>;
+}
+
 /// Today's backend: the implementation files below implement the areas
 /// above for this type.
 pub struct CassetteBackend;
@@ -481,6 +512,8 @@ mod permissions_impl;
 #[cfg(not(feature = "idea-chat"))]
 mod voice_impl;
 mod themes_impl;
+#[cfg(not(feature = "idea-chat"))]
+mod instance_impl;
 
 // The SECOND backend's areas, talked to over the idea-chat wire.
 #[cfg(feature = "idea-chat")]
@@ -978,4 +1011,38 @@ pub async fn set_voice_flags(
     screen_share: bool,
 ) -> Result<(), String> {
     Backend::set_voice_flags(channel_id, muted, deafened, camera, screen_share).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+// --- the instance-store accessors -------------------------------------------
+
+pub async fn instance_info() -> Result<InstanceInfo, String> {
+    Backend::instance_info().await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn get_instance_settings() -> Result<InstanceSettingsResult, String> {
+    Backend::get_instance_settings().await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn set_instance_settings(
+    call_provider: String,
+    livekit_url: String,
+    livekit_api_key: String,
+    livekit_api_secret: String,
+    chat_backend: String,
+    idea_chat_url: String,
+) -> Result<InstanceSettingsResult, String> {
+    Backend::set_instance_settings(call_provider, livekit_url, livekit_api_key, livekit_api_secret, chat_backend, idea_chat_url).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn test_call_provider(
+    call_provider: String,
+    livekit_url: String,
+    livekit_api_key: String,
+    livekit_api_secret: String,
+) -> Result<CallTestResult, String> {
+    Backend::test_call_provider(call_provider, livekit_url, livekit_api_key, livekit_api_secret).await.map_err(|e| crate::errors::friendly(&e))
+}
+
+pub async fn claim_instance_admin() -> Result<ClaimAdminResult, String> {
+    Backend::claim_instance_admin().await.map_err(|e| crate::errors::friendly(&e))
 }

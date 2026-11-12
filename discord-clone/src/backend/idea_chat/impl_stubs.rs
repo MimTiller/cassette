@@ -155,6 +155,38 @@ impl CallApi for IdeaChatBackend {
     }
 }
 
+impl InstanceApi for IdeaChatBackend {
+    // The instance store is RWND's admin area; idea-chat spaces have no
+    // counterpart yet — even the public card refuses until its wire lands.
+    async fn instance_info() -> Result<InstanceInfo, ServerError> {
+        Err(model::not_supported())
+    }
+    async fn get_instance_settings() -> Result<InstanceSettingsResult, ServerError> {
+        Err(model::not_supported())
+    }
+    async fn set_instance_settings(
+        _call_provider: String,
+        _livekit_url: String,
+        _livekit_api_key: String,
+        _livekit_api_secret: String,
+        _chat_backend: String,
+        _idea_chat_url: String,
+    ) -> Result<InstanceSettingsResult, ServerError> {
+        Err(model::not_supported())
+    }
+    async fn test_call_provider(
+        _call_provider: String,
+        _livekit_url: String,
+        _livekit_api_key: String,
+        _livekit_api_secret: String,
+    ) -> Result<CallTestResult, ServerError> {
+        Err(model::not_supported())
+    }
+    async fn claim_instance_admin() -> Result<ClaimAdminResult, ServerError> {
+        Err(model::not_supported())
+    }
+}
+
 impl ThemesApi for IdeaChatBackend {
     // Custom colour themes are RWND's own per-account store; nothing on this
     // server's model carries them.

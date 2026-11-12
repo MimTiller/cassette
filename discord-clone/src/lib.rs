@@ -102,6 +102,8 @@ mod reply_preview_bar;
 mod reply_reference_strip;
 #[path = "components/server_icon_upload_placeholder.rs"]
 mod server_icon_upload_placeholder;
+#[path = "components/instance_settings_panel.rs"]
+mod instance_settings_panel;
 #[path = "components/spoiler_tag.rs"]
 mod spoiler_tag;
 #[path = "components/invite_link_display.rs"]
