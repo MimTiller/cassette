@@ -151,6 +151,8 @@ where
 {
     // The markdown SDK's payload handler — see `markdown::register` docs.
     markdown::register(registry);
+    // The video SDK's `<video>` mount handler (voice tiles with live feeds).
+    video_sdk::register(registry);
 }
 
 // Recorder-side registration seam for the runtime-server sidecar

@@ -114,6 +114,18 @@ file-picker = { version = "=3.0.2", registry = "idealyst" }
 # a JSON file on native — instead of raw web_sys calls that only work on
 # wasm (the native halves used to no-op, signing users out every launch).
 storage = { version = "=3.0.0", registry = "idealyst", features = ["reactive"] }
+# The video SDK: voice tiles mount a real <video> element on web fed by the
+# LiveKit client's remote video tracks (camera / screen-share feeds) through a
+# media-stream MediaStream. `register_scene_extensions` registers its scene
+# handler. Its own media-stream dep (same workspace pin) is what publishes the
+# web `MediaStream` as the stream's native source.
+video-sdk = { version = "=4.0.0", registry = "idealyst", package = "video" }
+media-stream = { version = "=1.8.1", registry = "idealyst" }
+# The framework's JS boundary types: a remote track's browser MediaStream
+# comes in through the adapter as a `web_glue::dom::MediaStream`, which the
+# video SDK downcasts out of the stream's native source. Same pin as the
+# idealyst crate's own web-glue dep, so one crate instance.
+web-glue = { version = "=2.2.0", registry = "idealyst" }
 # The secure-credentials SDK: the session token on NATIVE targets lives in
 # the platform's real secure store (Keychain / Keystore / OS vault). On web
 # every operation errors — by design, a browser has no secure client store —

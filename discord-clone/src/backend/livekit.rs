@@ -45,7 +45,7 @@ const ADAPTER_GLOBAL: &'static str = "__cassette_voice";
 /// Each verb answers a Promise; Rust awaits through `JsFuture`, which is
 /// what ties the join/leave handlers to the real provider socket.
 #[cfg(target_arch = "wasm32")]
-const ADAPTER_SRC: &'static str = r"
+const ADAPTER_SRC: &'static str = r#"
 (() => {
   if (window.__cassette_voice) return;
   const SDK = window.LivekitClient;
@@ -64,12 +64,59 @@ const ADAPTER_SRC: &'static str = r"
   const mic_publication = (room) =>
     room.localParticipant.getTrackPublication(SDK.Source.Microphone);
 
-  // Publish a publication's tracks (its mic/screen-share audio) to the
-  // remote side, so deafen/mute can silence exactly those tracks.
+  // The live feed for one local video publication (camera or screen share):
+  // the SDK keeps a MediaStream per track (`mediaStream`); a freshly built
+  // MediaStream wrapping the raw track covers builds that only keep the
+  // track itself.
+  const track_stream = (track) => {
+    if (!track) return null;
+    if (track.mediaStream) return track.mediaStream;
+    const raw = track._mediaStreamTrack || track.mediaStreamTrack;
+    return raw ? new MediaStream([raw]) : null;
+  };
+
+  // Hand a video track's MediaStream to the app (installed as
+  // window.__cassette_video_events by Rust): one array (channel, identity,
+  // isScreenShare, stream-or-null, subscribed). The app keeps a per-identity
+  // feed so the viewer tiles attach it to their <video> elements.
+  const feed_video = (args) => {
+    const fn = window.__cassette_video_events;
+    if (fn) fn(args);
+  };
+
+  // The browser ended a local video publication on its own (its "Stop
+  // sharing" bar): (channel, 'camera'|'share') — the app flips the button
+  // and re-syncs the server-side flag so every viewer's tiles drop.
+  const feed_unpublish = (args) => {
+    const fn = window.__cassette_unpublish;
+    if (fn) fn(args);
+  };
+
+  const is_video_source = (pub) =>
+    pub.source === SDK.Source.Camera || pub.source === SDK.Source.ScreenShare;
+
   const remote_publications = (room) => {
     const out = [];
     room.remoteParticipants.forEach((rp) => {
       rp.audioTrackPublications.forEach((pub) => out.push(pub));
+    });
+    return out;
+  };
+
+  // The live MediaStreams for every remote VIDEO track currently
+  // subscribed, as {identity, isScreenShare, stream}. The SDK keeps the
+  // browser MediaStream on each remote track (`stream`); we hand the map
+  // to the Rust tiles, which set it as a <video>'s srcObject. Subscribing
+  // a video track does not start an audio element, so publishing camera
+  // or screen share never makes a peer hear themselves.
+  const remote_videos = (room) => {
+    const out = [];
+    room.remoteParticipants.forEach((rp) => {
+      rp.videoTrackPublications.forEach((pub) => {
+        if (pub.isSubscribed && pub.stream && pub.stream.getVideoTracks().length > 0) {
+          out.push([rp.identity, pub.source === SDK.Source.ScreenShare, pub.stream]);
+        }
+      });
     });
     return out;
   };
@@ -174,7 +221,7 @@ const ADAPTER_SRC: &'static str = r"
     },
   };
 })();
-";
+"#;
 
 thread_local! {
     /// Channels this browser tab holds a live room for (drives leave/switch
