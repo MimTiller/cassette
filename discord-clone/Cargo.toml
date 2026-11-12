@@ -217,6 +217,11 @@ server_manifest = "../discord-server/Cargo.toml"
 server_bin      = "server"
 
 [dev-dependencies]
+# The voice suite signs a LiveKit admin JWT to ask the media server directly
+# (ListParticipants), so it needs the same HMAC-SHA256 + base64url signing
+# stack `discord-server/src/voice.rs` uses, pinned to those exact crates.
+hmac = "0.12.1"
+sha2 = "0.10.9"
 # The robot E2E suite in tests/robot.rs, run by `idealyst test --web`.
 robot-test = { version = "=1.14.0", registry = "idealyst" }
 # More browsers for multi-user tests (tests/robot/users.rs): a relay each,

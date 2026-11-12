@@ -13,6 +13,10 @@
 //! connection line are the observables, not audio.
 
 use std::env;
+use std::time;
+
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 
 use robot_test::{json, robot_test, App, Value};
 
@@ -264,5 +268,169 @@ fn a_fresh_browser_restores_only_a_real_in_progress_call(app: &mut App) {
         second.app.text("Voice Connected").assert_hidden();
     }
     signed_out_off_call(&mut second.app);
+    signed_out_off_call(app);
+}
+
+// ── provider-side check: ask the LiveKit media server directly ─────────────
+//
+// The client's own roster tells nothing about the wire, so a live call is
+// verified against the media server itself: the Twirp `ListParticipants`
+// endpoint needs a JWT whose `video` grant nests `roomAdmin` and the exact
+// room (the grant shape verified against the media server, not the docs).
+// The room name is what the SERVER derives from the channel id
+// (`room_for(channel_id)` = `rwnd-ch-<id>`), re-derived from create_channel's
+// echoed id rather than invented. The run's Chrome carries fake-media flags,
+// so `getUserMedia` publishes a real synthetic audio track: a joined caller
+// must show up under their identity with an audio track, and leaving must
+// empty the room. A "connected but silent" join fails the first assertion;
+// a socket that never drops fails the second.
+
+/// Base64url, no padding — the JWT segments the media server expects (standard
+/// base64 segments are rejected). Mirrors `discord-server/src/voice.rs`.
+fn b64url(bytes: &[u8]) -> String {
+    const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = *chunk.first().unwrap_or(&0) as u32;
+        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
+        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
+        out.push(A[((b0 >> 2) & 63) as usize] as char);
+        out.push(A[((b0 << 4 | b1 >> 4) & 63) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(A[((b1 << 2 | b2 >> 6) & 63) as usize] as char);
+        }
+        if chunk.len() > 2 {
+            out.push(A[(b2 & 63) as usize] as char);
+        }
+    }
+    out
+}
+
+/// The HS256 signature segment for a JWT body over `secret`: the same hmac +
+/// sha2 stack the server signs the join ticket with (pinned to the same
+/// crates), so the media server accepts the token the client got.
+fn robot_jwt_sign(body: &[u8], secret: &[u8]) -> String {
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret).expect("hmac accepts any key length");
+    mac.update(body);
+    b64url(&mac.finalize().into_bytes())
+}
+
+/// A LiveKit admin token for room `room`: `roomAdmin` nests inside the `video`
+/// grant alongside the exact room name (what `EnsureAdminMiddleware` checks
+/// for a `ListParticipants` call). `nbf` backdates by the TTL so a provider
+/// clock skewed against this host (the LAN box runs minutes off) still
+/// accepts the token.
+fn admin_token(api_key: String, secret: String, room: String) -> String {
+    let now = time::SystemTime::now()
+        .duration_since(time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(1_000);
+    let ttl = 600;
+    let exp = now + ttl;
+    let nbf_at = now - ttl;
+    let header_seg = b64url(b"{\"alg\":\"HS256\",\"typ\":\"JWT\"}");
+    let claims = json!({
+        "iss": api_key,
+        "sub": "robot-admin",
+        "iat": now,
+        "nbf": nbf_at,
+        "exp": exp,
+        "video": { "room": room, "roomAdmin": true },
+    });
+    let claims_seg = b64url(claims.to_string().as_bytes());
+    let body = header_seg + "." + &claims_seg;
+    let sig = robot_jwt_sign(body.as_bytes(), secret.as_bytes());
+    body + "." + &sig
+}
+
+/// The media server's participants of `room`, each with the tracks it
+/// published (an empty array when the room holds nobody). A ws/wss join URL
+/// is the same address over http/https — the swap the admin test path makes
+/// too.
+fn participants(url: String, api_key: String, secret: String, room: String) -> Vec<Value> {
+    let http =
+        if url.starts_with("ws://") {
+            url.replace("ws://", "http://")
+        } else if url.starts_with("wss://") {
+            url.replace("wss://", "https://")
+        } else {
+            url
+        };
+    let endpoint = format!("{http}/twirp/livekit.RoomService/ListParticipants");
+    let token = admin_token(api_key, secret, room.clone());
+    let reply: Value = ureq::post(&endpoint)
+        .set("authorization", &format!("Bearer {token}"))
+        .set("content-type", "application/json")
+        .send_string(&json!({ "room": room }).to_string())
+        .unwrap_or_else(|e| panic!("ListParticipants {room}: {e}"))
+        .into_json()
+        .unwrap_or_else(|e| panic!("ListParticipants {room}: unreadable reply: {e}"));
+    match reply.get("participants") {
+        Some(v) => match v.as_array() {
+            Some(parts) => parts.to_vec(),
+            None => Vec::new(),
+        },
+        None => Vec::new(),
+    }
+}
+
+#[robot_test]
+fn the_media_server_lists_the_joined_caller_with_published_audio(app: &mut App) {
+    signed_out_off_call(app);
+    assert!(livekit_configured(), "provider assertions need a live provider");
+    // The SAME env the join used: the key/secret pairing, not the endpoint,
+    // is the gate — a token signed with a different secret fails the media
+    // server's 401 even though the join itself was accepted.
+    let url = env::var("LIVEKIT_URL").unwrap_or_default();
+    let api_key = env::var("LIVEKIT_API_KEY").unwrap_or_default();
+    let secret = env::var("LIVEKIT_API_SECRET").unwrap_or_default();
+    assert!(!url.is_empty() && !api_key.is_empty() && !secret.is_empty(), "livekit env not forwarded into the run");
+
+    // A fresh crew whose server's voice channel fixes the room name the same
+    // way the server derives it (rwnd-ch-<channel id>).
+    let (a, sid) = voice_crew_with_sid(app, "provchk");
+    let created = a.call("create_channel", json!({ "server_id": sid, "name": "meetprov", "kind": "voice" }));
+    let cid = created.get("Ok").unwrap_or(&created).get("channel_id").and_then(|v| v.as_i64()).unwrap_or(0);
+    assert!(cid > 0, "no channel id echoed: {created:?}");
+    // The room the server puts the channel in (`room_for(channel_id)`).
+    let room = format!("rwnd-ch-{cid}");
+
+    // Join through the seam; the page publishes its fake mic to the room.
+    call_voice(app);
+
+    let caller_id = a.id.to_string();
+    assert!(
+        eventually(
+            20,
+            || {
+                let parts = participants(url.clone(), api_key.clone(), secret.clone(), room.clone());
+                parts.iter().any(|p: &Value| {
+                    let published: Vec<Value> = if let Some(Value::Array(t)) = p.get("tracks") {
+                        t.to_vec()
+                    } else {
+                        Vec::new()
+                    };
+                    p.get("identity").and_then(|v| v.as_str()).unwrap_or("") == caller_id
+                        && published.iter().any(|t: &Value| t.get("trackType").and_then(|v| v.as_str()).unwrap_or("") == "audio")
+                })
+            },
+        ),
+        "the media server never listed the joined caller with audio: room {room}"
+    );
+
+    // Leaving drops the socket: the room must stop listing the caller
+    // (an empty `{"participants":[]}` once nobody remains).
+    leave_voice(app);
+    assert!(
+        eventually(
+            20,
+            || {
+                let parts = participants(url.clone(), api_key.clone(), secret.clone(), room.clone());
+                parts.iter().all(|p: &Value| p.get("identity").and_then(|v| v.as_str()).unwrap_or("") != caller_id)
+            },
+        ),
+        "the caller stayed in the room after leaving"
+    );
+
     signed_out_off_call(app);
 }
