@@ -73,6 +73,14 @@ impl CallApi for CassetteBackend {
         camera: bool,
         screen_share: bool,
     ) -> Result<(), ServerError> {
+        // Screen share publishes before its flag goes up, so a cancelled
+        // picker never leaves a share icon with nothing behind it; the track
+        // comes down after the flag does.
+        if screen_share {
+            crate::backend::livekit::set_screen_share(channel_id, true)
+                .await
+                .map_err(|msg| server::ServerError::Failed(msg.into()))?;
+        }
         discord_server::voice::set_voice_flags(
             discord_server::voice::VoiceFlagsInput {
                 channel_id,
@@ -83,6 +91,9 @@ impl CallApi for CassetteBackend {
             },
         ).await?;
         crate::backend::livekit::apply_flags(channel_id, muted, deafened).await;
+        if !screen_share {
+            let _ = crate::backend::livekit::set_screen_share(channel_id, false).await;
+        }
         Ok(())
     }
 }

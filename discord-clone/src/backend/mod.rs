@@ -971,6 +971,12 @@ pub async fn delete_role(role_id: i64) -> Result<(), String> {
     Backend::delete_role(role_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
+/// Whether this tab is still sharing its screen in a voice channel (the
+/// browser's own "Stop sharing" bar can end a share without the app).
+pub async fn screen_share_active(channel_id: i64) -> bool {
+    livekit::is_screen_sharing(channel_id).await
+}
+
 pub async fn assign_role(role_id: i64, user_id: i64, assigned: bool) -> Result<(), String> {
     Backend::assign_role(role_id, user_id, assigned).await.map_err(|e| crate::errors::friendly(&e))
 }

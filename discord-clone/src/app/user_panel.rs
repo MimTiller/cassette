@@ -427,6 +427,9 @@ pub(super) fn user_panel(
                                             Ok(_) => {
                                                 share_state.set(s2);
                                                 err_for_flags.set(None);
+                                                if s2 {
+                                                    watch_screen_share(ch as i64, share_state, muted, deafened, cam_for_share);
+                                                }
                                             }
                                             Err(msg) => err_for_flags.set(Some((ch as i64, msg))),
                                         }
@@ -642,4 +645,39 @@ fn status_menu_row(
             TouchResponse::CONSUMED
         })
     }
+}
+
+/// Notice a share the browser ended itself (its "Stop sharing" bar): while
+/// the button shows sharing, ask the seam every 2 s, and when the share is
+/// gone put the flag down so peers drop the tile and the icon goes dark.
+fn watch_screen_share(
+    ch: i64,
+    share: Signal<bool>,
+    muted: Signal<bool>,
+    deafened: Signal<bool>,
+    camera: Signal<bool>,
+) {
+    runtime_core::after_ms_detached(2_000, move || {
+        if !share.get() {
+            return;
+        }
+        runtime_core::spawn_then_in(
+            &crate::app::shell_alive(),
+            crate::backend::screen_share_active(ch),
+            move |still_on| {
+                if !share.get() {
+                    return;
+                }
+                if still_on {
+                    watch_screen_share(ch, share, muted, deafened, camera);
+                    return;
+                }
+                runtime_core::spawn_then_in(
+                    &crate::app::shell_alive(),
+                    crate::backend::set_voice_flags(ch, muted.get(), deafened.get(), camera.get(), false),
+                    move |_| share.set(false),
+                );
+            },
+        );
+    });
 }

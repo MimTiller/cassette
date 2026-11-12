@@ -149,7 +149,9 @@ const ADAPTER_SRC: &'static str = r#"
       if (prev && prev.room !== room) {
         try { prev.room.disconnect(); } catch (e) {}
       }
-      await room.connect(url, token);
+      // Kept on the entry so a share pressed mid-connect waits for the room.
+      entry.ready = room.connect(url, token);
+      await entry.ready;
       if (canPublish) {
         try {
           await room.localParticipant.setMicrophoneEnabled(true);
@@ -222,6 +224,32 @@ const ADAPTER_SRC: &'static str = r#"
     },
     // Tear the room down: stop every track and leave. Also drops the entry
     // so a later join starts clean.
+    // Share Screen: the picture and, where the browser allows it, the shared
+    // tab's or screen's sound as its own track (Chrome/Edge: a tab on any OS,
+    // the whole screen on Windows/ChromeOS). A cancelled picker rejects with
+    // NotAllowedError, which Rust turns into its own status line.
+    screen_share: async (ch, on) => {
+      const entry = ROOMS.get(ch);
+      if (!entry) throw new Error('not connected: ' + ch);
+      if (entry.ready) await entry.ready;
+      if (on) {
+        await entry.room.localParticipant.setScreenShareEnabled(true, {
+          audio: true,
+          systemAudio: 'include',
+          selfBrowserSurface: 'exclude',
+          surfaceSwitching: 'include',
+        });
+      } else {
+        await entry.room.localParticipant.setScreenShareEnabled(false);
+      }
+      return true;
+    },
+    // Whether this tab is still sharing: the browser's own "Stop sharing"
+    // bar ends the track without asking the app.
+    sharing: async (ch) => {
+      const entry = ROOMS.get(ch);
+      return !!(entry && entry.room.localParticipant.isScreenShareEnabled);
+    },
     disconnect: async (ch) => {
       const entry = ROOMS.get(ch);
       if (!entry) return false;
@@ -466,6 +494,37 @@ pub(crate) async fn apply_flags(channel_id: i64, muted: bool, deafened: bool) {
     let _ = (dval, derr);
 }
 
+/// Start or stop sharing this tab's screen in `channel_id`'s room.
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn set_screen_share(channel_id: i64, on: bool) -> Result<(), String> {
+    let args = [JsValue::from(channel_id.to_string()), JsValue::from(on)].to_vec();
+    let (value, raw_err) = call_adapter("screen_share", args).await;
+    if !raw_err.is_empty() {
+        return Err(share_error(raw_err));
+    }
+    if !value.is_truthy() {
+        return Err("the call server could not be reached".to_string());
+    }
+    Ok(())
+}
+
+/// Whether this tab is still sharing its screen in `channel_id`'s room.
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn is_screen_sharing(channel_id: i64) -> bool {
+    let (value, raw_err) = call_adapter("sharing", [JsValue::from(channel_id.to_string())].to_vec()).await;
+    raw_err.is_empty() && value.is_truthy()
+}
+
+/// The status line for a screen-share failure: a cancelled or refused picker
+/// is not a microphone problem, so it gets its own sentence.
+pub(crate) fn share_error(err: String) -> String {
+    let low = err.to_lowercase();
+    if low.contains("notallowed") || low.contains("permission") || low.contains("cancel") || low.contains("aborterror") {
+        return "screen sharing was cancelled or blocked by the browser".to_string();
+    }
+    classify(err)
+}
+
 // ── native halves: no browser, the seam answers through the RPCs alone ──
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -482,6 +541,14 @@ pub(crate) async fn disconnect(_channel_id: i64) -> bool {
 }
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) async fn apply_flags(_channel_id: i64, _muted: bool, _deafened: bool) {}
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) async fn set_screen_share(_channel_id: i64, _on: bool) -> Result<(), String> {
+    Ok(())
+}
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) async fn is_screen_sharing(_channel_id: i64) -> bool {
+    false
+}
 
 #[cfg(test)]
 mod tests {
@@ -496,6 +563,10 @@ mod tests {
         assert_eq!(classify("Failed to fetch: websocket timeout".to_string()), "the call server could not be reached".to_string());
         assert_eq!(classify("NotAllowedError: Permission denied".to_string()), "the browser blocked the microphone".to_string());
         assert_eq!(classify("not connected: 7".to_string()), "you are not connected to this voice channel".to_string());
+        // A cancelled or refused screen picker is its own line, not the mic's.
+        assert_eq!(share_error("NotAllowedError: Permission denied by user".to_string()),
+                   "screen sharing was cancelled or blocked by the browser".to_string());
+        assert_eq!(share_error("not connected: 7".to_string()), "you are not connected to this voice channel".to_string());
     }
 
     #[test]

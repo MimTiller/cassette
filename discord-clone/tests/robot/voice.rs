@@ -441,3 +441,103 @@ fn the_media_server_lists_the_joined_caller_with_published_audio(app: &mut App) 
 
     signed_out_off_call(app);
 }
+
+/// The tracks LiveKit lists for `identity` in `room`, as (type, source) pairs
+/// in LiveKit's own words ("VIDEO", "SCREEN_SHARE"; "AUDIO", "SCREEN_SHARE_AUDIO").
+fn tracks_of(url: String, api_key: String, secret: String, room: String, identity: String) -> Vec<(String, String)> {
+    let parts = participants(url, api_key, secret, room);
+    let mut out: Vec<(String, String)> = Vec::new();
+    for p in parts.iter() {
+        if p.get("identity").and_then(|v| v.as_str()).unwrap_or("") != identity {
+            continue;
+        }
+        if let Some(Value::Array(tracks)) = p.get("tracks") {
+            for t in tracks.iter() {
+                let kind = t.get("type").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let source = t.get("source").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                out.push((kind, source));
+            }
+        }
+    }
+    out
+}
+
+/// Share Screen publishes a real screen track: LiveKit lists A's SCREEN_SHARE
+/// video, B (in the same channel) gets a tile, and stopping the share takes
+/// the track out of the room. Chrome's fake media flags supply the screen.
+#[robot_test]
+fn a_screen_share_reaches_the_media_server_and_the_other_browser(app: &mut App) {
+    signed_out_off_call(app);
+    assert!(livekit_configured(), "screen share needs a live provider");
+    let url = env::var("LIVEKIT_URL").unwrap_or_default();
+    let api_key = env::var("LIVEKIT_API_KEY").unwrap_or_default();
+    let secret = env::var("LIVEKIT_API_SECRET").unwrap_or_default();
+
+    let (a, sid) = voice_crew_with_sid(app, "sharea");
+    let chans = a.call("list_channels", json!({ "server_id": sid }));
+    let chans = chans.get("Ok").unwrap_or(&chans).clone();
+    let cid = chans
+        .as_array()
+        .and_then(|list| list.iter().find(|c| c.get("kind").and_then(|v| v.as_str()) == Some("voice")))
+        .and_then(|c| c.get("id").and_then(|v| v.as_i64()))
+        .unwrap_or(0);
+    assert!(cid > 0, "no voice channel listed: {chans:?}");
+    let room = format!("rwnd-ch-{cid}");
+    let me = a.id.to_string();
+
+    // A joins and shares the screen.
+    call_voice(app);
+    app.text("Voice Connected").assert_visible();
+    app.test_id("user-share").click();
+    app.set_timeout(WAIT);
+    assert!(
+        eventually(20, || tracks_of(url.clone(), api_key.clone(), secret.clone(), room.clone(), me.clone())
+            .iter()
+            .any(|(kind, source)| kind == "VIDEO" && source == "SCREEN_SHARE")),
+        "LiveKit never listed A's screen-share track in {room}: {:?}",
+        tracks_of(url.clone(), api_key.clone(), secret.clone(), room.clone(), me.clone())
+    );
+    // The screen's sound rides as its own track (Chrome's fake capture
+    // supplies one, as a shared tab or a Windows screen would).
+    assert!(
+        eventually(20, || tracks_of(url.clone(), api_key.clone(), secret.clone(), room.clone(), me.clone())
+            .iter()
+            .any(|(kind, source)| kind == "AUDIO" && source == "SCREEN_SHARE_AUDIO")),
+        "LiveKit never listed A's screen-share audio track in {room}"
+    );
+
+    // B joins the same channel and gets a tile for A's share.
+    let inv = a.call("create_invite", json!({ "server_id": sid }));
+    let granted = a.call("set_everyone_permissions", json!({ "server_id": sid, "permissions": 196609 }));
+    assert!(granted.as_i64().unwrap_or(0) >= 196609, "granted no perms: {granted:?}");
+    let code = inv.get("code").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    assert!(!code.is_empty(), "minted no invite: {inv:?}");
+    let mut second = open_browser("share");
+    second.app.set_timeout(WAIT);
+    let b = Account::new("sharew");
+    sign_in_as(&mut second.app, &b);
+    redeem_invite(&mut second.app, &code);
+    second.app.text("Joined!").assert_visible();
+    second.app.test_id("join-server-done").click();
+    second.app.set_timeout(WAIT);
+    second.app.test_id("live-voice-row").click();
+    second.app.set_timeout(WAIT);
+    assert!(
+        eventually(20, || second.app.test_id("voice-tile").count() > 0),
+        "B never got a tile for A's screen share"
+    );
+    let shot = second.app.screenshot();
+    eprintln!("[shot] share-tile-b: {shot}");
+
+    // A stops sharing: the screen track leaves the room.
+    app.test_id("user-share").click();
+    assert!(
+        eventually(20, || !tracks_of(url.clone(), api_key.clone(), secret.clone(), room.clone(), me.clone())
+            .iter()
+            .any(|(_, source)| source == "SCREEN_SHARE" || source == "SCREEN_SHARE_AUDIO")),
+        "A's screen-share track stayed in {room} after stopping"
+    );
+
+    leave_voice(app);
+    signed_out_off_call(app);
+}
