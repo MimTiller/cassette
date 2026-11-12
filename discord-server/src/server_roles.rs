@@ -266,13 +266,24 @@ impl RoleService {
         Ok((ctx, member))
     }
 
+    /// The caller as the role_rules Actor for the pure hierarchy checks
+    /// (the same functions the client's role picker offers by).
+    fn as_actor(member: &Member) -> crate::role_rules::Actor {
+        crate::role_rules::Actor {
+            is_owner: member.is_owner,
+            manage_roles: member.server.contains(Permissions::MANAGE_ROLES),
+            highest_position: match member.rank {
+                crate::permissions::Rank::Role(p) => Some(p),
+                _ => None,
+            },
+        }
+    }
+
     /// The caller, who must hold Manage Roles and rank above `role`.
     fn require_manage_role(&self, caller: i64, role: &CustomRole) -> Result<(ServerContext, Member), String> {
         let (ctx, member) = self.require_manage(caller, role.server_id)?;
-        if !member.rank.outranks(permissions::Rank::Role(role.position)) {
-            return Err("you can only manage roles below your highest role".into());
-        }
-        Ok((ctx, member))
+        crate::role_rules::can_give(&RoleService::as_actor(&member), role.position)
+            .map(|_| (ctx, member))
     }
 
     /// The server's roles and assignments (any member may read them).
@@ -364,12 +375,10 @@ impl RoleService {
         let role = self.role(role_id).ok_or("role not found")?;
         let (ctx, member) = self.require_manage_role(caller, &role)?;
         let target = ctx.member(user_id).ok_or("member not found".to_string())?;
-        // The owner's roles set their rank and permissions for every check,
-        // so only the owner may move them; everyone else is refused even
-        // when they outrank the role.
-        if target.is_owner && !member.is_owner {
-            return Err("you can't change the server owner's roles".into());
-        }
+        // The same pure rules the picker offers by: the owner gate first,
+        // then the hierarchy (already checked for the managed role by
+        // require_manage_role, re-run here is the point of the seam).
+        crate::role_rules::can_assign(&RoleService::as_actor(&member), target.is_owner, role.position)?;
         let c = self.db.lock().map_err(|e| e.to_string())?;
         let sql = if assigned {
             "INSERT OR IGNORE INTO member_roles (role_id, user_id) VALUES (?1, ?2)"

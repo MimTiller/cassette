@@ -25,6 +25,7 @@
 
 // Permission sets, channel overwrites and the role hierarchy.
 pub mod permissions;
+pub mod role_rules;
 pub mod roles;
 pub mod server_roles;
 pub mod server_settings;
