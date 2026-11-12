@@ -167,6 +167,14 @@ async fn upload_server_sticker(name: String, related: String, mime: String, data
 }
 
 /// Register the functions; called once from `app()`.
+/// The joined voice channel's call-audio elements as JSON: one entry per
+/// other person's audio track, with whether it is paused or muted, its
+/// readyState and currentTime ("[]" outside a call).
+#[runtime_core::robot_fn(name = "cassette.call_audio")]
+fn call_audio(channel_id: i64) -> Result<String, String> {
+    Ok(crate::backend::call_audio_state(channel_id))
+}
+
 pub(crate) fn register() {
     runtime_vocabulary::robot_fn::register(theme_key::robot());
     runtime_vocabulary::robot_fn::register(jump_target::robot());
@@ -180,4 +188,5 @@ pub(crate) fn register() {
     runtime_vocabulary::robot_fn::register(upload_server_icon::robot());
     runtime_vocabulary::robot_fn::register(upload_server_emoji::robot());
     runtime_vocabulary::robot_fn::register(upload_server_sticker::robot());
+    runtime_vocabulary::robot_fn::register(call_audio::robot());
 }

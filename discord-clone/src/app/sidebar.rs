@@ -761,14 +761,31 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                             gap: Some(px(4.0)),
                                             ..Default::default()
                                         }) {
-                                            for (uid, name) in roster.iter().map(|u| (u.user_id, u.username.clone())), key = uid {
-                                                text(style = StyleRules {
-                                                    font_size: Some(px(11.0)),
-                                                    color: Some(col(TEXT_MUTED)),
-                                                    max_lines: Some(1u32),
-                                                    flex_shrink: Some(grow(1.0)),
+                                            for (uid, name, talking) in roster.iter().map(|u| (u.user_id, u.username.clone(), crate::backend::is_speaking(u.user_id))), key = uid {
+                                                view(style = StyleRules {
+                                                    flex_direction: Some(FlexDirection::Row),
+                                                    align_items: Some(AlignItems::Center),
+                                                    gap: Some(px(5.0)),
                                                     ..Default::default()
-                                                }) { name }
+                                                }, test_id = if talking { "voice-user-speaking" } else { "voice-user" }) {
+                                                    view(style = StyleRules {
+                                                        width: Some(px(6.0)),
+                                                        height: Some(px(6.0)),
+                                                        border_top_left_radius: Some(px(3.0)),
+                                                        border_top_right_radius: Some(px(3.0)),
+                                                        border_bottom_left_radius: Some(px(3.0)),
+                                                        border_bottom_right_radius: Some(px(3.0)),
+                                                        background: Some(col(if talking { theme::SUCCESS } else { theme::DIVIDER })),
+                                                        ..Default::default()
+                                                    }) {}
+                                                    text(style = StyleRules {
+                                                        font_size: Some(px(11.0)),
+                                                        color: Some(col(if talking { theme::SUCCESS } else { TEXT_MUTED })),
+                                                        max_lines: Some(1u32),
+                                                        flex_shrink: Some(grow(1.0)),
+                                                        ..Default::default()
+                                                    }) { name }
+                                                }
                                             }
                                         }
                                     }
@@ -882,6 +899,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                                                     joined_row.set(Some((sid as u32, cid as u32)));
                                                                 }
                                                                 err_row.set(None);
+                                                                watch_call(cid, joined_row, live_voice_rev, err_row);
                                                             }
                                                             Err(msg) => err_row.set(Some((cid, msg))),
                                                         };
@@ -1227,4 +1245,46 @@ fn server_dropdown(
             }
         },
     )
+}
+
+/// While this tab is in voice channel `cid`: every 400 ms ask the call who is
+/// speaking and repaint the voice rows when that changes, and say so under
+/// the row while the browser is holding the call's audio back. Stops (and
+/// clears the speaking marks) once the tab leaves or switches channel.
+fn watch_call(
+    cid: i64,
+    joined: Signal<Option<(u32, u32)>>,
+    voice_rev: Signal<u32>,
+    err: Signal<Option<(i64, String)>>,
+) {
+    const BLOCKED: &str = "click anywhere on the page to hear the call";
+    runtime_core::after_ms_detached(400, move || {
+        let here = matches!(joined.get(), Some((_, ch)) if ch as i64 == cid);
+        if !here {
+            if crate::backend::clear_speaking() {
+                voice_rev.update(|r| r.wrapping_add(1));
+            }
+            return;
+        }
+        runtime_core::spawn_then_in(
+            &crate::app::shell_alive(),
+            async move {
+                let changed = crate::backend::refresh_speaking(cid).await;
+                let blocked = crate::backend::call_audio_blocked(cid).await;
+                (changed, blocked)
+            },
+            move |(changed, blocked)| {
+                if changed {
+                    voice_rev.update(|r| r.wrapping_add(1));
+                }
+                let showing = matches!(err.get(), Some((c, ref m)) if c == cid && m == BLOCKED);
+                if blocked && !showing {
+                    err.set(Some((cid, BLOCKED.to_string())));
+                } else if !blocked && showing {
+                    err.set(None);
+                }
+                watch_call(cid, joined, voice_rev, err);
+            },
+        );
+    });
 }

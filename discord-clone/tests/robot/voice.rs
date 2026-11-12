@@ -541,3 +541,121 @@ fn a_screen_share_reaches_the_media_server_and_the_other_browser(app: &mut App) 
     leave_voice(app);
     signed_out_off_call(app);
 }
+
+/// A robot function's string reply: the bare string or an `Ok`-wrapped one.
+fn robot_string(v: Value) -> String {
+    if let Some(s) = v.as_str() {
+        return s.to_string();
+    }
+    v.get("Ok").and_then(|v| v.as_str()).map(str::to_string).unwrap_or_default()
+}
+
+/// The call-audio elements in `app`'s page for channel `cid`, as the app's
+/// `cassette.call_audio` hook reports them.
+fn call_audio(app: &mut App, cid: i64) -> Vec<Value> {
+    let raw = robot_string(app.call_function("cassette.call_audio", json!({ "channel_id": cid })));
+    match serde_json::from_str::<Value>(&raw) {
+        Ok(Value::Array(list)) => list,
+        _ => Vec::new(),
+    }
+}
+
+/// The element playing `identity`'s microphone, if B's page has one.
+fn mic_element_of(list: &[Value], identity: &str) -> Option<Value> {
+    list.iter()
+        .find(|e| {
+            e.get("identity").and_then(|v| v.as_str()) == Some(identity)
+                && e.get("source").and_then(|v| v.as_str()).unwrap_or("").eq_ignore_ascii_case("microphone")
+        })
+        .cloned()
+}
+
+/// B hears A: B's page plays A's microphone through an audio element that is
+/// not paused, has data, and whose playback position moves. Deafen is local:
+/// the element is muted in B's page but keeps playing (nothing changes on the
+/// call server), and undeafen unmutes it. A's fake-mic tone also lights A as
+/// speaking in B's voice list.
+#[robot_test]
+fn the_other_caller_is_heard_deafen_is_local_and_speaking_shows(app: &mut App) {
+    signed_out_off_call(app);
+    assert!(livekit_configured(), "hearing needs a live provider");
+    let (a, sid) = voice_crew_with_sid(app, "heara");
+    let chans = a.call("list_channels", json!({ "server_id": sid }));
+    let chans = chans.get("Ok").unwrap_or(&chans).clone();
+    let cid = chans
+        .as_array()
+        .and_then(|list| list.iter().find(|c| c.get("kind").and_then(|v| v.as_str()) == Some("voice")))
+        .and_then(|c| c.get("id").and_then(|v| v.as_i64()))
+        .unwrap_or(0);
+    assert!(cid > 0, "no voice channel listed: {chans:?}");
+    let a_id = a.id.to_string();
+
+    // A joins and publishes its fake mic (Chrome's beeping test tone).
+    call_voice(app);
+    app.text("Voice Connected").assert_visible();
+
+    // B joins the same channel.
+    let inv = a.call("create_invite", json!({ "server_id": sid }));
+    let granted = a.call("set_everyone_permissions", json!({ "server_id": sid, "permissions": 196609 }));
+    assert!(granted.as_i64().unwrap_or(0) >= 196609, "granted no perms: {granted:?}");
+    let code = inv.get("code").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    assert!(!code.is_empty(), "minted no invite: {inv:?}");
+    let mut second = open_browser("hear");
+    second.app.set_timeout(WAIT);
+    let b = Account::new("hearw");
+    sign_in_as(&mut second.app, &b);
+    redeem_invite(&mut second.app, &code);
+    second.app.text("Joined!").assert_visible();
+    second.app.test_id("join-server-done").click();
+    second.app.set_timeout(WAIT);
+    second.app.test_id("live-voice-row").click();
+    second.app.set_timeout(WAIT);
+    second.app.text("Voice Connected").assert_visible();
+
+    // B's page plays A's microphone: an element exists, is not paused, has
+    // data, and its position advances.
+    assert!(
+        eventually(20, || mic_element_of(&call_audio(&mut second.app, cid), &a_id)
+            .map(|e| e.get("paused").and_then(|v| v.as_bool()) == Some(false)
+                && e.get("readyState").and_then(|v| v.as_i64()).unwrap_or(0) >= 2)
+            .unwrap_or(false)),
+        "B never played A's microphone: {:?}",
+        call_audio(&mut second.app, cid)
+    );
+    let t0 = mic_element_of(&call_audio(&mut second.app, cid), &a_id)
+        .and_then(|e| e.get("currentTime").and_then(|v| v.as_f64()))
+        .unwrap_or(0.0);
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    let t1 = mic_element_of(&call_audio(&mut second.app, cid), &a_id)
+        .and_then(|e| e.get("currentTime").and_then(|v| v.as_f64()))
+        .unwrap_or(0.0);
+    assert!(t1 > t0 + 0.5, "A's audio did not advance in B's page ({t0} -> {t1})");
+
+    // A's tone lights A as speaking in B's voice list.
+    assert!(
+        eventually(20, || second.app.test_id("voice-user-speaking").count() > 0),
+        "B never saw anyone marked as speaking"
+    );
+
+    // Deafen is local: B's element for A is muted but keeps playing.
+    second.app.test_id("user-deafen").click();
+    assert!(
+        eventually(10, || mic_element_of(&call_audio(&mut second.app, cid), &a_id)
+            .map(|e| e.get("muted").and_then(|v| v.as_bool()) == Some(true)
+                && e.get("paused").and_then(|v| v.as_bool()) == Some(false))
+            .unwrap_or(false)),
+        "deafen did not mute A locally (or stopped the element): {:?}",
+        call_audio(&mut second.app, cid)
+    );
+    second.app.test_id("user-deafen").click();
+    assert!(
+        eventually(10, || mic_element_of(&call_audio(&mut second.app, cid), &a_id)
+            .map(|e| e.get("muted").and_then(|v| v.as_bool()) == Some(false))
+            .unwrap_or(false)),
+        "undeafen did not unmute A: {:?}",
+        call_audio(&mut second.app, cid)
+    );
+
+    leave_voice(app);
+    signed_out_off_call(app);
+}

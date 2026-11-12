@@ -63,6 +63,21 @@ const ADAPTER_SRC: &'static str = r#"
   const RoomClass = SDK.Room;
   const ROOMS = new Map();
 
+  // Other people's audio plays through <audio> elements the SDK attaches.
+  // They live in one hidden box so deafen and the robot hook can find them.
+  const audio_box = () => {
+    let box = document.getElementById('cassette-call-audio');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'cassette-call-audio';
+      box.style.display = 'none';
+      document.body.appendChild(box);
+    }
+    return box;
+  };
+  const audio_elements = (ch) =>
+    Array.from(audio_box().querySelectorAll('audio')).filter((el) => el.dataset.cassetteCh === String(ch));
+
   const disconnect_all = () => {
     for (const entry of ROOMS.values()) {
       try { entry.room.disconnect(); } catch (e) {}
@@ -145,6 +160,25 @@ const ADAPTER_SRC: &'static str = r#"
         entry.speaking.clear();
         for (const p of speakers) entry.speaking.add(p.identity);
       });
+      // Subscribing alone plays nothing: each remote audio track (a voice or
+      // a screen share's sound) is attached to an <audio> element, which
+      // deafen mutes and which goes away when the track does.
+      room.on(SDK.RoomEvent.TrackSubscribed, (track, pub, participant) => {
+        if (track.kind !== 'audio') return;
+        const el = track.attach();
+        el.dataset.cassetteCh = String(ch);
+        el.dataset.cassetteIdentity = participant.identity;
+        el.dataset.cassetteSource = String(pub.source);
+        el.muted = !!entry.deafened;
+        audio_box().appendChild(el);
+      });
+      room.on(SDK.RoomEvent.TrackUnsubscribed, (track) => {
+        if (track.kind !== 'audio') return;
+        for (const el of track.detach()) el.remove();
+      });
+      room.on(SDK.RoomEvent.AudioPlaybackStatusChanged, () => {
+        entry.audioBlocked = !room.canPlaybackAudio;
+      });
       ROOMS.set(ch, entry);
       if (prev && prev.room !== room) {
         try { prev.room.disconnect(); } catch (e) {}
@@ -152,6 +186,13 @@ const ADAPTER_SRC: &'static str = r#"
       // Kept on the entry so a share pressed mid-connect waits for the room.
       entry.ready = room.connect(url, token);
       await entry.ready;
+      // Browsers play audio only after a user gesture; the join click usually
+      // counts. When it did not, the next click anywhere on the page unlocks it.
+      try { await room.startAudio(); } catch (e) {}
+      entry.audioBlocked = !room.canPlaybackAudio;
+      if (entry.audioBlocked) {
+        document.addEventListener('pointerdown', () => { room.startAudio().catch(() => {}); }, { once: true });
+      }
       if (canPublish) {
         try {
           await room.localParticipant.setMicrophoneEnabled(true);
@@ -183,17 +224,18 @@ const ADAPTER_SRC: &'static str = r#"
     deafen: async (ch) => {
       const entry = ROOMS.get(ch);
       if (!entry) throw new Error('not connected: ' + ch);
-      const pub = mic_publication(entry.room);
-      if (pub) pub.setMuted(true);
-      for (const remote of remote_publications(entry.room)) remote.setMuted(true);
+      // Deafen is local only: this tab stops playing everyone else; nothing
+      // changes on the call server (no unsubscribe, no mic change; the mic
+      // follows the separate mute flag).
+      entry.deafened = true;
+      for (const el of audio_elements(ch)) el.muted = true;
       return true;
     },
     undeafen: async (ch) => {
       const entry = ROOMS.get(ch);
       if (!entry) throw new Error('not connected: ' + ch);
-      const pub = mic_publication(entry.room);
-      if (pub) pub.setMuted(false);
-      for (const remote of remote_publications(entry.room)) remote.setMuted(false);
+      entry.deafened = false;
+      for (const el of audio_elements(ch)) el.muted = false;
       return true;
     },
     // The identities the SDK reports as speaking right now (from its
@@ -255,8 +297,24 @@ const ADAPTER_SRC: &'static str = r#"
       if (!entry) return false;
       ROOMS.delete(ch);
       await entry.room.disconnect();
+      for (const el of audio_elements(ch)) el.remove();
       return true;
     },
+    // Whether the browser is still holding call audio back (no gesture yet).
+    audio_blocked: async (ch) => {
+      const entry = ROOMS.get(ch);
+      return !!(entry && entry.audioBlocked);
+    },
+    // A plain (not async) snapshot of the call's audio elements as JSON, for
+    // the robot hook: who each one plays, and whether it is really playing.
+    audio_state: (ch) => JSON.stringify(audio_elements(ch).map((el) => ({
+      identity: el.dataset.cassetteIdentity || '',
+      source: el.dataset.cassetteSource || '',
+      paused: el.paused,
+      muted: el.muted,
+      readyState: el.readyState,
+      currentTime: el.currentTime,
+    }))),
   };
 })();
 "#;
@@ -515,6 +573,46 @@ pub(crate) async fn is_screen_sharing(channel_id: i64) -> bool {
     raw_err.is_empty() && value.is_truthy()
 }
 
+/// The user ids LiveKit reports as speaking in `channel_id`'s room right now
+/// (identities are user ids).
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn speaking_ids(channel_id: i64) -> Vec<i64> {
+    let (value, raw_err) = call_adapter("speaking", [JsValue::from(channel_id.to_string())].to_vec()).await;
+    if !raw_err.is_empty() || !Array::is_array(&value) {
+        return Vec::new();
+    }
+    let ids: Array = value.unchecked_into();
+    ids.iter()
+        .filter_map(|v| v.as_string().and_then(|s| s.parse::<i64>().ok()))
+        .collect()
+}
+
+/// Whether the browser is still holding this call's audio back.
+#[cfg(target_arch = "wasm32")]
+pub(crate) async fn audio_blocked(channel_id: i64) -> bool {
+    let (value, raw_err) = call_adapter("audio_blocked", [JsValue::from(channel_id.to_string())].to_vec()).await;
+    raw_err.is_empty() && value.is_truthy()
+}
+
+/// The call's audio elements as JSON (see the adapter's `audio_state`), "[]"
+/// while no adapter is loaded. Synchronous, for the robot hook.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn audio_state(channel_id: i64) -> String {
+    let win = window().unwrap_throw();
+    let adapter = match Reflect::get(&win, &JsValue::from_str(ADAPTER_GLOBAL)) {
+        Ok(v) if v.is_truthy() => v,
+        _ => return "[]".to_string(),
+    };
+    let f = match Reflect::get(&adapter, &JsValue::from_str("audio_state")) {
+        Ok(v) if v.is_function() => v.unchecked_into::<Function>(),
+        _ => return "[]".to_string(),
+    };
+    f.call1(&adapter, &JsValue::from(channel_id.to_string()))
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_else(|| "[]".to_string())
+}
+
 /// The status line for a screen-share failure: a cancelled or refused picker
 /// is not a microphone problem, so it gets its own sentence.
 pub(crate) fn share_error(err: String) -> String {
@@ -548,6 +646,18 @@ pub(crate) async fn set_screen_share(_channel_id: i64, _on: bool) -> Result<(), 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) async fn is_screen_sharing(_channel_id: i64) -> bool {
     false
+}
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) async fn speaking_ids(_channel_id: i64) -> Vec<i64> {
+    Vec::new()
+}
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) async fn audio_blocked(_channel_id: i64) -> bool {
+    false
+}
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn audio_state(_channel_id: i64) -> String {
+    "[]".to_string()
 }
 
 #[cfg(test)]

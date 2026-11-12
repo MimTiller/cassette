@@ -971,6 +971,52 @@ pub async fn delete_role(role_id: i64) -> Result<(), String> {
     Backend::delete_role(role_id).await.map_err(|e| crate::errors::friendly(&e))
 }
 
+thread_local! {
+    /// Who LiveKit last reported speaking in the joined voice channel.
+    static SPEAKING: std::cell::RefCell<Vec<i64>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Ask the call who is speaking in `channel_id` now; true when that changed
+/// since the last ask (the caller repaints the voice rows then).
+pub async fn refresh_speaking(channel_id: i64) -> bool {
+    let mut now = livekit::speaking_ids(channel_id).await;
+    now.sort_unstable();
+    SPEAKING.with(|s| {
+        let mut s = s.borrow_mut();
+        if *s == now {
+            false
+        } else {
+            *s = now;
+            true
+        }
+    })
+}
+
+/// Forget who was speaking (after leaving the call); true when that changed.
+pub fn clear_speaking() -> bool {
+    SPEAKING.with(|s| {
+        let mut s = s.borrow_mut();
+        let had = !s.is_empty();
+        s.clear();
+        had
+    })
+}
+
+/// Whether `user_id` was speaking at the last ask.
+pub fn is_speaking(user_id: i64) -> bool {
+    SPEAKING.with(|s| s.borrow().contains(&user_id))
+}
+
+/// Whether the browser is still holding the call's audio back.
+pub async fn call_audio_blocked(channel_id: i64) -> bool {
+    livekit::audio_blocked(channel_id).await
+}
+
+/// The call's audio elements as JSON, for the robot hook.
+pub fn call_audio_state(channel_id: i64) -> String {
+    livekit::audio_state(channel_id)
+}
+
 /// Whether this tab is still sharing its screen in a voice channel (the
 /// browser's own "Stop sharing" bar can end a share without the app).
 pub async fn screen_share_active(channel_id: i64) -> bool {
