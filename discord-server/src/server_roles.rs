@@ -362,9 +362,13 @@ impl RoleService {
     /// Give `user_id` the role (or take it away); returns the server id.
     pub fn assign(&self, caller: i64, role_id: i64, user_id: i64, assigned: bool) -> Result<i64, String> {
         let role = self.role(role_id).ok_or("role not found")?;
-        let (ctx, _) = self.require_manage_role(caller, &role)?;
-        if ctx.member(user_id).is_none() {
-            return Err("member not found".into());
+        let (ctx, member) = self.require_manage_role(caller, &role)?;
+        let target = ctx.member(user_id).ok_or("member not found".to_string())?;
+        // The owner's roles set their rank and permissions for every check,
+        // so only the owner may move them; everyone else is refused even
+        // when they outrank the role.
+        if target.is_owner && !member.is_owner {
+            return Err("you can't change the server owner's roles".into());
         }
         let c = self.db.lock().map_err(|e| e.to_string())?;
         let sql = if assigned {
@@ -762,6 +766,30 @@ mod tests {
             // The owner outranks every role.
             svc.update(1, carols, "Head Mod", "", true, Some(Permissions::ADMINISTRATOR)).unwrap();
             svc.move_to(1, low.id, 99).unwrap();
+        }
+
+        #[test]
+        fn a_manager_hands_out_lower_roles_and_never_the_owners() {
+            let (_d, db) = setup();
+            // bob manages roles at rank 3; carol's mod role sits at 5.
+            let bobs = crate::permissions::grant(&db, 10, 2, crate::permissions::ADMIN_LEVEL, 3);
+            let svc = RoleService::new(db.clone());
+            let low = svc.create(2, 10, "Low", "", true).unwrap();
+            assert_eq!(low.position, 2);
+            // bob gives dave (a plain member) the role below his own.
+            svc.assign(2, low.id, 4, true).unwrap();
+            // bob can't move even the role he holds: it isn't below his highest.
+            assert_eq!(svc.assign(2, bobs, 4, true).unwrap_err(),
+                "you can only manage roles below your highest role");
+            // The owner can give their own person a role, and take it back.
+            svc.assign(1, low.id, 1, true).unwrap();
+            // bob outranks the low role but still can't touch the owner's set.
+            assert_eq!(svc.assign(2, low.id, 1, false).unwrap_err(),
+                "you can't change the server owner's roles");
+            assert_eq!(svc.assign(2, low.id, 1, true).unwrap_err(),
+                "you can't change the server owner's roles");
+            // Only the owner may change it.
+            svc.assign(1, low.id, 1, false).unwrap();
         }
 
         #[test]
