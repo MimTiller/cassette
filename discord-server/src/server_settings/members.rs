@@ -180,12 +180,13 @@ impl ServerSettings {
             .into_iter()
             .map(|(user_id, username, role)| MemberInfo {
                 user_id,
-                display_name: self.db.user_display_name(user_id),
                 username,
+                display_name: self.db.user_display_name(user_id),
                 role,
                 avatar_url: self.db.user_avatar(user_id),
                 avatar_decoration: self.db.user_avatar_decoration(user_id),
                 presence: self.db.presence(user_id),
+                joined_at: self.db.membership_joined(server_id, user_id),
             })
             .collect())
     }
@@ -330,6 +331,9 @@ pub struct MemberInfo {
     /// `Presence` frames then override it live.
     #[serde(default)]
     pub presence: Option<String>,
+    /// When they joined the server (epoch ms), for the settings roster.
+    #[serde(default)]
+    pub joined_at: Option<i64>,
 }
 
 /// The result of a member-management operation. `role` is the member's role
