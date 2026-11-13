@@ -525,6 +525,7 @@ mod permissions_impl;
 mod voice_impl;
 #[cfg(not(feature = "idea-chat"))]
 mod livekit;
+mod calls;
 mod call_media;
 mod video_feeds;
 mod themes_impl;

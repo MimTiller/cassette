@@ -37,10 +37,16 @@ sidecar = ["dep:dev-server"]
 # `idealyst dev` pulls in through these features, instead of cargo resolving
 # them from the registry on every dev build.
 dev-session = ["idealyst/hot-reload", "idealyst/hydrate", "idealyst/robot", "idealyst/ui-overlay", "runtime-core/dev"]
+# `calls`: the idea-chat call client (Nicho's call-session dialling the quic-call
+# relay) inside `call_media`. On by default: the voice seam needs it for a
+# CALL_PROVIDER=idea-chat run on either backend, and the crate builds to
+# nothing on native (the whole call stack is web-only).
+calls = ["dep:call-session", "dep:call-audio"]
+default = ["calls"]
 # `idea-chat`: build the second backend — IdeaChatBackend — instead of
 # CassetteBackend. Off by default; with it off the app is byte-for-byte
 # today's build.
-idea-chat = ["dep:chat-model", "dep:idea-state", "dep:serde_json", "dep:serde", "dep:uuid", "dep:net"]
+idea-chat = ["dep:chat-model", "dep:idea-state", "dep:serde_json", "dep:serde", "dep:uuid", "dep:net", "calls"]
 
 [dependencies]
 # The platform surface, used by `src/main.rs` only. It carries whatever
@@ -159,6 +165,12 @@ uuid = { version = "1", features = ["serde"], optional = true }
 # `server` 3.0, so the framework's `#[server]` stubs cannot reach it). Same
 # pin as the `server` SDK's own `net` dep, so one crate instance.
 net = { version = "=1.8.0", registry = "idealyst", optional = true }
+# idea-chat calls: Nicho's call session (dial the quic-call relay, route
+# datagrams to call-audio/call-video, renew grants). Pinned to the `rwnd-consumable`
+# branch commit, which builds as a git dependency against this app's idealyst
+# 9.x with exactly one copy of media-stream / web-glue / runtime-tls / runtime-core.
+call-session = { git = "https://github.com/MimTiller/idea-chat", rev = "51ac4f80b45ecfcf4b03d753584a07c5645571ed", optional = true }
+call-audio = { git = "https://github.com/MimTiller/idea-chat", rev = "51ac4f80b45ecfcf4b03d753584a07c5645571ed", optional = true }
 
 # No backend deps: `register_scene_extensions` is generic over the scene
 # `Host` (this scaffold registers no third-party SDKs), so the app crate
@@ -243,3 +255,11 @@ serde_json = "1"
 tempfile = "3"
 tungstenite = "0.24"
 ureq = { version = "2", features = ["json"] }
+
+# One copy of the media-stream family for the idea-chat call crates: call-audio
+# (through denoise) and call-session pull the registry copies, the app pulls the
+# git ones, and two copies fail to unify. Same pin as idea-chat's own [patch].
+[patch."sparse+https://crates.idealyst.io/index/"]
+media-stream = { git = "https://github.com/IdealystIO/idealyst-native", rev = "26a4aff7434b1c6169bbad6131ba4bedeff7f8c2" }
+web-glue     = { git = "https://github.com/IdealystIO/idealyst-native", rev = "26a4aff7434b1c6169bbad6131ba4bedeff7f8c2" }
+runtime-tls  = { git = "https://github.com/IdealystIO/idealyst-native", rev = "26a4aff7434b1c6169bbad6131ba4bedeff7f8c2" }

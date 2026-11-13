@@ -3,15 +3,15 @@
 //! whether playback is blocked — goes through here, and each channel answers
 //! through the provider its call ticket named when it connected.
 //!
-//! LiveKit is `livekit.rs` (RWND-server build only). Idea-chat calls (`call-session` joined with a
-//! signed `call-auth` grant; see docs/idea-chat-wire.md) are reserved: their
-//! crates do not build against this framework version yet, so an idea-chat
-//! ticket answers with a plain sentence instead of pretending to connect.
+//! LiveKit is `livekit.rs` (RWND-server build only). Idea-chat calls are
+//! `calls.rs`: `call-session` joined with the signed `call-auth` grant the
+//! server minted (see docs/idea-chat-wire.md).
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 
 use super::*;
+use super::calls;
 
 // The LiveKit half exists in the RWND-server build; the idea-chat build has
 // no LiveKit provider, so its stand-in answers as "no call here".
@@ -99,14 +99,18 @@ pub(crate) async fn connect(channel_id: i64, ticket: &CallTicket) -> Result<(), 
             remember(channel_id, Provider::LiveKit);
             Ok(())
         }
-        CallTicket::IdeaChat { .. } => Err(IDEA_CHAT_CALLS_PENDING.to_string()),
+        CallTicket::IdeaChat { relay, grant } => {
+            calls::connect(channel_id, relay.clone(), grant.clone()).await?;
+            remember(channel_id, Provider::IdeaChat);
+            Ok(())
+        }
     }
 }
 
 /// The channels this tab holds media for, whatever the provider.
 pub(crate) fn live_channels() -> Vec<i64> {
     let mut out: Vec<i64> = PROVIDERS.with(|p| p.borrow().keys().copied().collect());
-    for ch in lk::live_channels() {
+    for ch in lk::live_channels().into_iter().chain(calls::live_channels()) {
         if !out.contains(&ch) {
             out.push(ch);
         }
@@ -120,7 +124,7 @@ pub(crate) async fn disconnect(channel_id: i64) -> bool {
     forget(channel_id);
     crate::backend::video_feeds::drop_channel(channel_id);
     match provider {
-        Some(Provider::IdeaChat) => false,
+        Some(Provider::IdeaChat) => calls::disconnect(channel_id).await,
         // A channel the map does not know may still hold a LiveKit room from
         // before this tab's map existed (a restore): tear that down too.
         Some(Provider::LiveKit) | None => lk::disconnect(channel_id).await,
@@ -129,8 +133,10 @@ pub(crate) async fn disconnect(channel_id: i64) -> bool {
 
 /// Apply this tab's mute (the mic) and deafen (local playback) to the call.
 pub(crate) async fn apply_flags(channel_id: i64, muted: bool, deafened: bool) {
-    if provider_of(channel_id) == Some(Provider::LiveKit) {
-        lk::apply_flags(channel_id, muted, deafened).await;
+    match provider_of(channel_id) {
+        Some(Provider::LiveKit) => lk::apply_flags(channel_id, muted, deafened).await,
+        Some(Provider::IdeaChat) => calls::apply_flags(channel_id, muted, deafened).await,
+        None => {}
     }
 }
 
@@ -138,7 +144,7 @@ pub(crate) async fn apply_flags(channel_id: i64, muted: bool, deafened: bool) {
 pub(crate) async fn set_screen_share(channel_id: i64, on: bool) -> Result<(), String> {
     match provider_of(channel_id) {
         Some(Provider::LiveKit) => lk::set_screen_share(channel_id, on).await,
-        Some(Provider::IdeaChat) => Err(IDEA_CHAT_CALLS_PENDING.to_string()),
+        Some(Provider::IdeaChat) => calls::set_screen_share(channel_id, on).await,
         // Nothing to stop when not connected; starting needs a call.
         None if !on => Ok(()),
         None => Err(NOT_CONNECTED.to_string()),
@@ -149,7 +155,7 @@ pub(crate) async fn set_screen_share(channel_id: i64, on: bool) -> Result<(), St
 pub(crate) async fn set_camera(channel_id: i64, on: bool) -> Result<(), String> {
     match provider_of(channel_id) {
         Some(Provider::LiveKit) => lk::set_camera(channel_id, on).await,
-        Some(Provider::IdeaChat) => Err(IDEA_CHAT_CALLS_PENDING.to_string()),
+        Some(Provider::IdeaChat) => calls::set_camera(channel_id, on).await,
         None if !on => Ok(()),
         None => Err(NOT_CONNECTED.to_string()),
     }
@@ -157,11 +163,12 @@ pub(crate) async fn set_camera(channel_id: i64, on: bool) -> Result<(), String> 
 
 /// Refresh the videos this tab can show for `channel_id`; true when that changed.
 /// Each provider reports framework `MediaStream`s: LiveKit wraps the browser's;
-/// idea-chat's call-video produces them per participant (wired with its calls).
+/// idea-chat's call-video produces them per participant.
 pub(crate) async fn refresh_videos(channel_id: i64) -> bool {
     let feeds = match provider_of(channel_id) {
         Some(Provider::LiveKit) => lk::videos(channel_id).await,
-        _ => Vec::new(),
+        Some(Provider::IdeaChat) => calls::videos(channel_id).await,
+        None => Vec::new(),
     };
     crate::backend::video_feeds::update(channel_id, feeds)
 }
@@ -170,7 +177,8 @@ pub(crate) async fn refresh_videos(channel_id: i64) -> bool {
 pub(crate) async fn is_screen_sharing(channel_id: i64) -> bool {
     match provider_of(channel_id) {
         Some(Provider::LiveKit) => lk::is_screen_sharing(channel_id).await,
-        _ => false,
+        Some(Provider::IdeaChat) => calls::is_screen_sharing(channel_id).await,
+        None => false,
     }
 }
 
@@ -178,7 +186,8 @@ pub(crate) async fn is_screen_sharing(channel_id: i64) -> bool {
 pub(crate) async fn speaking_ids(channel_id: i64) -> Vec<i64> {
     match provider_of(channel_id) {
         Some(Provider::LiveKit) => lk::speaking_ids(channel_id).await,
-        _ => Vec::new(),
+        Some(Provider::IdeaChat) => calls::speaking_ids(channel_id).await,
+        None => Vec::new(),
     }
 }
 
@@ -186,7 +195,8 @@ pub(crate) async fn speaking_ids(channel_id: i64) -> Vec<i64> {
 pub(crate) async fn audio_blocked(channel_id: i64) -> bool {
     match provider_of(channel_id) {
         Some(Provider::LiveKit) => lk::audio_blocked(channel_id).await,
-        _ => false,
+        Some(Provider::IdeaChat) => calls::audio_blocked(channel_id).await,
+        None => false,
     }
 }
 
@@ -194,6 +204,7 @@ pub(crate) async fn audio_blocked(channel_id: i64) -> bool {
 pub(crate) fn audio_state(channel_id: i64) -> String {
     match provider_of(channel_id) {
         Some(Provider::LiveKit) => lk::audio_state(channel_id),
-        _ => "[]".to_string(),
+        Some(Provider::IdeaChat) => calls::audio_state(channel_id),
+        None => "[]".to_string(),
     }
 }
