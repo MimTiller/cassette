@@ -139,6 +139,18 @@ impl Db {
         rows.filter_map(Result::ok).collect()
     }
 
+    /// When `user_id` joined `server_id` (epoch ms), or `None` if the user
+    /// is not a member.
+    pub fn membership_joined(&self, server_id: i64, user_id: i64) -> Option<i64> {
+        let c = self.lock().ok()?;
+        c.query_row(
+            "SELECT joined_at FROM server_memberships WHERE server_id = ?1 AND user_id = ?2",
+            rusqlite::params![server_id, user_id],
+            |r| r.get::<_, i64>(0),
+        )
+        .ok()
+    }
+
     /// The role of `user_id`'s membership in `server_id` (`'owner'`, `'admin'`,
     /// or `'member'`), or `None` if the user is not a member.
     pub fn membership_role(&self, server_id: i64, user_id: i64) -> Option<String> {

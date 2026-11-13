@@ -73,6 +73,7 @@ pub(crate) fn nav_id(label: &str) -> &'static str {
         "Overview" => "settings-nav-overview",
         "Roles" => "settings-nav-roles",
         "Members" => "settings-nav-members",
+        "Manage Members" => "settings-nav-members",
         "Emoji" => "settings-nav-emoji",
         "Stickers" => "settings-nav-stickers",
         _ => "settings-nav-other",
