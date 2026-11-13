@@ -20,7 +20,7 @@ the two sides to drift apart on. Anything live, like new messages, typing and
 who's online, comes in over a WebSocket.
 
 <p align="center">
-  <img src="docs/screenshot.png" width="900" alt="RWND in its Blockbuster theme (navy and video-store yellow): a server called Late Night Rentals with channels general, new-releases, be-kind-rewind and a back-room voice channel, a conversation in #general about restocked new releases and movie night with bold, italic and inline-code text and a reaction, and four members online on the right">
+  <img src="docs/screenshot.png" width="900" alt="RWND in its default dark theme: a server called Late Night Rentals with channels general, new-releases, be-kind-rewind and a back-room voice channel, a conversation in #general about restocked new releases and movie night with bold, italic and inline-code text and a reaction, and four members online on the right">
 </p>
 
 ## Coming Attractions: where it's heading
