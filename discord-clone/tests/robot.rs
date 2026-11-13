@@ -20,6 +20,8 @@ mod multi_user;
 mod server;
 #[path = "robot/settings.rs"]
 mod settings;
+#[path = "robot/roles.rs"]
+mod roles;
 #[path = "robot/profile_status.rs"]
 mod profile_status;
 #[path = "robot/two_users.rs"]
