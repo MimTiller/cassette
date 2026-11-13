@@ -182,6 +182,25 @@ fn video_playing() -> Result<u32, String> {
     Ok(crate::backend::playing_videos())
 }
 
+/// The active backend's capability report, as `describe`'s `key=value`
+/// clauses: the suite asserts what the seam says the backend can do.
+#[runtime_core::robot_fn(name = "cassette.capabilities")]
+fn capabilities() -> Result<String, String> {
+    Ok(crate::backend::capabilities_impl::describe())
+}
+
+/// Override the cached capability report at runtime — e.g.
+/// `cassette.force_capabilities("gifs=false e2ee=true")` hides the GIF
+/// button and shows the e2ee lock in the default (Cassette) build, so the
+/// suite can watch a capability-gated control hide without rebuilding the
+/// app against the other backend. An empty spec restores the backend's own
+/// report.
+#[runtime_core::robot_fn(name = "cassette.force_capabilities")]
+fn force_capabilities(spec: String) -> Result<String, String> {
+    crate::backend::capabilities_impl::force(spec);
+    Ok(crate::backend::capabilities_impl::describe())
+}
+
 pub(crate) fn register() {
     runtime_vocabulary::robot_fn::register(theme_key::robot());
     runtime_vocabulary::robot_fn::register(jump_target::robot());
@@ -197,4 +216,6 @@ pub(crate) fn register() {
     runtime_vocabulary::robot_fn::register(upload_server_sticker::robot());
     runtime_vocabulary::robot_fn::register(call_audio::robot());
     runtime_vocabulary::robot_fn::register(video_playing::robot());
+    runtime_vocabulary::robot_fn::register(capabilities::robot());
+    runtime_vocabulary::robot_fn::register(force_capabilities::robot());
 }
