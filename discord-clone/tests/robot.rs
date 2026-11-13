@@ -36,3 +36,5 @@ mod themes;
 mod notifications;
 #[path = "robot/coverage.rs"]
 mod coverage;
+#[path = "robot/stickers_emoji.rs"]
+mod stickers_emoji;

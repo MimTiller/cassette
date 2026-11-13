@@ -147,8 +147,15 @@ async fn upload_server_emoji(name: String, mime: String, data_b64: String) -> Re
     let bytes = crate::profile_settings::b64_decode(&data_b64)?;
     // Route through the emoji upload's sniffing encode (accepted_mime reads the
     // real format from the bytes, so a JPEG works even when the caller declared
-    // a different MIME), not the profile path's declared-only validation.
-    let url = crate::emoji_upload::encode_as_is(&mime, &bytes)?;
+    // a different MIME), not the profile path's declared-only validation —
+    // and through the Upload button's own split: an animation keeps its frames
+    // (encode_as_is), a still over the 128×128 draw box is shrunk on a canvas
+    // (encode_still_resized) before the upload.
+    let url = if crate::emoji_upload::animated(&bytes) {
+        crate::emoji_upload::encode_as_is(&mime, &bytes)?
+    } else {
+        crate::emoji_upload::encode_still_resized(bytes, &mime).await?
+    };
     match crate::backend::upload_emoji(sid, name.to_string(), url).await {
         Ok(e) => Ok(e.image.clone()),
         Err(err) => Err(err),
