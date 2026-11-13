@@ -723,9 +723,15 @@ pub(super) fn build(s: &ShellState) -> ComposerParts {
                 text_input(value = composer, on_change = update_on_type, placeholder_reactive = composer_placeholder.read_only(), style = input_style, test_id = "composer").on_key_down(composer_key)
                 // GIF = open/close the GIF picker (closes the emoji one,
                 // like the reference app). Chip shared with the DM composer.
-                gif_button(gif_open, vec![emoji_open, sticker_open])
+                // Hidden when the backend has no GIF service.
+                if crate::backend::capabilities().gifs {
+                    gif_button(gif_open, vec![emoji_open, sticker_open])
+                }
                 // Sticker = open/close the sticker picker (closes the others).
-                StickerButton(on = sticker_open, close_others = vec![gif_open, emoji_open])
+                // Hidden when the backend has no stickers.
+                if crate::backend::capabilities().stickers {
+                    StickerButton(on = sticker_open, close_others = vec![gif_open, emoji_open])
+                }
                 view(style = move || StyleRules {
                     width: Some(px(28.0)),
                     height: Some(px(28.0)),

@@ -155,6 +155,14 @@ pub(super) fn build(s: &ShellState) -> MessagesParts {
                         { mobile::back_button("mobile-back", || mobile::show(mobile::Pane::List)) }
                         text(style = hash_style) { "#".to_string() }
                         text(style = title_style) { title }
+                        // The e2ee lock: this backend's messages are encrypted
+                        // on the wire, so a channel's content only exists on
+                        // the devices that hold the keys.
+                        if crate::backend::capabilities().e2ee {
+                            view(test_id = "e2ee-lock") {
+                                icon(icons_lucide::LOCK).color(|| theme::live(TEXT_MUTED)).size(14.0)
+                            }
+                        }
                         // Spacer: eats the row's remaining width so the pin /
                         // invite actions sit at the far right.
                         view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}

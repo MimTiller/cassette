@@ -188,9 +188,12 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                 // Bumped on every VoiceRoster frame, so the roster rows under
                 // a voice channel rebuild when the connected list changes.
                 live_voice_rev.get(),
+                // The call provider, so the rows re-render when voice turns
+                // on/off at the seam.
+                crate::backend::capabilities().voice,
             )
         },
-        move |(_voice, _live_server, _live_fp, _mention_rev, _unread_rev, _cat_collapsed, _chan_menu, _voice_status, _voice_rev): &(
+        move |(_voice, _live_server, _live_fp, _mention_rev, _unread_rev, _cat_collapsed, _chan_menu, _voice_status, _voice_rev, _voice_provider): &(
             Option<(u32, u32)>,
             Option<i64>,
             Vec<(i64, String, String)>,
@@ -200,6 +203,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
             Option<i64>,
             Option<(i64, String)>,
             u32,
+            crate::backend::VoiceProvider,
         )| {
             // `switch`'s render is `Fn` — clone the captured styles so the
             // closure borrows them rather than moving them out (whiteboard idiom).
@@ -877,6 +881,22 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                         { roster_view }
                                         { video_grid }
                                         { error_line }
+                                        // Voice is off: the row says so rather
+                                        // than offering a join button that
+                                        // would only ever refuse.
+                                        if crate::backend::capabilities().voice
+                                            == crate::backend::VoiceProvider::None
+                                        {
+                                            text(style = StyleRules {
+                                                font_size: Some(px(11.0)),
+                                                color: Some(col(theme::TEXT_MUTED)),
+                                                max_lines: Some(1u32),
+                                                flex_shrink: Some(grow(1.0)),
+                                                ..Default::default()
+                                            }) {
+                                                crate::backend::VOICE_NOT_ENABLED
+                                            }
+                                        }
                                     }
                                     .bind(row_ref)
                                     .on_hover(move |on| hovered.set(on))

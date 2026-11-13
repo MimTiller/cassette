@@ -387,6 +387,7 @@ pub(crate) fn shell_alive() -> runtime_core::ScopeAlive {
 
 fn app_shell(authed: Signal<bool>) -> Element {
     SHELL_ALIVE.with(|s| *s.borrow_mut() = Some(runtime_core::ScopeAlive::current()));
+    crate::backend::capabilities_impl::install();
     mobile::install(signal(mobile::Pane::default()), signal(true));
     crate::channel_permissions::install();
     crate::notif_prefs::install();

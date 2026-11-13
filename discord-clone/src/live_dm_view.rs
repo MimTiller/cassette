@@ -979,6 +979,13 @@ fn live_dm_conversation(
                 view(style = header_style) {
                     { crate::app::mobile::back_button("dm-mobile-back", || crate::app::mobile::show(crate::app::mobile::Pane::List)) }
                     { title_el }
+                    // The e2ee lock: this backend encrypts messages on the
+                    // wire, so a DM's content only exists on the keyholders.
+                    if crate::backend::capabilities().e2ee {
+                        view(test_id = "dm-e2ee-lock") {
+                            runtime_core::icon(icons_lucide::LOCK).color(|| theme::live(theme::TEXT_MUTED)).size(14.0)
+                        }
+                    }
                     view(style = StyleRules { flex_grow: Some(grow(1.0)), ..Default::default() }) {}
                     if let Some(el) = group_controls {
                         el

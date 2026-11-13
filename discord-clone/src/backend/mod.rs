@@ -375,7 +375,19 @@ type Backend = CassetteBackend;
 #[cfg(feature = "idea-chat")]
 type Backend = IdeaChatBackend;
 
-// --- the realtime handle ----------------------------------------------------
+// --- the capability report --------------------------------------------------
+
+pub(crate) mod capabilities_impl;
+
+/// The search placeholder label per search source (on-device says so).
+pub(crate) use capabilities_impl::search_label;
+/// The sentence a voice row shows when no call provider is enabled.
+pub(crate) use capabilities_impl::VOICE_NOT_ENABLED;
+/// The call provider the voice rows compare against.
+pub(crate) use capabilities_impl::VoiceProvider;
+/// The cached report for UI sites (reads the report signal under the hood,
+/// so a capability change re-renders the sites that read it).
+pub(crate) use capabilities_impl::capabilities;
 
 /// The event-stream handle: what the UI holds after [`connect`]. Cheap to
 /// clone. Its verbs ask the backend for a history page, a message send /
@@ -816,11 +828,19 @@ pub async fn set_blocked(user_id: i64, block: bool) -> Result<Vec<BlockedUser>, 
 // --- the account accessors --------------------------------------------------
 
 pub async fn login(username: String, password: String) -> Result<LoginResult, String> {
-    Backend::login(username, password).await.map_err(|e| crate::errors::friendly(&e))
+    let result = Backend::login(username, password).await.map_err(|e| crate::errors::friendly(&e));
+    if result.is_ok() {
+        capabilities_impl::refresh();
+    }
+    result
 }
 
 pub async fn signup(username: String, password: String) -> Result<SignupResult, String> {
-    Backend::signup(username, password).await.map_err(|e| crate::errors::friendly(&e))
+    let result = Backend::signup(username, password).await.map_err(|e| crate::errors::friendly(&e));
+    if result.is_ok() {
+        capabilities_impl::refresh();
+    }
+    result
 }
 
 pub async fn logout() -> Result<LogoutResult, String> {

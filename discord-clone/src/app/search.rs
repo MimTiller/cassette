@@ -68,7 +68,14 @@ fn search_result_row(hit: &discord_server::search::SearchHit, on_jump: Rc<dyn Fn
 /// The search box for the server in `server`. `on_jump(channel_id,
 /// message_id)` opens a result.
 pub(super) fn search_box(server: Signal<Option<i64>>, server_name: String, on_jump: Rc<dyn Fn(i64, i64)>) -> Element {
-    let placeholder = if server_name.is_empty() { "Search".to_string() } else { format!("Search {server_name}") };
+    // The placeholder names where search runs, per the backend's report:
+    // on-device search says so ("searches this device"), `None` says off.
+    let placeholder = memo(move ||
+        Some(crate::backend::search_label(
+            server_name.clone(),
+            crate::backend::capabilities().search
+        ))
+    );
     let query = signal(String::new());
     let results: Signal<Option<SearchResults>> = signal(None);
     let busy = signal(false);
@@ -258,7 +265,7 @@ pub(super) fn search_box(server: Signal<Option<i64>>, server_name: String, on_ju
                 text_input(
                     value = query,
                     on_change = move |v: String| query.set(v),
-                    placeholder = placeholder,
+                    placeholder_reactive = placeholder.read_only(),
                     test_id = "message-search",
                     style = StyleRules {
                         // Zero basis: the input takes the room left beside the
