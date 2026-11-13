@@ -38,10 +38,23 @@ pub fn signed_out_off_call(app: &mut App) {
 /// Is this run's dev server configured for livekit calls? The wrapper's
 /// `--env` reaches the test binary and the server sidecar alike, so the
 /// suite branches instead of pretending a provider that is not there — the
-/// same env-branch the GIF picker test makes on GIPHY_API_KEY.
+/// same env-branch the GIF picker test makes on GIPHY_API_KEY. This names
+/// LiveKit SPECIFICALLY: the media-server participant assertions read the
+/// LiveKit key/secret pair and never run under idea-chat (LiveKit is frozen).
 fn livekit_configured() -> bool {
     match env::var("CALL_PROVIDER") {
         Ok(v) => v == "livekit",
+        Err(_) => false,
+    }
+}
+
+/// Is ANY live call provider configured? A join through the seam connects (and
+/// paints "Voice Connected") for either LiveKit or the idea-chat relay, so the
+/// provider-agnostic seam tests — the join/leave round trip, the roster line,
+/// the fresh-boot restore — branch on this, not on LiveKit alone.
+fn live_provider() -> bool {
+    match env::var("CALL_PROVIDER") {
+        Ok(v) => v == "livekit" || v == "idea-chat",
         Err(_) => false,
     }
 }
@@ -104,7 +117,7 @@ fn voice_crew(app: &mut App, prefix: &str) -> Account {
 #[robot_test]
 fn joining_the_voice_row_goes_through_the_backend_seam(app: &mut App) {
     signed_out_off_call(app);
-    let live = livekit_configured();
+    let live = live_provider();
     voice_crew(app, "voicetap");
 
     // The row exists and joining it goes through the backend seam.
@@ -131,7 +144,7 @@ fn joining_the_voice_row_goes_through_the_backend_seam(app: &mut App) {
 #[robot_test]
 fn leaving_a_live_call_clears_the_roster_and_the_line(app: &mut App) {
     signed_out_off_call(app);
-    let live = livekit_configured();
+    let live = live_provider();
     let a = voice_crew(app, "voiceleave");
     let name = a.name.clone();
 
@@ -289,7 +302,7 @@ fn a_camera_on_shows_a_video_tile_to_the_other_browser(app: &mut App) {
 #[robot_test]
 fn a_fresh_browser_restores_only_a_real_in_progress_call(app: &mut App) {
     signed_out_off_call(app);
-    let live = livekit_configured();
+    let live = live_provider();
     let a = voice_crew(app, "voiceboot");
 
     call_voice(app);
@@ -635,10 +648,10 @@ fn mic_element_of(list: &[Value], identity: &str) -> Option<Value> {
 #[robot_test]
 fn the_other_caller_is_heard_deafen_is_local_and_speaking_shows(app: &mut App) {
     signed_out_off_call(app);
-    // LiveKit is frozen and not used for testing: this LiveKit-only test
-    // runs only when CALL_PROVIDER=livekit is set on purpose.
-    if !livekit_configured() {
-        eprintln!("[skip] hearing needs a live provider: set CALL_PROVIDER=livekit to run it");
+    // Every assertion here reads the client's own hooks (the call-audio rows
+    // and the speaking dot), so either live provider drives them.
+    if !live_provider() {
+        eprintln!("[skip] hearing needs a live provider: set CALL_PROVIDER=livekit or idea-chat to run it");
         return;
     }
     let (a, sid) = voice_crew_with_sid(app, "heara");
@@ -716,6 +729,88 @@ fn the_other_caller_is_heard_deafen_is_local_and_speaking_shows(app: &mut App) {
             .unwrap_or(false)),
         "undeafen did not unmute A: {:?}",
         call_audio(&mut second.app, cid)
+    );
+
+    // Mute is ANNOUNCED: muting A's mic stops A sending, so B's own mic row
+    // for A (the incoming one) stays playing but the row B reads for ITS OWN
+    // mic flips to paused — A's mute changes what A broadcasts, seen on A's
+    // page through the same hook.
+    app.test_id("user-mic").click();
+    assert!(
+        eventually(10, || mic_element_of(&call_audio(app, cid), &a_id)
+            .map(|e| e.get("paused").and_then(|v| v.as_bool()) == Some(true))
+            .unwrap_or(false)),
+        "muting A did not stop A's own mic line: {:?}",
+        call_audio(app, cid)
+    );
+    app.test_id("user-mic").click();
+
+    leave_voice(app);
+    signed_out_off_call(app);
+}
+
+/// idea-chat's own video path: A turns their camera on through the user panel,
+/// and B — in the same channel from its own browser — gets a `voice-tile`
+/// carrying A's name and plays a frame (the client's per-participant
+/// `MediaStream`, read through `cassette.video_playing`). Like the camera test,
+/// but the observable is the idea-chat client's hooks, not the LiveKit media
+/// server, so it runs under CALL_PROVIDER=idea-chat.
+#[robot_test]
+fn the_idea_chat_camera_shows_a_tile_to_the_other_browser(app: &mut App) {
+    signed_out_off_call(app);
+    // Only for the idea-chat relay: this names the client's own streams.
+    if env::var("CALL_PROVIDER").unwrap_or_default() != "idea-chat" {
+        eprintln!("[skip] idea-chat tile needs CALL_PROVIDER=idea-chat to run");
+        return;
+    }
+    let (a, sid) = voice_crew_with_sid(app, "ichattile");
+    let name_a = a.name.clone();
+
+    // A joins and turns the camera on.
+    call_voice(app);
+    app.text("Voice Connected").assert_visible();
+    app.test_id("user-camera").click();
+    app.set_timeout(WAIT);
+
+    // B joins the same channel through a minted invite.
+    let inv = a.call("create_invite", json!({ "server_id": sid }));
+    let granted = a.call("set_everyone_permissions", json!({ "server_id": sid, "permissions": 196609 }));
+    assert!(granted.as_i64().unwrap_or(0) >= 196609, "granted no perms: {granted:?}");
+    let code = inv.get("code").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    assert!(!code.is_empty(), "minted no invite: {inv:?}");
+    let mut second = open_browser("ichat");
+    second.app.set_timeout(WAIT);
+    let b = Account::new("ichatw");
+    sign_in_as(&mut second.app, &b);
+    redeem_invite(&mut second.app, &code);
+    second.app.text("Joined!").assert_visible();
+    second.app.test_id("join-server-done").click();
+    second.app.set_timeout(WAIT);
+    second.app.test_id("live-voice-row").click();
+    second.app.set_timeout(WAIT);
+    second.app.text("Voice Connected").assert_visible();
+
+    // B sees A: a tile for A's camera, and a real frame playing through it.
+    assert!(
+        eventually(20, || second.app.text(name_a.as_str()).count() > 0),
+        "B's roster never carried A: {name_a}"
+    );
+    assert!(
+        eventually(20, || second.app.call_function("cassette.video_playing", json!({})).as_u64()
+            .or_else(|| second.app.call_function("cassette.video_playing", json!({})).get("Ok").and_then(|v| v.as_u64()))
+            .unwrap_or(0) > 0),
+        "B never played a frame from A's idea-chat camera"
+    );
+    let shot = second.app.screenshot();
+    eprintln!("[shot] ichat-tile-b: {shot}");
+
+    // Camera off: B's tile stops playing a frame.
+    app.test_id("user-camera").click();
+    assert!(
+        eventually(20, || second.app.call_function("cassette.video_playing", json!({})).as_u64()
+            .or_else(|| second.app.call_function("cassette.video_playing", json!({})).get("Ok").and_then(|v| v.as_u64()))
+            .unwrap_or(1) == 0),
+        "B kept playing A's camera after it was turned off"
     );
 
     leave_voice(app);
