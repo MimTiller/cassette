@@ -64,6 +64,7 @@ pub(crate) enum Provider {
 }
 
 /// The user-facing line for a provider this build cannot drive yet.
+#[cfg(feature = "idea-chat")]
 pub(crate) const IDEA_CHAT_CALLS_PENDING: &str = "idea-chat calls are not available in this build yet";
 const NOT_CONNECTED: &str = "you are not connected to this voice channel";
 

@@ -102,12 +102,15 @@ fn with_call<T>(f: impl FnOnce(&Call) -> T) -> Option<T> {
 /// (`g1.<room>.<user>.<send>.…`): the relay refuses a grant whose room is
 /// not the room it is admitted to, so the grant — not a re-derivation —
 /// names the room.
+#[cfg(target_arch = "wasm32")]
+#[cfg(target_arch = "wasm32")]
 pub(crate) fn room_of(grant: &str) -> String {
     grant.split('.').nth(1).unwrap_or("").to_string()
 }
 
 /// The user the grant speaks for (a RWND user id as text): our own mic
 /// line's identity, and the other end of the roster's relay-number mapping.
+#[cfg(target_arch = "wasm32")]
 pub(crate) fn user_of(grant: &str) -> String {
     grant.split('.').nth(2).unwrap_or("").to_string()
 }
@@ -115,6 +118,7 @@ pub(crate) fn user_of(grant: &str) -> String {
 /// Whether the grant lets us send audio: its send code carries `a`. A caller
 /// without Speak gets a grant that sends nothing, and starts with the mic
 /// off — the `can_publish` the LiveKit ticket carries.
+#[cfg(target_arch = "wasm32")]
 pub(crate) fn can_publish(grant: &str) -> bool {
     grant.split('.').nth(3).unwrap_or("").contains('a')
 }
@@ -207,9 +211,6 @@ pub(crate) fn on_control(text: String) {
         hang_up();
     }
 }
-
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn on_control(_text: String) {}
 
 /// Hang up: dropping the live `Call` closes the link, releases the mic and
 /// stops every playback output. Answers whether a call was live.
@@ -414,9 +415,6 @@ fn touch_live() {
     });
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn touch_live() {}
-
 /// Keep the live marks fresh between hook reads: every quarter-second while
 /// this call is the live one, re-mark what is speaking and what is arriving.
 #[cfg(target_arch = "wasm32")]
@@ -430,8 +428,6 @@ pub(crate) fn watch_audio(channel_id: i64) {
     });
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn watch_audio(_channel_id: i64) {}
 
 /// The call's audio as JSON, for the robot hook: one line per person OUR
 /// browser hears (and one for our own mic), with what our playback does with
@@ -481,8 +477,3 @@ pub(crate) fn audio_state(_channel_id: i64) -> String {
     "[]".to_string()
 }
 
-/// The seam's error sentences: `call-session` answers with its own plain
-/// sentences already ("did not let us in…", "did not answer within…").
-pub(crate) fn classify(err: String) -> String {
-    err
-}
