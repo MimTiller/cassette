@@ -178,6 +178,9 @@ pub fn call_config_of(db: &Db) -> CallConfig {
         livekit_url: db_or_env(&db, "livekit_url", "LIVEKIT_URL", "").0,
         livekit_api_key: db_or_env(&db, "livekit_api_key", "LIVEKIT_API_KEY", "").0,
         livekit_api_secret: db_or_env(&db, "livekit_api_secret", "LIVEKIT_API_SECRET", "").0,
+        relay_url: db_or_env(&db, "idea_chat_relay_url", "IDEA_CHAT_RELAY_URL", "").0,
+        relay_cert_hash: db_or_env(&db, "idea_chat_relay_cert_hash", "IDEA_CHAT_RELAY_CERT_HASH", "").0,
+        relay_secret: db_or_env(&db, "idea_chat_relay_secret", "IDEA_CHAT_RELAY_SECRET", "").0,
     }
 }
 
@@ -438,6 +441,9 @@ fn resolve_call_input(db: &Db, caller_id: i64, input: TestCallInput) -> Result<C
             livekit_url: pick(input.livekit_url, "livekit_url", "LIVEKIT_URL", ""),
             livekit_api_key: pick(input.livekit_api_key, "livekit_api_key", "LIVEKIT_API_KEY", ""),
             livekit_api_secret: pick(input.livekit_api_secret, "livekit_api_secret", "LIVEKIT_API_SECRET", ""),
+            relay_url: pick(String::new(), "idea_chat_relay_url", "IDEA_CHAT_RELAY_URL", ""),
+            relay_cert_hash: pick(String::new(), "idea_chat_relay_cert_hash", "IDEA_CHAT_RELAY_CERT_HASH", ""),
+            relay_secret: pick(String::new(), "idea_chat_relay_secret", "IDEA_CHAT_RELAY_SECRET", ""),
         }
     )
 }

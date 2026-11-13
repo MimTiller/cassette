@@ -56,6 +56,7 @@ server = [
     "dep:image",
     "dep:base64",
     "dep:reqwest",
+    "dep:call-auth",
 ]
 sidecar = ["dep:dev-server"]
 
@@ -107,6 +108,11 @@ base64 = { version = "0.22.1", optional = true }
 # Server-only: the GIF picker's Giphy search (`gifs.rs`) calls Giphy from the
 # server so the API key never reaches the browser.
 reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls", "json"], optional = true }
+
+# idea-chat calls: the grant signer (its issuer side only — the relay enforces
+# with the same crate at the other end). Pinned to the `rwnd-consumable` branch
+# commit, which builds without a sibling idealyst-native checkout.
+call-auth = { git = "https://github.com/MimTiller/idea-chat", rev = "51ac4f80b45ecfcf4b03d753584a07c5645571ed", optional = true }
 
 # Pin the wasm-bindgen family to exactly what the installed `wasm-bindgen-cli`
 # (0.2.122, matching the parent repo's lockfile) produces. `idealyst build

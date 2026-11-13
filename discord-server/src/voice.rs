@@ -48,6 +48,8 @@ use crate::server_settings::{next_frame_seq, WsServerMsg};
 use hmac::{Hmac, Mac};
 #[cfg(feature = "server")]
 use sha2::Sha256;
+#[cfg(feature = "server")]
+use call_auth::Send;
 
 use serde::{Deserialize, Serialize};
 
@@ -157,6 +159,14 @@ pub struct VoiceFlagsInput {
     pub screen_share: bool,
 }
 
+/// Ask the server for a fresh `call-auth` grant for the caller's current
+/// voice channel: issued when their running grant is halfway through its
+/// life. Carries the channel so the relay's room matches.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RenewGrantInput {
+    pub channel_id: i64,
+}
+
 /// The voice-state answer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VoiceStateResult {
@@ -183,11 +193,18 @@ pub struct VoiceStateResult {
 #[cfg(feature = "server")]
 #[derive(Clone)]
 pub struct CallConfig {
-    /// `livekit` | `none` (| `idea-chat`, reserved).
+    /// `livekit` | `none` | `idea-chat`.
     pub provider: String,
     pub livekit_url: String,
     pub livekit_api_key: String,
     pub livekit_api_secret: String,
+    /// The quic-call relay's URL (`https://host:port/`).
+    pub relay_url: String,
+    /// The relay's pinned certificate hash, empty for a CA-issued cert.
+    pub relay_cert_hash: String,
+    /// The call-auth secret this server signs grants with, and the relay
+    /// checks them with.
+    pub relay_secret: String,
 }
 
 #[cfg(feature = "server")]
@@ -198,12 +215,14 @@ impl CallConfig {
             livekit_url: std::env::var("LIVEKIT_URL").unwrap_or_default(),
             livekit_api_key: std::env::var("LIVEKIT_API_KEY").unwrap_or_default(),
             livekit_api_secret: std::env::var("LIVEKIT_API_SECRET").unwrap_or_default(),
+            relay_url: std::env::var("IDEA_CHAT_RELAY_URL").unwrap_or_default(),
+            relay_cert_hash: std::env::var("IDEA_CHAT_RELAY_CERT_HASH").unwrap_or_default(),
+            relay_secret: std::env::var("IDEA_CHAT_RELAY_SECRET").unwrap_or_default(),
         }
     }
 
     /// The refusal for a join under this config, or `None` when a provider
-    /// answers. `idea-chat` is reserved: the wire is specced but not
-    /// implemented, so a server configured for it says so plainly.
+    /// answers.
     pub fn refusal(&self) -> Option<String> {
         match self.provider.as_str() {
             "livekit" =>
@@ -217,7 +236,14 @@ impl CallConfig {
                 } else {
                     None
                 }
-            "idea-chat" => Some("voice calls over idea-chat are not available yet".into()),
+            "idea-chat" =>
+                if self.relay_url.is_empty() || self.relay_secret.is_empty() {
+                    Some(
+                        "idea-chat is configured but IDEA_CHAT_RELAY_URL or IDEA_CHAT_RELAY_SECRET is missing".into(),
+                    )
+                } else {
+                    None
+                }
             _ => Some(NOT_ENABLED.to_string()),
         }
     }
@@ -546,14 +572,28 @@ impl VoiceService {
 
     /// The provider ticket for an authorized join: LiveKit's URL plus an
     /// access token whose `video` grant opens the channel's room, canPublish
-    /// from Speak. The provider check runs first, so a server with voice
-    /// disabled says so plainly even for a channel the caller could join.
+    /// from Speak; an idea-chat ticket carries the relay URL and a `call-auth`
+    /// grant for (user, room, send) signed with the relay secret. The provider
+    /// check runs first, so a server with voice disabled says so plainly even
+    /// for a channel the caller could join.
     pub fn ticket(&self, caller: i64, channel_id: i64, config: CallConfig) -> Result<CallTicket, String> {
         if let Some(reason) = config.refusal() {
             return Err(reason);
         }
         let perms = self.authorize(caller, channel_id)?;
         let can_publish = perms.contains(Permissions::SPEAK);
+        if config.provider == "idea-chat" {
+            return Ok(CallTicket::IdeaChat {
+                relay: config.relay_url,
+                grant: mint_grant(
+                    config.relay_secret,
+                    room_for(channel_id),
+                    caller,
+                    can_publish,
+                    now_ms(),
+                ),
+            })
+        }
         let name = self.db.user_display_name(caller)
             .unwrap_or_else(|| self.db.user_by_id(caller).map(|(_, u)| u).unwrap_or_default());
         Ok(CallTicket::LiveKit {
@@ -644,6 +684,29 @@ fn now_secs() -> i64 {
         .unwrap_or(1_000)
 }
 
+#[cfg(feature = "server")]
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(1_000_000)
+}
+
+#[cfg(feature = "server")]
+pub const GRANT_TTL_SECS: u64 = 5 * 60;
+
+#[cfg(feature = "server")]
+pub fn mint_grant(secret: String, room: String, user: i64, can_publish: bool, at_ms: u64) -> String {
+    call_auth::Grant::mint(
+        secret.as_bytes(),
+        &room,
+        &user.to_string(),
+        if can_publish { Send::ALL } else { Send::NONE },
+        at_ms,
+        GRANT_TTL_SECS * 1000,
+    )
+}
+
 /// Join a voice channel: check the channel, its Connect permission, and
 /// the server's provider, answer with the provider's call ticket, and
 /// record (and broadcast) the roster. A refusal is the provider's own
@@ -686,6 +749,32 @@ pub async fn set_voice_flags(input: VoiceFlagsInput) -> Result<(), ServerError> 
         )
         .map_err(ServerError::failed)?;
     Ok(())
+}
+
+/// Ask for a fresh `call-auth` grant for `channel_id` on the caller's behalf
+/// (they must already be in it): the client's call session runs this
+/// halfway through the current grant's life, so a renewed caller keeps
+/// their place and a caller a revocation voided stops getting one. Never
+/// records the roster (they are already in it) and never leaks the secret.
+#[server]
+pub async fn renew_grant(input: RenewGrantInput) -> Result<String, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    if voice_of(caller) != Some(input.channel_id) {
+        return Err(ServerError::failed("you are not connected to this voice channel".to_string()));
+    }
+    let config = crate::instance::current_call_config();
+    if let Some(reason) = config.refusal() {
+        return Err(ServerError::failed(reason));
+    }
+    if config.provider != "idea-chat" {
+        return Err(ServerError::failed("this server does not run idea-chat calls".to_string()));
+    }
+    let perms = VoiceService::new(db.clone())
+        .authorize(caller, input.channel_id)
+        .map_err(ServerError::failed)?;
+    let can_publish = perms.contains(Permissions::SPEAK);
+    Ok(mint_grant(config.relay_secret, room_for(input.channel_id), caller, can_publish, now_ms()))
 }
 
 /// The server's voice state: its enabled call provider, plus the ticket for
@@ -760,6 +849,9 @@ mod tests {
             livekit_url: "ws://127.0.0.1:7880".to_string(),
             livekit_api_key: "devkey".to_string(),
             livekit_api_secret: "secret".to_string(),
+            relay_url: "".to_string(),
+            relay_cert_hash: "".to_string(),
+            relay_secret: "".to_string(),
         }
     }
 
@@ -769,6 +861,9 @@ mod tests {
             livekit_url: "".to_string(),
             livekit_api_key: "".to_string(),
             livekit_api_secret: "".to_string(),
+            relay_url: "".to_string(),
+            relay_cert_hash: "".to_string(),
+            relay_secret: "".to_string(),
         }
     }
 
@@ -778,6 +873,9 @@ mod tests {
             livekit_url: "".to_string(),
             livekit_api_key: "".to_string(),
             livekit_api_secret: "".to_string(),
+            relay_url: "https://192.168.0.32:4433/".to_string(),
+            relay_cert_hash: "pinsha256==".to_string(),
+            relay_secret: "relay-test-secret".to_string(),
         }
     }
 
@@ -805,9 +903,17 @@ mod tests {
             "the not-enabled sentence is shown verbatim",
         );
         assert_eq!(
-            svc.join(4, 20, idea_chat_config()).unwrap_err(),
-            "voice calls over idea-chat are not available yet",
-            "the reserved provider says so plainly",
+            svc.join(4, 20, CallConfig {
+                provider: "idea-chat".to_string(),
+                livekit_url: "".to_string(),
+                livekit_api_key: "".to_string(),
+                livekit_api_secret: "".to_string(),
+                relay_url: "https://192.168.0.32:4433/".to_string(),
+                relay_cert_hash: "".to_string(),
+                relay_secret: "".to_string(),
+            }).unwrap_err(),
+            "idea-chat is configured but IDEA_CHAT_RELAY_URL or IDEA_CHAT_RELAY_SECRET is missing",
+            "a half-configured provider refuses with its own sentence",
         );
         assert_eq!(
             svc.join(4, 20, CallConfig {
@@ -815,6 +921,9 @@ mod tests {
                 livekit_url: "".to_string(),
                 livekit_api_key: "".to_string(),
                 livekit_api_secret: "".to_string(),
+                relay_url: "".to_string(),
+                relay_cert_hash: "".to_string(),
+                relay_secret: "".to_string(),
             }).unwrap_err(),
             "livekit is configured but LIVEKIT_URL, LIVEKIT_API_KEY or LIVEKIT_API_SECRET is missing",
             "a half-configured provider refuses with its own sentence",
@@ -837,6 +946,72 @@ mod tests {
             }
             Ok(other) => panic!("livekit config issued {other:?}"),
             Err(reason) => panic!("{reason}"),
+        }
+    }
+
+    #[test]
+    fn idea_chat_grant_mints_and_verifies() {
+        let (_dir, db) = fixture();
+        let svc = VoiceService::new(db.clone());
+        match svc.ticket(4, 20, idea_chat_config()) {
+            Ok(CallTicket::IdeaChat { relay, grant }) => {
+                assert_eq!(relay, "https://192.168.0.32:4433/");
+                let parts: Vec<String> = grant.split('.').into_iter().map(|s| s.into()).collect();
+                assert_eq!(parts.len(), 7, "g1 room user send issued expires sig");
+                assert_eq!(parts[0], "g1".to_string(), "the grant kind");
+                assert_eq!(parts[1], room_for(20), "the room is the channel's");
+                assert_eq!(parts[2], "4".to_string(), "the user is the caller's id");
+                assert_eq!(parts[3], "avs".to_string(), "dave has Speak so may send audio, video and screen");
+                match call_auth::Grant::verify("relay-test-secret".as_bytes(), &grant) {
+                    Ok(g) => {
+                        assert_eq!(g.room, room_for(20));
+                        assert_eq!(g.user, "4".to_string());
+                        assert!(g.send.audio && g.send.video && g.send.screen, "Speak sends all three");
+                        assert_eq!(g.expires_ms - g.issued_ms, GRANT_TTL_SECS * 1000, "the grant lives as long as we mint");
+                    }
+                    Err(r) => panic!("our own mint must verify: {r}"),
+                }
+            }
+            Ok(other) => panic!("idea-chat config issued {other:?}"),
+            Err(reason) => panic!("{reason}"),
+        }
+    }
+
+    #[test]
+    fn listen_only_grant_sends_nothing() {
+        let (_dir, db) = fixture();
+        let svc = VoiceService::new(db.clone());
+        // user 4 (dave) in channel 22: Connect via @everyone but Speak is
+        // denied there, so send none.
+        match svc.ticket(4, 22, idea_chat_config()) {
+            Ok(CallTicket::IdeaChat { grant, relay: _ }) => {
+                let parts: Vec<String> = grant.split('.').into_iter().map(|s| s.into()).collect();
+                assert_eq!(parts[3], "-".to_string(), "no Speak -> send none");
+            }
+            other => panic!("expected an idea-chat ticket: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_hostile_display_name_forges_nothing() {
+        // Grants carry ids only: a display name never reaches one, so the
+        // worst name a user picked cannot add a field, a room, or a send.
+        let evil = "4.evil-room.-.9e9.9e19.deadbeef".to_string();
+        let grant = mint_grant("s".to_string(), room_for(20), 4, true, now_ms());
+        let without = grant.replace(evil.as_str(), "");
+        assert_eq!(without, grant, "the name never appears in the grant");
+        match call_auth::Grant::verify("s".as_bytes(), &grant) {
+            Ok(g) => assert_eq!(g.user, "4".to_string(), "the grant still speaks for the id"),
+            Err(r) => panic!("our own mint must verify: {r}"),
+        }
+    }
+
+    #[test]
+    fn wrong_secret_rejects_the_grant() {
+        let grant = mint_grant("relay-test-secret".to_string(), room_for(20), 4, true, now_ms());
+        match call_auth::Grant::verify("theater".as_bytes(), &grant) {
+            Err(r) => assert_eq!(r, call_auth::Refusal::BadSignature, "a forged signature is refused"),
+            Ok(_) => panic!("the wrong secret must not accept"),
         }
     }
 
