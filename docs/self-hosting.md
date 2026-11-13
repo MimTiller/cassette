@@ -18,14 +18,13 @@ the bundle into `$PREFIX/web`, so the server it starts serves the app at
 
 [`deploy/install.sh`](../deploy/README.md) sets all of this up in one run:
 it asks where to install, for the public URL, and the port (or takes
-`--public-url/--port/--with-livekit/--yes` for non-interactive use),
+`--public-url/--port/--yes` for non-interactive use),
 generates the session secret, writes the env file, and installs
-`rwnd.service` as a `systemd --user` unit — no root needed. With
-`--with-livekit` it also downloads the pinned LiveKit release
-(sha256-verified), generates keys, writes `livekit.yaml`, installs
-`rwnd-livekit.service`, and puts `CALL_PROVIDER`/`LIVEKIT_*` in the env
-file. Read on for what everything means, and see
-[deploy/README.md](../deploy/README.md) for the flag table.
+`rwnd.service` as a `systemd --user` unit — no root needed. Voice and video run
+on idea-chat's call relay, a separate QUIC/WebTransport service you start
+alongside the server; the installer does not set it up yet, so follow the
+"Voice and video" section below for it. Read on for what everything means, and
+see [deploy/README.md](../deploy/README.md) for the flag table.
 
 ## Requirements
 
@@ -34,7 +33,7 @@ file. Read on for what everything means, and see
   [idealyst README](https://github.com/IdealystIO/idealyst-native#installing-the-cli)
 - `wasm-bindgen-cli` 0.2.122, matching the pin in `discord-clone/Cargo.toml`:
   `cargo install wasm-bindgen-cli --version 0.2.122`
-- For voice: the single-binary LiveKit server (see below). No other runtime
+- For voice and video: the idea-chat call relay (see below). No other runtime
   dependencies — SQLite is compiled in (`rusqlite`, bundled).
 
 ## Building
@@ -85,107 +84,78 @@ keep them that way.
 `server reset-link <username>` (same env as the running server) prints a one-time
 password-reset link valid for 24 hours.
 
-## Voice: LiveKit
+## Voice and video: the idea-chat call relay
 
-Voice calls run on [LiveKit](https://github.com/livekit/livekit): one Go
-binary, its own API key/secret pair.
+Calls run on idea-chat's call relay: a QUIC/WebTransport service from the
+[idea-chat](https://github.com/IdealystIO/idea-chat) repo, separate from the
+RWND server. Each client's media is end-to-end encrypted, so the relay only
+forwards datagrams it cannot read. Build it from an idea-chat checkout:
 
 ```bash
-# grab the binary (linux_amd64 shown)
-tar xzf livekit_1.13.11_linux_amd64.tar.gz   # or download from LiveKit's releases
-./livekit-server generate-keys               # prints "API Key: ..." and "API Secret: ..."
+cd idea-chat && cargo build --release -p call-relay   # target/release/call-relay
 ```
 
-Minimal `livekit.yaml` — port `7880` is the HTTP/WebSocket service,
-`7881` the ICE/TCP fallback port, `7882` a single ICE/UDP port instead of the
-default `50000-60000` range (pinning one range makes forwarding far easier):
+Its usage (from `crates/call-relay/src/main.rs`):
 
-```yaml
-port: 7880
-bind_addresses:
-  - 0.0.0.0
-rtc:
-  tcp_port: 7881
-  udp_port: 7882
-  use_external_ip: false
-  node_ip: <your public or LAN IP>   # the IP LiveKit advertises to clients
-keys:
-  <generated-key>: <generated-secret>
+```text
+call-relay [ADDR:PORT] [--cert FULLCHAIN.pem --key PRIVKEY.pem] [--host NAME]
+           [--secret-file FILE] [--max-ttl SECS] [--grace SECS] [--throttle on|off]
+call-relay mint    --secret-file FILE --room R --user U [--send avs] [--ttl SECS]
+call-relay revoke  --secret-file FILE --relay URL [--hash HEX] --user U [--room R] [--send CODE]
 ```
 
-Run with `livekit-server --config livekit.yaml`; `livekit-server ports`
-prints what it actually bound.
+Defaults: it listens on `127.0.0.1:4433`, grants mint with a 120 s ttl
+unless `--ttl` says otherwise, the relay accepts grants up to `--max-ttl`
+(default 600 s), and a lapsed grant stops a client's traffic after `--grace`
+seconds (default 15).
 
-Ports you must expose for voice to work:
+**Identity and TLS.** With `--cert FULLCHAIN.pem --key PRIVKEY.pem` the relay
+serves a CA-issued certificate and clients just dial
+`https://<host>:<port>/` — no pinning. Without them it mints a self-signed
+certificate and prints a cert hash clients must pin: a *new* hash on every
+start, so restarting the relay means re-pinning (re-run and copy the printed
+URL). Put a real CA cert in place for anything you run long-term.
 
-| Port | Traffic |
-|---|---|
-| `7880` | WebSocket signalling (wss) — always needed |
-| `7882` (or the `50000-60000` range) | ICE/UDP — the actual audio/video |
-| `7881` | ICE/TCP fallback — only if UDP is blocked |
+**Membership.** With `--secret-file` (the file must hold at least 16 random
+bytes; 32 or more is recommended — the relay refuses shorter secrets), the
+relay checks `call-auth` grants: nobody joins without one, and nobody sends
+more than their grant allows. The issuer mints grants with the same secret —
+`call-relay mint` prints one; `call-relay revoke` delivers a revocation to a
+running relay (a kick, or `--send` a limit such as listen-only). Grants are
+short by design: a client renews its grant before it expires, and an issuer
+that stops issuing has removed someone within one grant's lifetime.
 
-`use_external_ip: false` with `node_ip` set is what you want when a proxy or
-port-forwarding sits in front; `true` advertises the server's own detected IP.
+**One port, no proxy.** The relay's connection is QUIC/WebTransport, not
+HTTP/WebSocket: it cannot sit behind a reverse proxy or a tunnel at all.
+Whatever fronts the app (the Caddy/nginx setup below) must leave the relay
+reachable *directly* — the client dials its public `https://host:port/` URL.
+There is no TURN fallback any more, and no Cloud option: the relay you run is
+the relay you use.
 
-The RWND app's env for this provider (set in the app later, or via env now):
-
-| Variable | Meaning |
-|---|---|
-| `CALL_PROVIDER=livekit` | Selects the LiveKit backend |
-| `LIVEKIT_URL` | e.g. `wss://yourhost:7880` |
-| `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` | The pair from `generate-keys` |
-
-Keep the secret out of the repo and out of URLs; it belongs in the process
-environment or a gitignored file.
-
-### When TURN is needed, and how
-
-TURN (relay over HTTPS) is the fallback for clients whose UDP media traffic
-can't reach the server — corporate networks, some proxies, tunnels. LiveKit
-has a built-in TURN relay; turn it on and give it a domain and a TLS
-certificate for that domain:
-
-```yaml
-turn:
-  enabled: true
-  domain: turn.yourhost.example   # DNS points at this server
-  tls_port: 5349                  # TURN over TLS
-  cert_file: /path/to/cert.pem
-  key_file: /path/to/key.pem
-```
-
-(The cert and key can also come from `--turn-cert` / `--turn-key`, env
-`LIVEKIT_TURN_CERT` / `LIVEKIT_TURN_KEY`.) Then open/forward TCP `5349` as
-you would the others.
-
-### No-ops option: LiveKit Cloud
-
-[LiveKit Cloud](https://livekit.com) gives you a signalling URL and key/secret
-with nothing installed or forwarded: set `LIVEKIT_URL` to your project's
-`wss://<project>.livekit.cloud` URL plus your Cloud key/secret (or run
-`deploy/install.sh --livekit-url ... --livekit-key ... --livekit-secret ...`
-without `--with-livekit`) and you're done. UDP/TURN/TLS all become their
-problem.
+The RWND app's env for this provider is still being implemented and is not
+read by `discord-server` yet; expect `CALL_PROVIDER` and `IDEA_CHAT_RELAY_*`
+(the relay's `https://` URL and its secret file) once the voice layer lands.
+Until then, treat the names above as provisional.
 
 ## HTTPS
 
-Browsers gate the microphone and camera: `getUserMedia` only works on a
-`https://` page or `localhost`. An https page also refuses to open a `ws://`
-socket, so once the app is on https, the LiveKit signalling must be `wss://`
-too — plain `ws://localhost:7880` stops working the moment the page is on a
-domain. This is what you need when RWND sits on your own domain (voice over a
-bare `http://` host is blocked by the browser regardless of LiveKit).
+Two mechanisms sit behind https for calls, and both are worth knowing rather
+than just configuring: browsers gate `getUserMedia` (the mic and camera) to
+`https://` pages or `localhost`, and the relay is dialed as an `https://`
+WebTransport URL regardless of what the page is on — its TLS identity is
+what makes the connection trustworthy, not the page's. So an https app page
+and a plain `127.0.0.1` LAN relay work on localhost pages, and over a real
+domain both sides need real https.
 
 Caddy is the short path: it fetches certificates itself (ACME) when the
 domains' DNS points at the machine, and upgrades WebSockets automatically.
 [`deploy/Caddyfile.example`](../deploy/Caddyfile.example) is a validated
-(`caddy validate --config deploy/Caddyfile.example --adapter caddyfile`) two-
-vhost setup — the app on one domain, LiveKit signalling on another — with
-comments on which ports (UDP 7882 media, TCP 7881 ICE/TCP, 5349 TURN/TLS)
-still must be forwarded directly, since Caddy only proxies HTTP/WebSocket.
-With it, set `LIVEKIT_URL=wss://livekit.example.com`.
+(`caddy validate --config deploy/Caddyfile.example --adapter caddyfile`)
+setup for the app; the relay is deliberately not in it — its QUIC
+connection cannot be proxied, only dialed directly. With it, set
+`PUBLIC_URL=https://your.domain`.
 
-nginx needs the WebSocket upgrade stanza explicitly on the LiveKit vhost:
+nginx needs the WebSocket upgrade stanza explicitly for the app:
 
 ```nginx
 map $http_upgrade $connection_upgrade {
@@ -193,10 +163,9 @@ map $http_upgrade $connection_upgrade {
   ''      close;
 }
 server {
-  server_name livekit.example.com;
   # ssl_cert/ssl_pem or certbot; Caddy gets certs itself, nginx doesn't.
   location / {
-    proxy_pass http://127.0.0.1:7880;   # LiveKit's ws signalling endpoint
+    proxy_pass http://127.0.0.1:3000;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $connection_upgrade;
@@ -209,16 +178,11 @@ proxy's IP(s), so the server trusts its `X-Forwarded-For` for per-IP rate
 limits (`127.0.0.1,::1` when Caddy/nginx run on the same machine) — and
 `PUBLIC_URL=https://your.domain`, the address people actually use.
 
-A Cloudflare tunnel also serves https+wss, so both vhosts above collapse into
-it: point `PUBLIC_URL` at the tunnel URL and `LIVEKIT_URL` at a second tunnel
-in front of 7880 (`wss://<random>.trycloudflare.com`). The tunnel carries the
-app page and signalling; the ICE/UDP media ports don't go through it, so
-tunnel voice needs TURN (5349) or LiveKit Cloud — see the sections above.
-
 ## Reverse proxies and tunnels
 
 Whatever sits in front must upgrade WebSockets — the chat gateway is one
-WebSocket connection to the RWND server, and LiveKit's signalling is another.
+WebSocket connection to the RWND server. (The call relay is not HTTP at all:
+see the "no proxy" note above; it gets no vhost and no stanza.)
 
 Caddy (it upgrades WebSockets automatically, and does TLS):
 
@@ -254,17 +218,18 @@ Then set `TRUSTED_PROXIES` to the proxy's IP(s) — the server only believes
 `X-Forwarded-For` from addresses in that list — and set `PUBLIC_URL` to the
 public `https://` address.
 
-Cloudflare tunnels: a `trycloudflare.com` / `cloudflare tunnel` carries HTTP
-and wss, so the app itself and LiveKit's signalling both work through it. It
-does **not** forward the ICE/UDP media traffic, so voice over a tunnel needs
-either the TURN fallback above or (simpler) LiveKit Cloud. Text chat through a
-tunnel is fine.
+Cloudflare tunnels: a `trycloudflare.com` URL carries HTTP and wss, so the
+app page and the chat gateway both work through it, and text chat over a
+tunnel is fine. Calls do not: the relay's QUIC/WebTransport connection
+cannot go through a tunnel. To use calls while the app is on a tunnel, dial
+a relay that sits on its own directly reachable host:port (e.g. a CA-cert
+relay on the machine itself, `https://<ip>:4433/`).
 
 ## Picking the provider
 
-- **Voice on now:** LiveKit, via the env above
-  (`CALL_PROVIDER=livekit`, `LIVEKIT_URL`, `LIVEKIT_API_KEY`,
-  `LIVEKIT_API_SECRET`).
+- **Voice and video:** the idea-chat call relay, started and pinned per the
+  section above. It is not wired into this repo's server yet — env names are
+  provisional, see the note there.
 - **Later:** the same choice from inside the app — Voice & Video and Chat
   Backend pages plus a first-run setup wizard, coming in the Instance
   Settings area. Until those land, env is the only way to configure.
