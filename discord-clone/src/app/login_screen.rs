@@ -202,7 +202,10 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
     // Log in: validate, call the server, and flip `authed` on success. The
     // session id and token are recorded by `crate::auth`.
     let do_login = {
-        let alive = alive.clone();
+        // `authed` and `busy` live at the app root, and flipping `authed`
+        // unmounts this screen, dropping its own scope: anchor the call to
+        // the root so the callback (and its `busy` reset) still runs.
+        let root = crate::app::root_alive();
         let authed = authed.clone();
         let busy = busy.clone();
         move || {
@@ -219,7 +222,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             error.set(String::new());
             notice.set(String::new());
             busy.set(true);
-            runtime_core::spawn_then_in(&alive, async move { crate::identity::sign_in(&name, &pw).await }, move |result| {
+            runtime_core::spawn_then_in(&root, async move { crate::identity::sign_in(&name, &pw).await }, move |result| {
                 match result {
                     Ok(_) => authed.set(true),
                     Err(message) => error.set(message),
@@ -231,7 +234,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
     // Sign up: the same checks plus a matching confirmation, then
     // `auth::signup`, which creates the account and logs it in.
     let do_signup = {
-        let alive = alive.clone();
+        let root = crate::app::root_alive();
         let authed = authed.clone();
         let busy = busy.clone();
         move || {
@@ -250,7 +253,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             }
             error.set(String::new());
             busy.set(true);
-            runtime_core::spawn_then_in(&alive, async move { crate::identity::sign_up(&name, &pw).await }, move |result| {
+            runtime_core::spawn_then_in(&root, async move { crate::identity::sign_up(&name, &pw).await }, move |result| {
                 match result {
                     Ok(_) => authed.set(true),
                     Err(message) => error.set(message),

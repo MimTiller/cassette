@@ -270,6 +270,10 @@ static SESSION_NOTE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(No
 
 pub fn app() -> Element {
     crate::robot_hooks::register();
+    // The app root's scope, for calls whose results land in root state but
+    // start from a screen that unmounts mid-flight (the login screen flipping
+    // `authed`): see [`root_alive`].
+    ROOT_ALIVE.with(|s| *s.borrow_mut() = Some(runtime_core::ScopeAlive::current()));
     // The colour theme (tokens for every role), with the saved accent.
     crate::theme::install(crate::notify::load_theme(), crate::notify::load_accent());
     crate::app_icon::show(crate::app_icon::current());
@@ -375,6 +379,9 @@ fn mention_active_query(text: &str) -> Option<String> {
 thread_local! {
     /// The app shell's scope (see [`shell_alive`]).
     static SHELL_ALIVE: std::cell::RefCell<Option<runtime_core::ScopeAlive>> = const { std::cell::RefCell::new(None) };
+    /// The app root's scope (see [`root_alive`]): captured in `app()` before
+    /// the login/shell branch, so it outlives the login screen unmounting.
+    static ROOT_ALIVE: std::cell::RefCell<Option<runtime_core::ScopeAlive>> = const { std::cell::RefCell::new(None) };
 }
 
 /// The app shell's lifetime, for server calls whose results land in shell
@@ -383,6 +390,14 @@ thread_local! {
 /// user is signed in and is dropped after logout.
 pub(crate) fn shell_alive() -> runtime_core::ScopeAlive {
     SHELL_ALIVE.with(|s| s.borrow().clone()).unwrap_or_else(runtime_core::ScopeAlive::current)
+}
+
+/// The app root's lifetime (see [`app`]): for login/signup calls whose
+/// callbacks write root state (`authed`, `busy`) but start from the login
+/// screen, which unmounts the moment `authed` flips — the login screen's own
+/// scope is gone by the time the call lands, so anchor to the root instead.
+pub(crate) fn root_alive() -> runtime_core::ScopeAlive {
+    ROOT_ALIVE.with(|s| s.borrow().clone()).unwrap_or_else(runtime_core::ScopeAlive::current)
 }
 
 fn app_shell(authed: Signal<bool>) -> Element {
