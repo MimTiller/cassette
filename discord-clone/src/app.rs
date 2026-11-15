@@ -270,6 +270,12 @@ static SESSION_NOTE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(No
 
 pub fn app() -> Element {
     crate::robot_hooks::register();
+    // Minted HERE (the app root's scope, not the shell's): the shell
+    // unmounts on every log out, and a signal scoped to a dead shell makes
+    // every later login's `capabilities_impl::refresh` write trap, killing
+    // the login callback before it can flip `authed`. The root lives for
+    // the whole session, so login N+1's refresh writes a live signal.
+    crate::backend::capabilities_impl::install();
     // The app root's scope, for calls whose results land in root state but
     // start from a screen that unmounts mid-flight (the login screen flipping
     // `authed`): see [`root_alive`].
@@ -402,7 +408,6 @@ pub(crate) fn root_alive() -> runtime_core::ScopeAlive {
 
 fn app_shell(authed: Signal<bool>) -> Element {
     SHELL_ALIVE.with(|s| *s.borrow_mut() = Some(runtime_core::ScopeAlive::current()));
-    crate::backend::capabilities_impl::install();
     mobile::install(signal(mobile::Pane::default()), signal(true));
     crate::channel_permissions::install();
     crate::notif_prefs::install();

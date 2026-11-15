@@ -134,9 +134,10 @@ thread_local! {
     static CAPABILITIES: Cell<Option<Signal<Capabilities>>> = const { Cell::new(None) };
 }
 
-/// Mint and cache the report's signal, once, in the caller's scope.
-/// `app_shell` calls this so the signal lives for the whole app and survives
-/// a login-time rebuild.
+/// Mint and cache the report's signal, once, in the app root's scope
+/// (`app()` calls it before the login/shell branch, so the signal survives
+/// log-out/log-in cycles: a signal minted inside the shell would die on the
+/// first log out and every later login's `refresh` write would trap).
 pub(crate) fn install() {
     let _ = CAPABILITIES.with(|c| {
         if let Some(existing) = c.get() {
