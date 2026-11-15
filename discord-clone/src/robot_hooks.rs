@@ -182,6 +182,16 @@ fn call_volume() -> Result<String, String> {
     Ok(crate::backend::call_volume_state())
 }
 
+/// Open (or close) one remote's voice-tile volume menu in THIS tab. The web
+/// bridge never delivers a secondary press, so the suite drives the tile's
+/// opener through this hook instead — the same flip a real browser's right
+/// click on the tile's name row makes.
+#[runtime_core::robot_fn(name = "cassette.open_voice_tile")]
+fn open_voice_tile(user_id: i64) -> Result<(), String> {
+    crate::app::open_voice_tile(user_id);
+    Ok(())
+}
+
 /// How many <video> elements on the page are painting a frame: a tile that
 /// shows a real camera or screen, not the avatar stand-in.
 #[runtime_core::robot_fn(name = "cassette.video_playing")]
@@ -223,6 +233,7 @@ pub(crate) fn register() {
     runtime_vocabulary::robot_fn::register(upload_server_sticker::robot());
     runtime_vocabulary::robot_fn::register(call_audio::robot());
     runtime_vocabulary::robot_fn::register(call_volume::robot());
+    runtime_vocabulary::robot_fn::register(open_voice_tile::robot());
     runtime_vocabulary::robot_fn::register(video_playing::robot());
     runtime_vocabulary::robot_fn::register(capabilities::robot());
     runtime_vocabulary::robot_fn::register(force_capabilities::robot());

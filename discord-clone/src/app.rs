@@ -406,6 +406,32 @@ pub(crate) fn root_alive() -> runtime_core::ScopeAlive {
     ROOT_ALIVE.with(|s| s.borrow().clone()).unwrap_or_else(runtime_core::ScopeAlive::current)
 }
 
+thread_local! {
+    /// The live tab's tile-menu signal, registered by `app()` so the robot
+    /// hook can flip it: the web bridge never delivers a secondary press.
+    static VOICE_TILE_MENU: std::cell::RefCell<Option<Signal<Option<i64>>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Remember the tab's tile-menu signal (called once where it is born).
+pub(crate) fn register_voice_tile_menu(s: Signal<Option<i64>>) {
+    VOICE_TILE_MENU.with(|t| *t.borrow_mut() = Some(s));
+}
+
+/// Flip `user_id`'s tile menu open/closed on the registered signal — the
+/// same write a secondary press on the tile's name row makes.
+pub(crate) fn open_voice_tile(user_id: i64) {
+    VOICE_TILE_MENU.with(|t| {
+        if let Some(s) = t.borrow().clone() {
+            if s.get() == Some(user_id) {
+                s.set(None)
+            } else {
+                s.set(Some(user_id))
+            };
+        }
+    });
+}
+
 fn app_shell(authed: Signal<bool>) -> Element {
     SHELL_ALIVE.with(|s| *s.borrow_mut() = Some(runtime_core::ScopeAlive::current()));
     mobile::install(signal(mobile::Pane::default()), signal(true));
@@ -473,6 +499,11 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // user id; one at a time, like the channel rows' `chan_menu`). LOCAL
     // ONLY: the menu's controls write to this tab's call session alone.
     let voice_tile_menu: Signal<Option<i64>> = signal(None);
+    // The web robot bridge never delivers a secondary press, so the suite
+    // drives the tile's opener through `cassette.open_voice_tile`: the hook
+    // flips this same signal, and registering it here keeps the tab's one
+    // live copy (the signal is born at the app root, above the shell).
+    crate::app::register_voice_tile_menu(voice_tile_menu.clone());
     // The signed-in user's live presence status, as a signal because the
     // profile strip can change it; the member panel renders the user under
     // this status, so a change regroups them there too.

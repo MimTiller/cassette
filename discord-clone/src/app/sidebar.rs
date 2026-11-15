@@ -162,7 +162,7 @@ pub(super) fn VoiceTile(
                 gap: Some(px(4.0)),
                 flex_shrink: Some(grow(1.0)),
                 ..Default::default()
-            }) {
+            }, test_id = "voice-tile-label") {
                 // The room's mute treatment: the dimmed name plus a small
                 // speaker-off icon the robot can read. A `switch` keyed on
                 // the local mute, so unmuting drops the icon without a
@@ -188,26 +188,29 @@ pub(super) fn VoiceTile(
                 )
                 { label }
             }
+                .on_touch(move |ev| {
+                    // A context tap (secondary press) on the name row opens
+                    // this tile's menu; the tile body is a live video the
+                    // browser hit-tests away from us, so the opener rides the
+                    // plain label row. A plain tap bubbles to the voice row.
+                    if ev.phase == TouchPhase::Began
+                        && runtime_shared::touch::pointer_button().opens_context_menu()
+                        && crate::backend::capabilities().voice
+                            == crate::backend::VoiceProvider::IdeaChat
+                    {
+                        if tile_menu.get() == Some(user_id) {
+                            tile_menu.set(None)
+                        } else {
+                            tile_menu.set(Some(user_id))
+                        };
+                        TouchResponse::CONSUMED
+                    } else {
+                        TouchResponse::IGNORED
+                    }
+                })
             { menu }
         }
         .bind(tile_ref)
-        .on_touch(move |ev| {
-            if ev.phase == TouchPhase::Began
-                && runtime_shared::touch::pointer_button().opens_context_menu()
-                && crate::backend::capabilities().voice
-                    == crate::backend::VoiceProvider::IdeaChat
-            {
-                if tile_menu.get() == Some(user_id) {
-                    tile_menu.set(None)
-                } else {
-                    tile_menu.set(Some(user_id))
-                };
-                TouchResponse::CONSUMED
-            } else {
-                // Plain taps bubble: the voice row keeps its join/leave tap.
-                TouchResponse::IGNORED
-            }
-        })
     }
 }
 
