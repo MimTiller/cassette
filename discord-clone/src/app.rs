@@ -469,6 +469,10 @@ fn app_shell(authed: Signal<bool>) -> Element {
     // The backend's refusal from the last voice join attempt, painted under
     // the channel row in red (user-facing text, shown verbatim).
     let voice_error: Signal<Option<(i64, String)>> = signal(None);
+    // Which voice tile's per-person volume menu is open (keyed by the remote
+    // user id; one at a time, like the channel rows' `chan_menu`). LOCAL
+    // ONLY: the menu's controls write to this tab's call session alone.
+    let voice_tile_menu: Signal<Option<i64>> = signal(None);
     // The signed-in user's live presence status, as a signal because the
     // profile strip can change it; the member panel renders the user under
     // this status, so a change regroups them there too.
@@ -1426,6 +1430,7 @@ fn app_shell(authed: Signal<bool>) -> Element {
         live_voice_roster: live_voice_roster.clone(),
         live_voice_rev: live_voice_rev.clone(),
         voice_error: voice_error.clone(),
+        voice_tile_menu: voice_tile_menu.clone(),
         live_at_bottom: live_at_bottom.clone(),
         live_attachments: live_attachments.clone(),
         live_ban_confirm: live_ban_confirm.clone(),

@@ -19,6 +19,7 @@ pub(super) fn VoiceTile(
     #[prop(static)] screen_share: bool,
     #[prop(static)] channel_id: i64,
     #[prop(static)] user_id: i64,
+    #[prop(static)] tile_menu: Signal<Option<i64>>,
 ) -> Element {
     // LOCAL ONLY: this tab's volume (slider position: 0 silent, 1 exactly as
     // sent, 2 double) and local mute for the person on this tile. Both start
@@ -26,10 +27,6 @@ pub(super) fn VoiceTile(
     // tab's own `Call` when set, and nothing here is sent to the room.
     let vol = signal(crate::backend::get_user_volume(channel_id, user_id));
     let mute_local = signal(crate::backend::get_user_muted(channel_id, user_id));
-    // Which tile's menu is open: this tile's switch keys on it, so opening
-    // re-renders just this tile's subtree (a roster rebuild re-reads the
-    // seam-backed positions, so a re-open never desyncs).
-    let menu_open = signal(false);
     let tile_ref: Ref<ViewHandle> = Ref::<ViewHandle>::new();
     let speaking = move || !muted && !mute_local.get();
     let ring = move || if speaking() {
@@ -76,7 +73,7 @@ pub(super) fn VoiceTile(
     // the slider position, so unmuting restores it.
     let menu: Element = ui! {
         switch(
-            move || menu_open.get(),
+            move || tile_menu.get() == Some(user_id),
             move |on: &bool| {
                 if !*on {
                     return ui! {
@@ -200,7 +197,11 @@ pub(super) fn VoiceTile(
                 && crate::backend::capabilities().voice
                     == crate::backend::VoiceProvider::IdeaChat
             {
-                menu_open.set(!menu_open.get());
+                if tile_menu.get() == Some(user_id) {
+                    tile_menu.set(None)
+                } else {
+                    tile_menu.set(Some(user_id))
+                };
                 TouchResponse::CONSUMED
             } else {
                 // Plain taps bubble: the voice row keeps its join/leave tap.
@@ -215,7 +216,7 @@ pub(super) struct SidebarParts {
 }
 
 pub(super) fn build(s: &ShellState) -> SidebarParts {
-    let ShellState { active_live_channel, active_live_server, cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, create_busy, create_error, create_name, create_open, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, joined_voice, live_at_bottom, live_chan_menu, live_channels, live_collapsed, live_mention_rev, live_scroll_handle, live_servers, live_unread, live_unread_rev, live_voice_roster, live_voice_rev, member_panel_width, muted, notif_mode, profile_mode, camera, screen_share, rc_busy, rc_cid, rc_err, rc_name, rc_open, server_menu_open, sidebar_width, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, status_menu, user_status, voice_error, .. } = s.clone();
+    let ShellState { active_live_channel, active_live_server, cc_busy, cc_err, cc_kind, cc_name, cc_open, collapsed, create_busy, create_error, create_name, create_open, dc_busy, dc_cid, dc_err, dc_name, dc_open, deafened, gateway, invite_created, invite_err, invite_expiry, invite_mode, joined_voice, live_at_bottom, live_chan_menu, live_channels, live_collapsed, live_mention_rev, live_scroll_handle, live_servers, live_unread, live_unread_rev, live_voice_roster, live_voice_rev, member_panel_width, muted, notif_mode, profile_mode, camera, screen_share, rc_busy, rc_cid, rc_err, rc_name, rc_open, server_menu_open, sidebar_width, ss_add_user_id, ss_busy, ss_err, ss_icon, ss_name, ss_open, ss_owner, status_menu, user_status, voice_error, voice_tile_menu, .. } = s.clone();
     // --- channel sidebar -------------------------------------------------
     // Width is driven by the `sidebar_width` signal (a thin drag handle on the
     // sidebar's right edge resizes it). A rules *closure* so the width
@@ -992,7 +993,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                             ..Default::default()
                                         }) {
                                             for u in video_users.iter(), key = u.user_id {
-                                                VoiceTile(name = u.username.clone(), muted = u.muted, screen_share = u.screen_share, channel_id = cid, user_id = u.user_id)
+                                            VoiceTile(name = u.username.clone(), muted = u.muted, screen_share = u.screen_share, channel_id = cid, user_id = u.user_id, tile_menu = voice_tile_menu.clone())
                                             }
                                         }
                                     }

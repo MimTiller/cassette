@@ -44,6 +44,7 @@ pub(super) struct ShellState {
     pub(super) live_voice_roster: Rc<RefCell<HashMap<i64, Vec<discord_server::voice::VoiceUser>>>>,
     pub(super) live_voice_rev: Signal<u32>,
     pub(super) voice_error: Signal<Option<(i64, String)>>,
+    pub(super) voice_tile_menu: Signal<Option<i64>>,
     pub(super) live_at_bottom: Signal<bool>,
     pub(super) live_attachments: Rc<RefCell<HashMap<i64, Vec<discord_server::server_settings::MessageAttachment>>>>,
     pub(super) live_ban_confirm: Signal<Option<i64>>,
