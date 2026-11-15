@@ -1,6 +1,7 @@
 //! The live videos a voice tile can show, by (channel, user id), whatever
 //! carries the call. A provider reports its feeds as [`VideoFeed`]s holding
-//! the framework's own `media_stream::MediaStream`: idea-chat's call stack
+//! the framework's own `media_stream::MediaStream`: LiveKit wraps the
+//! browser's MediaStream as one (`livekit::videos`); idea-chat's call stack
 //! (`call-video`) already produces them per participant. The `video` SDK
 //! plays a feed in the tile's `<video>`. A stream is only replaced when its
 //! track changes, so a tile keeps playing between polls.

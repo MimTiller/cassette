@@ -166,6 +166,9 @@ impl InstanceApi for IdeaChatBackend {
     }
     async fn set_instance_settings(
         _call_provider: String,
+        _livekit_url: String,
+        _livekit_api_key: String,
+        _livekit_api_secret: String,
         _chat_backend: String,
         _idea_chat_url: String,
     ) -> Result<InstanceSettingsResult, ServerError> {
@@ -173,6 +176,9 @@ impl InstanceApi for IdeaChatBackend {
     }
     async fn test_call_provider(
         _call_provider: String,
+        _livekit_url: String,
+        _livekit_api_key: String,
+        _livekit_api_secret: String,
     ) -> Result<CallTestResult, ServerError> {
         Err(model::not_supported())
     }

@@ -1,6 +1,7 @@
 //! Today's voice calls: the `discord-server` voice RPCs, plus this tab's own
 //! media for the call, driven through `crate::backend::call_media`, which
-//! answers through the provider the ticket named (idea-chat today). The RPC owns the permission truth and the roster
+//! answers through the provider the ticket named (LiveKit in `livekit.rs`;
+//! idea-chat reserved). The RPC owns the permission truth and the roster
 //! frame; nothing here names a provider.
 
 use super::*;

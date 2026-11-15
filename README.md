@@ -152,7 +152,8 @@ idealyst build --web --release
 [`deploy/install.sh`](deploy/README.md) installs RWND as a per-user `systemd`
 service in one go: it builds the app, generates the session secret, writes the
 settings file and starts the service. [`docs/self-hosting.md`](docs/self-hosting.md)
-covers HTTPS, reverse proxies, tunnels and the idea-chat call relay.
+covers HTTPS, reverse proxies and tunnels. (Its voice sections describe LiveKit,
+which RWND no longer uses; voice is moving to idea-chat.)
 
 ## DIP Switches: configuration
 

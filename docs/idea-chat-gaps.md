@@ -104,8 +104,8 @@ EmojiApi, StickersApi, GifApi, RolesApi (chat-model has the three fixed ranks
 Owner/Admin/Member — `set_role` exists but the named-role system has no model),
 PermissionsApi, ThemesApi, CallApi (voice: chat-model speaks `VoiceJoined/
 VoiceUpdated/VoiceLeft`, `RingUpdated`, `KeyRequested`/`KeyDelivered` — E2EE
-call keys; the app's call provider has nothing to bridge to yet, and the old
-provider is out; join_call/leave_call/update_call exist on chat-api now —
+call keys; the app's LiveKit provider has nothing to bridge to yet, and LiveKit
+is out as a provider; join_call/leave_call/update_call exist on chat-api now —
 **wire-doc fix**: the study predated them), InstanceApi (chat-api has no
 instance-status/claim route — that was hearth, now out of the build;
 **missing**), SearchApi → `search(scope, query)` **impl** (client-side search

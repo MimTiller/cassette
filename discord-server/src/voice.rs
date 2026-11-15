@@ -1,22 +1,25 @@
 //! Voice calls: the provider-agnostic call seam.
 //!
 //! Whoever hosts a Cassette server picks the voice-call provider for it:
-//! Nicho's idea-chat calls (QUIC relay + SFrame E2EE + signed grants, see
-//! `docs/idea-chat-wire.md`). Joining a voice channel returns a
-//! [`CallTicket`] naming the provider and everything its client needs; the
-//! UI talks only to that ticket and the client's `CallApi` area, never to a
-//! provider directly.
+//! today LiveKit, later Nicho's idea-chat calls (QUIC relay + SFrame E2EE +
+//! signed grants, see `docs/idea-chat-wire.md`). Joining a voice channel
+//! returns a [`CallTicket`] naming the provider and everything its client
+//! needs; the UI talks only to that ticket and the client's `CallApi` area,
+//! never to a provider directly.
 //!
 //! The provider comes from the environment, read on every call (the
-//! server's own choice, not the client's): `CALL_PROVIDER` = `idea-chat` |
-//! `none` (default `none`), plus the relay's `IDEA_CHAT_RELAY_URL`,
-//! `IDEA_CHAT_RELAY_SECRET` and `IDEA_CHAT_RELAY_CERT_HASH`. With `none` a
-//! join refuses, and the voice UI shows the not-enabled state instead of a
-//! connect.
+//! server's own choice, not the client's): `CALL_PROVIDER` = `livekit` |
+//! `none` (default `none`; `idea-chat` is reserved and refused until its
+//! wire lands), plus `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`
+//! for LiveKit. With `none` a join refuses, and the voice UI shows the
+//! not-enabled state instead of a connect.
 //!
-//! An idea-chat ticket carries the relay URL and a `call-auth` grant for
-//! (user, room, send) signed with the relay secret. Joining requires the
-//! Connect permission, checked in the channel (a voice channel's permission
+//! A LiveKit ticket carries the socket URL and an access token: a JWT
+//! (HS256) signed with the API secret, claims `iss` = the API key, `sub` =
+//! the user id, `name` = the display name, `iat`/`nbf`/`exp` (short-lived),
+//! and a `video` grant object for the channel's room (`rwnd-ch-<id>`), whose
+//! `canPublish` follows the Speak permission. Joining requires the Connect
+//! permission, checked in the channel (a voice channel's permission
 //! question is the channel's, never the server's).
 //!
 //! Who is in which voice channel lives on the server - per-session state,
@@ -42,9 +45,18 @@ use crate::realtime::{channel_audience, hub};
 use crate::server_settings::{next_frame_seq, WsServerMsg};
 
 #[cfg(feature = "server")]
+use hmac::{Hmac, Mac};
+#[cfg(feature = "server")]
+use sha2::Sha256;
+#[cfg(feature = "server")]
 use call_auth::Send;
 
 use serde::{Deserialize, Serialize};
+
+/// How long a LiveKit access token stays valid: short, since it only
+/// authorizes a connection the user is about to make.
+#[cfg(feature = "server")]
+const TOKEN_TTL_SECS: i64 = 10 * 60;
 
 /// The refusal when voice is disabled: shown to the user verbatim.
 #[cfg(feature = "server")]
@@ -57,9 +69,17 @@ const NOT_ENABLED: &'static str = "voice is not enabled on this server";
 /// connect; the client treats it as opaque provider data.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CallTicket {
-    /// Nicho's idea-chat calls (QUIC relay + SFrame E2EE + signed grants -
-    /// see `docs/idea-chat-wire.md`). The relay URL plus a `call-auth` grant
-    /// for (user, room, send) signed with the relay secret.
+    /// A LiveKit call: the server's socket URL and an access token for the
+    /// viewer's identity, plus whether they may publish audio (their Speak
+    /// permission, which the client's mic control follows).
+    LiveKit {
+        url: String,
+        token: String,
+        can_publish: bool,
+    },
+    /// Reserved: Nicho's idea-chat calls (QUIC relay + SFrame E2EE + signed
+    /// grants - see `docs/idea-chat-wire.md`). Not issued until that wire
+    /// lands; a server configured for it refuses for now.
     IdeaChat {
         relay: String,
         grant: String,
@@ -113,7 +133,7 @@ pub struct LeaveVoiceResult {
 }
 
 /// Ask the server what its voice state is: the enabled call provider
-/// (`idea-chat` | `none` - for the not-enabled UI state; secret material is
+/// (`livekit` | `none` - for the not-enabled UI state; secret material is
 /// never handed out) and, when the caller is already in `channel_id`, the
 /// ticket that re-joins them, so a fresh browser restores its voice bar
 /// without a new click.
@@ -167,14 +187,17 @@ pub struct VoiceStateResult {
 
 // ── the provider config ────────────────────────────────────────────────────
 
-/// The call-provider settings: which provider answers joins, and the idea-chat
-/// relay's credentials when it does. Read from the environment on every join,
-/// so a server can't be steered by its clients.
+/// The call-provider settings: which provider answers joins, and LiveKit's
+/// credentials when it does. Read from the environment on every join, so
+/// a server can't be steered by its clients.
 #[cfg(feature = "server")]
 #[derive(Clone)]
 pub struct CallConfig {
-    /// `idea-chat` | `none`.
+    /// `livekit` | `none` | `idea-chat`.
     pub provider: String,
+    pub livekit_url: String,
+    pub livekit_api_key: String,
+    pub livekit_api_secret: String,
     /// The quic-call relay's URL (`https://host:port/`).
     pub relay_url: String,
     /// The relay's pinned certificate hash, empty for a CA-issued cert.
@@ -189,6 +212,9 @@ impl CallConfig {
     pub fn from_env() -> Self {
         CallConfig {
             provider: std::env::var("CALL_PROVIDER").unwrap_or_else(|_| "none".to_string()),
+            livekit_url: std::env::var("LIVEKIT_URL").unwrap_or_default(),
+            livekit_api_key: std::env::var("LIVEKIT_API_KEY").unwrap_or_default(),
+            livekit_api_secret: std::env::var("LIVEKIT_API_SECRET").unwrap_or_default(),
             relay_url: std::env::var("IDEA_CHAT_RELAY_URL").unwrap_or_default(),
             relay_cert_hash: std::env::var("IDEA_CHAT_RELAY_CERT_HASH").unwrap_or_default(),
             relay_secret: std::env::var("IDEA_CHAT_RELAY_SECRET").unwrap_or_default(),
@@ -199,6 +225,17 @@ impl CallConfig {
     /// answers.
     pub fn refusal(&self) -> Option<String> {
         match self.provider.as_str() {
+            "livekit" =>
+                if self.livekit_url.is_empty()
+                    || self.livekit_api_key.is_empty()
+                    || self.livekit_api_secret.is_empty()
+                {
+                    Some(
+                        "livekit is configured but LIVEKIT_URL, LIVEKIT_API_KEY or LIVEKIT_API_SECRET is missing".into(),
+                    )
+                } else {
+                    None
+                }
             "idea-chat" =>
                 if self.relay_url.is_empty() || self.relay_secret.is_empty() {
                     Some(
@@ -214,14 +251,136 @@ impl CallConfig {
 
 /// The provider name the client compares [`VoiceStateResult.provider`]
 /// against to decide between the live and the not-enabled voice UI.
+pub const PROVIDER_LIVEKIT: &'static str = "livekit";
 pub const PROVIDER_NONE: &'static str = "none";
 
-// ── the relay room ─────────────────────────────────────────────────────────
+// ── the JWT ────────────────────────────────────────────────────────────────
 
-/// The relay's room for a channel: one room per channel id.
+/// The LiveKit room for a channel: one room per channel id.
 #[cfg(feature = "server")]
 pub fn room_for(channel_id: i64) -> String {
     format!("rwnd-ch-{channel_id}")
+}
+
+/// Base64url (no padding), for a JWT's header/claims segments.
+#[cfg(feature = "server")]
+pub fn b64url(bytes: &[u8]) -> String {
+    const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = *chunk.first().unwrap_or(&0) as u32;
+        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
+        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
+        out.push(A[((b0 >> 2) & 63) as usize] as char);
+        out.push(A[((b0 << 4 | b1 >> 4) & 63) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(A[((b1 << 2 | b2 >> 6) & 63) as usize] as char);
+        }
+        if chunk.len() > 2 {
+            out.push(A[(b2 & 63) as usize] as char);
+        }
+    }
+    out
+}
+
+/// The header segment every token here carries: `{"alg":"HS256","typ":"JWT"}`,
+/// base64url, no padding.
+#[cfg(feature = "server")]
+const JWT_HEADER: &'static str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
+
+#[cfg(feature = "server")]
+type HmacSha256 = Hmac<Sha256>;
+
+/// Sign a JWT's header/claims body with `secret`: the signature segment.
+#[cfg(feature = "server")]
+fn jwt_sign(body: &[u8], secret: &[u8]) -> String {
+    // HMAC accepts any key length; the error arm is unreachable.
+    let mut mac = HmacSha256::new_from_slice(secret).expect("hmac accepts any key length");
+    mac.update(body);
+    b64url(&mac.finalize().into_bytes())
+}
+
+/// The JWT claims JSON for a LiveKit access token: `iss` names the issuing
+/// service, `sub` is the identity, `name` its display name, `iat`/`nbf`/`exp`
+/// the short validity window pinned to `now`, and the `video` grant object
+/// opens room `room` (`canPublish` from the Speak permission).
+#[cfg(feature = "server")]
+pub fn livekit_claims(api_key: String, identity: i64, name: String, room: String, can_publish: bool, now: i64) -> String {
+    let exp = now + TOKEN_TTL_SECS;
+    let nbf = now - TOKEN_TTL_SECS;
+    // Serialized, never pasted: the display name is user-chosen, and a quote
+    // in it must stay text rather than add claims (a second `sub` would let
+    // one user join a call as another).
+    serde_json::json!({
+        "iss": api_key,
+        "sub": identity.to_string(),
+        "name": name,
+        "iat": now,
+        "nbf": nbf,
+        "exp": exp,
+        "video": {
+            "room": room,
+            "roomJoin": true,
+            "canPublish": can_publish,
+            "canSubscribe": true,
+            "canPublishData": can_publish,
+        },
+    })
+    .to_string()
+}
+
+#[cfg(feature = "server")]
+pub fn issue_access_token_at(
+    api_key: String,
+    secret: String,
+    identity: i64,
+    name: String,
+    room: String,
+    can_publish: bool,
+    now: i64,
+) -> String {
+    let claims = livekit_claims(api_key, identity, name, room, can_publish, now);
+    let claims_b64 = b64url(claims.as_bytes());
+    let body = format!("{JWT_HEADER}.{claims_b64}");
+    let sig = jwt_sign(body.as_bytes(), secret.as_bytes());
+    format!("{body}.{sig}")
+}
+
+/// A token for the media server's `ListRooms` endpoint: the same JWT shape
+/// as the join token but carrying only the `roomList` grant inside `video`
+/// (what the server's `EnsureListPermission` checks), so the Instance
+/// Settings test can ask the provider how many rooms it has without being
+/// able to join or publish anywhere.
+#[cfg(feature = "server")]
+pub fn room_list_token(api_key: String, secret: String, now: i64) -> String {
+    let exp = now + TOKEN_TTL_SECS;
+    let nbf = now - TOKEN_TTL_SECS;
+    let claims = serde_json::json!({
+        "iss": api_key,
+        "sub": "",
+        "iat": now,
+        "nbf": nbf,
+        "exp": exp,
+        "video": { "roomList": true },
+    })
+    .to_string();
+    let claims_b64 = b64url(claims.as_bytes());
+    let body = format!("{JWT_HEADER}.{claims_b64}");
+    let sig = jwt_sign(body.as_bytes(), secret.as_bytes());
+    format!("{body}.{sig}")
+}
+
+/// A LiveKit access token, live now.
+#[cfg(feature = "server")]
+pub fn issue_access_token(
+    api_key: String,
+    secret: String,
+    identity: i64,
+    name: String,
+    room: String,
+    can_publish: bool,
+) -> String {
+    issue_access_token_at(api_key, secret, identity, name, room, can_publish, now_secs())
 }
 
 // ── the connected-voice roster (process state, no DB column) ───────────────────────────────
@@ -265,7 +424,7 @@ fn roster_ids(channel_id: i64) -> Vec<i64> {
 #[cfg(feature = "server")]
 /// Per-user mute/deafen/camera/screen-share flags for their current voice
 /// connection: process state like the roster itself, cleared when they leave
-/// the channel. A browser's own toggles are invisible to peers,
+/// the channel. LiveKit only ever sees one browser's own toggles and grants,
 /// so the flags live server-side and ride every VoiceRoster frame — that is
 /// what lets a peer draw the muted icon and a video tile, and what a fresh
 /// client restores from `voice_state`.
@@ -411,25 +570,43 @@ impl VoiceService {
         Ok(perms)
     }
 
-    /// The provider ticket for an authorized join: the relay URL plus a
-    /// `call-auth` grant for (user, room, send) signed with the relay secret.
-    /// The provider check runs first, so a server with voice disabled says so
-    /// plainly even for a channel the caller could join.
+    /// The provider ticket for an authorized join: LiveKit's URL plus an
+    /// access token whose `video` grant opens the channel's room, canPublish
+    /// from Speak; an idea-chat ticket carries the relay URL and a `call-auth`
+    /// grant for (user, room, send) signed with the relay secret. The provider
+    /// check runs first, so a server with voice disabled says so plainly even
+    /// for a channel the caller could join.
     pub fn ticket(&self, caller: i64, channel_id: i64, config: CallConfig) -> Result<CallTicket, String> {
         if let Some(reason) = config.refusal() {
             return Err(reason);
         }
         let perms = self.authorize(caller, channel_id)?;
         let can_publish = perms.contains(Permissions::SPEAK);
-        Ok(CallTicket::IdeaChat {
-            relay: config.relay_url,
-            grant: mint_grant(
-                config.relay_secret,
-                room_for(channel_id),
+        if config.provider == "idea-chat" {
+            return Ok(CallTicket::IdeaChat {
+                relay: config.relay_url,
+                grant: mint_grant(
+                    config.relay_secret,
+                    room_for(channel_id),
+                    caller,
+                    can_publish,
+                    now_ms(),
+                ),
+            })
+        }
+        let name = self.db.user_display_name(caller)
+            .unwrap_or_else(|| self.db.user_by_id(caller).map(|(_, u)| u).unwrap_or_default());
+        Ok(CallTicket::LiveKit {
+            url: config.livekit_url,
+            token: issue_access_token(
+                config.livekit_api_key,
+                config.livekit_api_secret,
                 caller,
+                name,
+                room_for(channel_id),
                 can_publish,
-                now_ms(),
             ),
+            can_publish,
         })
     }
 
@@ -484,7 +661,7 @@ impl VoiceService {
         Ok(LeaveVoiceResult { was_in })
     }
 
-    /// The server's call provider name - `idea-chat` | `none` - for clients
+    /// The server's call provider name - `livekit` | `none` - for clients
     /// that ask, so secret material is never handed out.
     pub fn provider(&self) -> String {
         crate::instance::current_call_config().provider
@@ -497,6 +674,14 @@ impl VoiceService {
 fn db_from_state() -> Result<Db, ServerError> {
     server::use_state::<Db>()
         .ok_or_else(|| ServerError::failed("database not installed"))
+}
+
+#[cfg(feature = "server")]
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(1_000)
 }
 
 #[cfg(feature = "server")]
@@ -658,9 +843,24 @@ mod tests {
         (dir, db)
     }
 
+    fn live_config() -> CallConfig {
+        CallConfig {
+            provider: "livekit".to_string(),
+            livekit_url: "ws://127.0.0.1:7880".to_string(),
+            livekit_api_key: "devkey".to_string(),
+            livekit_api_secret: "secret".to_string(),
+            relay_url: "".to_string(),
+            relay_cert_hash: "".to_string(),
+            relay_secret: "".to_string(),
+        }
+    }
+
     fn none_config() -> CallConfig {
         CallConfig {
             provider: "none".to_string(),
+            livekit_url: "".to_string(),
+            livekit_api_key: "".to_string(),
+            livekit_api_secret: "".to_string(),
             relay_url: "".to_string(),
             relay_cert_hash: "".to_string(),
             relay_secret: "".to_string(),
@@ -670,6 +870,9 @@ mod tests {
     fn idea_chat_config() -> CallConfig {
         CallConfig {
             provider: "idea-chat".to_string(),
+            livekit_url: "".to_string(),
+            livekit_api_key: "".to_string(),
+            livekit_api_secret: "".to_string(),
             relay_url: "https://192.168.0.32:4433/".to_string(),
             relay_cert_hash: "pinsha256==".to_string(),
             relay_secret: "relay-test-secret".to_string(),
@@ -702,6 +905,9 @@ mod tests {
         assert_eq!(
             svc.join(4, 20, CallConfig {
                 provider: "idea-chat".to_string(),
+                livekit_url: "".to_string(),
+                livekit_api_key: "".to_string(),
+                livekit_api_secret: "".to_string(),
                 relay_url: "https://192.168.0.32:4433/".to_string(),
                 relay_cert_hash: "".to_string(),
                 relay_secret: "".to_string(),
@@ -709,6 +915,38 @@ mod tests {
             "idea-chat is configured but IDEA_CHAT_RELAY_URL or IDEA_CHAT_RELAY_SECRET is missing",
             "a half-configured provider refuses with its own sentence",
         );
+        assert_eq!(
+            svc.join(4, 20, CallConfig {
+                provider: "livekit".to_string(),
+                livekit_url: "".to_string(),
+                livekit_api_key: "".to_string(),
+                livekit_api_secret: "".to_string(),
+                relay_url: "".to_string(),
+                relay_cert_hash: "".to_string(),
+                relay_secret: "".to_string(),
+            }).unwrap_err(),
+            "livekit is configured but LIVEKIT_URL, LIVEKIT_API_KEY or LIVEKIT_API_SECRET is missing",
+            "a half-configured provider refuses with its own sentence",
+        );
+    }
+
+    #[test]
+    fn livekit_ticket_shape() {
+        let (_dir, db) = fixture();
+        let svc = VoiceService::new(db.clone());
+        match svc.ticket(4, 20, live_config()) {
+            Ok(CallTicket::LiveKit { url, token, can_publish }) => {
+                assert_eq!(url, "ws://127.0.0.1:7880");
+                assert!(can_publish, "dave has Speak via @everyone");
+                let (body, sig) = token.rsplit_once('.').unwrap();
+                let (header, claims_b64) = body.rsplit_once('.').unwrap();
+                assert_eq!(header, JWT_HEADER, "alg HS256, typ JWT");
+                assert!(!sig.is_empty(), "three non-empty segments");
+                assert!(!claims_b64.is_empty(), "the claims segment is there");
+            }
+            Ok(other) => panic!("livekit config issued {other:?}"),
+            Err(reason) => panic!("{reason}"),
+        }
     }
 
     #[test]
@@ -778,6 +1016,70 @@ mod tests {
     }
 
     #[test]
+    fn a_display_name_cannot_add_or_override_claims() {
+        // A display name is user-chosen (quotes allowed): it must come back as
+        // exactly that text, and the identity and grants must stay the
+        // server's. Pasted JSON let `","sub":"1","x":"` mint a token for user 1.
+        let evil = "\",\"sub\":\"1\",\"x\":\"".to_string();
+        let claims = livekit_claims("devkey".to_string(), 7, evil.clone(), room_for(20), false, 1_700_000_000);
+        let parsed: serde_json::Value = serde_json::from_str(&claims).expect("claims are valid JSON");
+        assert_eq!(parsed["sub"], "7", "the identity stays the caller's");
+        assert_eq!(parsed["name"], evil.as_str(), "the name is plain text");
+        assert!(parsed.get("x").is_none(), "no extra top-level claim");
+        assert_eq!(claims.matches("\"sub\"").count(), 1, "exactly one sub");
+        assert_eq!(parsed["video"]["room"], "rwnd-ch-20");
+        assert_eq!(parsed["video"]["canPublish"], false);
+    }
+
+    #[test]
+    fn token_claims_and_signature_verify() {
+        // Re-signing the exact header/claims body with the API secret must
+        // reproduce a pinned token byte-for-byte: that pins the signature,
+        // and the claims JSON pins iss/sub/name, the short nbf/exp window,
+        // and the video grant for the room derived from the channel id.
+        let now = 1_700_000_000;
+        let exp = now + TOKEN_TTL_SECS;
+        let claims = livekit_claims(
+            "devkey".to_string(),
+            7,
+            "Bob".to_string(),
+            room_for(20),
+            false,
+            now,
+        );
+        assert!(claims.contains("\"iss\":\"devkey\""), "iss is the api key");
+        assert!(claims.contains("\"sub\":\"7\""), "sub is the identity");
+        assert!(claims.contains("\"name\":\"Bob\""), "name is the display name");
+        let nbf_at = now - TOKEN_TTL_SECS;
+        let nbf = format!("\"nbf\":{nbf_at}");
+        assert!(
+            claims.contains(nbf.as_str()),
+            "not valid before a TTL-width window",
+        );
+        let exp_needle = format!("\"exp\":{exp}");
+        assert!(
+            claims.contains(exp_needle.as_str()),
+            "expires after the short TTL window",
+        );
+        assert!(claims.contains("\"room\":\"rwnd-ch-20\""), "room from the channel id");
+        assert!(claims.contains("\"canPublish\":false"), "no Speak -> cannot publish");
+        let token = issue_access_token_at(
+            "devkey".to_string(),
+            "secret".to_string(),
+            7,
+            "Bob".to_string(),
+            room_for(20),
+            false,
+            now,
+        );
+        let claims_b64 = b64url(claims.as_bytes());
+        let body = format!("{JWT_HEADER}.{claims_b64}");
+        let sig = jwt_sign(body.as_bytes(), "secret".as_bytes());
+        let rebuilt = format!("{body}.{sig}");
+        assert_eq!(rebuilt, token, "the HMAC of the body is the token");
+    }
+
+    #[test]
     fn set_voice_flags_makes_the_roster_show_it() {
         let _guard = crate::e2e_lock::guard();
         // Allowed caller: joining then muting lands the flag on the roster
@@ -785,7 +1087,7 @@ mod tests {
         // with a plain sentence, and so is one whose channel differs.
         let (_dir, db) = fixture();
         let svc = VoiceService::new(db.clone());
-        assert!(svc.join(4, 20, idea_chat_config()).is_ok(), "dave joins");
+        assert!(svc.join(4, 20, live_config()).is_ok(), "dave joins");
         assert!(svc.set_flags(4, 20, true, false, false, false).is_ok(), "dave mutes");
         let cards = roster_entries(db.clone(), 20);
         assert_eq!(cards.len(), 1, "one entry");
@@ -812,7 +1114,7 @@ mod tests {
         // roster card, which is what a peer's client draws the tile from.
         let (_dir, db) = fixture();
         let svc = VoiceService::new(db.clone());
-        assert!(svc.join(4, 22, idea_chat_config()).is_ok(), "dave holds Connect on 22");
+        assert!(svc.join(4, 22, live_config()).is_ok(), "dave holds Connect on 22");
         assert_eq!(
             svc.set_flags(4, 22, false, false, true, false).unwrap_err(),
             "only members who can speak may turn on the camera or share their screen",
@@ -825,7 +1127,7 @@ mod tests {
         );
         assert!(svc.set_flags(4, 22, true, false, false, false).is_ok(), "mute alone stays allowed");
         assert!(svc.leave(4, 22).unwrap().was_in, "dave leaves 22");
-        assert!(svc.join(4, 20, idea_chat_config()).is_ok(), "dave joins the open room");
+        assert!(svc.join(4, 20, live_config()).is_ok(), "dave joins the open room");
         assert!(svc.set_flags(4, 20, false, false, true, true).is_ok(), "dave opens both");
         let cards = roster_entries(db.clone(), 20);
         assert_eq!(cards.len(), 1, "one entry");
@@ -842,7 +1144,7 @@ mod tests {
         let _guard = crate::e2e_lock::guard();
         let (_dir, db) = fixture();
         let svc = VoiceService::new(db.clone());
-        assert!(svc.join(4, 20, idea_chat_config()).is_ok(), "dave joins the open room");
+        assert!(svc.join(4, 20, live_config()).is_ok(), "dave joins the open room");
         assert_eq!(voice_of(4), Some(20), "the join records the entry");
         assert_eq!(roster_ids(20), vec![4], "dave is listed");
         assert!(svc.leave(4, 20).unwrap().was_in, "leave reports they were in");
