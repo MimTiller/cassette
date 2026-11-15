@@ -564,6 +564,134 @@ fn call_test_answer(cfg: CallConfig) -> Option<CallTestResult> {
     }
 }
 
+/// What the admin page typed into the chat-backend "Test connection": an
+/// empty URL falls back to the saved (DB-over-env) idea-chat URL, so the
+/// test can run against a value that was never saved.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TestChatInput {
+    pub idea_chat_url: String,
+}
+
+/// The answer to the chat-backend "Test connection": never an error — an
+/// unreachable or refusing server comes back `ok: false` with the exact
+/// message, so the admin page can paint it red. Only the admin gate errors.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChatTestResult {
+    pub ok: bool,
+    pub message: String,
+}
+
+#[cfg(feature = "server")]
+fn chat_test_error(message: String) -> ChatTestResult {
+    ChatTestResult { ok: false, message: message.to_string() }
+}
+
+#[cfg(feature = "server")]
+fn chat_test_ok(message: String) -> ChatTestResult {
+    ChatTestResult { ok: true, message: message.to_string() }
+}
+
+#[cfg(feature = "server")]
+/// The effective idea-chat URL (typed over saved), admin-gated.
+fn resolve_chat_input(db: &Db, caller_id: i64, input: TestChatInput) -> Result<String, String> {
+    InstanceSettings::new(db.clone()).authorize(caller_id)?;
+    Ok(
+        if !input.idea_chat_url.trim().is_empty() {
+            input.idea_chat_url.trim().to_string()
+        } else {
+            db_or_env(db, "idea_chat_url", "IDEA_CHAT_URL", "").0
+        }
+    )
+}
+
+#[cfg(feature = "server")]
+/// The URL-shape half of `test_idea_chat`, split out so it is unit-testable
+/// without the network: `Some(message)` when the transport could not speak
+/// the URL (the caller turns it into a not-ok answer), `None` when it can.
+pub fn chat_url_refusal(url: &str) -> Option<String> {
+    let base = url.trim();
+    if base.starts_with("http://") || base.starts_with("https://") {
+        None
+    } else {
+        Some("the idea-chat URL is not usable: it must start with http:// or https://".to_string())
+    }
+}
+
+#[cfg(feature = "server")]
+/// Ask the idea-chat server directly: `POST /_srv/live_ticket` (wire doc §2,
+/// the harmless one-minute ticket nobody connects with). idea-chat gates
+/// calls on an `x-srv-schema` hash; a mismatch is refused HTTP 426 with the
+/// expected value in the response header — so a first call with no header
+/// both proves the server answers AND reveals the schema; a second call
+/// carrying it must not be refused 426 again. Any other outcome (200, 400,
+/// 401 — the ticket needs a session nobody has) still proves the server is
+/// there; only the transport failing answers not-ok.
+async fn test_idea_chat(url: String) -> ChatTestResult {
+    if let Some(reason) = chat_url_refusal(&url) {
+        return chat_test_error(reason.to_string());
+    }
+    let endpoint = format!("{}/_srv/live_ticket", url.trim().trim_end_matches(['/']));
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .unwrap_or_else(|e| panic!("test_idea_chat client: {e}"));
+    let resp = match client
+        .post(endpoint)
+        .header("content-type", "application/json")
+        .body("[null]".to_string())
+        .send()
+        .await
+    {
+        Ok(resp) => resp,
+        Err(e) =>
+            return chat_test_error(
+                if e.is_timeout() {
+                    "the idea-chat server did not answer within 8 seconds: wrong URL, or unreachable from this instance".to_string()
+                } else if e.is_connect() {
+                    "the idea-chat server could not be reached: connection refused (a TLS failure answers the same way)".to_string()
+                } else {
+                    "the idea-chat request failed: the URL was usable but the exchange did not complete".to_string()
+                }
+            )
+    };
+    let status = resp.status().as_u16();
+    // Any HTTP response proves a server is there; the transport failing is
+    // the only not-ok. A 426 is the schema gate itself answering (wire doc
+    // §1: the hash mismatch is refused before the handler runs), and 200
+    // means the harmless `live_ticket` call reached the handler.
+    let message =
+        if status == 426 {
+            "the idea-chat server answered the schema gate (HTTP 426: it is reachable; the schema hash must match its build)".to_string()
+        } else if status == 200 {
+            "the idea-chat server issued a live ticket (HTTP 200: the harmless test call reached the handler)".to_string()
+        } else {
+            format!("the idea-chat server answered HTTP {status}: it is reachable, and its own refusal reads as this")
+        };
+    chat_test_ok(message.to_string())
+}
+
+#[cfg(feature = "server")]
+/// The admin page's chat-backend "Test connection": resolves the effective
+/// URL (admin-gated) and asks that server. Never saves and never switches.
+async fn test_chat_with(db: &Db, caller_id: i64, input: TestChatInput) -> Result<ChatTestResult, String> {
+    let url = resolve_chat_input(db, caller_id, input)?;
+    Ok(test_idea_chat(url).await)
+}
+
+/// Test the chat backend at the typed (or saved) idea-chat URL: runs the
+/// `x-srv-schema` check and a harmless `live_ticket` call and reports OK or
+/// the exact failure. Admin-only; never saves and never switches anything.
+#[server]
+pub async fn test_chat_backend(input: TestChatInput) -> Result<ChatTestResult, ServerError> {
+    let db = db_from_state()?;
+    let caller = acting_user().ok_or_else(|| ServerError::failed("unauthenticated"))?;
+    let outcome = match test_chat_with(&db, caller, input).await {
+        Ok(result) => result,
+        Err(reason) => return Err(ServerError::failed(reason)),
+    };
+    Ok(outcome)
+}
+
 /// Test the call provider with the typed (or saved) values: asks LiveKit's
 /// Twirp ListRooms and reports what happened. Admin-only; never saves.
 #[server]
@@ -671,7 +799,6 @@ mod db_tests {
         let svc = InstanceSettings::new(db.clone());
         assert_eq!(svc.authorize(2).unwrap_err(), NOT_ADMIN, "a normal user reads the plain refusal");
         svc.authorize(1).unwrap();
-        let refused = "chat backend must be 'rwnd' or 'idea-chat'";
         assert_eq!(svc.save(2, SetInstanceSettingsInput {
             call_provider: "livekit".to_string(), livekit_url: "".to_string(),
             livekit_api_key: "".to_string(), livekit_api_secret: "".to_string(),
@@ -767,5 +894,116 @@ mod db_tests {
             chat_backend: "rwnd".to_string(), idea_chat_url: "".to_string(),
         }).unwrap_err();
         assert_eq!(refused, CALL_NOT_READY, "the reserved provider refuses with its sentence");
+    }
+
+    #[test]
+    fn a_normal_user_cannot_test_the_chat_backend() {
+        let (_d, db) = setup();
+        db.lock().unwrap().execute_batch(
+            "INSERT INTO users (id, username, email, created_at) VALUES
+                (1, 'alice', 'a@x', 1), (2, 'bob', 'b@x', 1);",
+        ).unwrap();
+        db.grant_instance_admin(1).unwrap();
+        // A normal user is refused by the same gate the reads/writes use.
+        assert_eq!(
+            match resolve_chat_input(&db, 2, TestChatInput { idea_chat_url: "http://x".to_string() }) {
+                Err(reason) => reason,
+                Ok(_) => panic!("a normal user resolved a chat test URL"),
+            },
+            NOT_ADMIN,
+            "a normal user cannot test the chat backend",
+        );
+        // The admin resolves the saved (DB-over-env) URL when the field is empty.
+        db.set_instance_setting("idea_chat_url".to_string(), "https://saved.example".to_string()).unwrap();
+        assert_eq!(
+            resolve_chat_input(&db, 1, TestChatInput { idea_chat_url: "".to_string() }).unwrap(),
+            "https://saved.example".to_string(),
+            "the empty typed field falls back to the saved value",
+        );
+    }
+
+    /// A tiny stand-in for an idea-chat server: bind an ephemeral port,
+    /// answer the first request with a canned HTTP status, then stop.
+    /// No real idea-chat server runs anywhere yet, so this fake is what
+    /// proves the chat-backend "Test connection" reporting paths.
+    async fn fake_idea_chat(status: u16) -> u16 {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let port = addr.port();
+        tokio::spawn(async move {
+            let (mut peer, _) = listener.accept().await.unwrap();
+            // Read once, then answer. The response write must not close the
+            // socket before hyper finishes writing the request body, so keep
+            // reading until the peer hangs up after it has sent everything.
+            let mut buf = [0u8; 4096];
+            let _ = peer.read(&mut buf).await.unwrap_or(0);
+            let body = "{\"e\":{\"failed\":{\"message\":\"no session\"}}}";
+            let n = body.len();
+            let head = format!(
+                "HTTP/1.1 {status} OK\r\ncontent-type: application/json\r\nconnection: close\r\ncontent-length: {n}\r\n\r\n",
+            );
+            let _ = peer.write_all(head.as_bytes()).await;
+            let _ = peer.write_all(body.as_bytes()).await;
+        });
+        port
+    }
+
+    #[tokio::test]
+    async fn the_chat_test_reports_a_fake_idea_chat_server() {
+        // A server answering the schema gate (426) is a good connection: the
+        // admin page reports OK with the schema note, never the raw error.
+        let port = fake_idea_chat(426).await;
+        let url = format!("http://127.0.0.1:{port}/");
+        let answer = test_idea_chat(url).await;
+        eprintln!("DBG ok={answer_ok} msg={answer_msg}", answer_ok = answer.ok, answer_msg = answer.message.clone());
+        assert_eq!(answer.ok, true, "a server that answers the wire is a good connection");
+        assert_eq!(
+            answer.message,
+            "the idea-chat server answered the schema gate (HTTP 426: it is reachable; the schema hash must match its build)".to_string(),
+            "the schema gate itself answering is explained",
+        );
+    }
+
+    #[tokio::test]
+    async fn the_chat_test_reports_the_live_ticket_handler() {
+        // A server answering the harmless live_ticket call (200) is the happy
+        // path.
+        let port = fake_idea_chat(200).await;
+        let url = format!("http://127.0.0.1:{port}/");
+        let answer = test_idea_chat(url).await;
+        eprintln!("DBG2 ok={answer_ok} msg={answer_msg}", answer_ok = answer.ok, answer_msg = answer.message.clone());
+        assert_eq!(answer.ok, true, "a 200 live ticket is the happy path");
+        assert_eq!(
+            answer.message,
+            "the idea-chat server issued a live ticket (HTTP 200: the harmless test call reached the handler)".to_string(),
+            "the handler call is explained",
+        );
+    }
+
+    #[tokio::test]
+    async fn the_chat_test_reports_an_unreachable_server() {
+        // Port 9 has nothing listening: the transport fails, and the answer
+        // is a not-ok with a plain sentence, never an RPC error.
+        let answer = test_idea_chat("http://127.0.0.1:9/".to_string()).await;
+        assert_eq!(answer.ok, false, "nothing listening means not-ok");
+        assert_eq!(
+            answer.message,
+            "the idea-chat server could not be reached: connection refused (a TLS failure answers the same way)".to_string(),
+            "the transport failure becomes a plain sentence",
+        );
+    }
+
+    #[test]
+    fn an_unusable_chat_url_answers_not_ok_without_the_network() {
+        let refusal = chat_url_refusal("ftp://nope");
+        assert_eq!(refusal.is_some(), true, "a non-http URL never reaches the transport");
+        assert_eq!(
+            refusal.unwrap_or_else(String::new),
+            "the idea-chat URL is not usable: it must start with http:// or https://".to_string(),
+            "the refusal names the fix in plain words",
+        );
+        assert_eq!(chat_url_refusal("https://ok.example").is_some(), false, "an http(s) URL proceeds");
     }
 }
