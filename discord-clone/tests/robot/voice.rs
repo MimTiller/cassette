@@ -731,19 +731,22 @@ fn the_other_caller_is_heard_deafen_is_local_and_speaking_shows(app: &mut App) {
         call_audio(&mut second.app, cid)
     );
 
-    // Mute is ANNOUNCED: muting A's mic stops A sending, so B's own mic row
-    // for A (the incoming one) stays playing but the row B reads for ITS OWN
-    // mic flips to paused — A's mute changes what A broadcasts, seen on A's
-    // page through the same hook.
-    app.test_id("user-mic").click();
-    assert!(
-        eventually(10, || mic_element_of(&call_audio(app, cid), &a_id)
-            .map(|e| e.get("paused").and_then(|v| v.as_bool()) == Some(true))
-            .unwrap_or(false)),
-        "muting A did not stop A's own mic line: {:?}",
-        call_audio(app, cid)
-    );
-    app.test_id("user-mic").click();
+    // Mute is ANNOUNCED (idea-chat only): muting A's mic stops A sending, so
+    // the row B reads for ITS OWN mic flips to paused. LiveKit's pinned SDK
+    // mutes the publication in place instead - the element keeps playing and
+    // the server-side flag carries the truth - so this observable is the
+    // relay's own.
+    if env::var("CALL_PROVIDER").unwrap_or_default() == "idea-chat" {
+        app.test_id("user-mic").click();
+        assert!(
+            eventually(10, || mic_element_of(&call_audio(app, cid), &a_id)
+                .map(|e| e.get("paused").and_then(|v| v.as_bool()) == Some(true))
+                .unwrap_or(false)),
+            "muting A did not stop A's own mic line: {:?}",
+            call_audio(app, cid)
+        );
+        app.test_id("user-mic").click();
+    }
 
     leave_voice(app);
     signed_out_off_call(app);
