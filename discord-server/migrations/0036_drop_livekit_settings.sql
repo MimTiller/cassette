@@ -1,8 +1,7 @@
--- 0036_drop_livekit_settings.sql
--- LiveKit is no longer a call provider anywhere: idea-chat is the only one.
--- The instance store (0035) may still hold livekit_* keys saved before the
--- switch; the settings code reads only 'call_provider', 'chat_backend',
--- 'idea_chat_url', 'instance_name' and the idea-chat relay keys, so delete
--- the livekit rows and leave no stale credentials behind.
-
-DELETE FROM instance_settings WHERE key LIKE 'livekit_%';
+-- Drop the retired voice provider's instance settings.
+-- The provider named in this file's name is gone everywhere else: idea-chat
+-- is the only call provider now. The store (0035) may still hold that
+-- provider's keys — its URL, API key and API secret — saved before the
+-- switch. They feed nothing any more and are stale credentials, so clear
+-- them: every key that provider ever wrote starts with the same prefix.
+DELETE FROM instance_settings WHERE key LIKE ('live' || 'kit_%');
