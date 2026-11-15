@@ -43,7 +43,6 @@ pub(crate) enum LinkPreviewSource {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum VoiceProvider {
     None,
-    LiveKit,
     IdeaChat,
 }
 
@@ -69,12 +68,12 @@ pub struct Capabilities {
 /// What today's `discord-server` can do: every feature the screens ship
 /// against — server search, server-fetched link previews, the GIF service,
 /// custom emoji, stickers, named roles, invite codes, the per-account theme
-/// store, and LiveKit-backed voice. Nothing encrypted: `e2ee` is false.
+/// store, and idea-chat-backed voice. Nothing encrypted: `e2ee` is false.
 pub(crate) const CASSETTE_CAPABILITIES: Capabilities = Capabilities {
     search: SearchSource::Server,
     link_previews: LinkPreviewSource::Server,
     e2ee: false,
-    voice: VoiceProvider::LiveKit,
+    voice: VoiceProvider::IdeaChat,
     custom_emoji: true,
     stickers: true,
     themes_sync: true,
@@ -202,7 +201,6 @@ pub(crate) fn describe() -> String {
     };
     let voice = match caps.voice {
         VoiceProvider::None => "none",
-        VoiceProvider::LiveKit => "livekit",
         VoiceProvider::IdeaChat => "idea_chat",
     };
     let e2ee = on_off(caps.e2ee);
@@ -264,7 +262,6 @@ pub(crate) fn apply_override(base: Capabilities, spec: String) -> Capabilities {
             ("search", "on_device") => out.search = SearchSource::OnDevice,
             ("search", "none") => out.search = SearchSource::None,
             ("voice", "none") => out.voice = VoiceProvider::None,
-            ("voice", "livekit") => out.voice = VoiceProvider::LiveKit,
             ("voice", "idea_chat") => out.voice = VoiceProvider::IdeaChat,
             _ => {}
         };
@@ -298,7 +295,7 @@ mod tests {
         assert_eq!(caps.search == SearchSource::Server, true);
         assert_eq!(caps.link_previews == LinkPreviewSource::Server, true);
         assert_eq!(caps.e2ee, false);
-        assert_eq!(caps.voice == VoiceProvider::LiveKit, true);
+        assert_eq!(caps.voice == VoiceProvider::IdeaChat, true);
         assert_eq!(caps.custom_emoji, true);
         assert_eq!(caps.stickers, true);
         assert_eq!(caps.themes_sync, true);

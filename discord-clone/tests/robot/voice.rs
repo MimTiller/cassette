@@ -1,7 +1,7 @@
 //! Voice-call suite: tapping the live voice row joins through the backend's
 //! CallApi seam (leave clears it, the sidebar and the profile strip's
 //! "Voice Connected" line follow), and the backend's refusal paints under the
-//! row verbatim. With CALL_PROVIDER=livekit configured on the run the join
+//! row verbatim. With CALL_PROVIDER=idea-chat configured on the run the join
 //! issues a ticket: the VoiceRoster frames draw the connected names under the
 //! row, leaving drops them, and a fresh browser restores the in-progress call
 //! via voice_state's re-issued ticket without a new click. Without a provider
@@ -14,9 +14,6 @@
 
 use std::env;
 use std::time;
-
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
 
 use robot_test::{json, robot_test, App, Value};
 
@@ -35,26 +32,14 @@ pub fn signed_out_off_call(app: &mut App) {
     signed_out(app);
 }
 
-/// Is this run's dev server configured for livekit calls? The wrapper's
-/// `--env` reaches the test binary and the server sidecar alike, so the
-/// suite branches instead of pretending a provider that is not there — the
-/// same env-branch the GIF picker test makes on GIPHY_API_KEY. This names
-/// LiveKit SPECIFICALLY: the media-server participant assertions read the
-/// LiveKit key/secret pair and never run under idea-chat (LiveKit is frozen).
-fn livekit_configured() -> bool {
-    match env::var("CALL_PROVIDER") {
-        Ok(v) => v == "livekit",
-        Err(_) => false,
-    }
-}
 
 /// Is ANY live call provider configured? A join through the seam connects (and
-/// paints "Voice Connected") for either LiveKit or the idea-chat relay, so the
+/// paints "Voice Connected") for the idea-chat relay, so the
 /// provider-agnostic seam tests — the join/leave round trip, the roster line,
-/// the fresh-boot restore — branch on this, not on LiveKit alone.
+/// the fresh-boot restore — branch on this, not on the relay alone.
 fn live_provider() -> bool {
     match env::var("CALL_PROVIDER") {
-        Ok(v) => v == "livekit" || v == "idea-chat",
+        Ok(v) => v == "idea-chat",
         Err(_) => false,
     }
 }
@@ -194,110 +179,6 @@ fn redeem_invite(app: &mut App, code: &str) {
     app.set_timeout(WAIT);
 }
 
-/// Fake-media camera test: A turns their camera on through the user panel's
-/// Video button (the seam broadcasts the roster frame), and B — in the same
-/// server and channel from its own browser — paints a video tile carrying
-/// A's name. The robot cannot drive a real provider socket, so the tile is
-/// the observable, not actual pixels.
-#[robot_test]
-fn a_camera_on_shows_a_video_tile_to_the_other_browser(app: &mut App) {
-    signed_out_off_call(app);
-    // LiveKit is frozen and not used for testing: this LiveKit-only test
-    // runs only when CALL_PROVIDER=livekit is set on purpose.
-    if !livekit_configured() {
-        eprintln!("[skip] camera tiles only render with a live provider: set CALL_PROVIDER=livekit to run it");
-        return;
-    }
-    let (a, sid) = voice_crew_with_sid(app, "camerab");
-    let name_a = a.name.clone();
-
-    // A joins the voice channel through the seam.
-    call_voice(app);
-
-    // B joins the same server through a minted invite. @everyone gets
-    // Connect + Speak (bit 0 view + 16 connect + 17 speak) before B's
-    // join arms its permission snapshot, so B can join the voice row too.
-    let inv = a.call("create_invite", json!({ "server_id": sid }));
-    let granted = a.call("set_everyone_permissions", json!({ "server_id": sid, "permissions": 196609 }));
-    assert!(granted.as_i64().unwrap_or(0) >= 196609, "granted no perms: {granted:?}");
-    let code = inv.get("code").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    assert!(!code.is_empty(), "minted no invite: {inv:?}");
-    let mut second = open_browser("cam");
-    second.app.set_timeout(WAIT);
-    let b = Account::new("cameraw");
-    sign_in_as(&mut second.app, &b);
-    redeem_invite(&mut second.app, &code);
-    second.app.text("Joined!").assert_visible();
-    second.app.test_id("join-server-done").click();
-    second.app.set_timeout(WAIT);
-    second.app.text("meet").assert_visible();
-
-    // A turns the camera on through the user panel's Video button.
-    app.test_id("user-camera").click();
-    app.set_timeout(WAIT);
-
-    // B joins too through the seam, and the roster frame shows A: a video tile
-    // with A's name.
-    second.app.test_id("live-voice-row").click();
-    second.app.set_timeout(WAIT);
-    assert!(
-        eventually(20, || second.app.test_id("voice-tile").count() > 0),
-        "B never got a video tile"
-    );
-    assert!(
-        eventually(20, || second.app.text(name_a.as_str()).count() > 0),
-        "the tile never carried A's name: {name_a}"
-    );
-    // The tile is real video, not the avatar stand-in: LiveKit lists A's
-    // camera track, and B's page has a <video> painting frames.
-    let url = env::var("LIVEKIT_URL").unwrap_or_default();
-    let api_key = env::var("LIVEKIT_API_KEY").unwrap_or_default();
-    let secret = env::var("LIVEKIT_API_SECRET").unwrap_or_default();
-    let chans = a.call("list_channels", json!({ "server_id": sid }));
-    let chans = chans.get("Ok").unwrap_or(&chans).clone();
-    let cid = chans
-        .as_array()
-        .and_then(|list| list.iter().find(|c| c.get("kind").and_then(|v| v.as_str()) == Some("voice")))
-        .and_then(|c| c.get("id").and_then(|v| v.as_i64()))
-        .unwrap_or(0);
-    let room = format!("rwnd-ch-{cid}");
-    let me = a.id.to_string();
-    assert!(
-        eventually(20, || tracks_of(url.clone(), api_key.clone(), secret.clone(), room.clone(), me.clone())
-            .iter()
-            .any(|(kind, source)| kind == "VIDEO" && source == "CAMERA")),
-        "LiveKit never listed A's camera track in {room}"
-    );
-    assert!(
-        eventually(20, || second.app.call_function("cassette.video_playing", json!({})).as_u64()
-            .or_else(|| second.app.call_function("cassette.video_playing", json!({})).get("Ok").and_then(|v| v.as_u64()))
-            .unwrap_or(0) > 0),
-        "B's tile never painted a video frame"
-    );
-    let shot = second.app.screenshot();
-    eprintln!("[shot] cam-tile-b: {shot}");
-
-    // Camera off: A's camera track leaves the room, and B's tile stops
-    // playing it.
-    app.test_id("user-camera").click();
-    assert!(
-        eventually(20, || !tracks_of(url.clone(), api_key.clone(), secret.clone(), room.clone(), me.clone())
-            .iter()
-            .any(|(_, source)| source == "CAMERA")),
-        "A's camera track stayed in {room} after turning it off"
-    );
-    assert!(
-        eventually(20, || second.app.call_function("cassette.video_playing", json!({})).as_u64()
-            .or_else(|| second.app.call_function("cassette.video_playing", json!({})).get("Ok").and_then(|v| v.as_u64()))
-            .unwrap_or(1) == 0),
-        "B kept playing A's camera after it was turned off"
-    );
-
-    // Leave the call through the seam so A's panel reads "Online" again and
-    // the suite's signed-out cleanup applies.
-    leave_voice(app);
-    signed_out_off_call(app);
-}
 
 #[robot_test]
 fn a_fresh_browser_restores_only_a_real_in_progress_call(app: &mut App) {
@@ -330,288 +211,6 @@ fn a_fresh_browser_restores_only_a_real_in_progress_call(app: &mut App) {
     signed_out_off_call(&mut second.app);
     signed_out_off_call(app);
 }
-
-// ── provider-side check: ask the LiveKit media server directly ─────────────
-//
-// The client's own roster tells nothing about the wire, so a live call is
-// verified against the media server itself: the Twirp `ListParticipants`
-// endpoint needs a JWT whose `video` grant nests `roomAdmin` and the exact
-// room (the grant shape verified against the media server, not the docs).
-// The room name is what the SERVER derives from the channel id
-// (`room_for(channel_id)` = `rwnd-ch-<id>`), re-derived from create_channel's
-// echoed id rather than invented. The run's Chrome carries fake-media flags,
-// so `getUserMedia` publishes a real synthetic audio track: a joined caller
-// must show up under their identity with an audio track, and leaving must
-// empty the room. A "connected but silent" join fails the first assertion;
-// a socket that never drops fails the second.
-
-/// Base64url, no padding — the JWT segments the media server expects (standard
-/// base64 segments are rejected). Mirrors `discord-server/src/voice.rs`.
-fn b64url(bytes: &[u8]) -> String {
-    const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let b0 = *chunk.first().unwrap_or(&0) as u32;
-        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
-        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
-        out.push(A[((b0 >> 2) & 63) as usize] as char);
-        out.push(A[((b0 << 4 | b1 >> 4) & 63) as usize] as char);
-        if chunk.len() > 1 {
-            out.push(A[((b1 << 2 | b2 >> 6) & 63) as usize] as char);
-        }
-        if chunk.len() > 2 {
-            out.push(A[(b2 & 63) as usize] as char);
-        }
-    }
-    out
-}
-
-/// The HS256 signature segment for a JWT body over `secret`: the same hmac +
-/// sha2 stack the server signs the join ticket with (pinned to the same
-/// crates), so the media server accepts the token the client got.
-fn robot_jwt_sign(body: &[u8], secret: &[u8]) -> String {
-    let mut mac = Hmac::<Sha256>::new_from_slice(secret).expect("hmac accepts any key length");
-    mac.update(body);
-    b64url(&mac.finalize().into_bytes())
-}
-
-/// A LiveKit admin token for room `room`: `roomAdmin` nests inside the `video`
-/// grant alongside the exact room name (what `EnsureAdminMiddleware` checks
-/// for a `ListParticipants` call). `nbf` backdates by the TTL so a provider
-/// clock skewed against this host (the LAN box runs minutes off) still
-/// accepts the token.
-fn admin_token(api_key: String, secret: String, room: String) -> String {
-    let now = time::SystemTime::now()
-        .duration_since(time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(1_000);
-    let ttl = 600;
-    let exp = now + ttl;
-    let nbf_at = now - ttl;
-    let header_seg = b64url(b"{\"alg\":\"HS256\",\"typ\":\"JWT\"}");
-    let claims = json!({
-        "iss": api_key,
-        "sub": "robot-admin",
-        "iat": now,
-        "nbf": nbf_at,
-        "exp": exp,
-        "video": { "room": room, "roomAdmin": true },
-    });
-    let claims_seg = b64url(claims.to_string().as_bytes());
-    let body = header_seg + "." + &claims_seg;
-    let sig = robot_jwt_sign(body.as_bytes(), secret.as_bytes());
-    body + "." + &sig
-}
-
-/// The media server's participants of `room`, each with the tracks it
-/// published (an empty array when the room holds nobody). A ws/wss join URL
-/// is the same address over http/https — the swap the admin test path makes
-/// too.
-fn participants(url: String, api_key: String, secret: String, room: String) -> Vec<Value> {
-    let http =
-        if url.starts_with("ws://") {
-            url.replace("ws://", "http://")
-        } else if url.starts_with("wss://") {
-            url.replace("wss://", "https://")
-        } else {
-            url
-        };
-    let endpoint = format!("{http}/twirp/livekit.RoomService/ListParticipants");
-    let token = admin_token(api_key, secret, room.clone());
-    let reply: Value = ureq::post(&endpoint)
-        .set("authorization", &format!("Bearer {token}"))
-        .set("content-type", "application/json")
-        .send_string(&json!({ "room": room }).to_string())
-        .unwrap_or_else(|e| panic!("ListParticipants {room}: {e}"))
-        .into_json()
-        .unwrap_or_else(|e| panic!("ListParticipants {room}: unreadable reply: {e}"));
-    match reply.get("participants") {
-        Some(v) => match v.as_array() {
-            Some(parts) => parts.to_vec(),
-            None => Vec::new(),
-        },
-        None => Vec::new(),
-    }
-}
-
-#[robot_test]
-fn the_media_server_lists_the_joined_caller_with_published_audio(app: &mut App) {
-    signed_out_off_call(app);
-    // LiveKit is frozen and not used for testing: this LiveKit-only test
-    // runs only when CALL_PROVIDER=livekit is set on purpose.
-    if !livekit_configured() {
-        eprintln!("[skip] provider assertions need a live provider: set CALL_PROVIDER=livekit to run it");
-        return;
-    }
-    // The SAME env the join used: the key/secret pairing, not the endpoint,
-    // is the gate — a token signed with a different secret fails the media
-    // server's 401 even though the join itself was accepted.
-    let url = env::var("LIVEKIT_URL").unwrap_or_default();
-    let api_key = env::var("LIVEKIT_API_KEY").unwrap_or_default();
-    let secret = env::var("LIVEKIT_API_SECRET").unwrap_or_default();
-    assert!(!url.is_empty() && !api_key.is_empty() && !secret.is_empty(), "livekit env not forwarded into the run");
-
-    // A fresh crew whose server's voice channel fixes the room name the same
-    // way the server derives it (rwnd-ch-<channel id>).
-    let (a, sid) = voice_crew_with_sid(app, "provchk");
-    // The voice row the join clicks is the crew's "meet" channel, so that is
-    // the room to ask LiveKit about.
-    let chans = a.call("list_channels", json!({ "server_id": sid }));
-    let chans = chans.get("Ok").unwrap_or(&chans).clone();
-    let cid = chans
-        .as_array()
-        .and_then(|list| list.iter().find(|c| c.get("kind").and_then(|v| v.as_str()) == Some("voice")))
-        .and_then(|c| c.get("id").and_then(|v| v.as_i64()))
-        .unwrap_or(0);
-    assert!(cid > 0, "no voice channel listed: {chans:?}");
-    // The room the server puts the channel in (`room_for(channel_id)`).
-    let room = format!("rwnd-ch-{cid}");
-
-    // Join through the seam; the page publishes its fake mic to the room.
-    call_voice(app);
-
-    let caller_id = a.id.to_string();
-    assert!(
-        eventually(
-            20,
-            || {
-                let parts = participants(url.clone(), api_key.clone(), secret.clone(), room.clone());
-                parts.iter().any(|p: &Value| {
-                    let published: Vec<Value> = if let Some(Value::Array(t)) = p.get("tracks") {
-                        t.to_vec()
-                    } else {
-                        Vec::new()
-                    };
-                    p.get("identity").and_then(|v| v.as_str()).unwrap_or("") == caller_id
-                        && published.iter().any(|t: &Value| t.get("type").and_then(|v| v.as_str()).unwrap_or("") == "AUDIO")
-                })
-            },
-        ),
-        "the media server never listed the joined caller with audio: room {room}"
-    );
-
-    // Leaving drops the socket: the room must stop listing the caller
-    // (an empty `{"participants":[]}` once nobody remains).
-    leave_voice(app);
-    assert!(
-        eventually(
-            20,
-            || {
-                let parts = participants(url.clone(), api_key.clone(), secret.clone(), room.clone());
-                parts.iter().all(|p: &Value| p.get("identity").and_then(|v| v.as_str()).unwrap_or("") != caller_id)
-            },
-        ),
-        "the caller stayed in the room after leaving"
-    );
-
-    signed_out_off_call(app);
-}
-
-/// The tracks LiveKit lists for `identity` in `room`, as (type, source) pairs
-/// in LiveKit's own words ("VIDEO", "SCREEN_SHARE"; "AUDIO", "SCREEN_SHARE_AUDIO").
-fn tracks_of(url: String, api_key: String, secret: String, room: String, identity: String) -> Vec<(String, String)> {
-    let parts = participants(url, api_key, secret, room);
-    let mut out: Vec<(String, String)> = Vec::new();
-    for p in parts.iter() {
-        if p.get("identity").and_then(|v| v.as_str()).unwrap_or("") != identity {
-            continue;
-        }
-        if let Some(Value::Array(tracks)) = p.get("tracks") {
-            for t in tracks.iter() {
-                let kind = t.get("type").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let source = t.get("source").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                out.push((kind, source));
-            }
-        }
-    }
-    out
-}
-
-/// Share Screen publishes a real screen track: LiveKit lists A's SCREEN_SHARE
-/// video, B (in the same channel) gets a tile, and stopping the share takes
-/// the track out of the room. Chrome's fake media flags supply the screen.
-#[robot_test]
-fn a_screen_share_reaches_the_media_server_and_the_other_browser(app: &mut App) {
-    signed_out_off_call(app);
-    // LiveKit is frozen and not used for testing: this LiveKit-only test
-    // runs only when CALL_PROVIDER=livekit is set on purpose.
-    if !livekit_configured() {
-        eprintln!("[skip] screen share needs a live provider: set CALL_PROVIDER=livekit to run it");
-        return;
-    }
-    let url = env::var("LIVEKIT_URL").unwrap_or_default();
-    let api_key = env::var("LIVEKIT_API_KEY").unwrap_or_default();
-    let secret = env::var("LIVEKIT_API_SECRET").unwrap_or_default();
-
-    let (a, sid) = voice_crew_with_sid(app, "sharea");
-    let chans = a.call("list_channels", json!({ "server_id": sid }));
-    let chans = chans.get("Ok").unwrap_or(&chans).clone();
-    let cid = chans
-        .as_array()
-        .and_then(|list| list.iter().find(|c| c.get("kind").and_then(|v| v.as_str()) == Some("voice")))
-        .and_then(|c| c.get("id").and_then(|v| v.as_i64()))
-        .unwrap_or(0);
-    assert!(cid > 0, "no voice channel listed: {chans:?}");
-    let room = format!("rwnd-ch-{cid}");
-    let me = a.id.to_string();
-
-    // A joins and shares the screen.
-    call_voice(app);
-    app.text("Voice Connected").assert_visible();
-    app.test_id("user-share").click();
-    app.set_timeout(WAIT);
-    assert!(
-        eventually(20, || tracks_of(url.clone(), api_key.clone(), secret.clone(), room.clone(), me.clone())
-            .iter()
-            .any(|(kind, source)| kind == "VIDEO" && source == "SCREEN_SHARE")),
-        "LiveKit never listed A's screen-share track in {room}: {:?}",
-        tracks_of(url.clone(), api_key.clone(), secret.clone(), room.clone(), me.clone())
-    );
-    // The screen's sound rides as its own track (Chrome's fake capture
-    // supplies one, as a shared tab or a Windows screen would).
-    assert!(
-        eventually(20, || tracks_of(url.clone(), api_key.clone(), secret.clone(), room.clone(), me.clone())
-            .iter()
-            .any(|(kind, source)| kind == "AUDIO" && source == "SCREEN_SHARE_AUDIO")),
-        "LiveKit never listed A's screen-share audio track in {room}"
-    );
-
-    // B joins the same channel and gets a tile for A's share.
-    let inv = a.call("create_invite", json!({ "server_id": sid }));
-    let granted = a.call("set_everyone_permissions", json!({ "server_id": sid, "permissions": 196609 }));
-    assert!(granted.as_i64().unwrap_or(0) >= 196609, "granted no perms: {granted:?}");
-    let code = inv.get("code").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    assert!(!code.is_empty(), "minted no invite: {inv:?}");
-    let mut second = open_browser("share");
-    second.app.set_timeout(WAIT);
-    let b = Account::new("sharew");
-    sign_in_as(&mut second.app, &b);
-    redeem_invite(&mut second.app, &code);
-    second.app.text("Joined!").assert_visible();
-    second.app.test_id("join-server-done").click();
-    second.app.set_timeout(WAIT);
-    second.app.test_id("live-voice-row").click();
-    second.app.set_timeout(WAIT);
-    assert!(
-        eventually(20, || second.app.test_id("voice-tile").count() > 0),
-        "B never got a tile for A's screen share"
-    );
-    let shot = second.app.screenshot();
-    eprintln!("[shot] share-tile-b: {shot}");
-
-    // A stops sharing: the screen track leaves the room.
-    app.test_id("user-share").click();
-    assert!(
-        eventually(20, || !tracks_of(url.clone(), api_key.clone(), secret.clone(), room.clone(), me.clone())
-            .iter()
-            .any(|(_, source)| source == "SCREEN_SHARE" || source == "SCREEN_SHARE_AUDIO")),
-        "A's screen-share track stayed in {room} after stopping"
-    );
-
-    leave_voice(app);
-    signed_out_off_call(app);
-}
-
 /// A robot function's string reply: the bare string or an `Ok`-wrapped one.
 fn robot_string(v: Value) -> String {
     if let Some(s) = v.as_str() {
@@ -651,7 +250,7 @@ fn the_other_caller_is_heard_deafen_is_local_and_speaking_shows(app: &mut App) {
     // Every assertion here reads the client's own hooks (the call-audio rows
     // and the speaking dot), so either live provider drives them.
     if !live_provider() {
-        eprintln!("[skip] hearing needs a live provider: set CALL_PROVIDER=livekit or idea-chat to run it");
+        eprintln!("[skip] hearing needs a live provider: set CALL_PROVIDER=idea-chat to run it");
         return;
     }
     let (a, sid) = voice_crew_with_sid(app, "heara");
@@ -753,7 +352,7 @@ fn the_other_caller_is_heard_deafen_is_local_and_speaking_shows(app: &mut App) {
 /// and B — in the same channel from its own browser — gets a `voice-tile`
 /// carrying A's name and plays a frame (the client's per-participant
 /// `MediaStream`, read through `cassette.video_playing`). Like the camera test,
-/// but the observable is the idea-chat client's hooks, not the LiveKit media
+/// but the observable is the idea-chat client's hooks, not a media
 /// server, so it runs under CALL_PROVIDER=idea-chat.
 #[robot_test]
 fn the_idea_chat_camera_shows_a_tile_to_the_other_browser(app: &mut App) {
@@ -824,7 +423,7 @@ fn the_idea_chat_camera_shows_a_tile_to_the_other_browser(app: &mut App) {
 /// element for A keeps receiving, since the gain lives in B's playback.
 /// Muting keeps the slider position: B dials while muted, unmutes, and
 /// the dial comes back. Runs on the idea-chat relay, where per-remote
-/// volume lives in the client's own `Call` (LiveKit has no seam for it).
+/// volume lives in the client's own `Call`.
 #[robot_test]
 fn the_tile_menu_volume_and_mute_stay_in_the_listeners_tab(app: &mut App) {
     signed_out_off_call(app);

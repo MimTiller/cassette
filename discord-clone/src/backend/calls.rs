@@ -1,7 +1,6 @@
 //! idea-chat calls: the quic-call relay session this tab drives for a voice
 //! channel — the provider half `call_media` reaches through a
-//! `CallTicket::IdeaChat` (the same seam as `livekit.rs`, chosen by the
-//! ticket). Join dials the relay through Nicho's `call-session` with the
+//! `CallTicket::IdeaChat`, chosen by the ticket. Join dials the relay through Nicho's `call-session` with the
 //! signed grant the server minted (pinning the relay's certificate hash from
 //! the run's environment), mute is our mic, deafen is LOCAL ONLY (playback
 //! gain 0 here, nothing sent), speaking comes from the session's own
@@ -10,7 +9,7 @@
 //! `renew_grant` so a caller the server voided stops getting them.
 //!
 //! Web-only like the media under it: a native build keeps no session, so
-//! every entry point answers there like `livekit.rs` does natively.
+//! every entry point answers there natively.
 
 #[cfg(target_arch = "wasm32")]
 use std::future::Future;
@@ -124,7 +123,7 @@ pub(crate) fn user_of(grant: &str) -> String {
 
 /// Whether the grant lets us send audio: its send code carries `a`. A caller
 /// without Speak gets a grant that sends nothing, and starts with the mic
-/// off — the `can_publish` the LiveKit ticket carries.
+/// off — the `can_publish` the call-auth grant carries.
 #[cfg(target_arch = "wasm32")]
 pub(crate) fn can_publish(grant: &str) -> bool {
     grant.split('.').nth(3).unwrap_or("").contains('a')
@@ -279,7 +278,7 @@ pub(crate) fn live_channels() -> Vec<i64> {
     Vec::new()
 }
 
-/// Mute our mic (announced to the room, like the LiveKit seam's), and deafen
+/// Mute our mic (announced to the room), and deafen
 /// LOCAL ONLY: our playback gain goes to 0 for everyone, arriving audio
 /// still comes through the link, we simply hear none of it, and nothing we
 /// send changes.

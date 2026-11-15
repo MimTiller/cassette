@@ -68,8 +68,7 @@ pub fn open_browser(label: &str) -> Browser {
             "--window-size=1280,800",
             "--remote-debugging-port=0",
             // Fake mic/camera so getUserMedia publishes a real (synthetic)
-            // track: the LiveKit provider assertions (published audio on the
-            // media server) need a stream the page can actually capture.
+            // track: the call tests need a stream the page can actually capture.
             "--use-fake-device-for-media-stream",
             "--use-fake-ui-for-media-stream",
         ])
