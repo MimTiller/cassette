@@ -67,6 +67,9 @@ pub(crate) enum Provider {
 #[cfg(feature = "idea-chat")]
 pub(crate) const IDEA_CHAT_CALLS_PENDING: &str = "idea-chat calls are not available in this build yet";
 const NOT_CONNECTED: &str = "you are not connected to this voice channel";
+/// A LiveKit call keeps no per-remote local volume, so a tile menu that tries
+/// to set one says so rather than painting a control that does nothing.
+const LIVEKIT_NO_REMOTE_VOLUME: &str = "this call cannot set one person's volume on your own";
 
 thread_local! {
     /// The provider of each channel this tab holds media for.
@@ -139,6 +142,57 @@ pub(crate) async fn apply_flags(channel_id: i64, muted: bool, deafened: bool) {
         Some(Provider::IdeaChat) => calls::apply_flags(channel_id, muted, deafened).await,
         None => {}
     }
+}
+
+/// LOCAL ONLY (nothing is sent to the room): our volume on one remote's
+/// audio, keyed by their RWND user id — the idea-chat relay applies it to
+/// every connection that user has and to any they open later, through this
+/// tab's own `Call`. A LiveKit call has no per-remote local volume, so
+/// setting one there answers a user-facing refusal; reads answer the
+/// defaults so the tile still paints.
+pub(crate) fn set_user_volume(channel_id: i64, user_id: i64, position: f32) -> Result<(), String> {
+    match provider_of(channel_id) {
+        Some(Provider::IdeaChat) => {
+            calls::set_user_volume(channel_id, user_id, position);
+            Ok(())
+        }
+        Some(Provider::LiveKit) => Err(LIVEKIT_NO_REMOTE_VOLUME.to_string()),
+        None => Err(NOT_CONNECTED.to_string()),
+    }
+}
+
+/// LOCAL ONLY: mute or unmute one remote in this tab, keeping their volume
+/// (unmuting restores it).
+pub(crate) fn set_user_mute(channel_id: i64, user_id: i64, on: bool) -> Result<(), String> {
+    match provider_of(channel_id) {
+        Some(Provider::IdeaChat) => {
+            calls::set_user_mute(channel_id, user_id, on);
+            Ok(())
+        }
+        Some(Provider::LiveKit) => Err(LIVEKIT_NO_REMOTE_VOLUME.to_string()),
+        None => Err(NOT_CONNECTED.to_string()),
+    }
+}
+
+/// This tab's remembered slider position for `user_id` (1.0 = as sent).
+pub(crate) fn get_user_volume(channel_id: i64, user_id: i64) -> f32 {
+    match provider_of(channel_id) {
+        Some(Provider::IdeaChat) => calls::get_user_volume(channel_id, user_id),
+        _ => 1.0,
+    }
+}
+
+/// Whether this tab has `user_id` locally muted.
+pub(crate) fn get_user_muted(channel_id: i64, user_id: i64) -> bool {
+    match provider_of(channel_id) {
+        Some(Provider::IdeaChat) => calls::get_user_muted(channel_id, user_id),
+        _ => false,
+    }
+}
+
+/// This tab's whole local volume table, for the robot hook.
+pub(crate) fn volume_state() -> String {
+    calls::volume_state()
 }
 
 /// Start or stop sharing this tab's screen (and its sound where the browser can).

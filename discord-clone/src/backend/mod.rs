@@ -1105,6 +1105,33 @@ pub async fn set_voice_flags(
     Backend::set_voice_flags(channel_id, muted, deafened, camera, screen_share).await.map_err(|e| crate::errors::friendly(&e))
 }
 
+// --- per-person local volume (LOCAL ONLY, no server call) -------------------
+// These never touch the trait: a remote's volume and a local mute are this
+// tab's own playback state inside its live call session, so there is nothing
+// to ask the backend. Keyed by RWND user id; the idea-chat call maps it to
+// the relay numbers that user holds through the roster.
+
+pub fn set_user_volume(channel_id: i64, user_id: i64, position: f32) -> Result<(), String> {
+    call_media::set_user_volume(channel_id, user_id, position)
+}
+
+pub fn set_user_mute(channel_id: i64, user_id: i64, on: bool) -> Result<(), String> {
+    call_media::set_user_mute(channel_id, user_id, on)
+}
+
+pub fn get_user_volume(channel_id: i64, user_id: i64) -> f32 {
+    call_media::get_user_volume(channel_id, user_id)
+}
+
+pub fn get_user_muted(channel_id: i64, user_id: i64) -> bool {
+    call_media::get_user_muted(channel_id, user_id)
+}
+
+/// This tab's whole local volume table, for the robot hook.
+pub fn call_volume_state() -> String {
+    call_media::volume_state()
+}
+
 // --- the instance-store accessors -------------------------------------------
 
 pub async fn instance_info() -> Result<InstanceInfo, String> {

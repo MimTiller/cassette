@@ -20,7 +20,7 @@ use std::pin::Pin;
 #[cfg(target_arch = "wasm32")]
 use call_session::{Access, Call, Fetch, Renew, Settings, log, set_muted, sync_screen_audio};
 #[cfg(target_arch = "wasm32")]
-use call_audio::{ModelSettings, Processing, Suppression, VoiceStages};
+use call_audio::{ModelSettings, Processing, Suppression, VoiceStages, taper};
 #[cfg(target_arch = "wasm32")]
 use runtime_core::after_ms_detached;
 #[cfg(target_arch = "wasm32")]
@@ -81,6 +81,13 @@ thread_local! {
     /// When each relay number's audio last looked live (their announcement,
     /// or a level the receive loop just updated), on `epoch_millis`.
     static HEARD: RefCell<HashMap<u32, i64>> = RefCell::new(HashMap::new());
+    /// Each remote's volume as THIS tab has it: slider position (0.0 silent,
+    /// 1.0 as sent, 2.0 double), keyed by RWND user id as text. LOCAL ONLY:
+    /// the gain rides this tab's own `Call`, nothing is sent to the room.
+    static VOLUMES: RefCell<HashMap<String, f32>> = RefCell::new(HashMap::new());
+    /// Which remotes this tab has locally muted (mute keeps the volume:
+    /// unmuting restores the position above). LOCAL ONLY.
+    static MUTED: RefCell<HashMap<String, bool>> = RefCell::new(HashMap::new());
 }
 
 /// A handle to the live call for the `call-session` functions that take one
@@ -145,7 +152,25 @@ pub(crate) fn session_settings() -> Settings {
         voice: VoiceStages::default(),
         model: ModelSettings::default(),
         model_path: "",
-        gains: HashMap::new(),
+        // This tab's remembered per-person positions survive a hang-up:
+        // the first words a muted or dialed remote says after a rejoin are
+        // already at their level. Muted wins over the position (which stays
+        // saved for unmute); a position's gain goes through `taper` exactly
+        // as the live seam path sends it, so 1.0 remains exactly as sent.
+        gains: VOLUMES.with(|v| {
+            let saved = v.borrow().clone();
+            let mutes = MUTED.with(|m| m.borrow().clone());
+            saved.iter()
+                .map(move |(user, position)| (
+                    user.clone(),
+                    if mutes.get(user).copied().unwrap_or(false) {
+                        0.0
+                    } else {
+                        taper(*position)
+                    },
+                ))
+                .collect::<HashMap<String, f32>>()
+        }),
         default_gain: if DEAFENED.with(|d| d.get()) { 0.0 } else { 1.0 },
     }
 }
@@ -234,6 +259,9 @@ pub(crate) async fn disconnect(_channel_id: i64) -> bool {
     hang_up()
 }
 
+/// The local per-person volume state is this tab's preference, kept across
+/// hangs-up; the gains re-apply at the next join from `session_settings`.
+
 /// The channels this tab holds media for: the one live idea-chat call, if
 /// any (the seam's leave and channel-switch use this to pick what to drop).
 #[cfg(target_arch = "wasm32")]
@@ -264,6 +292,78 @@ pub(crate) async fn apply_flags(_channel_id: i64, muted: bool, deafened: bool) {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) async fn apply_flags(_channel_id: i64, _muted: bool, _deafened: bool) {}
+
+/// LOCAL ONLY: our volume on one remote's audio, keyed by their RWND user id
+/// as text (the grant's user field, the roster's other end). `position` is
+/// the slider's own scale — 1.0 is exactly as sent — and rides through
+/// `voice_dsp::taper` into `set_user_volume`, which applies it to every
+/// relay number that user holds and to any they open later. The position is
+/// remembered across hangs-up so the next join starts at it (see
+/// `session_settings`). Nothing is sent to the room: the gain lives in this
+/// tab's own `Call`.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn set_user_volume(_channel_id: i64, user_id: i64, position: f32) {
+    let user = user_id.to_string();
+    VOLUMES.with(|v| v.borrow_mut().insert(user.clone(), position));
+    with_call(move |c| c.set_user_volume(user.as_str(), taper(position)));
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn set_user_volume(_channel_id: i64, _user_id: i64, _position: f32) {}
+
+/// LOCAL ONLY: mute or unmute one remote in this tab. Mute keeps the volume
+/// above, so unmuting restores it.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn set_user_mute(_channel_id: i64, user_id: i64, on: bool) {
+    let user = user_id.to_string();
+    MUTED.with(|m| m.borrow_mut().insert(user.clone(), on));
+    let position = VOLUMES.with(|v| v.borrow().get(&user).copied().unwrap_or(1.0));
+    with_call(move |c| c.set_user_volume(user.as_str(), if on { 0.0 } else { taper(position) }));
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn set_user_mute(_channel_id: i64, _user_id: i64, _on: bool) {}
+
+/// This tab's remembered slider position for `user_id` (1.0 = as sent).
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn get_user_volume(_channel_id: i64, user_id: i64) -> f32 {
+    VOLUMES.with(|v| v.borrow().get(&user_id.to_string()).copied().unwrap_or(1.0))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn get_user_volume(_channel_id: i64, _user_id: i64) -> f32 {
+    1.0
+}
+
+/// Whether this tab has `user_id` locally muted.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn get_user_muted(_channel_id: i64, user_id: i64) -> bool {
+    MUTED.with(|m| m.borrow().get(&user_id.to_string()).copied().unwrap_or(false))
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn get_user_muted(_channel_id: i64, _user_id: i64) -> bool {
+    false
+}
+
+/// This tab's whole local volume table, as one line per user for the robot
+/// hook: `<user id>=<position>,<muted>` ("''" position defaults 1.0).
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn volume_state() -> String {
+    let mutes: HashMap<String, bool> = MUTED.with(|m| m.borrow().clone());
+    VOLUMES.with(|v| {
+        v.borrow()
+            .iter()
+            .map(move |(u, p)| format!(r"{}:{},{}", u, p, mutes.get(u).map(|b| *b).unwrap_or(false)))
+            .collect::<Vec<String>>()
+    })
+    .join("\n")
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn volume_state() -> String {
+    String::new()
+}
 
 /// Start or stop sharing this tab's screen (and its sound where the browser
 /// can): the session's own video path asks the browser and encodes the
