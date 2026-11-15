@@ -816,3 +816,135 @@ fn the_idea_chat_camera_shows_a_tile_to_the_other_browser(app: &mut App) {
     leave_voice(app);
     signed_out_off_call(app);
 }
+
+/// The voice tile's menu volume and mute stay in the listener's own tab:
+/// B opens A's tile menu with a context tap, dials the volume to 0 and
+/// mutes — both writes ride B's own call session, so the room never hears
+/// them (A's volume table stays empty and A keeps playing B), and B's
+/// element for A keeps receiving, since the gain lives in B's playback.
+/// Muting keeps the slider position: B dials while muted, unmutes, and
+/// the dial comes back. Runs on the idea-chat relay, where per-remote
+/// volume lives in the client's own `Call` (LiveKit has no seam for it).
+#[robot_test]
+fn the_tile_menu_volume_and_mute_stay_in_the_listeners_tab(app: &mut App) {
+    signed_out_off_call(app);
+    if env::var("CALL_PROVIDER").unwrap_or_default() != "idea-chat" {
+        eprintln!("[skip] the tile volume menu needs CALL_PROVIDER=idea-chat to run");
+        return;
+    }
+    let (a, sid) = voice_crew_with_sid(app, "volu");
+    let chans = a.call("list_channels", json!({ "server_id": sid }));
+    let chans = chans.get("Ok").unwrap_or(&chans).clone();
+    let cid = chans
+        .as_array()
+        .and_then(|list| list.iter().find(|c| c.get("kind").and_then(|v| v.as_str()) == Some("voice")))
+        .and_then(|c| c.get("id").and_then(|v| v.as_i64()))
+        .unwrap_or(0);
+    assert!(cid > 0, "no voice channel listed: {chans:?}");
+    let a_id = a.id.to_string();
+
+    // A joins and turns the camera on: B gets a video tile for A — the
+    // menu lives on the tile.
+    call_voice(app);
+    app.text("Voice Connected").assert_visible();
+    app.test_id("user-camera").click();
+    app.set_timeout(WAIT);
+
+    // B joins the same channel through a minted invite.
+    let inv = a.call("create_invite", json!({ "server_id": sid }));
+    let granted = a.call("set_everyone_permissions", json!({ "server_id": sid, "permissions": 196609 }));
+    assert!(granted.as_i64().unwrap_or(0) >= 196609, "granted no perms: {granted:?}");
+    let code = inv.get("code").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    assert!(!code.is_empty(), "minted no invite: {inv:?}");
+    let mut second = open_browser("volu");
+    second.app.set_timeout(WAIT);
+    let b = Account::new("volw");
+    sign_in_as(&mut second.app, &b);
+    redeem_invite(&mut second.app, &code);
+    second.app.text("Joined!").assert_visible();
+    second.app.test_id("join-server-done").click();
+    second.app.set_timeout(WAIT);
+    second.app.test_id("live-voice-row").click();
+    second.app.set_timeout(WAIT);
+    second.app.text("Voice Connected").assert_visible();
+    let b_id = b.id.to_string();
+
+    assert!(
+        eventually(20, || second.app.test_id("voice-tile").count() > 0),
+        "B never got a video tile for A"
+    );
+    // A plays into B before any dial, and B plays into A (so the later
+    // "A is unchanged" assertion has something it COULD have changed).
+    assert!(
+        eventually(20, || mic_element_of(&call_audio(&mut second.app, cid), &a_id)
+            .map(|e| e.get("paused").and_then(|v| v.as_bool()) == Some(false)
+                && e.get("readyState").and_then(|v| v.as_i64()).unwrap_or(0) >= 2)
+            .unwrap_or(false)),
+        "B never played A before the dial: {:?}",
+        call_audio(&mut second.app, cid)
+    );
+    assert!(
+        eventually(20, || mic_element_of(&call_audio(app, cid), &b_id)
+            .map(|e| e.get("paused").and_then(|v| v.as_bool()) == Some(false))
+            .unwrap_or(false)),
+        "A never played B before the dial: {:?}",
+        call_audio(app, cid)
+    );
+    // A's own local table is empty before anything happens in B.
+    assert_eq!(robot_string(app.call_function("cassette.call_volume", json!({}))).is_empty(),
+        true, "A's tab already held a dial");
+
+    // B opens A's tile menu (context tap) and dials to 0, then mutes.
+    second.app.test_id("voice-tile").context_click();
+    second.app.set_timeout(WAIT);
+    second.app.test_id("voice-tile-volume").assert_visible();
+    second.app.test_id("voice-tile-volume").set_slider(0.0);
+    second.app.set_timeout(WAIT);
+    second.app.test_id("voice-tile-mute").set_toggle(true);
+    second.app.set_timeout(WAIT);
+
+    // The tile says muted on A's name.
+    assert!(second.app.test_id("voice-tile-muted-icon").count() > 0,
+        "B's tile never showed the mute on A's name");
+
+    // B's table carries the dial (`<user id>=<position>,<muted>`).
+    let dialed = robot_string(second.app.call_function("cassette.call_volume", json!({})));
+    assert!(
+        dialed.contains(format!("{}:0.0,true", a_id).as_str()) || dialed.contains(format!("{}:0,true", a_id).as_str()),
+        "B's table lost the dial: {dialed}"
+    );
+
+    // Local, not announced: A's tab never sees a dial, keeps playing B,
+    // and B's feed INTO B stays alive (the mute is a gain on B's playback,
+    // not a stop of A's stream).
+    assert_eq!(robot_string(app.call_function("cassette.call_volume", json!({}))).is_empty(),
+        true, "the dial leaked into A''s tab");
+    assert!(mic_element_of(&call_audio(app, cid), &b_id)
+        .map(|e| e.get("paused").and_then(|v| v.as_bool()) == Some(false))
+        .unwrap_or(false), "A stopped hearing B after B's local mute: {:?}", call_audio(app, cid));
+    assert!(mic_element_of(&call_audio(&mut second.app, cid), &a_id)
+        .map(|e| e.get("paused").and_then(|v| v.as_bool()) == Some(false))
+        .unwrap_or(false), "muting A in B stopped A's feed into B: {:?}", call_audio(&mut second.app, cid));
+
+    // Muting keeps the volume: dial while muted saves the position, and
+    // unmuting restores it.
+    second.app.test_id("voice-tile-volume").set_slider(0.5);
+    second.app.set_timeout(WAIT);
+    let mid = robot_string(second.app.call_function("cassette.call_volume", json!({})));
+    assert!(
+        mid.contains(format!("{}:0.5,true", a_id).as_str()),
+        "dialing while muted lost the position: {mid}"
+    );
+    second.app.test_id("voice-tile-mute").set_toggle(false);
+    second.app.set_timeout(WAIT);
+    let restored = robot_string(second.app.call_function("cassette.call_volume", json!({})));
+    assert!(
+        restored.contains(format!("{}:0.5,false", a_id).as_str()),
+        "unmuting did not restore the saved volume: {restored}"
+    );
+    assert_eq!(second.app.test_id("voice-tile-muted-icon").count(), 0,
+        "B's tile still shows the mute after unmuting");
+
+    leave_voice(app);
+    signed_out_off_call(app);
+}
