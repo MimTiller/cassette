@@ -34,6 +34,7 @@ impl MembersApi for IdeaChatBackend {
                             None => None,
                             Some(status) => Some(live::presence_word(status.presence)),
                         },
+                        joined_at: Some(member.joined_at),
                     })
                 }
                 Ok(out)

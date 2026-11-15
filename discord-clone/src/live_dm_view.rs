@@ -272,6 +272,7 @@ mod dm_find_tests {
             avatar_url: None,
             avatar_decoration: None,
             presence: None,
+            joined_at: None,
         }
     }
 
