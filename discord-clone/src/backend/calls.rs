@@ -305,7 +305,10 @@ pub(crate) async fn apply_flags(_channel_id: i64, _muted: bool, _deafened: bool)
 pub(crate) fn set_user_volume(_channel_id: i64, user_id: i64, position: f32) {
     let user = user_id.to_string();
     VOLUMES.with(|v| v.borrow_mut().insert(user.clone(), position));
-    with_call(move |c| c.set_user_volume(user.as_str(), taper(position)));
+    // Mute wins over the position: dialing while muted saves the level for
+    // when the tab unmutes, but leaves the gain at zero now.
+    let muted = MUTED.with(|m| m.borrow().get(&user).copied().unwrap_or(false));
+    with_call(move |c| c.set_user_volume(user.as_str(), if muted { 0.0 } else { taper(position) }));
 }
 
 #[cfg(not(target_arch = "wasm32"))]
