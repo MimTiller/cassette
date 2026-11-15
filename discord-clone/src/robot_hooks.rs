@@ -175,6 +175,13 @@ fn call_audio(channel_id: i64) -> Result<String, String> {
     Ok(crate::backend::call_audio_state(channel_id))
 }
 
+/// THIS tab's local per-person volume table, one line per remote:
+/// `<user id>=<position>,<muted>` (LOCAL ONLY — no other tab's hook sees it).
+#[runtime_core::robot_fn(name = "cassette.call_volume")]
+fn call_volume() -> Result<String, String> {
+    Ok(crate::backend::call_volume_state())
+}
+
 /// How many <video> elements on the page are painting a frame: a tile that
 /// shows a real camera or screen, not the avatar stand-in.
 #[runtime_core::robot_fn(name = "cassette.video_playing")]
@@ -215,6 +222,7 @@ pub(crate) fn register() {
     runtime_vocabulary::robot_fn::register(upload_server_emoji::robot());
     runtime_vocabulary::robot_fn::register(upload_server_sticker::robot());
     runtime_vocabulary::robot_fn::register(call_audio::robot());
+    runtime_vocabulary::robot_fn::register(call_volume::robot());
     runtime_vocabulary::robot_fn::register(video_playing::robot());
     runtime_vocabulary::robot_fn::register(capabilities::robot());
     runtime_vocabulary::robot_fn::register(force_capabilities::robot());

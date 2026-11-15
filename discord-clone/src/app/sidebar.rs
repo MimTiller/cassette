@@ -20,8 +20,19 @@ pub(super) fn VoiceTile(
     #[prop(static)] channel_id: i64,
     #[prop(static)] user_id: i64,
 ) -> Element {
-    let speaking = !muted;
-    let ring = move || if speaking {
+    // LOCAL ONLY: this tab's volume (slider position: 0 silent, 1 exactly as
+    // sent, 2 double) and local mute for the person on this tile. Both start
+    // from the seam's remembered table (which survives hangs-up), ride this
+    // tab's own `Call` when set, and nothing here is sent to the room.
+    let vol = signal(crate::backend::get_user_volume(channel_id, user_id));
+    let mute_local = signal(crate::backend::get_user_muted(channel_id, user_id));
+    // Which tile's menu is open: this tile's switch keys on it, so opening
+    // re-renders just this tile's subtree (a roster rebuild re-reads the
+    // seam-backed positions, so a re-open never desyncs).
+    let menu_open = signal(false);
+    let tile_ref: Ref<ViewHandle> = Ref::<ViewHandle>::new();
+    let speaking = move || !muted && !mute_local.get();
+    let ring = move || if speaking() {
         col(theme::SUCCESS)
     } else {
         col(theme::DIVIDER)
@@ -49,12 +60,86 @@ pub(super) fn VoiceTile(
         None => crate::avatar_chip::avatar_chip(name.as_str(), theme::ACCENT, chip_size),
     };
     let label = ui! {
-        text(style = StyleRules {
+        text(style = move || StyleRules {
             font_size: Some(px(11.0)),
-            color: Some(col(TEXT_MUTED)),
+            // A locally muted remote reads dim on their name, as the room's
+            // channel rows treat a muted channel.
+            color: Some(col(if mute_local.get() { theme::TEXT_FAINT } else { TEXT_MUTED })),
             max_lines: Some(1u32),
             ..Default::default()
         }) { name }
+    };
+    // The tile's menu: a context tap opens a popover anchored below the tile
+    // with a per-person volume slider (0-200%, 100% = as sent) and a local
+    // mute. Both write through the seam into THIS tab's call session —
+    // nothing is sent to the room and no other tab can see it. Muting keeps
+    // the slider position, so unmuting restores it.
+    let menu: Element = ui! {
+        switch(
+            move || menu_open.get(),
+            move |on: &bool| {
+                if !*on {
+                    return ui! {
+                        view(style = StyleRules {
+                            width: Some(px(0.0)),
+                            height: Some(px(0.0)),
+                            ..Default::default()
+                        }) {}
+                    };
+                }
+                ui! {
+                    anchored_overlay(
+                        target = AnchorTarget::from(tile_ref),
+                        side = ElementSide::Below,
+                        align = ElementAlign::Center,
+                        offset = 6.0,
+                        backdrop = BackdropMode::None,
+                    ) {
+                        view(style = StyleRules {
+                            flex_direction: Some(FlexDirection::Column),
+                            gap: Some(px(6.0)),
+                            padding_left: Some(px(8.0)),
+                            padding_right: Some(px(8.0)),
+                            ..crate::style_helpers::popover_panel()
+                        }) {
+                            // 0-200%: the slider's position is the seam's
+                            // position (1.0 = exactly as sent), so the gain
+                            // rides through `taper` in the seam.
+                            slider(
+                                value = vol,
+                                min = 0.0,
+                                max = 2.0,
+                                step = 0.05,
+                                on_change = move |v: f32| {
+                                    vol.set(v);
+                                    crate::backend::set_user_volume(channel_id, user_id, v).ok();
+                                },
+                                test_id = "voice-tile-volume",
+                            ) {}
+                            toggle(
+                                value = mute_local,
+                                on_change = move |on2: bool| {
+                                    mute_local.set(on2);
+                                    crate::backend::set_user_mute(channel_id, user_id, on2).ok();
+                                },
+                                test_id = "voice-tile-mute",
+                            ) {}
+                            text(style = StyleRules {
+                                font_size: Some(px(11.0)),
+                                color: Some(col(TEXT_MUTED)),
+                                ..Default::default()
+                            }) {
+                                move || if mute_local.get() {
+                                    "Muted".to_string()
+                                } else {
+                                    format!("{:.0}%", vol.get() * 100.0)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+        )
     };
     ui! {
         view(style = move || StyleRules {
@@ -75,8 +160,53 @@ pub(super) fn VoiceTile(
             ..rounded(6.0)
         }, test_id = "voice-tile") {
             { chip }
-            { label }
+            view(style = StyleRules {
+                flex_direction: Some(FlexDirection::Row),
+                gap: Some(px(4.0)),
+                flex_shrink: Some(grow(1.0)),
+                ..Default::default()
+            }) {
+                // The room's mute treatment: the dimmed name plus a small
+                // speaker-off icon the robot can read. A `switch` keyed on
+                // the local mute, so unmuting drops the icon without a
+                // rebuild of the whole tile.
+                switch(
+                    move || mute_local.get(),
+                    move |on: &bool| {
+                        if !*on {
+                            return ui! {
+                                view(style = StyleRules {
+                                    width: Some(px(0.0)),
+                                    height: Some(px(0.0)),
+                                    ..Default::default()
+                                }) {}
+                            };
+                        }
+                        ui! {
+                            view(test_id = "voice-tile-muted-icon") {
+                                icon(MIC_OFF).color(|| theme::live(theme::TEXT_FAINT)).size(12.0)
+                            }
+                        }
+                    },
+                )
+                { label }
+            }
+            { menu }
         }
+        .bind(tile_ref)
+        .on_touch(move |ev| {
+            if ev.phase == TouchPhase::Began
+                && runtime_shared::touch::pointer_button().opens_context_menu()
+                && crate::backend::capabilities().voice
+                    == crate::backend::VoiceProvider::IdeaChat
+            {
+                menu_open.set(!menu_open.get());
+                TouchResponse::CONSUMED
+            } else {
+                // Plain taps bubble: the voice row keeps its join/leave tap.
+                TouchResponse::IGNORED
+            }
+        })
     }
 }
 
