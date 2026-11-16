@@ -200,6 +200,43 @@ fn md_runs(app: &mut App, body: &str) -> Vec<String> {
 }
 
 #[robot_test]
+fn editing_and_deleting_a_message_both_open_the_action_menu(app: &mut App) {
+    let (a, _b, server) = crew("menuactions");
+    signed_out(app);
+    sign_in_as(app, &a);
+    app.text(&server).assert_visible();
+    app.text("general").click();
+    app.set_timeout(WAIT);
+
+    let msg = "the menu actions message";
+    app.test_id("composer").fill(&msg);
+    app.test_id("composer").press_key("Enter");
+    app.text(&msg).assert_visible();
+
+    // Hovering the message row opens the action bar; the more pill expands
+    // the overflow menu, whose Edit row takes the new text.
+    app.text(&msg).hover_native();
+    app.test_id("msg-more").click();
+    app.test_id("menu-edit-message").click();
+    let edited = "the edited text";
+    app.test_id("edit-input").fill(&edited);
+    app.test_id("edit-input").press_key("Enter");
+    app.text(&edited).assert_visible();
+    app.text("(edited)").assert_visible();
+    shot(app, "menu-edit-applied");
+
+    // The same menu carries Delete: hover the edited row, open the menu,
+    // take its Delete row and confirm on the strip.
+    app.text(&edited).hover_native();
+    app.test_id("msg-more").click();
+    app.test_id("menu-delete-message").click();
+    app.text("Delete this message?").assert_visible();
+    app.test_id("confirm-delete").click();
+    app.text(&edited).assert_hidden();
+    shot(app, "menu-deleted");
+}
+
+#[robot_test]
 fn scrolling_up_offers_the_jump_to_bottom_pill(app: &mut App) {
     let (a, _b, server) = crew("jump");
     signed_out(app);
