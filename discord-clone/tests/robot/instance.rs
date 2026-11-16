@@ -1,9 +1,10 @@
 //! Instance Settings: the admin's Chat Backend page. The run's first
-//! instance-admin seat is empty, so the suite's first test signs up a fresh
-//! host through the API, signs the browser into it, and claims the seat
-//! through the setup card. The later tests sign the browser back into that
-//! SAME account (the run's DB is shared, and its admin row persists) rather
-//! than claiming again. The page shows the picker with Built-in selected,
+//! instance-admin seat is empty, so whichever test here gets to the page first
+//! signs up a fresh host, signs the browser into it, and claims the seat
+//! through the setup card (`open_instance_settings` does the claim, so it
+//! does not matter which test that is: tests run in name order). The later
+//! tests sign the browser back into that SAME account (the run's DB is
+//! shared, and its admin row persists) rather than claiming again. The page shows the picker with Built-in selected,
 //! the idea-chat URL field, and the chat "Test connection" answers — an
 //! unusable URL and an unreachable one each paint their exact refusal in
 //! red. Nothing here switches the robot instance to idea-chat: a switch
@@ -26,10 +27,19 @@ fn admin() -> &'static Account {
     ADMIN.get_or_init(move || Account::new("insthost"))
 }
 
-/// Open the Instance Settings area from the User Settings sidebar's row.
+/// Open the Instance Settings area from the User Settings sidebar's row. The
+/// first visit of a run lands on the setup card (the seat is empty) and claims
+/// it; later visits find the page itself, so this waits for either.
 fn open_instance_settings(app: &mut App) {
     app.test_id("user-settings").click();
     app.test_id("settings-nav-instance-settings").click();
+    let landed = eventually(20, || {
+        app.test_id("instance-claim").is_visible() || app.text("Call provider").is_visible()
+    });
+    assert!(landed, "the instance area should show the setup card or the page");
+    if app.test_id("instance-claim").is_visible() {
+        app.test_id("instance-claim").click();
+    }
 }
 
 #[robot_test]
@@ -40,9 +50,6 @@ fn the_chat_backend_picker_opens_on_built_in(app: &mut App) {
     app.text("Online").assert_visible();
 
     open_instance_settings(app);
-    // The seat was empty at signup, so the area opened on the setup card.
-    app.test_id("instance-claim").assert_visible();
-    app.test_id("instance-claim").click();
     app.text("Call provider").assert_visible();
 
     // The picker: Built-in leads, the idea-chat row and its URL field show.
@@ -57,6 +64,20 @@ fn the_chat_backend_picker_opens_on_built_in(app: &mut App) {
     let refused = "Test connection: the idea-chat URL is not usable: it must start with http:// or https://";
     let shown = eventually(10, move || app.text(refused).is_visible());
     assert!(shown, "the empty-URL refusal should paint under the button");
+}
+
+#[robot_test]
+fn escape_closes_the_instance_settings_page(app: &mut App) {
+    signed_out(app);
+    let host = admin();
+    sign_in_as(app, host);
+    app.text("Online").assert_visible();
+
+    open_instance_settings(app);
+    app.text("Call provider").assert_visible();
+    app.press_key("Escape");
+    let closed = eventually(10, || !app.text("Call provider").is_visible());
+    assert!(closed, "Escape should close the instance settings page");
 }
 
 #[robot_test]

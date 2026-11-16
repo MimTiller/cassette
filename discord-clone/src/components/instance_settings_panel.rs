@@ -114,6 +114,11 @@ pub(crate) fn state() -> InstanceState {
     STATE.with(|s| s.get()).expect("instance_settings_panel::install runs in app_shell")
 }
 
+/// The open/closed signal, for Escape (see `app::popups`).
+pub(crate) fn open_signal() -> Signal<bool> {
+    state().open
+}
+
 /// The provider picker's indexes.
 const PROVIDER_NONE: u32 = 0;
 const PROVIDER_IDEA_CHAT: u32 = 1;

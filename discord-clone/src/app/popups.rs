@@ -100,6 +100,13 @@ pub(super) fn build(s: &ShellState) -> PopupsParts {
     );
     // Dialogs and full-screen panes Escape closes when no popup is open.
     let dialogs: Rc<Vec<Entry>> = Rc::new(vec![
+        // First, so Escape closes it before the User Settings screen it opens
+        // over. Instance Settings installs its state later (`overlays::build`),
+        // so its signal is read when Escape is pressed, not while building this.
+        Entry {
+            open: Rc::new(|| crate::instance_settings_panel::open_signal().get()),
+            close: Rc::new(|| crate::instance_settings_panel::open_signal().set(false)),
+        },
         opt(crate::avatar_crop::open_signal()),
         flag(cc_open),
         flag(rc_open),
