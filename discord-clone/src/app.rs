@@ -1616,11 +1616,8 @@ fn app_shell(authed: Signal<bool>) -> Element {
                     // to its content, so its measured height is the total
                     // scrollable height. The `sent_messages` switch is the only
                     // real child (the graveyard WelcomeBanner is gone).
-                    // No visible scrollbar (Discord-style); the wheel,
-                    // trackpad and keyboard still scroll it.
                     scroll_view(style = StyleRules {
                         flex_grow: Some(grow(1.0)),
-                        scrollbar: Some(runtime_core::ScrollbarVisibility::Hidden),
                         ..Default::default()
                     }, test_id = "msg-scroll") {
                         view(style = StyleRules {
