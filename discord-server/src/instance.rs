@@ -6,7 +6,7 @@
 //! The store is the `instance_settings` key/value table (migration
 //! `0035_instance_settings.sql`); env vars stay the fallback and the
 //! headless-deploy path: a saved key wins over its env counterpart
-//! (`CALL_PROVIDER`, `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`,
+//! (`CALL_PROVIDER`, `IDEA_CHAT_URL`,
 //! `CHAT_BACKEND`, `IDEA_CHAT_URL`, `INSTANCE_NAME`), and the answer labels
 //! which source each effective value came from.
 //!
@@ -16,7 +16,7 @@
 //! admin is set up by the setup flow, not by auto-promoting the first
 //! registered user.
 //!
-//! Secrets (the LiveKit API secret) are write-only from the client: the
+//! Secrets (the idea-chat relay secret) are write-only from the client: the
 //! answer carries `secret_set` and its last 4 characters, never the value.
 //! Saving an empty secret field keeps the old one.
 //!
@@ -67,12 +67,6 @@ pub struct InstanceSettingsResult {
     pub instance_name: String,
     pub call_provider: String,
     pub call_provider_source: SettingSource,
-    pub livekit_url: String,
-    pub livekit_url_source: SettingSource,
-    pub livekit_api_key: String,
-    pub livekit_api_key_source: SettingSource,
-    pub livekit_api_secret: SecretInfo,
-    pub livekit_api_secret_source: SettingSource,
     pub chat_backend: String,
     pub chat_backend_source: SettingSource,
     pub idea_chat_url: String,
@@ -90,12 +84,9 @@ pub struct InstanceSettingsResult {
 /// which is how an empty secret field keeps the old secret.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SetInstanceSettingsInput {
-    /// `none` | `livekit` (`idea-chat` is accepted by the type but refused
+    /// `none` | `idea-chat` (`idea-chat` is accepted by the type but refused
     /// on save until its wire lands).
     pub call_provider: String,
-    pub livekit_url: String,
-    pub livekit_api_key: String,
-    pub livekit_api_secret: String,
     /// `rwnd` | `idea-chat` (stored; the idea-chat chat backend is wired by
     /// a later task).
     pub chat_backend: String,
@@ -106,7 +97,7 @@ pub struct SetInstanceSettingsInput {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InstanceInfo {
     pub instance_name: String,
-    /// The call provider answering joins now: `livekit` | `none`.
+    /// The call provider answering joins now: `none` | `idea-chat`.
     pub call_provider: String,
     /// The chat backend in use: `rwnd` | `idea-chat`.
     pub chat_backend: String,
@@ -175,9 +166,6 @@ pub fn current_call_config() -> CallConfig {
 pub fn call_config_of(db: &Db) -> CallConfig {
     CallConfig {
         provider: db_or_env(&db, "call_provider", "CALL_PROVIDER", PROVIDER_NONE).0,
-        livekit_url: db_or_env(&db, "livekit_url", "LIVEKIT_URL", "").0,
-        livekit_api_key: db_or_env(&db, "livekit_api_key", "LIVEKIT_API_KEY", "").0,
-        livekit_api_secret: db_or_env(&db, "livekit_api_secret", "LIVEKIT_API_SECRET", "").0,
         relay_url: db_or_env(&db, "idea_chat_relay_url", "IDEA_CHAT_RELAY_URL", "").0,
         relay_cert_hash: db_or_env(&db, "idea_chat_relay_cert_hash", "IDEA_CHAT_RELAY_CERT_HASH", "").0,
         relay_secret: db_or_env(&db, "idea_chat_relay_secret", "IDEA_CHAT_RELAY_SECRET", "").0,
@@ -236,9 +224,6 @@ impl InstanceSettings {
     /// authorized). The secret comes back as [`SecretInfo`] only.
     pub fn read(&self) -> InstanceSettingsResult {
         let (provider, provider_src) = db_or_env(&self.db, "call_provider", "CALL_PROVIDER", PROVIDER_NONE);
-        let (url, url_src) = db_or_env(&self.db, "livekit_url", "LIVEKIT_URL", "");
-        let (api_key, key_src) = db_or_env(&self.db, "livekit_api_key", "LIVEKIT_API_KEY", "");
-        let (secret, secret_src) = db_or_env(&self.db, "livekit_api_secret", "LIVEKIT_API_SECRET", "");
         let (chat, chat_src) = db_or_env(&self.db, "chat_backend", "CHAT_BACKEND", CHAT_RWND);
         let (idea_url, idea_src) = db_or_env(&self.db, "idea_chat_url", "IDEA_CHAT_URL", "");
         let (name, _name_src) = db_or_env(&self.db, "instance_name", "INSTANCE_NAME", DEFAULT_NAME);
@@ -246,15 +231,6 @@ impl InstanceSettings {
             instance_name: name,
             call_provider: provider,
             call_provider_source: provider_src,
-            livekit_url: url,
-            livekit_url_source: url_src,
-            livekit_api_key: api_key,
-            livekit_api_key_source: key_src,
-            livekit_api_secret: SecretInfo {
-                secret_set: !secret.is_empty(),
-                last4: secret_last4(secret),
-            },
-            livekit_api_secret_source: secret_src,
             chat_backend: chat,
             chat_backend_source: chat_src,
             idea_chat_url: idea_url,
@@ -301,9 +277,6 @@ impl InstanceSettings {
             }
         };
         keep("call_provider", input.call_provider);
-        keep("livekit_url", input.livekit_url);
-        keep("livekit_api_key", input.livekit_api_key);
-        keep("livekit_api_secret", input.livekit_api_secret);
         keep("chat_backend", input.chat_backend);
         keep("idea_chat_url", input.idea_chat_url);
     }
@@ -388,7 +361,7 @@ pub async fn instance_info() -> Result<InstanceInfo, ServerError> {
 }
 
 /// Read the instance settings: the effective value of every setting plus
-/// its source. Admin-only; the LiveKit API secret comes back only as
+/// its source. Admin-only; the relay secret comes back only as
 /// `secret_set` and its last 4 characters.
 #[server]
 pub async fn get_instance_settings(_input: ()) -> Result<InstanceSettingsResult, ServerError> {
@@ -406,9 +379,6 @@ pub async fn get_instance_settings(_input: ()) -> Result<InstanceSettingsResult,
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TestCallInput {
     pub call_provider: String,
-    pub livekit_url: String,
-    pub livekit_api_key: String,
-    pub livekit_api_secret: String,
 }
 
 /// The answer to "Test connection": never an error — a provider-side
@@ -438,9 +408,6 @@ fn resolve_call_input(db: &Db, caller_id: i64, input: TestCallInput) -> Result<C
     Ok(
         CallConfig {
             provider: pick(input.call_provider, "call_provider", "CALL_PROVIDER", PROVIDER_NONE),
-            livekit_url: pick(input.livekit_url, "livekit_url", "LIVEKIT_URL", ""),
-            livekit_api_key: pick(input.livekit_api_key, "livekit_api_key", "LIVEKIT_API_KEY", ""),
-            livekit_api_secret: pick(input.livekit_api_secret, "livekit_api_secret", "LIVEKIT_API_SECRET", ""),
             relay_url: pick(String::new(), "idea_chat_relay_url", "IDEA_CHAT_RELAY_URL", ""),
             relay_cert_hash: pick(String::new(), "idea_chat_relay_cert_hash", "IDEA_CHAT_RELAY_CERT_HASH", ""),
             relay_secret: pick(String::new(), "idea_chat_relay_secret", "IDEA_CHAT_RELAY_SECRET", ""),
@@ -459,108 +426,22 @@ fn test_call_ok(rooms: i64) -> CallTestResult {
 }
 
 #[cfg(feature = "server")]
-/// Ask the LiveKit provider directly: `POST <http(s) url>/twirp/livekit.
-/// RoomService/ListRooms` with a Bearer JWT carrying only the `video.roomList`
-/// grant (what LiveKit's `EnsureListPermission` checks). A ws/wss URL is the
-/// socket the app would join; the API sits on the same address over http/https.
-/// A provider-side failure is `ok: false` plus the exact message — never an
-/// RPC error — so the admin page paints one red line. No SSRF guard: the URL
-/// is one the instance host typed about their own infrastructure.
-async fn test_livekit(cfg: CallConfig) -> CallTestResult {
-    let url = cfg.livekit_url.trim();
-    if url.is_empty() || cfg.livekit_api_key.is_empty() || cfg.livekit_api_secret.is_empty() {
-        return test_call_error("livekit is configured but its URL, API key or API secret is missing".to_string());
-    }
-    let http =
-        if url.starts_with("ws://") {
-            url.replace("ws://", "http://")
-        } else if url.starts_with("wss://") {
-            url.replace("wss://", "https://")
-        } else {
-            url.to_string()
-        };
-    let base = http.trim_end();
-    if !(base.starts_with("http://") || base.starts_with("https://")) {
-        return test_call_error(format!("the LiveKit URL is not usable: {url}"));
-    }
-    let trimmed = base.trim_end_matches(['/']);
-    let endpoint = format!("{trimmed}/twirp/livekit.RoomService/ListRooms");
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(1_000);
-    let token = crate::voice::room_list_token(cfg.livekit_api_key, cfg.livekit_api_secret, now);
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(8))
-        .build()
-        .unwrap_or_else(|e| panic!("test_livekit client: {e}"));
-    let resp = match client
-        .post(endpoint)
-        .bearer_auth(token)
-        .header("content-type", "application/json")
-        .body("{}".to_string())
-        .send()
-        .await
-    {
-        Ok(resp) => resp,
-        Err(e) =>
-            return test_call_error(
-                if e.is_timeout() {
-                    "the provider did not answer within 8 seconds: wrong URL, or unreachable from this instance".to_string()
-                } else if e.is_connect() {
-                    "the provider could not be reached: connection refused (a TLS failure answers the same way)".to_string()
-                } else {
-                    "the provider request failed".to_string()
-                }
-            )
-    };
-    let ok = resp.status().is_success();
-    let status = resp.status().as_u16();
-    let body = match resp.text().await {
-        Ok(text) => text.trim().to_string(),
-        Err(e) => return test_call_error(format!("the provider's reply could not be read: {e}")),
-    };
-    if ok {
-        let parsed: Result<serde_json::Value, _> = serde_json::from_str(&body);
-        let rooms = parsed.ok().and_then(|v| v.get("rooms").and_then(|r| r.as_array().map(|a| a.len() as i64)));
-        match rooms {
-            Some(n) => test_call_ok(n),
-            None => test_call_error("the provider answered 200 but not a room list".to_string()),
-        }
-    } else if status == 401 {
-        if body.contains("signature is invalid") {
-            test_call_error("the API secret is wrong: the provider could not verify the token signature".to_string())
-        } else if body.contains("API key") {
-            test_call_error("the provider does not know this API key".to_string())
-        } else {
-            test_call_error(format!("the provider refused the credentials: {body}"))
-        }
-    } else {
-        test_call_error(format!("the provider answered HTTP {status}: {body}"))
-    }
-}
-
-#[cfg(feature = "server")]
 /// The admin page's "Test connection": never saves anything — it resolves
 /// the effective config (admin-gated) and asks the provider named by it.
 async fn test_call_with(db: &Db, caller_id: i64, input: TestCallInput) -> Result<CallTestResult, String> {
     let cfg = resolve_call_input(db, caller_id, input)?;
-    match call_test_answer(cfg.clone()) {
-        Some(answer) => Ok(answer),
-        None => Ok(test_livekit(cfg).await),
-    }
+    Ok(call_test_answer(cfg))
 }
 
 #[cfg(feature = "server")]
 /// The answer for a provider that has no live test to run (or the provider
-/// picker is unknown); `None` means LiveKit, which reaches the network.
+/// picker is unknown).
 /// Pure so the routing is unit-testable without HTTP.
-fn call_test_answer(cfg: CallConfig) -> Option<CallTestResult> {
+fn call_test_answer(cfg: CallConfig) -> CallTestResult {
     match cfg.provider.trim() {
-        "livekit" => None,
-        CALL_IDEA_CHAT => Some(test_call_error("idea-chat calls are not available yet".to_string())),
-        PROVIDER_NONE => Some(test_call_error("no call provider is selected".to_string())),
-        other => Some(test_call_error(format!("unknown call provider: {other}"))),
+        CALL_IDEA_CHAT => test_call_error("idea-chat calls are not available yet".to_string()),
+        PROVIDER_NONE => test_call_error("no call provider is selected".to_string()),
+        other => test_call_error(format!("unknown call provider: {other}")),
     }
 }
 
@@ -692,7 +573,7 @@ pub async fn test_chat_backend(input: TestChatInput) -> Result<ChatTestResult, S
     Ok(outcome)
 }
 
-/// Test the call provider with the typed (or saved) values: asks LiveKit's
+/// Test the call provider with the typed (or saved) values.
 /// Twirp ListRooms and reports what happened. Admin-only; never saves.
 #[server]
 pub async fn test_call_provider(input: TestCallInput) -> Result<CallTestResult, ServerError> {
@@ -787,39 +668,6 @@ mod db_tests {
         ).unwrap();
         (dir, db)
     }
-
-    #[test]
-    fn the_store_gates_on_the_admin_roster() {
-        let (_d, db) = setup();
-        db.lock().unwrap().execute_batch(
-            "INSERT INTO users (id, username, email, created_at) VALUES
-                (1, 'alice', 'a@x', 1), (2, 'bob', 'b@x', 1);",
-        ).unwrap();
-        db.grant_instance_admin(1).unwrap();
-        let svc = InstanceSettings::new(db.clone());
-        assert_eq!(svc.authorize(2).unwrap_err(), NOT_ADMIN, "a normal user reads the plain refusal");
-        svc.authorize(1).unwrap();
-        assert_eq!(svc.save(2, SetInstanceSettingsInput {
-            call_provider: "livekit".to_string(), livekit_url: "".to_string(),
-            livekit_api_key: "".to_string(), livekit_api_secret: "".to_string(),
-            chat_backend: "rwnd".to_string(), idea_chat_url: "".to_string(),
-        }).unwrap_err(), NOT_ADMIN, "and cannot write either");
-        let r = svc.save(1, SetInstanceSettingsInput {
-            call_provider: "livekit".to_string(), livekit_url: "ws://x".to_string(),
-            livekit_api_key: "k".to_string(), livekit_api_secret: "topsecret".to_string(),
-            chat_backend: "rwnd".to_string(), idea_chat_url: "".to_string(),
-        }).unwrap();
-        assert_eq!((r.call_provider, r.call_provider_source), ("livekit".to_string(), SettingSource::Db), "the save lands in the store");
-        assert_eq!(db.instance_setting("call_provider".to_string()), Some("livekit".to_string()), "readback");
-        let empty = SetInstanceSettingsInput {
-            call_provider: "".to_string(), livekit_url: "".to_string(), livekit_api_key: "".to_string(),
-            livekit_api_secret: "".to_string(), chat_backend: "".to_string(), idea_chat_url: "".to_string(),
-        };
-        let again = svc.save(1, empty).unwrap();
-        assert_eq!(again.call_provider, "livekit", "an empty field keeps the old value");
-        assert_eq!(again.livekit_api_secret.last4, "cret", "and keeps the secret (its tail proves it)");
-    }
-
     #[test]
     fn the_instance_admin_gate_covers_test_claim_and_promote() {
         let (_d, db) = setup();
@@ -830,17 +678,11 @@ mod db_tests {
         db.grant_instance_admin(1).unwrap();
         // alice is an admin: testing works, and she can promote carol.
         let cfg = resolve_call_input(&db, 1, TestCallInput {
-            call_provider: "none".to_string(), livekit_url: "".to_string(),
-            livekit_api_key: "".to_string(), livekit_api_secret: "".to_string(),
+            call_provider: "none".to_string(),
         }).unwrap();
         let answer = call_test_answer(cfg);
-        match &answer {
-            Some(t) => {
-                assert_eq!(t.message, "no call provider is selected".to_string(), "the admin reaches the test with a clear answer");
-                assert_eq!(t.ok, false, "no provider means no live test ran");
-            }
-            None => panic!("the admin's 'none' pick routed to a live test"),
-        };
+        assert_eq!(answer.message, "no call provider is selected".to_string(), "the admin reaches the test with a clear answer");
+        assert_eq!(answer.ok, false, "no provider means no live test ran");
         assert_eq!(promote_admin(&db, 1, 3).unwrap(), true, "the admin promotes a co-host");
         assert_eq!(db.instance_admin(3), true, "carol is an admin now");
         // bob is not: every instance op refuses him with the same sentence.
@@ -850,9 +692,6 @@ mod db_tests {
                 2,
                 TestCallInput {
                     call_provider: "".to_string(),
-                    livekit_url: "".to_string(),
-                    livekit_api_key: "".to_string(),
-                    livekit_api_secret: "".to_string(),
                 },
             ) {
                 Err(reason) => reason,
@@ -889,8 +728,7 @@ mod db_tests {
         db.grant_instance_admin(1).unwrap();
         let svc = InstanceSettings::new(db.clone());
         let refused = svc.save(1, SetInstanceSettingsInput {
-            call_provider: "idea-chat".to_string(), livekit_url: "".to_string(),
-            livekit_api_key: "".to_string(), livekit_api_secret: "".to_string(),
+            call_provider: "idea-chat".to_string(),
             chat_backend: "rwnd".to_string(), idea_chat_url: "".to_string(),
         }).unwrap_err();
         assert_eq!(refused, CALL_NOT_READY, "the reserved provider refuses with its sentence");

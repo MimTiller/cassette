@@ -121,7 +121,7 @@ file-picker = { version = "=8.0.0", registry = "idealyst" }
 # wasm (the native halves used to no-op, signing users out every launch).
 storage = { version = "=8.0.0", registry = "idealyst", features = ["reactive"] }
 # The video SDK: voice tiles mount a real <video> element on web fed by the
-# LiveKit client's remote video tracks (camera / screen-share feeds) through a
+# relay client's remote video tracks (camera / screen-share feeds) through a
 # media-stream MediaStream. `register_scene_extensions` registers its scene
 # handler. Its own media-stream dep (same workspace pin) is what publishes the
 # web `MediaStream` as the stream's native source.
@@ -241,7 +241,7 @@ server_manifest = "../discord-server/Cargo.toml"
 server_bin      = "server"
 
 [dev-dependencies]
-# The voice suite signs a LiveKit admin JWT to ask the media server directly
+# The voice suite talks to the relay directly
 # (ListParticipants), so it needs the same HMAC-SHA256 + base64url signing
 # stack `discord-server/src/voice.rs` uses, pinned to those exact crates.
 hmac = "0.12.1"

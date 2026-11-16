@@ -7,9 +7,8 @@
 //!
 //! Today one section — Voice & Video — configures the call provider and the
 //! chat backend without editing env files: the provider picker (None /
-//! LiveKit / idea-chat, the last listed disabled "coming soon"), the LiveKit
-//! credentials (URL, API key, API secret as a password field), and the
-//! chat-backend picker. Every value row labels where its EFFECTIVE value
+//! idea-chat, the last listed disabled "coming soon") and the chat-backend
+//! picker. Every value row labels where its EFFECTIVE value
 //! comes from — the instance store ("DB") or the environment ("env") — and
 //! a save swaps the server's live voice config, so joining a voice channel
 //! after Save uses the new values with no restart.
@@ -117,17 +116,14 @@ pub(crate) fn state() -> InstanceState {
 
 /// The provider picker's indexes.
 const PROVIDER_NONE: u32 = 0;
-const PROVIDER_LIVEKIT: u32 = 1;
-const PROVIDER_IDEA_CHAT: u32 = 2;
+const PROVIDER_IDEA_CHAT: u32 = 1;
 
 /// The chat-backend picker's indexes.
 const CHAT_RWND: u32 = 0;
 const CHAT_IDEA_CHAT: u32 = 1;
 
 fn provider_index(name: &str) -> u32 {
-    if name == "livekit".to_string() {
-        PROVIDER_LIVEKIT
-    } else if name == "idea-chat".to_string() {
+    if name == "idea-chat".to_string() {
         PROVIDER_IDEA_CHAT
     } else {
         PROVIDER_NONE
@@ -140,9 +136,7 @@ fn chat_index(name: &str) -> u32 {
 
 /// Picker index -> the provider name the backend stores.
 fn provider_name(i: u32) -> String {
-    if i == PROVIDER_LIVEKIT {
-        "livekit".to_string()
-    } else if i == PROVIDER_IDEA_CHAT {
+    if i == PROVIDER_IDEA_CHAT {
         "idea-chat".to_string()
     } else {
         "none".to_string()
@@ -169,8 +163,6 @@ pub(crate) fn open_area() {
     if let Some(v) = s.saved.get() {
         s.provider.set(provider_index(v.call_provider.as_str()));
         s.chat.set(chat_index(v.chat_backend.as_str()));
-        s.url.set(v.livekit_url);
-        s.api_key.set(v.livekit_api_key);
         s.idea_url.set(v.idea_chat_url);
     }
     s.api_secret.set(String::new());
@@ -232,9 +224,6 @@ pub fn InstanceSettingsPanel() -> Element {
     let sv = s.saved;
     let prov = s.provider;
     let chatb = s.chat;
-    let url_s = s.url;
-    let key_s = s.api_key;
-    let secret_s = s.api_secret;
     let idea_s = s.idea_url;
     let dirty_s = s.dirty;
     let b = s.busy;
@@ -270,7 +259,7 @@ pub fn InstanceSettingsPanel() -> Element {
         runtime_core::spawn_then_in(
             &crate::app::shell_alive(),
             async move {
-                crate::backend::test_call_provider(provider_name(prov.get()), url_s.get(), key_s.get(), secret_s.get()).await
+                crate::backend::test_call_provider(provider_name(prov.get())).await
             },
             move |result| {
                 match result {
@@ -320,7 +309,7 @@ pub fn InstanceSettingsPanel() -> Element {
         runtime_core::spawn_then_in(
             &crate::app::shell_alive(),
             async move {
-                crate::backend::set_instance_settings(provider_name(prov.get()), url_s.get(), key_s.get(), secret_s.get(),
+                crate::backend::set_instance_settings(provider_name(prov.get()),
                     chat_name(chatb.get()), idea_s.get()).await
             },
             move |result| {
@@ -402,11 +391,8 @@ pub fn InstanceSettingsPanel() -> Element {
         if let Some(v) = sv.get() {
             prov.set(provider_index(v.call_provider.as_str()));
             chatb.set(chat_index(v.chat_backend.as_str()));
-            url_s.set(v.livekit_url);
-            key_s.set(v.livekit_api_key);
             idea_s.set(v.idea_chat_url);
         }
-        secret_s.set(String::new());
         dirty_s.set(false);
         s.confirm.set(false);
         s.chat_test.set(None);
@@ -447,7 +433,6 @@ pub fn InstanceSettingsPanel() -> Element {
                 // soon") until its call wire lands.
                 let on_pick = Rc::new(move |_idx: u32| { mark_dirty(); });
                 let pick_none = crate::settings_suite::option_row("None", PROVIDER_NONE, prov.clone(), on_pick.clone());
-                let pick_live = crate::settings_suite::option_row("LiveKit", PROVIDER_LIVEKIT, prov.clone(), on_pick.clone());
                 let pick_idea = crate::settings_suite::option_row("idea-chat (coming soon)", PROVIDER_IDEA_CHAT, prov.clone(), on_pick);
                 let provider_help = ui! {
                     text(style = StyleRules {
@@ -456,30 +441,13 @@ pub fn InstanceSettingsPanel() -> Element {
                         margin_top: Some(px(10.0)),
                         ..Default::default()
                     }) {
-                        "LiveKit needs UDP 7882 (or TURN) reachable from each user: a Cloudflare http tunnel alone cannot carry voice. Setup notes live in docs/self-hosting.md.".to_string()
+                        "Calls go through the idea-chat relay. Its URL and secret are set on the server, not here.".to_string()
                     }
                 };
                 let provider_card = crate::settings_suite::settings_card(
                     "Call provider".to_string(),
-                    vec![pick_none, pick_live, pick_idea, provider_help],
+                    vec![pick_none, pick_idea, provider_help],
                 );
-
-                // The credential rows: shown while LiveKit is picked.
-                let creds_children: Vec<Element> =
-                    if p == PROVIDER_LIVEKIT {
-                        vec![
-                            text_field_id(url_s.clone(), "inst-url-input", "ws:// or wss:// address", input_style.clone()),
-                            src_line("URL".to_string(), match saved_v { Some(v) => source_db(v.livekit_url_source.clone()), None => false }),
-                            text_field_id(key_s.clone(), "inst-key-input", "API key", input_style.clone()),
-                            src_line("API key".to_string(), match saved_v { Some(v) => source_db(v.livekit_api_key_source.clone()), None => false }),
-                            secret_field_id(secret_s.clone(), "inst-secret-input", "API secret", input_style.clone()),
-                            src_line("API secret".to_string(), match saved_v { Some(v) => source_db(v.livekit_api_secret_source.clone()), None => false }),
-                            secret_state(saved_v),
-                        ]
-                    } else {
-                        vec![ui! { view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {} }]
-                    };
-                let creds_card = crate::settings_suite::settings_card("LiveKit credentials".to_string(), creds_children);
 
                 // The secret's state line: never the value — the tail confirms.
                 let chat_on_pick = Rc::new(move |_idx: u32| { mark_dirty(); });
@@ -565,7 +533,6 @@ pub fn InstanceSettingsPanel() -> Element {
                     ui! {
                         view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(16.0)), ..Default::default() }) {
                             { provider_card }
-                            { creds_card }
                             { chat_card }
                             { actions }
                         }
@@ -636,32 +603,6 @@ pub fn InstanceSettingsPanel() -> Element {
     }
 }
 
-/// The secret's state line: never the value — "saved, ends in ab12".
-fn secret_state(saved_v: &Option<InstanceSettingsResult>) -> Element {
-    if let Some(v) = saved_v {
-        if v.livekit_api_secret.secret_set {
-            ui! {
-                text(style = StyleRules {
-                    font_size: Some(px(12.0)),
-                    color: Some(col(theme::SUCCESS)),
-                    margin_top: Some(px(6.0)),
-                    ..Default::default()
-                }) { format!("API secret saved, ends in {}", v.livekit_api_secret.last4) }
-            }
-        } else {
-            ui! {
-                text(style = StyleRules {
-                    font_size: Some(px(12.0)),
-                    color: Some(col(theme::TEXT_MUTED)),
-                    margin_top: Some(px(6.0)),
-                    ..Default::default()
-                }) { "no API secret saved yet".to_string() }
-            }
-        }
-    } else {
-        ui! { view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {} }
-    }
-}
 
 /// The chat-test answer under its button: OK green, or the exact failure red.
 fn chat_answer(chat_v: &Option<ChatTestResult>) -> Element {

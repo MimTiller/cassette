@@ -299,7 +299,7 @@ pub trait CallApi {
     async fn leave_voice(channel_id: i64) -> Result<LeaveVoiceResult, ServerError>;
     async fn voice_state(channel_id: i64) -> Result<VoiceStateResult, ServerError>;
     /// Mute and deafen the caller's own connection (the server owns the
-    /// flags: LiveKit's own toggles are invisible to peers, so every client
+    /// flags: a browser's own toggles are invisible to peers, so every client
     /// must see the same icons). Refuses unless the caller is connected to
     /// this channel.
     async fn set_voice_flags(
@@ -337,17 +337,11 @@ pub trait InstanceApi {
     async fn get_instance_settings() -> Result<InstanceSettingsResult, ServerError>;
     async fn set_instance_settings(
         call_provider: String,
-        livekit_url: String,
-        livekit_api_key: String,
-        livekit_api_secret: String,
         chat_backend: String,
         idea_chat_url: String,
     ) -> Result<InstanceSettingsResult, ServerError>;
     async fn test_call_provider(
         call_provider: String,
-        livekit_url: String,
-        livekit_api_key: String,
-        livekit_api_secret: String,
     ) -> Result<CallTestResult, ServerError>;
     async fn claim_instance_admin() -> Result<ClaimAdminResult, ServerError>;
     async fn test_chat_backend(idea_chat_url: String) -> Result<ChatTestResult, ServerError>;
@@ -525,7 +519,6 @@ mod members_impl;
 mod roles_impl;
 mod permissions_impl;
 mod voice_impl;
-mod livekit;
 mod calls;
 mod call_media;
 mod video_feeds;
@@ -1290,7 +1283,7 @@ pub async fn delete_role(role_id: i64) -> Result<(), String> {
 }
 
 thread_local! {
-    /// Who LiveKit last reported speaking in the joined voice channel.
+    /// Who the relay last reported speaking in the joined voice channel.
     static SPEAKING: std::cell::RefCell<Vec<i64>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
@@ -1483,29 +1476,23 @@ pub async fn get_instance_settings() -> Result<InstanceSettingsResult, String> {
 
 pub async fn set_instance_settings(
     call_provider: String,
-    livekit_url: String,
-    livekit_api_key: String,
-    livekit_api_secret: String,
     chat_backend: String,
     idea_chat_url: String,
 ) -> Result<InstanceSettingsResult, String> {
     if chat_idea_chat() {
-            IdeaChatBackend::set_instance_settings(call_provider, livekit_url, livekit_api_key, livekit_api_secret, chat_backend, idea_chat_url).await
+            IdeaChatBackend::set_instance_settings(call_provider, chat_backend, idea_chat_url).await
         } else {
-            CassetteBackend::set_instance_settings(call_provider, livekit_url, livekit_api_key, livekit_api_secret, chat_backend, idea_chat_url).await
+            CassetteBackend::set_instance_settings(call_provider, chat_backend, idea_chat_url).await
         }.map_err(|e| crate::errors::friendly(&e))
 }
 
 pub async fn test_call_provider(
     call_provider: String,
-    livekit_url: String,
-    livekit_api_key: String,
-    livekit_api_secret: String,
 ) -> Result<CallTestResult, String> {
     if chat_idea_chat() {
-            IdeaChatBackend::test_call_provider(call_provider, livekit_url, livekit_api_key, livekit_api_secret).await
+            IdeaChatBackend::test_call_provider(call_provider).await
         } else {
-            CassetteBackend::test_call_provider(call_provider, livekit_url, livekit_api_key, livekit_api_secret).await
+            CassetteBackend::test_call_provider(call_provider).await
         }.map_err(|e| crate::errors::friendly(&e))
 }
 

@@ -262,9 +262,9 @@ pub(super) fn user_panel(
                 flex_shrink: Some(grow(0.0)),
                 ..Default::default()
             };
-            // The mute/deafen flags live on the server: a browser's own LiveKit
+            // The mute/deafen flags live on the server: a browser's own
             // toggle is invisible to peers, so the tap posts the pair through
-            // the seam (which also drives the client's LiveKit room) and the
+            // the seam (which also drives the client's call) and the
             // icons follow the answer. While not in a voice channel there is
             // nothing to post, so the tap just flips the icon locally.
             let muted_state = muted.clone();
