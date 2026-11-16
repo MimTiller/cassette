@@ -1,5 +1,0 @@
-[test] dev session isolated as `test` (beside any `idealyst dev` of this project)
-[test] building the `robot` test target…
-error: could not compile `discord-clone` (test "robot") due to 1 previous error; 4 warnings emitted
-Error: building the `robot` test target failed (cargo's errors are above)
-robot-test exit=1 (full log: /tmp/robot-run-rVsz8l.log)
