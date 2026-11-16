@@ -466,3 +466,33 @@ fn a_sticker_uploads_sends_from_the_picker_and_shows_for_another_browser(app: &m
     let shot = app.screenshot();
     eprintln!("[shot] cov-sticker-settings: {shot}");
 }
+
+// ---- the bottom-left user profile bar renders after signing in -------------
+
+#[robot_test]
+fn the_user_profile_bar_renders_after_signing_in(app: &mut App) {
+    signed_out(app);
+    let a = Account::new("covbar");
+    sign_in_as(app, &a);
+    // No server yet: the onboarding sidebar's bottom-left bar (avatar, name,
+    // presence line, mic/deafen/gear icons) must still be mounted.
+    app.test_id("user-panel-avatar").assert_visible();
+    app.text(&a.name).assert_visible();
+    app.text("Online").assert_visible();
+    app.test_id("user-mic").assert_visible();
+    app.test_id("user-deafen").assert_visible();
+    app.test_id("user-settings").assert_visible();
+
+    // With a live server the sidebar takes the other branch (live-sidebar);
+    // the bar must stay mounted at its bottom there too.
+    let server = fresh_name("Cov Bar ");
+    create_and_enter(app, &server);
+    app.test_id("live-sidebar").assert_visible();
+    app.test_id("user-panel-avatar").assert_visible();
+    app.text(&a.name).assert_visible();
+    app.text("Online").assert_visible();
+    app.test_id("user-mic").assert_visible();
+    app.test_id("user-deafen").assert_visible();
+    let shot = app.screenshot();
+    eprintln!("[shot] cov-bar-live-sidebar: {shot}");
+}
