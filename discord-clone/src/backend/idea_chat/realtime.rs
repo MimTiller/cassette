@@ -5,8 +5,6 @@ use crate::backend::*;
 
 impl EventStreamApi for IdeaChatBackend {
     fn connect(token: String) -> Gateway {
-        Gateway {
-            handle: crate::backend::idea_chat::live::connect(token),
-        }
+        Gateway::IdeaChat(crate::backend::idea_chat::live::connect(token))
     }
 }

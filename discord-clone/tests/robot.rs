@@ -38,3 +38,5 @@ mod notifications;
 mod coverage;
 #[path = "robot/voice.rs"]
 mod voice;
+#[path = "robot/instance.rs"]
+mod instance;

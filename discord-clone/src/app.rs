@@ -288,6 +288,11 @@ pub fn app() -> Element {
     // Runs once per process (the `app()` entry), so no "only once" guard is
     // needed.
     crate::auth::configure_server();
+    // The persisted chat-backend pick must exist BEFORE `connect` runs at
+    // the bottom of `app`, so a browser reload onto a server that just
+    // switched backends opens the right socket flavor (the login-time
+    // instance-info seed then corrects the flag for later calls).
+    crate::backend::install_chat_backend_choice();
     #[cfg(feature = "idea-chat")]
     // The idea-chat wire's schema gate is an open question (wire doc §7):
     // seed any persisted `x-srv-schema` value so the header rides calls only

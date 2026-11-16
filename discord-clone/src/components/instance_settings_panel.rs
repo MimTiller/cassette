@@ -56,7 +56,7 @@ use std::cell::Cell;
 use crate::style_helpers::{col, pct, px, rounded};
 use crate::settings_suite::{settings_layout, nav_heading, nav_row, nav_id};
 
-use discord_server::instance::{CallTestResult, InstanceSettingsResult, SettingSource};
+use discord_server::instance::{CallTestResult, ChatTestResult, InstanceSettingsResult, SettingSource};
 
 thread_local! {
     static STATE: Cell<Option<InstanceState>> = const { Cell::new(None) };
@@ -82,6 +82,8 @@ pub(crate) struct InstanceState {
     busy: Signal<bool>,
     error: Signal<String>,
     test_result: Signal<Option<CallTestResult>>,
+    chat_test: Signal<Option<ChatTestResult>>,
+    confirm: Signal<bool>,
 }
 
 /// Set up the area's state (once, from `app_shell`).
@@ -102,6 +104,8 @@ pub(crate) fn install() {
         busy: signal(false),
         error: signal(String::new()),
         test_result: signal(None),
+        chat_test: signal(None),
+        confirm: signal(false),
     })));
 }
 
@@ -247,11 +251,65 @@ pub fn InstanceSettingsPanel() -> Element {
     // Save: the drafts into set_instance_settings — an empty field keeps the
     // saved value server-side, so the drafts need no keep-check here. On
     // success the refreshed read replaces `saved`, repainting the source
-    // labels through the switch key.
-    let do_save = move || {
+    // labels through the switch key. Switching chat backends is handled by
+    // the confirm dialog (see `do_save` below, which arms `confirm` instead
+    // of saving when the pick differs from what is saved).
+
+    // Test: the server's test_call_provider on the typed drafts (empty
+    // fields fall back to the saved values there). Never saves.
+    let do_test = move || {
         if b.get() {
             return;
         }
+        e.set(String::new());
+        tested.set(None);
+        b.set(true);
+        let b2 = b;
+        let e2 = e;
+        let tested2 = tested;
+        runtime_core::spawn_then_in(
+            &crate::app::shell_alive(),
+            async move {
+                crate::backend::test_call_provider(provider_name(prov.get()), url_s.get(), key_s.get(), secret_s.get()).await
+            },
+            move |result| {
+                match result {
+                    Ok(answer) => tested2.set(Some(answer)),
+                    Err(msg) => e2.set(msg),
+                }
+                b2.set(false);
+            },
+        );
+    };
+    // Chat test: the server's test_chat_backend on the typed idea-chat URL
+    // (empty falls back to the saved value there). Never saves, never
+    // switches; the refusal of an unreachable URL paints red below.
+    let do_chat_test = move || {
+        if b.get() {
+            return;
+        }
+        e.set(String::new());
+        tested.set(None);
+        s.chat_test.set(None);
+        b.set(true);
+        let b2 = b;
+        let e2 = e;
+        let chat2 = s.chat_test;
+        runtime_core::spawn_then_in(
+            &crate::app::shell_alive(),
+            async move { crate::backend::test_chat_backend(idea_s.get()).await },
+            move |result| {
+                match result {
+                    Ok(answer) => chat2.set(Some(answer)),
+                    Err(msg) => e2.set(msg),
+                }
+                b2.set(false);
+            },
+        );
+    };
+    // The actual save RPC, without the confirm check (the confirm dialog's
+    // yes path runs it straight through).
+    let commit_save = move || {
         e.set(String::new());
         b.set(true);
         let b2 = b;
@@ -278,31 +336,38 @@ pub fn InstanceSettingsPanel() -> Element {
             },
         );
     };
-    // Test: the server's test_call_provider on the typed drafts (empty
-    // fields fall back to the saved values there). Never saves.
-    let do_test = move || {
+    // Save: with a backend switch pending (draft pick differs from the saved
+    // read) arm the confirm dialog instead of saving; the dialog's yes path
+    // runs `commit_save` through. Without a switch the save lands directly.
+    let do_save = move || {
         if b.get() {
             return;
         }
-        e.set(String::new());
-        tested.set(None);
-        b.set(true);
-        let b2 = b;
-        let e2 = e;
-        let tested2 = tested;
-        runtime_core::spawn_then_in(
-            &crate::app::shell_alive(),
-            async move {
-                crate::backend::test_call_provider(provider_name(prov.get()), url_s.get(), key_s.get(), secret_s.get()).await
-            },
-            move |result| {
-                match result {
-                    Ok(answer) => tested2.set(Some(answer)),
-                    Err(msg) => e2.set(msg),
-                }
-                b2.set(false);
-            },
-        );
+        let saved_chat = if let Some(v) = sv.get() {
+            v.chat_backend.clone()
+        } else {
+            "rwnd".to_string()
+        };
+        if chatb.get() != chat_index(saved_chat.as_str()) {
+            s.confirm.set(true);
+            return;
+        }
+        commit_save();
+    };
+    // A switch was armed by do_save: yes commits the save (which lands the
+    // new chat backend), no drops the pick back to what is saved.
+    let confirm_switch = move || {
+        s.confirm.set(false);
+        commit_save();
+    };
+    let cancel_switch = move || {
+        s.confirm.set(false);
+        if let Some(v) = sv.get() {
+            chatb.set(chat_index(v.chat_backend.as_str()))
+        } else {
+            chatb.set(CHAT_RWND)
+        }
+        dirty_s.set(false);
     };
     // Claim: the setup flow's one-shot — this account takes instance-admin
     // power while the instance has none. Success flips the gates, which
@@ -343,16 +408,19 @@ pub fn InstanceSettingsPanel() -> Element {
         }
         secret_s.set(String::new());
         dirty_s.set(false);
+        s.confirm.set(false);
+        s.chat_test.set(None);
     };
 
     // --- The section body: one switch over everything it reads -------------
     let body = ui! {
         switch(
             move || (close.get(), adm.get(), st.get(), prov.get(), chatb.get(),
-                     dirty_s.get(), b.get(), e.get(), sv.get(), tested.get()),
-            move |key: &(bool, bool, bool, u32, u32, bool, bool, String, Option<InstanceSettingsResult>, Option<CallTestResult>)| {
-                let (is_open, is_admin, is_setup, p, _c, is_dirty, _is_busy, err, saved_v, test_v) =
-                    (key.0, key.1, key.2, key.3, key.4, key.5, key.6, &key.7, &key.8, &key.9);
+                     dirty_s.get(), b.get(), e.get(), sv.get(), tested.get(),
+                     s.chat_test.get(), s.confirm.get()),
+            move |key: &(bool, bool, bool, u32, u32, bool, bool, String, Option<InstanceSettingsResult>, Option<CallTestResult>, Option<ChatTestResult>, bool)| {
+                let (is_open, is_admin, is_setup, p, _c, is_dirty, _is_busy, err, saved_v, test_v, chat_v, is_confirm) =
+                    (key.0, key.1, key.2, key.3, key.4, key.5, key.6, &key.7, &key.8, &key.9, &key.10, key.11);
                 if !is_open {
                     return ui! { view(style = StyleRules { width: Some(px(0.0)), height: Some(px(0.0)), ..Default::default() }) {} };
                 }
@@ -416,7 +484,7 @@ pub fn InstanceSettingsPanel() -> Element {
                 // The secret's state line: never the value — the tail confirms.
                 let chat_on_pick = Rc::new(move |_idx: u32| { mark_dirty(); });
                 let chat_rwnd_row = crate::settings_suite::option_row("Built-in RWND server", CHAT_RWND, chatb.clone(), chat_on_pick.clone());
-                let chat_idea_row = crate::settings_suite::option_row("idea-chat server (coming soon)", CHAT_IDEA_CHAT, chatb.clone(), chat_on_pick);
+                let chat_idea_row = crate::settings_suite::option_row("idea-chat server", CHAT_IDEA_CHAT, chatb.clone(), chat_on_pick);
                 let idea_line = ui! {
                     view(style = StyleRules { flex_direction: Some(FlexDirection::Column), gap: Some(px(6.0)), ..Default::default() }) {
                         text_field_id(idea_s.clone(), "inst-idea-input", "idea-chat server URL", input_style.clone())
@@ -450,6 +518,15 @@ pub fn InstanceSettingsPanel() -> Element {
                         view(style = StyleRules { flex_direction: Some(FlexDirection::Row), gap: Some(px(10.0)), ..Default::default() }) {
                             button(label = "Test connection".to_string(), disabled = move || b.get(), on_click = move || do_test(), test_id = "instance-test", style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Primary))
                             view { test_answer(test_v) }
+                        }
+                        view(style = StyleRules { flex_direction: Some(FlexDirection::Row), gap: Some(px(10.0)), ..Default::default() }) {
+                            button(label = "Test chat connection".to_string(), disabled = move || b.get(), on_click = move || do_chat_test(), test_id = "instance-chat-test", style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Primary))
+                            view { chat_answer(chat_v) }
+                        }
+                        view(style = StyleRules { flex_direction: Some(FlexDirection::Row), gap: Some(px(10.0)), ..Default::default() }) {
+                            button(label = "Switch chat backend".to_string(), disabled = move || b.get() || !is_confirm, on_click = move || confirm_switch(), test_id = "instance-chat-confirm-yes", style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Primary))
+                            button(label = "Cancel the switch".to_string(), disabled = move || b.get() || !is_confirm, on_click = move || cancel_switch(), test_id = "instance-chat-confirm-no", style = crate::styles::ButtonBox().kind(crate::styles::ButtonBoxKind::Secondary))
+                            view { switch_explain(is_confirm) }
                         }
                     }
                 };
@@ -583,6 +660,56 @@ fn secret_state(saved_v: &Option<InstanceSettingsResult>) -> Element {
         }
     } else {
         ui! { view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {} }
+    }
+}
+
+/// The chat-test answer under its button: OK green, or the exact failure red.
+fn chat_answer(chat_v: &Option<ChatTestResult>) -> Element {
+    if let Some(t) = chat_v {
+        if t.ok {
+            ui! {
+                text(style = StyleRules {
+                    font_size: Some(px(13.0)),
+                    color: Some(col(theme::SUCCESS)),
+                    margin_top: Some(px(8.0)),
+                    ..Default::default()
+                }) { format!("Test connection: {}", t.message) }
+            }
+        } else {
+            ui! {
+                text(style = StyleRules {
+                    font_size: Some(px(13.0)),
+                    color: Some(col(theme::DANGER)),
+                    margin_top: Some(px(8.0)),
+                    ..Default::default()
+                }) { format!("Test connection: {}", t.message) }
+            }
+        }
+    } else {
+        ui! { view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {} }
+    }
+}
+
+/// The switch-confirm explainer: shown while the gate is armed, saying what
+/// a switch does and does not do.
+fn switch_explain(is_confirm: bool) -> Element {
+    let line: String =
+        if is_confirm {
+            "switching chat backends: existing RWND messages are NOT moved and every client reloads onto the new backend".to_string()
+        } else {
+            "".to_string()
+        };
+    if line.is_empty() {
+        ui! { view(style = StyleRules { height: Some(px(0.0)), ..Default::default() }) {} }
+    } else {
+        ui! {
+            text(style = StyleRules {
+                font_size: Some(px(13.0)),
+                color: Some(col(theme::TEXT_STRONG)),
+                margin_top: Some(px(8.0)),
+                ..Default::default()
+            }) { line.to_string() }
+        }
     }
 }
 

@@ -46,4 +46,9 @@ impl InstanceApi for CassetteBackend {
     async fn claim_instance_admin() -> Result<ClaimAdminResult, ServerError> {
         discord_server::instance::claim_instance_admin(()).await
     }
+    async fn test_chat_backend(idea_chat_url: String) -> Result<ChatTestResult, ServerError> {
+        discord_server::instance::test_chat_backend(
+            discord_server::instance::TestChatInput { idea_chat_url },
+        ).await
+    }
 }

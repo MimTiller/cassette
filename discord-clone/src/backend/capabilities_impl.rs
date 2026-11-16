@@ -150,7 +150,11 @@ pub(crate) fn install() {
 
 /// The active backend's own report (uncached): the seed and the refresh.
 pub(crate) fn report() -> Capabilities {
-    Backend::capabilities()
+    if chat_idea_chat() {
+        IdeaChatBackend::capabilities()
+    } else {
+        CassetteBackend::capabilities()
+    }
 }
 
 /// The report's signal for UI sites: read `.get()` (or a field) inside a

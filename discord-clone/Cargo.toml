@@ -42,7 +42,7 @@ dev-session = ["idealyst/hot-reload", "idealyst/hydrate", "idealyst/robot", "ide
 # CALL_PROVIDER=idea-chat run on either backend, and the crate builds to
 # nothing on native (the whole call stack is web-only).
 calls = ["dep:call-session", "dep:call-audio"]
-default = ["calls"]
+default = ["calls", "idea-chat"]
 # `idea-chat`: build the second backend — IdeaChatBackend — instead of
 # CassetteBackend. Off by default; with it off the app is byte-for-byte
 # today's build.

@@ -4,8 +4,6 @@ use super::*;
 
 impl EventStreamApi for CassetteBackend {
     fn connect(token: String) -> Gateway {
-        Gateway {
-            handle: discord_server::server_settings::message_gateway(token),
-        }
+        Gateway::Cassette(discord_server::server_settings::message_gateway(token))
     }
 }

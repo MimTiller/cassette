@@ -40,6 +40,7 @@ pub(super) fn build(s: &ShellState) -> OverlaysParts {
         move |(info, saved)| {
             if let Ok(v) = info {
                 crate::instance_settings_panel::seed(v.is_instance_admin, v.setup_complete);
+                crate::backend::choose_chat_backend(v.chat_backend.as_str() == "idea-chat".to_string());
             }
             if let Some(Ok(v)) = saved {
                 crate::instance_settings_panel::seed_saved(v);

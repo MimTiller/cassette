@@ -185,6 +185,9 @@ impl InstanceApi for IdeaChatBackend {
     async fn claim_instance_admin() -> Result<ClaimAdminResult, ServerError> {
         Err(model::not_supported())
     }
+    async fn test_chat_backend(_idea_chat_url: String) -> Result<ChatTestResult, ServerError> {
+        Err(model::not_supported())
+    }
 }
 
 impl ThemesApi for IdeaChatBackend {
