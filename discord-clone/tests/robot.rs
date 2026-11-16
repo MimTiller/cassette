@@ -40,3 +40,5 @@ mod coverage;
 mod voice;
 #[path = "robot/instance.rs"]
 mod instance;
+#[path = "robot/stickers_emoji.rs"]
+mod stickers_emoji;
