@@ -213,9 +213,9 @@ fn editing_and_deleting_a_message_both_open_the_action_menu(app: &mut App) {
     app.test_id("composer").press_key("Enter");
     app.text(&msg).assert_visible();
 
-    // Edit comes from the hover bar's "more" pill, never an inline link: hover
-    // the row, open the overflow menu, take its Edit row, type the new text.
-    app.test_id("msg-row").hover_native();
+    // Hovering the message row opens the action bar; the more pill expands
+    // the overflow menu, whose Edit row takes the new text.
+    app.text(&msg).hover_native();
     app.test_id("msg-more").click();
     app.test_id("menu-edit-message").click();
     let edited = "the edited text";
@@ -225,9 +225,9 @@ fn editing_and_deleting_a_message_both_open_the_action_menu(app: &mut App) {
     app.text("(edited)").assert_visible();
     shot(app, "menu-edit-applied");
 
-    // Delete comes from the same menu: hover, open, take its Delete row, then
-    // confirm on the delete strip.
-    app.test_id("msg-row").hover_native();
+    // The same menu carries Delete: hover the edited row, open the menu,
+    // take its Delete row and confirm on the strip.
+    app.text(&edited).hover_native();
     app.test_id("msg-more").click();
     app.test_id("menu-delete-message").click();
     app.text("Delete this message?").assert_visible();
