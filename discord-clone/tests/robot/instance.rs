@@ -121,7 +121,7 @@ fn switching_the_chat_backend_asks_to_confirm(app: &mut App) {
     app.test_id("instance-reset").click();
     app.test_id("instance-chat-test").click();
     let refused = "Test connection: the idea-chat URL is not usable: it must start with http:// or https://";
-    let shown = eventually(10, move || app.text(refused).is_visible());
+    let shown = eventually(10, || app.text(refused).is_visible());
     assert!(shown, "after Cancel the saved backend is still built-in");
     app.text("Built-in RWND server").assert_visible();
 }
