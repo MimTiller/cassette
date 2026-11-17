@@ -54,6 +54,9 @@ pub(crate) mod perms_map;
 /// Named roles: the snapshot, create/edit/delete/assign over the roles RPCs.
 pub(crate) mod roles;
 
+/// What the caller may do: the permission reads and channel overwrites.
+pub(crate) mod perms;
+
 // The area traits' second implementations.
 pub(crate) mod realtime;
 pub(crate) mod impl_account;

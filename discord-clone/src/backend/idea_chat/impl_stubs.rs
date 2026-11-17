@@ -72,31 +72,6 @@ impl GifApi for IdeaChatBackend {
     }
 }
 
-impl PermissionsApi for IdeaChatBackend {
-    // Channel visibility/posting is one `view`/`post` rank per channel, not
-    // RWND's permission bitsets and per-role overwrites.
-    async fn my_permissions(_server_id: i64) -> Result<MyPermissions, ServerError> {
-        Err(model::not_supported())
-    }
-
-    async fn channel_overwrites(_channel_id: i64) -> Result<Vec<Overwrite>, ServerError> {
-        Err(model::not_supported())
-    }
-
-    async fn set_channel_overwrite(
-        _channel_id: i64,
-        _target: Target,
-        _allow: Permissions,
-        _deny: Permissions,
-    ) -> Result<Vec<Overwrite>, ServerError> {
-        Err(model::not_supported())
-    }
-
-    async fn set_everyone_permissions(_server_id: i64, _permissions: Permissions) -> Result<Permissions, ServerError> {
-        Err(model::not_supported())
-    }
-}
-
 impl CallApi for IdeaChatBackend {
     async fn join_voice(_channel_id: i64) -> Result<CallTicket, ServerError> {
         Err(model::not_supported())

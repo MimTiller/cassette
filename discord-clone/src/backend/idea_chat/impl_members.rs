@@ -64,15 +64,39 @@ impl MembersApi for IdeaChatBackend {
         }
     }
 
-    // No ban and no moderation state on this server: the closest is
-    // `remove_member`, which loses the ban semantics.
-    async fn ban_member(_server_id: i64, _user_id: i64, _reason: Option<String>) -> Result<MemberResult, ServerError> {
-        Err(model::not_supported())
+    // `ban_member(space, member)` is this server's ban: the person leaves the
+    // space and a ban row blocks rejoining (unban lifts it). RWND's free-text
+    // reason has no counterpart here, so it is accepted and dropped.
+    async fn ban_member(server_id: i64, user_id: i64, _reason: Option<String>) -> Result<MemberResult, ServerError> {
+        let space = live::wire_of(server_id);
+        let role = live::role_word_of(space, live::wire_of(user_id));
+        let mut args = Vec::new();
+        args.push(client::arg(space));
+        args.push(client::arg(live::wire_of(user_id)));
+        match client::post("ban_member", args).await {
+            Err(e) => Err(e),
+            Ok(_) => Ok(MemberResult { server_id, user_id, role }),
+        }
     }
 
-    // No timed mute of one member anywhere in the model.
-    async fn timeout_member(_server_id: i64, _user_id: i64, _duration_secs: i64) -> Result<MemberResult, ServerError> {
-        Err(model::not_supported())
+    // `timeout_member(space, member, minutes?)` is this server's timed mute:
+    // the seconds round up to minutes; clearing a timeout is `None`, which
+    // RWND's positive-duration bar never asks for.
+    async fn timeout_member(server_id: i64, user_id: i64, duration_secs: i64) -> Result<MemberResult, ServerError> {
+        if duration_secs <= 0 {
+            return Err(ServerError::failed("a timeout must last at least one second"))
+        }
+        let space = live::wire_of(server_id);
+        let minutes: Option<u32> = Some(((duration_secs + 59) / 60) as u32);
+        let role = live::role_word_of(space, live::wire_of(user_id));
+        let mut args = Vec::new();
+        args.push(client::arg(space));
+        args.push(client::arg(live::wire_of(user_id)));
+        args.push(client::arg(minutes));
+        match client::post("timeout_member", args).await {
+            Err(e) => Err(e),
+            Ok(_) => Ok(MemberResult { server_id, user_id, role }),
+        }
     }
 }
 
