@@ -51,6 +51,9 @@ pub(crate) mod idmap;
 /// RWND's permission bits ↔ this server's, one table read both ways.
 pub(crate) mod perms_map;
 
+/// Named roles: the snapshot, create/edit/delete/assign over the roles RPCs.
+pub(crate) mod roles;
+
 // The area traits' second implementations.
 pub(crate) mod realtime;
 pub(crate) mod impl_account;

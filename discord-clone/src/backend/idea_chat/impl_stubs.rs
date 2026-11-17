@@ -72,40 +72,6 @@ impl GifApi for IdeaChatBackend {
     }
 }
 
-impl RolesApi for IdeaChatBackend {
-    // The wire has three fixed ranks (`Member`/`Admin`/`Owner`), not RWND's
-    // named role system with per-role permission bitsets.
-    async fn server_roles(_server_id: i64) -> Result<RolesSnapshot, ServerError> {
-        Err(model::not_supported())
-    }
-
-    async fn create_role(_server_id: i64, _name: String, _color: String, _mentionable: bool) -> Result<CustomRole, ServerError> {
-        Err(model::not_supported())
-    }
-
-    async fn update_role(
-        _role_id: i64,
-        _name: String,
-        _color: String,
-        _mentionable: bool,
-        _permissions: Option<Permissions>,
-    ) -> Result<CustomRole, ServerError> {
-        Err(model::not_supported())
-    }
-
-    async fn move_role(_role_id: i64, _position: i64) -> Result<CustomRole, ServerError> {
-        Err(model::not_supported())
-    }
-
-    async fn delete_role(_role_id: i64) -> Result<(), ServerError> {
-        Err(model::not_supported())
-    }
-
-    async fn assign_role(_role_id: i64, _user_id: i64, _assigned: bool) -> Result<(), ServerError> {
-        Err(model::not_supported())
-    }
-}
-
 impl PermissionsApi for IdeaChatBackend {
     // Channel visibility/posting is one `view`/`post` rank per channel, not
     // RWND's permission bitsets and per-role overwrites.
