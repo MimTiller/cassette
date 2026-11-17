@@ -104,7 +104,8 @@ pub(crate) fn decode_error(body: serde_json::Value) -> ServerError {
             if kind == "incompatible_version" {
                 return ServerError::failed("the server speaks a different schema");
             }
-            let message = match detail.as_object().and_then(|fields| fields.get("message")) {
+            // `message` when the server wrote one, else its `why`, else the kind.
+            let message = match detail.as_object().and_then(|fields| fields.get("message").or_else(|| fields.get("why"))) {
                 Some(value) => value.as_str().unwrap_or(kind),
                 None => kind,
             };

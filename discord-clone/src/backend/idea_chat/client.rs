@@ -92,10 +92,56 @@ pub(crate) async fn post(path: &str, args: Vec<Value>) -> Result<Value, ServerEr
         Ok(value) => value,
         Err(e) => return Err(transport(e)),
     };
+    open_envelope(value)
+}
+
+/// Open the server's answer. It is `{"Ok": value}` for a success and
+/// `{"Err": {"<kind>": {"why", "message", ...}}}` for a refusal, both at HTTP 200;
+/// the older `{"e": ...}` envelope and a bare value (a build without the wrapper) are
+/// still understood.
+pub(crate) fn open_envelope(value: Value) -> Result<Value, ServerError> {
+    if let Some(refusal) = value.get("Err") {
+        return Err(crate::backend::idea_chat::model::decode_error(serde_json::json!({ "e": refusal })));
+    }
     if value.get("e").is_some() {
         return Err(crate::backend::idea_chat::model::decode_error(value));
     }
-    Ok(value)
+    Ok(match value {
+        Value::Object(mut fields) if fields.contains_key("Ok") => fields.remove("Ok").unwrap_or(Value::Null),
+        other => other,
+    })
+}
+
+#[cfg(test)]
+mod envelope_tests {
+    use super::open_envelope;
+    use serde_json::json;
+
+    #[test]
+    fn a_success_is_unwrapped() {
+        assert_eq!(open_envelope(json!({ "Ok": { "token": null } })).unwrap(), json!({ "token": null }));
+        assert_eq!(open_envelope(json!({ "Ok": "01a1ea8f" })).unwrap(), json!("01a1ea8f"));
+        assert_eq!(open_envelope(json!({ "Ok": null })).unwrap(), json!(null));
+    }
+
+    #[test]
+    fn a_refusal_reads_as_its_message() {
+        let refused = open_envelope(json!({ "Err": { "Failed": { "why": "forbidden", "message": "You can't ban them." } } }));
+        assert_eq!(crate::errors::friendly(&refused.unwrap_err()), "You can't ban them.".to_string());
+    }
+
+    #[test]
+    fn a_refusal_without_a_message_reads_as_its_reason() {
+        let refused = open_envelope(json!({ "Err": { "Failed": { "why": "bad_credentials" } } }));
+        assert_eq!(crate::errors::friendly(&refused.unwrap_err()), "bad_credentials".to_string());
+    }
+
+    #[test]
+    fn the_older_envelope_and_a_bare_value_still_work() {
+        let refused = open_envelope(json!({ "e": { "failed": { "message": "nope" } } }));
+        assert_eq!(crate::errors::friendly(&refused.unwrap_err()), "nope".to_string());
+        assert_eq!(open_envelope(json!({ "id": 1 })).unwrap(), json!({ "id": 1 }));
+    }
 }
 
 /// Post and decode the answer as a chat-model type — its own serde does the

@@ -196,6 +196,29 @@ pub(crate) fn frames_for(event: Event) -> Vec<WsServerMsg> {
     out
 }
 
+/// The refresh frames a snapshot owes the UI. A snapshot replaces the world
+/// wholesale: on connect, and again whenever the server restates it (making or
+/// joining a space re-derives the connection's topics, so idea-chat answers with
+/// a fresh snapshot rather than a space event). The screens re-read the state only
+/// when a frame tells them to, so each space and each direct conversation in the
+/// new world gets the frame its event would have produced: the server list
+/// re-reads on a settings frame, and the open server's channels on a roles frame
+/// (roles and overwrites decide which channels a person sees, which is exactly
+/// what a restated world may have changed).
+pub(crate) fn frames_for_world(world: &State) -> Vec<WsServerMsg> {
+    let mut out: Vec<WsServerMsg> = Vec::new();
+    for space in world.space_order.iter() {
+        out.push(settings_changed(*space));
+        out.push(roles_changed(*space));
+    }
+    for channel in world.channels.values() {
+        if channel.space.is_none() {
+            out.push(channel_arrived(channel.clone()));
+        }
+    }
+    out
+}
+
 fn space_order_first(spaces: Vec<Id>) -> Id {
     match spaces.first() {
         Some(id) => *id,
@@ -382,26 +405,41 @@ impl GatewayHandle {
     /// detached and the facts they cause arrive back as live events, so
     /// nothing is injected here — only the socket's typing is an Action.
     pub fn send_message(self: GatewayHandle, channel_id: i64, content: String, reply_to_message_id: Option<i64>, attachments: Vec<AttachmentInput>, sticker_id: Option<i64>) {
+        // The call is awaited: a future that is only created does nothing, so a send
+        // written without `.await` never reaches the server. A refusal shows as an
+        // error frame, the way a failed history page does.
+        let incoming = self.incoming;
         driver::spawn_detached(async move {
-            let _ = client_send(channel_id, content, reply_to_message_id, attachments, sticker_id);
+            if let Err(e) = client_send(channel_id, content, reply_to_message_id, attachments, sticker_id).await {
+                incoming.set_always(Some(error_frame(reason(e))));
+            }
         });
     }
 
     pub fn edit_message(self: GatewayHandle, message_id: i64, content: String) {
+        let incoming = self.incoming;
         driver::spawn_detached(async move {
-            let _ = client_edit(message_id, content);
+            if let Err(e) = client_edit(message_id, content).await {
+                incoming.set_always(Some(error_frame(reason(e))));
+            }
         });
     }
 
     pub fn delete_message(self: GatewayHandle, message_id: i64) {
+        let incoming = self.incoming;
         driver::spawn_detached(async move {
-            let _ = client_delete(message_id);
+            if let Err(e) = client_delete(message_id).await {
+                incoming.set_always(Some(error_frame(reason(e))));
+            }
         });
     }
 
     pub fn set_status(self: GatewayHandle, status: String) {
+        let incoming = self.incoming;
         driver::spawn_detached(async move {
-            let _ = client_set_status(status);
+            if let Err(e) = client_set_status(status).await {
+                incoming.set_always(Some(error_frame(reason(e))));
+            }
         });
     }
 
@@ -604,7 +642,12 @@ pub(crate) fn connect(_token: String) -> GatewayHandle {
                                 }
                                 Ok(frame) => {
                                     match frame {
-                                        Down::Snapshot { seq, state } => take_snapshot(state.clone(), seq),
+                                        Down::Snapshot { seq, state } => {
+                                            take_snapshot(state.clone(), seq);
+                                            for frame in frames_for_world(&state).iter() {
+                                                incoming.set_always(Some(frame.clone()));
+                                            }
+                                        }
                                         Down::Event { seq, event } => {
                                             if fold(event.clone(), seq) {
                                                 for frame in frames_for(event.clone()).iter() {
@@ -633,7 +676,7 @@ pub(crate) fn connect(_token: String) -> GatewayHandle {
 /// one-connection ticket good for a minute, validated server-side before any
 /// frame is exchanged.
 async fn ticket() -> Result<String, ServerError> {
-    client::call_as::<String>("live_ticket", Vec::new()).await
+    client::call_as::<String>("live_ticket", vec![serde_json::Value::Null]).await
 }
 
 #[cfg(test)]
@@ -645,6 +688,30 @@ mod tests {
 
     fn uid(n: u128) -> Id {
         Id::from_u128(n)
+    }
+
+    #[test]
+    fn a_snapshot_tells_the_screens_which_spaces_the_new_world_holds() {
+        // idea-chat answers a new or joined space with a fresh snapshot, not a
+        // space event; without a frame the server list never re-reads the state.
+        let empty = State::default();
+        assert_eq!(frames_for_world(&empty).len(), 0);
+
+        let mut world = State::default();
+        world.space_order = vec![uid(1), uid(2)];
+        let frames = frames_for_world(&world);
+        assert_eq!(frames.len(), 4);
+        let mut settings: Vec<i64> = Vec::new();
+        let mut roles: Vec<i64> = Vec::new();
+        for frame in frames.iter() {
+            match frame {
+                WsServerMsg::ServerSettingsChanged { server_id, .. } => settings.push(*server_id),
+                WsServerMsg::RolesChanged { server_id, .. } => roles.push(*server_id),
+                _ => panic!("a space in a snapshot answers a settings and a roles frame"),
+            }
+        }
+        assert_eq!(settings, vec![see(uid(1)), see(uid(2))]);
+        assert_eq!(roles, vec![see(uid(1)), see(uid(2))]);
     }
 
     #[test]
