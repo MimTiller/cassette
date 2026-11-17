@@ -27,7 +27,7 @@ impl MembersApi for IdeaChatBackend {
                             None => None,
                             Some(name) => Some(name),
                         },
-                        role: live::role_word(member.role),
+                        role: live::role_word(row.clone(), *user_id, member.clone()),
                         avatar_url: user.avatar.clone(),
                         avatar_decoration: None,
                         presence: match world.presence.get(user_id) {
@@ -53,12 +53,8 @@ impl MembersApi for IdeaChatBackend {
     // drops the person from the state. The role echoed is the one held when
     // the kick started.
     async fn remove_member(server_id: i64, user_id: i64) -> Result<MemberResult, ServerError> {
-        let world = live::snapshot();
         let space = live::wire_of(server_id);
-        let role = match world.spaces.get(&space).and_then(move |s| s.members.get(&live::wire_of(user_id))) {
-            None => "member".to_string(),
-            Some(member) => live::role_word(member.role),
-        };
+        let role = live::role_word_of(space, live::wire_of(user_id));
         let mut args = Vec::new();
         args.push(client::arg(space));
         args.push(client::arg(live::wire_of(user_id)));
@@ -93,7 +89,8 @@ mod tests {
     #[test]
     fn a_roster_maps_from_the_state_with_roles_and_presence() {
         // Offline: the members row mapping is pure over the state, so build a
-        // space with two members (one Moderator) and a presence row, then map
+        // space with two members — one holding an admin-tagged role (maps to
+        // RWND's "moderator") and the owner — plus a presence row, then map
         // what `list_members` would see (the helper mirrors its body).
         let mut s = State::default();
         s.users.insert(uid(7), User {
@@ -111,19 +108,25 @@ mod tests {
             bio: "".to_string(),
         });
         let mut members: std::collections::BTreeMap<Id, Member> = std::collections::BTreeMap::new();
-        members.insert(uid(7), Member { role: Role::Owner, joined_at: 1_000 });
-        members.insert(uid(8), Member { role: Role::Admin, joined_at: 2_000 });
+        members.insert(uid(7), Member { roles: Vec::new(), joined_at: 1_000 });
+        members.insert(uid(8), Member { roles: vec!(uid(9)), joined_at: 2_000 });
+        let mut defs: std::collections::BTreeMap<Id, chat_model::Role> = std::collections::BTreeMap::new();
+        defs.insert(uid(9), chat_model::Role { id: uid(9), name: "Admins".to_string(), permissions: chat_model::perms::ADMIN, position: 0 });
         s.spaces.insert(uid(3), Space {
             id: uid(3),
             name: "Alpha".to_string(),
             icon: None,
             owner: uid(7),
             members: members,
+            roles: defs,
+            everyone: chat_model::perms::DEFAULT_EVERYONE,
             categories: Vec::new(),
             created_at: 0,
         });
         assert_eq!(s.spaces.get(&uid(3)).and_then(move |x| x.members.get(&uid(8))) != None, true);
-        assert_eq!(live::role_word(Role::Admin), "moderator");
+        let space = s.spaces.get(&uid(3)).unwrap().clone();
+        assert_eq!(live::role_word(space.clone(), uid(8), space.members.get(&uid(8)).unwrap().clone()), "moderator".to_string());
+        assert_eq!(live::role_word(space.clone(), uid(7), space.members.get(&uid(7)).unwrap().clone()), "owner".to_string());
     }
 
     #[test]

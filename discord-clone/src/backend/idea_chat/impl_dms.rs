@@ -4,7 +4,7 @@
 
 use crate::backend::*;
 use crate::backend::idea_chat::{client, live, model};
-use chat_model::{Channel, ChannelKind, Id, Message, Role};
+use chat_model::{Channel, ChannelKind, Id, Message};
 use discord_server::dms::{DmParticipant};
 use serde_json::Value;
 
@@ -112,7 +112,7 @@ impl DmsApi for IdeaChatBackend {
         let world = live::snapshot();
         let channel = live::wire_of(dm_id);
         let (topic, view, post) = match world.channels.get(&channel) {
-            None => ("".to_string(), Role::Member, Role::Member),
+            None => ("".to_string(), 0, 0),
             Some(found) => (found.topic.clone(), found.view, found.post),
         };
         let mut args = Vec::new();
@@ -210,7 +210,7 @@ pub(crate) fn dms_of(world: chat_model::live::State) -> Vec<Dm> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chat_model::{Channel, ChannelKind, Id, Role};
+    use chat_model::{Channel, ChannelKind, Id};
     use chat_model::live::State;
 
     fn uid(n: u128) -> Id {
@@ -228,10 +228,11 @@ mod tests {
             position: 0,
             parent: None,
             starter: None,
-            view: Role::Member,
-            post: Role::Member,
+            view: 0,
+            post: 0,
             members: members,
             archived: false,
+            overwrites: std::collections::BTreeMap::new(),
             last_message: None,
             message_count: 0,
             created_by: uid(2),
