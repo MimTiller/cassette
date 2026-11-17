@@ -62,10 +62,21 @@ pub(crate) fn origin() -> String {
     base_url().unwrap_or_default()
 }
 
-/// POST `/_srv/<path>` with the args array, bearer when we hold one. Answers
-/// the raw JSON return value, or a `ServerError` from the transport or the
-/// kit's error envelope.
+/// POST `/_srv/<path>` with the args array, bearer when we hold one, and
+/// open the answer: the value inside `{"Ok": …}`, or a refusal decoded from
+/// the envelope. Callers that care about the refusal's kind use
+/// [`post_envelope`] and read the raw envelope themselves.
 pub(crate) async fn post(path: &str, args: Vec<Value>) -> Result<Value, ServerError> {
+    match post_envelope(path, args).await {
+        Err(e) => Err(e),
+        Ok(envelope) => open_envelope(envelope),
+    }
+}
+
+/// POST `/_srv/<fn>` and hand back the answer UNOPENED — callers that care
+/// about the refusal's kind (`sign_in`'s `Unverified` arms) read the raw
+/// envelope, everything else goes through [`post`].
+pub(crate) async fn post_envelope(path: &str, args: Vec<Value>) -> Result<Value, ServerError> {
     let client = Client::new()
         .post(origin() + "/_srv/" + &path)
         .header("content-type", "application/json");
@@ -88,11 +99,7 @@ pub(crate) async fn post(path: &str, args: Vec<Value>) -> Result<Value, ServerEr
         Ok(response) => response,
         Err(e) => return Err(transport(e)),
     };
-    let value = match response.json::<Value>().await {
-        Ok(value) => value,
-        Err(e) => return Err(transport(e)),
-    };
-    open_envelope(value)
+    response.json::<Value>().await.map_err(transport)
 }
 
 /// Open the server's answer. It is `{"Ok": value}` for a success and
