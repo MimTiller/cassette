@@ -242,7 +242,7 @@ mod tests {
         // 0) is RWND's top-ranked role row.
         let mut roles = std::collections::BTreeMap::new();
         roles.insert(uid(9), chat_model::Role {
-            id: uid(9), name: "Mods".to_string(), permissions: perms::ADMIN, position: 0,
+            id: uid(9), name: "Mods".to_string(), permissions: perms::ADMIN, position: 0, colour: None,
         });
         let mut members = std::collections::BTreeMap::new();
         members.insert(uid(8), chat_model::Member { roles: vec!(uid(9)), joined_at: 0 });
