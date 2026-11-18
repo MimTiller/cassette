@@ -42,3 +42,5 @@ mod voice;
 mod instance;
 #[path = "robot/stickers_emoji.rs"]
 mod stickers_emoji;
+#[path = "robot/idea_chat.rs"]
+mod idea_chat;

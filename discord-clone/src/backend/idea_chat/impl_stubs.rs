@@ -72,65 +72,6 @@ impl GifApi for IdeaChatBackend {
     }
 }
 
-impl RolesApi for IdeaChatBackend {
-    // The wire has three fixed ranks (`Member`/`Admin`/`Owner`), not RWND's
-    // named role system with per-role permission bitsets.
-    async fn server_roles(_server_id: i64) -> Result<RolesSnapshot, ServerError> {
-        Err(model::not_supported())
-    }
-
-    async fn create_role(_server_id: i64, _name: String, _color: String, _mentionable: bool) -> Result<CustomRole, ServerError> {
-        Err(model::not_supported())
-    }
-
-    async fn update_role(
-        _role_id: i64,
-        _name: String,
-        _color: String,
-        _mentionable: bool,
-        _permissions: Option<Permissions>,
-    ) -> Result<CustomRole, ServerError> {
-        Err(model::not_supported())
-    }
-
-    async fn move_role(_role_id: i64, _position: i64) -> Result<CustomRole, ServerError> {
-        Err(model::not_supported())
-    }
-
-    async fn delete_role(_role_id: i64) -> Result<(), ServerError> {
-        Err(model::not_supported())
-    }
-
-    async fn assign_role(_role_id: i64, _user_id: i64, _assigned: bool) -> Result<(), ServerError> {
-        Err(model::not_supported())
-    }
-}
-
-impl PermissionsApi for IdeaChatBackend {
-    // Channel visibility/posting is one `view`/`post` rank per channel, not
-    // RWND's permission bitsets and per-role overwrites.
-    async fn my_permissions(_server_id: i64) -> Result<MyPermissions, ServerError> {
-        Err(model::not_supported())
-    }
-
-    async fn channel_overwrites(_channel_id: i64) -> Result<Vec<Overwrite>, ServerError> {
-        Err(model::not_supported())
-    }
-
-    async fn set_channel_overwrite(
-        _channel_id: i64,
-        _target: Target,
-        _allow: Permissions,
-        _deny: Permissions,
-    ) -> Result<Vec<Overwrite>, ServerError> {
-        Err(model::not_supported())
-    }
-
-    async fn set_everyone_permissions(_server_id: i64, _permissions: Permissions) -> Result<Permissions, ServerError> {
-        Err(model::not_supported())
-    }
-}
-
 impl CallApi for IdeaChatBackend {
     async fn join_voice(_channel_id: i64) -> Result<CallTicket, ServerError> {
         Err(model::not_supported())

@@ -124,7 +124,7 @@ impl AccountApi for IdeaChatBackend {
                 None => None,
                 Some(space) => match space.members.get(&uuid) {
                     None => None,
-                    Some(member) => Some(live::role_word(member.role)),
+                    Some(member) => Some(live::role_word(space.clone(), uuid, member.clone())),
                 },
             },
         };

@@ -15,7 +15,7 @@ use serde_json::{Value, to_string};
 
 use discord_server::server_settings::{WsServerMsg, AttachmentInput, MessageAttachment, next_frame_seq};
 
-use chat_model::{Id, User, Channel, Me, Message, Presence, Relation, Role, Millis, Status};
+use chat_model::{Id, User, Channel, Me, Message, Presence, Relation, Millis, Status};
 use chat_model::live::{State, Event, Action};
 use chat_model::timeline::{Page};
 use idea_state::{Cursor, Step};
@@ -118,12 +118,36 @@ pub(crate) fn presence_word(status: Presence) -> String {
     }
 }
 
-/// chat-model has three ranks; RWND's "moderator" is chat-model's `Admin`.
-pub(crate) fn role_word(role: Role) -> String {
-    match role {
-        Role::Owner => "owner".to_string(),
-        Role::Admin => "moderator".to_string(),
-        Role::Member => "member".to_string(),
+/// RWND's rank word for a member of a roles-carrying space: the owner is
+/// "owner"; a member holding a role tagged admin (`IsAdmin`) is "moderator";
+/// everyone else is "member". chat-model's `Role` is a named record now, so
+/// the word comes from ownership and the admin tag rather than a fixed enum —
+/// the closest RWND rank to a holder of an admin-tagged role is moderator.
+pub(crate) fn role_word(space: chat_model::Space, user: Id, member: chat_model::Member) -> String {
+    if user == space.owner {
+        "owner".to_string()
+    } else if member.roles.iter().any(move |r| chat_model::perms::covers(
+        space.roles.get(r).map(move |role| role.permissions).unwrap_or(0),
+        chat_model::perms::ADMIN,
+    )) {
+        "moderator".to_string()
+    } else {
+        "member".to_string()
+    }
+}
+
+/// The rank word `user` holds in space `space` of the current snapshot: reads
+/// the space's members and roles off the reducer, so callers that hold only
+/// ids (the profile card, a member row) need not thread the space struct.
+/// A person not in the space (or an unknown space) reads as "member".
+pub(crate) fn role_word_of(space: Id, user: Id) -> String {
+    let world = snapshot();
+    match world.spaces.get(&space) {
+        None => "member".to_string(),
+        Some(found_space) => match found_space.members.get(&user) {
+            None => "member".to_string(),
+            Some(member) => role_word(found_space.clone(), user, member.clone()),
+        },
     }
 }
 
@@ -163,7 +187,15 @@ pub(crate) fn frames_for(event: Event) -> Vec<WsServerMsg> {
         Event::SpaceRenamed { space, .. } => out.push(settings_changed(space)),
         Event::SpaceRemoved { space } => out.push(settings_changed(space)),
         Event::MemberJoined { space, user, .. } => out.push(member_changed(space, user.id, true)),
-        Event::MemberRole { space, .. } => out.push(roles_changed(space)),
+        Event::MemberRoles { space, .. } => out.push(roles_changed(space)),
+        // Ownership moved: the space's settings row (its owner) re-reads.
+        Event::OwnerChanged { space, owner: _ } => out.push(settings_changed(space)),
+        // The space's role set restated: the roles screen and the channel list
+        // (roles and their masks decide which channels a person sees) re-read.
+        Event::RolesChanged { space, .. } => out.push(roles_changed(space)),
+        // The everyone baseline restated: what every member may do moved, so
+        // the same screens that a role change refreshes must re-read here too.
+        Event::BaselineChanged { space, .. } => out.push(roles_changed(space)),
         Event::MemberLeft { space, user } => out.push(member_changed(space, user, false)),
         Event::CategoriesChanged { space, .. } => out.push(settings_changed(space)),
         Event::SpaceOrder { spaces } => out.push(settings_changed(space_order_first(spaces.clone()))),
@@ -1027,10 +1059,11 @@ mod tests {
             position: 0,
             parent: None,
             starter: None,
-            view: Role::Member,
-            post: Role::Member,
+            view: 0,
+            post: 0,
             members: Vec::new(),
             archived: false,
+            overwrites: std::collections::BTreeMap::new(),
             last_message: Some(uid(100)),
             message_count: 1,
             created_by: uid(2),

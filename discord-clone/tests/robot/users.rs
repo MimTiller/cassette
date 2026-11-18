@@ -40,6 +40,16 @@ impl Drop for Browser {
 /// Open another browser on the app as `label` (used in its screenshots'
 /// file names) and return its driver once the app in it answers.
 pub fn open_browser(label: &str) -> Browser {
+    open_browser_at(label, crate::support::base(), "".to_string())
+}
+
+/// `open_browser` with the page loaded from `base` instead of the run's
+/// server, and `extra_init` — JS run before the page loads, after the
+/// relay wrap (the idea-chat rows seed the persisted chat-backend pick
+/// this way, like the flows script's addInitScript). The app in the
+/// browser dials ITS relay, so it can speak a chat server that serves
+/// the same bundle from its own origin.
+pub fn open_browser_at(label: &str, base: String, extra_init: String) -> Browser {
     let profiles = tempfile::Builder::new().prefix("cassette-robot-").tempdir().expect("profiles dir");
     let relay = robot_relay::start(robot_relay::RelayConfig {
         register: false,
@@ -83,7 +93,7 @@ pub fn open_browser(label: &str) -> Browser {
     let port = devtools_port(&profile);
     let cdp = page_socket(port);
     let relay_url = format!("ws://{}", relay.ws_addr);
-    let cdp_thread = drive_page(cdp, &relay_url, &crate::support::base());
+    let cdp_thread = drive_page(cdp, &relay_url, base, &extra_init);
 
     let app = App::connect(relay.tcp_addr).expect("connect to the extra browser's relay");
     let deadline = Instant::now() + Duration::from_secs(60);
@@ -145,7 +155,8 @@ fn http_get(port: u16, path: &str) -> Result<String, Box<ureq::Error>> {
 
 /// Point the page at `relay_url`, load the app from `base`, and keep the
 /// DevTools session open (its settings last only as long as it does).
-fn drive_page(mut cdp: Cdp, relay_url: &str, base: &str) -> std::thread::JoinHandle<()> {
+/// `extra_init` runs before the page loads, after the relay wrap.
+fn drive_page(mut cdp: Cdp, relay_url: &str, base: String, extra_init: &str) -> std::thread::JoinHandle<()> {
     let pin_relay = format!(
         "Object.defineProperty(window, 'IDEALYST_ROBOT_RELAY_URL', \
          {{ get: () => {relay:?}, set: () => {{}}, configurable: false }}); \
@@ -170,7 +181,7 @@ fn drive_page(mut cdp: Cdp, relay_url: &str, base: &str) -> std::thread::JoinHan
         }
     };
     send(&mut cdp, "Page.enable", json!({}));
-    send(&mut cdp, "Page.addScriptToEvaluateOnNewDocument", json!({ "source": pin_relay }));
+    send(&mut cdp, "Page.addScriptToEvaluateOnNewDocument", json!({ "source": format!("{pin_relay} {extra_init}") }));
     send(&mut cdp, "Page.navigate", json!({ "url": format!("{base}/") }));
     std::thread::spawn(move || while cdp.read().is_ok() {})
 }

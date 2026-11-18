@@ -1,0 +1,248 @@
+//! Named roles over the idea-chat RPCs: the snapshot and the edits translate
+//! through `perms_map`. The model has no colour, no mentionable flag and no
+//! reordering verb — a role's position counts UP its ladder (lower is more
+//! senior), so RWND's position (higher first) is the negated idea-chat one,
+//! and a reorder refuses with a sentence naming what this server orders by.
+
+use crate::backend::*;
+use crate::backend::idea_chat::{client, live, perms_map};
+use chat_model::{Id, Role, Space};
+
+impl RolesApi for IdeaChatBackend {
+    // The reducer state carries the space's role records and every member's
+    // held ids; the snapshot maps them through the shared permission table.
+    async fn server_roles(server_id: i64) -> Result<RolesSnapshot, ServerError> {
+        let world = live::snapshot();
+        let space_id = live::wire_of(server_id);
+        match world.spaces.get(&space_id) {
+            None => Err(ServerError::failed("that space is not on this server")),
+            Some(space) => Ok(roles_snapshot_of(space_id, space.clone())),
+        }
+    }
+
+    // `create_role(space, name, permissions)` answers the fresh role. The
+    // new role starts with the empty permission set — RWND sets powers
+    // through `update_role` after creating — and its colour/mentionable have
+    // no counterpart on this model, so they are accepted and ignored.
+    async fn create_role(
+        server_id: i64,
+        name: String,
+        _color: String,
+        _mentionable: bool,
+    ) -> Result<CustomRole, ServerError> {
+        let mut args = Vec::new();
+        args.push(client::arg(live::wire_of(server_id)));
+        args.push(client::arg(&name));
+        args.push(client::arg::<u64>(0));
+        match client::call_as::<Role>("create_role", args).await {
+            Err(e) => Err(e),
+            Ok(role) => Ok(custom_role_of(server_id, role.clone())),
+        }
+    }
+
+    // `update_role(space, role, name, permissions)` answers unit: RWND's
+    // `None` permissions leave them as they are, so the current set comes
+    // back through unchanged. The fresh record is read off the snapshot the
+    // `RolesChanged` event updates.
+    async fn update_role(
+        role_id: i64,
+        name: String,
+        _color: String,
+        _mentionable: bool,
+        permissions: Option<Permissions>,
+    ) -> Result<CustomRole, ServerError> {
+        let role_wire = live::wire_of(role_id);
+        let world = live::snapshot();
+        match space_of_role(world.clone(), role_wire) {
+            None => Err(ServerError::failed("that role is not on this server")),
+            Some(space_id) => {
+                let held = match world.spaces.get(&space_id).and_then(move |space| space.roles.get(&role_wire)) {
+                    None => chat_model::perms::EVERYONE,
+                    Some(role) => role.permissions,
+                };
+                let new_perms = match permissions {
+                    None => held,
+                    Some(permissions) => perms_map::to_idea(permissions),
+                };
+                let mut args = Vec::new();
+                args.push(client::arg(space_id));
+                args.push(client::arg(role_wire));
+                args.push(client::arg(&name));
+                args.push(client::arg::<u64>(new_perms));
+                match client::post("update_role", args).await {
+                    Err(e) => Err(e),
+                    Ok(_) => match live::snapshot().spaces.get(&space_id).and_then(move |space| space.roles.get(&role_wire)) {
+                        None => Err(ServerError::failed("the role is not on this server")),
+                        Some(role) => Ok(custom_role_of(live::see(space_id), role.clone())),
+                    },
+                }
+            },
+        }
+    }
+
+    // Roles carry a position but the wire has no reordering verb: the
+    // position comes from a role's rank in the ladder, not a free slot.
+    async fn move_role(_role_id: i64, _position: i64) -> Result<CustomRole, ServerError> {
+        Err(ServerError::failed("this server orders roles by rank, not by position"))
+    }
+
+    // `delete_role(space, role)` answers unit; the `RolesChanged` event drops
+    // it from the state and the holders from their rosters.
+    async fn delete_role(role_id: i64) -> Result<(), ServerError> {
+        let role_wire = live::wire_of(role_id);
+        match space_of_role(live::snapshot(), role_wire) {
+            None => Err(ServerError::failed("that role is not on this server")),
+            Some(space_id) => {
+                let mut args = Vec::new();
+                args.push(client::arg(space_id));
+                args.push(client::arg(role_wire));
+                match client::post("delete_role", args).await {
+                    Err(e) => Err(e),
+                    Ok(_) => Ok(()),
+                }
+            },
+        }
+    }
+
+    // `set_roles(space, member, roles)` restates the whole list, so giving
+    // one role is the member's current list plus it, and taking one is the
+    // list without it. The server gates the act itself (Manage Roles, only
+    // roles below the caller's own).
+    async fn assign_role(role_id: i64, user_id: i64, assigned: bool) -> Result<(), ServerError> {
+        let role_wire = live::wire_of(role_id);
+        let member_wire = live::wire_of(user_id);
+        match space_of_role(live::snapshot(), role_wire) {
+            None => Err(ServerError::failed("that role is not on this server")),
+            Some(space_id) => {
+                let current: Vec<Id> = match live::snapshot().spaces.get(&space_id).and_then(move |space| space.members.get(&member_wire)) {
+                    None => Vec::new(),
+                    Some(member) => member.roles.clone(),
+                };
+                let roles: Vec<Id> = match assigned {
+                    true => {
+                        let mut roles = current;
+                        if !roles.contains(&role_wire) {
+                            roles.push(role_wire)
+                        }
+                        roles
+                    }
+                    false => current.iter().filter(move |held| **held != role_wire).copied().collect(),
+                };
+                let mut args = Vec::new();
+                args.push(client::arg(space_id));
+                args.push(client::arg(member_wire));
+                args.push(client::arg(roles));
+                match client::post("set_roles", args).await {
+                    Err(e) => Err(e),
+                    Ok(_) => Ok(()),
+                }
+            },
+        }
+    }
+}
+
+// --- helpers this area shares -------------------------------------------
+
+/// RWND's role row from one idea-chat record: no colour, never mentionable
+/// (no mention grammar here), and the ladder position negated so RWND's
+/// higher-first ordering matches idea-chat's senior-lowest one.
+pub(crate) fn custom_role_of(server_id: i64, role: Role) -> CustomRole {
+    CustomRole {
+        id: live::see(role.id),
+        server_id: server_id,
+        name: role.name.clone(),
+        color: "".to_string(),
+        mentionable: false,
+        position: -(role.position as i64),
+        permissions: perms_map::to_rwnd(role.permissions),
+    }
+}
+
+/// The whole snapshot: role records (highest RWND position first), the
+/// `(user, role)` pairs of who holds what, and the translated baseline.
+pub(crate) fn roles_snapshot_of(space_id: Id, space: Space) -> RolesSnapshot {
+    let mut roles: Vec<CustomRole> = space.roles.values().map(move |role| custom_role_of(live::see(space_id), role.clone())).collect();
+    roles.sort_by_key(move |role| -role.position);
+    let mut assignments: Vec<(i64, i64)> = Vec::new();
+    for (user_id, member) in space.members.iter() {
+        for role_id in member.roles.iter() {
+            assignments.push((live::see(*user_id), live::see(*role_id)))
+        }
+    }
+    RolesSnapshot {
+        server_id: live::see(space_id),
+        roles: roles,
+        assignments: assignments,
+        everyone_permissions: perms_map::to_rwnd(space.everyone),
+    }
+}
+
+/// Which space defines the role `role`, if any of the viewer's do.
+pub(crate) fn space_of_role(world: chat_model::live::State, role: Id) -> Option<Id> {
+    for (space_id, space) in world.spaces.iter() {
+        if space.roles.contains_key(&role) {
+            return Some(*space_id)
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chat_model::live::State;
+    use chat_model::perms;
+    use chat_model::{Member, Role};
+    use std::collections::BTreeMap;
+
+    fn uid(n: u128) -> Id {
+        Id::from_u128(n)
+    }
+
+    #[test]
+    fn a_roles_snapshot_translates_masks_and_negates_positions() {
+        // Offline: the mapping is pure over the records, so hand it a space
+        // with one role (view + kick powers, senior position 2) and one
+        // holder, and check the RWND row.
+        let mut roles: BTreeMap<Id, Role> = BTreeMap::new();
+        roles.insert(uid(9), Role {
+            id: uid(9),
+            name: "Helpers".to_string(),
+            permissions: perms::Permission::ViewChannel.bit() | perms::Permission::ManageMembers.bit(),
+            position: 2,
+        });
+        let mut members: BTreeMap<Id, Member> = BTreeMap::new();
+        members.insert(uid(8), Member { roles: vec!(uid(9)), joined_at: 0 });
+        let space = Space {
+            id: uid(3),
+            name: "Alpha".to_string(),
+            icon: None,
+            owner: uid(7),
+            members: members,
+            roles: roles,
+            everyone: perms::DEFAULT_EVERYONE,
+            categories: Vec::new(),
+            created_at: 0,
+        };
+        let snap = roles_snapshot_of(uid(3), space);
+        assert_eq!(snap.roles.len(), 1);
+        assert_eq!(snap.roles[0].name, "Helpers".to_string());
+        assert_eq!(snap.roles[0].position, -2);
+        assert_eq!(snap.roles[0].color, "".to_string());
+        assert_eq!(snap.roles[0].mentionable, false);
+        assert_eq!(snap.roles[0].permissions.contains(Permissions::VIEW_CHANNEL), true);
+        assert_eq!(snap.roles[0].permissions.contains(Permissions::KICK_MEMBERS), true);
+        assert_eq!(snap.roles[0].permissions.contains(Permissions::BAN_MEMBERS), false);
+        assert_eq!(snap.assignments.len(), 1);
+        assert_eq!(snap.everyone_permissions.contains(Permissions::SEND_MESSAGES), true);
+        assert_eq!(snap.everyone_permissions.contains(Permissions::MANAGE_ROLES), false);
+    }
+
+    #[test]
+    fn a_role_edit_carries_the_callers_flags_once() {
+        // The update path re-encodes RWND's flags through the table, so the
+        // idea-chat set it writes holds exactly the mapped bits.
+        let rw = Permissions::VIEW_CHANNEL.union(Permissions::MANAGE_ROLES);
+        assert_eq!(perms_map::to_idea(rw), perms::Permission::ViewChannel.bit() | perms::Permission::ManageRoles.bit());
+    }
+}

@@ -516,7 +516,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                     padding_right: Some(px(4.0)),
                                     flex_shrink: Some(runtime_core::Tokenized::Literal(0.0)),
                                     ..rounded(8.0)
-                                }) {
+                                }, test_id = "unread-count-badge") {
                                     text(style = StyleRules {
                                         font_size: Some(px(11.0)),
                                         font_weight: Some(FontWeight::Bold),
@@ -778,7 +778,7 @@ pub(super) fn build(s: &ShellState) -> SidebarParts {
                                                     height: Some(px(8.0)),
                                                     background: Some(col(PILL)),
                                                     ..rounded(2.0)
-                                                }) {}
+                                                }, test_id = "unread-side-pill") {}
                                             }
                                         }
                                     },

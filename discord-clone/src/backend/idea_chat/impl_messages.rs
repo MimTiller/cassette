@@ -124,7 +124,7 @@ async fn react(id: chat_model::Id, emoji: String, add: bool) -> Result<(), Serve
 mod tests {
     use super::*;
     use serde_json::Value;
-    use chat_model::{Id, Channel, ChannelKind, ReadState, Role};
+    use chat_model::{Id, Channel, ChannelKind, ReadState};
     use chat_model::live::State;
 
     fn uid(n: u128) -> Id {
@@ -164,10 +164,11 @@ mod tests {
             position: 0,
             parent: None,
             starter: None,
-            view: Role::Member,
-            post: Role::Member,
+            view: 0,
+            post: 0,
             members: Vec::new(),
             archived: false,
+            overwrites: std::collections::BTreeMap::new(),
             last_message: Some(uid(100)),
             message_count: 1,
             created_by: uid(2),
@@ -183,10 +184,11 @@ mod tests {
             position: 1,
             parent: None,
             starter: None,
-            view: Role::Member,
-            post: Role::Member,
+            view: 0,
+            post: 0,
             members: Vec::new(),
             archived: false,
+            overwrites: std::collections::BTreeMap::new(),
             last_message: Some(uid(101)),
             message_count: 1,
             created_by: uid(2),
@@ -221,10 +223,11 @@ mod tests {
             position: 0,
             parent: None,
             starter: None,
-            view: Role::Member,
-            post: Role::Member,
+            view: 0,
+            post: 0,
             members: Vec::new(),
             archived: false,
+            overwrites: std::collections::BTreeMap::new(),
             last_message: None,
             message_count: 0,
             created_by: uid(2),

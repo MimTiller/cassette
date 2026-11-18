@@ -5,7 +5,7 @@
 
 use crate::backend::*;
 use crate::backend::idea_chat::{client, live, model};
-use chat_model::{Channel, ChannelKind, Id, Role};
+use chat_model::{Channel, ChannelKind, Id};
 use runtime_shared::time::epoch_millis;
 
 impl ServersApi for IdeaChatBackend {
@@ -285,7 +285,7 @@ pub(crate) fn channel_row(id: Id, channel: Channel) -> ChannelSummary {
             Some(p) => Some(live::see(p)),
             None => None,
         },
-        private: channel.view == Role::Admin || channel.view == Role::Owner,
+        private: channel.view != chat_model::perms::EVERYONE,
     }
 }
 
@@ -320,7 +320,7 @@ pub(crate) fn settings_of(server_id: i64) -> ServerSettingsResult {
 mod tests {
     use super::*;
     use chat_model::live::State;
-    use chat_model::{Id, Space, Channel, ChannelKind, Role};
+    use chat_model::{Id, Space, Channel, ChannelKind};
     use std::collections::BTreeMap;
 
     fn uid(n: u128) -> Id {
@@ -328,6 +328,10 @@ mod tests {
     }
 
     fn empty_members() -> BTreeMap<Id, chat_model::Member> {
+        BTreeMap::new()
+    }
+
+    fn empty_roles() -> BTreeMap<Id, chat_model::Role> {
         BTreeMap::new()
     }
 
@@ -342,6 +346,8 @@ mod tests {
             icon: None,
             owner: uid(2),
             members: empty_members(),
+            roles: empty_roles(),
+            everyone: chat_model::perms::DEFAULT_EVERYONE,
             categories: Vec::new(),
             created_at: 0,
         });
@@ -351,6 +357,8 @@ mod tests {
             icon: Some("/f/x.png".to_string()),
             owner: uid(2),
             members: empty_members(),
+            roles: empty_roles(),
+            everyone: chat_model::perms::DEFAULT_EVERYONE,
             categories: Vec::new(),
             created_at: 0,
         });
@@ -365,10 +373,11 @@ mod tests {
             position: 0,
             parent: None,
             starter: None,
-            view: Role::Member,
-            post: Role::Member,
+            view: 0,
+            post: 0,
             members: Vec::new(),
             archived: false,
+            overwrites: std::collections::BTreeMap::new(),
             last_message: None,
             message_count: 0,
             created_by: uid(2),
@@ -384,10 +393,11 @@ mod tests {
             position: 1,
             parent: None,
             starter: None,
-            view: Role::Admin,
-            post: Role::Admin,
+            view: chat_model::perms::ADMIN,
+            post: chat_model::perms::ADMIN,
             members: Vec::new(),
             archived: false,
+            overwrites: std::collections::BTreeMap::new(),
             last_message: None,
             message_count: 0,
             created_by: uid(2),
@@ -435,10 +445,11 @@ mod tests {
             position: 1,
             parent: None,
             starter: None,
-            view: Role::Admin,
-            post: Role::Admin,
+            view: chat_model::perms::ADMIN,
+            post: chat_model::perms::ADMIN,
             members: Vec::new(),
             archived: false,
+            overwrites: std::collections::BTreeMap::new(),
             last_message: None,
             message_count: 0,
             created_by: uid(2),
