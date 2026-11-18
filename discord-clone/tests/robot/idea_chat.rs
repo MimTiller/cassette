@@ -110,6 +110,16 @@ fn ureq_chat(function: String, args: Vec<Value>, session: &str) -> Result<ureq::
     req.send_string(&json!(args).to_string())
 }
 
+/// The sentence in a refusal: a bare string, or the `message` of an object that may be wrapped
+/// (`{"Err": {"Failed": {"message": ..., "why": ...}}}`).
+fn refusal_text(v: &Value) -> Option<&str> {
+    match v {
+        Value::String(text) => Some(text.as_str()),
+        Value::Object(map) => map.get("message").and_then(|m| m.as_str()).or_else(|| map.values().find_map(refusal_text)),
+        _ => None,
+    }
+}
+
 /// The same call when the rules should refuse it: answers the refusal's
 /// message text instead of panicking (the way roles.rs's `srv_refused` does
 /// against the RWND server).
@@ -121,7 +131,7 @@ pub fn chat_srv_refused(function: String, args: Vec<Value>, session: &str) -> St
     };
     let out: Value = response.into_json().unwrap_or_else(|_| panic!("chat {function}: refused with an unreadable body"));
     match out.get("Err").or_else(|| out.get("Failed")) {
-        Some(err) => err.as_str().or_else(|| err.get("message").and_then(|m| m.as_str()))
+        Some(err) => refusal_text(err)
             .unwrap_or_else(|| panic!("chat {function}: refused with a body that has no message: {err}")).to_string(),
         None => panic!("chat {function}: succeeded when the rules should have refused it (reply {out})")
     }
@@ -479,8 +489,19 @@ fn a_edits_and_deletes_her_message_and_b_follows(_app: &mut App) {
     // browsers see the edit without reloading.
     let target = "the target message";
     send(&mut browser_a.app, target);
-    browser_a.app.text(target).hover_native();
-    browser_a.app.test_id("msg-more").click();
+    // Let the invite dialog's closing and the join frames settle: hovering while something still covers the row is refused.
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    // The menu can close again when a live frame re-renders the list right after it opens, so open it until the Edit row is there.
+    let menu_up = eventually(30, || {
+        if browser_a.app.test_id("menu-edit-message").count() > 0 {
+            return true;   // already open; hovering again would be refused, the menu covers the row
+        }
+        browser_a.app.text(target).hover_native();
+        browser_a.app.test_id("msg-more").click();
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        browser_a.app.test_id("menu-edit-message").count() > 0
+    });
+    assert!(menu_up, "the message menu never offered Edit on A's own message");
     browser_a.app.test_id("menu-edit-message").click();
     let edited = "the edited text";
     browser_a.app.test_id("edit-input").fill(edited);
@@ -519,7 +540,7 @@ fn b_reacts_to_as_message_and_a_sees_the_count(_app: &mut App) {
 
     // The script's (h): B opens the react pill on A's row, taps a thumbs-up
     // cell in the picker; A sees the reaction without reloading.
-    browser_b.app.test_id("msg-row").hover_native();
+    browser_b.app.text(target).hover_native();
     browser_b.app.test_id("msg-react").click();
     browser_b.app.test_id("emoji-cell").assert_visible();
     browser_b.app.test_id("emoji-cell").nth(0).click();

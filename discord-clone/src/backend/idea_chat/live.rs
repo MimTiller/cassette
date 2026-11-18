@@ -37,6 +37,16 @@ fn cursor() -> &'static std::sync::Mutex<Cursor> {
     CURSOR.get_or_init(Default::default)
 }
 
+/// Who has reacted with what, per message. The app applies a reaction frame's `count` as the emoji's TOTAL (and a total of 0
+/// drops the pill), but idea-chat's `ReactionChanged` event names one user and carries no total. So the sets are seeded from
+/// every message row that crosses (history and live rows carry the full lists) and moved by each event, and the frame says
+/// how many people now hold the reaction.
+static REACTORS: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<(Id, String), std::collections::BTreeSet<Id>>>> = std::sync::OnceLock::new();
+
+fn reactors() -> &'static std::sync::Mutex<std::collections::HashMap<(Id, String), std::collections::BTreeSet<Id>>> {
+    REACTORS.get_or_init(Default::default)
+}
+
 /// The reducer's current visible world (empty until the first snapshot).
 pub(crate) fn snapshot() -> State {
     let held = state().lock().unwrap_or_else(move |p| p.into_inner());
@@ -325,11 +335,44 @@ pub(crate) fn display_of(user: User) -> Option<String> {
 }
 
 /// An edited-message frame: replace the stored content for the id.
+/// A stored body written the way people read it: the server keeps a mention as `<@uuid>` and a channel link as `<#uuid>`, but
+/// the app's mention pills and channel links work on `@handle` and `#name`. Tokens it cannot name stay as they are.
+pub(crate) fn readable_body(body: &str, world: &State) -> String {
+    let mut out = String::with_capacity(body.len());
+    let mut rest = body;
+    while let Some(at) = rest.find('<') {
+        out.push_str(&rest[..at]);
+        let tail = &rest[at..];
+        let token = tail.get(0..39).filter(|t| t.ends_with('>') && (t.starts_with("<@") || t.starts_with("<#")));
+        match token.and_then(|t| uuid::Uuid::parse_str(&t[2..38]).ok().map(|id| (t, id))) {
+            Some((t, id)) => {
+                let name = if t.starts_with("<@") {
+                    world.users.get(&id).map(|u| format!("@{}", u.handle))
+                } else {
+                    world.channels.get(&id).map(|c| format!("#{}", c.name))
+                };
+                match name {
+                    Some(n) => out.push_str(&n),
+                    None => out.push_str(t),
+                }
+                rest = &tail[39..];
+            }
+            None => {
+                out.push('<');
+                rest = &tail[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 pub(crate) fn edited(message: Message) -> WsServerMsg {
+    let content = readable_body(&message.body, &snapshot());
     WsServerMsg::MessageEdited {
         message_id: see(message.id),
         channel_id: see(message.channel),
-        content: message.body,
+        content,
         edited_at: millis_at(message.edited_at.unwrap_or(message.at)),
         mentioned_user_ids: message.mentions.iter().map(move |u| see(*u)).collect(),
         seq: next_frame_seq(),
@@ -338,10 +381,16 @@ pub(crate) fn edited(message: Message) -> WsServerMsg {
 
 pub(crate) fn reaction(added: bool, channel: Id, message: Id, user: Id, emoji: String) -> WsServerMsg {
     let seq = next_frame_seq();
+    let total = {
+        let mut held = reactors().lock().unwrap_or_else(|p| p.into_inner());
+        let who = held.entry((message, emoji.clone())).or_default();
+        if added { who.insert(user); } else { who.remove(&user); }
+        who.len() as _
+    };
     if added {
-        WsServerMsg::ReactionAdd { message_id: see(message), channel_id: see(channel), user_id: see(user), emoji, count: 0, seq }
+        WsServerMsg::ReactionAdd { message_id: see(message), channel_id: see(channel), user_id: see(user), emoji, count: total, seq }
     } else {
-        WsServerMsg::ReactionRemove { message_id: see(message), channel_id: see(channel), user_id: see(user), emoji, count: 0, seq }
+        WsServerMsg::ReactionRemove { message_id: see(message), channel_id: see(channel), user_id: see(user), emoji, count: total, seq }
     }
 }
 
@@ -350,6 +399,7 @@ pub(crate) fn reaction(added: bool, channel: Id, message: Id, user: Id, emoji: S
 /// reducer state and the id table.
 pub(crate) fn message_row(message: Message, new: bool) -> WsServerMsg {
     let world = snapshot();
+    let content = readable_body(&message.body, &world);
     let viewer = match world.me {
         Some(me) => me.user.id,
         None => message.author,
@@ -361,6 +411,8 @@ pub(crate) fn message_row(message: Message, new: bool) -> WsServerMsg {
     let mut reactions: Vec<(String, u32, bool)> = Vec::new();
     for entry in message.reactions.iter() {
         reactions.push((entry.emoji.clone(), entry.users.len() as u32, entry.users.iter().any(move |u| *u == viewer)));
+        reactors().lock().unwrap_or_else(|p| p.into_inner())
+            .insert((message.id, entry.emoji.clone()), entry.users.iter().copied().collect());
     }
     let mut attachments: Vec<MessageAttachment> = Vec::new();
     for file in message.attachments.iter() {
@@ -384,7 +436,7 @@ pub(crate) fn message_row(message: Message, new: bool) -> WsServerMsg {
         author_username: author_username.to_string(),
         author_avatar: None,
         author_decoration: None,
-        content: message.body,
+        content,
         created_at: millis_at(message.at),
         edited_at: match message.edited_at {
             Some(at) => Some(millis_at(at)),
