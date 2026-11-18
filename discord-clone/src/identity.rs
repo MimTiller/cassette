@@ -266,8 +266,16 @@ pub async fn sign_up_email(email: &str, password: &str, handle: &str, display_na
 /// Sign in with an email and password. Answers `true` when the account is
 /// signed in, `false` when the server said the email is unverified (a fresh
 /// code went to it) and the form must move to the emailed-code step.
+///
+/// A successful sign-in records the identity exactly as the ordinary login and
+/// `verify_email` do: without it the shell opens but the app does not know who
+/// it is, and the server rail never shows the account's servers.
 pub async fn sign_in_email(email: &str, password: &str) -> Result<bool, String> {
-    crate::backend::sign_in_email(email.to_string(), password.to_string()).await
+    match crate::backend::sign_in_email(email.to_string(), password.to_string()).await {
+        Err(message) => Err(message),
+        Ok(None) => Ok(false),
+        Ok(Some(login)) => apply_identity(Ok(identity_from_login(login)), current_provider()).map(|_| true),
+    }
 }
 
 /// Confirm the emailed code and record the identity it signs in, so the

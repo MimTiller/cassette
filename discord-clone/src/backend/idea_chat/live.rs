@@ -676,8 +676,12 @@ pub(crate) fn connect(_token: String) -> GatewayHandle {
                                     match frame {
                                         Down::Snapshot { seq, state } => {
                                             take_snapshot(state.clone(), seq);
-                                            for frame in frames_for_world(&state).iter() {
-                                                incoming.set_always(Some(frame.clone()));
+                                            // The screens watch ONE signal, and setting it twice in the same instant leaves only the
+                                            // last value for them to read: a new server's settings frame (which puts its tile in the
+                                            // rail and its name in the header) was overwritten by its roles frame. Spread the frames
+                                            // out so each one is seen.
+                                            for (index, frame) in frames_for_world(&state).into_iter().enumerate() {
+                                                runtime_core::after_ms_detached((index as i32) * 25, move || incoming.set_always(Some(frame)));
                                             }
                                         }
                                         Down::Event { seq, event } => {

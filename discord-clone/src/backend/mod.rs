@@ -1015,14 +1015,15 @@ pub async fn signup_email(email: String, password: String, handle: String, displ
         .map_err(|e| crate::errors::friendly(&e))
 }
 
-/// Sign in with an email and password. Answers `true` when the account is
-/// signed in, `false` when the server said the email is unverified (a fresh
-/// code went to it) and the form must move to the emailed-code step.
-pub async fn sign_in_email(email: String, password: String) -> Result<bool, String> {
+/// Sign in with an email and password. Answers the signed-in account's
+/// login (the caller records the identity it carries), or `None` when the
+/// server said the email is unverified (a fresh code went to it) and the form
+/// must move to the emailed-code step.
+pub async fn sign_in_email(email: String, password: String) -> Result<Option<LoginResult>, String> {
     idea_chat::impl_account::sign_in_email(email, password).await
         .map(move |answer| match answer {
-            idea_chat::impl_account::SignInAnswer::SignedIn(_) => true,
-            idea_chat::impl_account::SignInAnswer::VerifyEmail(_) => false,
+            idea_chat::impl_account::SignInAnswer::SignedIn(login) => Some(login),
+            idea_chat::impl_account::SignInAnswer::VerifyEmail(_) => None,
         })
         .map_err(|e| crate::errors::friendly(&e))
 }

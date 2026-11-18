@@ -121,7 +121,8 @@ pub fn chat_srv_refused(function: String, args: Vec<Value>, session: &str) -> St
     };
     let out: Value = response.into_json().unwrap_or_else(|_| panic!("chat {function}: refused with an unreadable body"));
     match out.get("Err").or_else(|| out.get("Failed")) {
-        Some(err) => err.as_str().unwrap_or_else(|| panic!("chat {function}: refused with a non-string body: {err}")).to_string(),
+        Some(err) => err.as_str().or_else(|| err.get("message").and_then(|m| m.as_str()))
+            .unwrap_or_else(|| panic!("chat {function}: refused with a body that has no message: {err}")).to_string(),
         None => panic!("chat {function}: succeeded when the rules should have refused it (reply {out})")
     }
 }
@@ -145,20 +146,26 @@ pub struct ChatAccount {
 
 impl ChatAccount {
     /// Sign this account in through the login screen — chat's login maps
-    /// the username onto the email slot, so the username field takes the
-    /// email. The 10/min sign-in route can throttle a burst of fresh
+    /// the form's email field (`login-email-field`) takes the email. The 10/min sign-in route can throttle a burst of fresh
     /// browsers: on refusal the login screen stays up, so Escape and
     /// pause, then retry until the shell answers.
     fn sign_chat_in(&self, app: &mut App) {
         let email = &self.email;
         let password = &self.password;
         let landed = eventually(150, move || {
+            // A retry can find the shell already up: the sign-in of the attempt before it landed after that attempt gave up.
+            if app.text("Online").count() > 0 {
+                return true;
+            }
             app.test_id("login-tab-signin").click();
-            app.test_id("login-email").fill(&email);
+            // In idea-chat mode the login form's email field is `login-email-field` (`login-email` is the built-in form's username).
+            app.test_id("login-email-field").fill(&email);
             app.test_id("login-password").fill(&password);
             app.test_id("login-submit").click();
             app.set_timeout(WAIT);
-            if app.text("Online").count() > 0 {
+            // `count()` answers at once, so it has to be polled: the sign-in takes a second or two, and checking
+            // straight after the click read "not signed in" while the request was still in flight.
+            if eventually(20, || app.text("Online").count() > 0) {
                 true
             } else {
                 app.press_key("Escape");
@@ -252,9 +259,12 @@ pub fn space_of(app_name: &str) -> String {
     db_row(&format!("select s.id from spaces s where s.name = {}", q(app_name)))
 }
 
-/// #general's channel id in the database for the space `space`.
+/// #general's channel id in the database for the space `space`: its id, or its
+/// name (each test makes its own fresh, unique one, and most keep only the name).
 pub fn channel_of(space: &str) -> String {
-    db_row(&format!("select c.id from channels c where c.space_id = {} and c.name = 'general'", q(space)))
+    db_row(&format!(
+        "select c.id from channels c join spaces s on s.id = c.space_id where (s.id::text = {0} or s.name = {0}) and c.name = 'general'",
+        q(space)))
 }
 
 /// Open A's invite overlay (perms re-armed first, the gap server.rs
@@ -287,6 +297,11 @@ pub fn join_by_code(app: &mut App, code: &str) {
     app.test_id("join-server-join").click();
     app.text("Joined!").assert_visible();
     app.test_id("join-server-done").click();
+    app.set_timeout(WAIT);
+    // Joining lands on the server with no channel selected (A's create_server picks #general; B has to as well),
+    // and without a channel there is no composer to send from.
+    app.text("general").assert_visible();
+    app.text("general").click();
     app.set_timeout(WAIT);
 }
 
@@ -390,7 +405,7 @@ fn b_joins_a_server_through_an_invite(_app: &mut App) {
     // The script's (d2): B is a member of the space in the chat database,
     // and the invite row is stored with its code.
     assert_eq!(db_row(&format!("select count(sm.user_id) from space_members sm join users u on u.id = sm.user_id where sm.space_id = {}::uuid and u.email = {}",
-        space_of(&server), q(&b.email))), "1", "B is a member of A's space on the chat database");
+        q(&space_of(&server)), q(&b.email))), "1", "B is a member of A's space on the chat database");
     assert_ne!(db_row(&format!("select count(i.code) from invites i where i.code = {}",
         q(&code))), "0", "the invite is stored on the chat database");
 }
