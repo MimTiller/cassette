@@ -218,6 +218,11 @@ fn blocked_ids_of_me() -> Vec<i64> {
 /// Pack a `Session` answer into the `LoginResult` the identity seam records.
 fn login_from_session(session: model::Session) -> LoginResult {
     let me = session.me.user;
+    // The id table is keyed by the signed-in account's name, and `apply_identity` only records that name AFTER this result is
+    // built. Numbering "me" first would put the account's own id in the empty-name table, and every later lookup (which uses the
+    // account's table) would number it differently, so the app no longer knew which messages were the user's own (no Edit or
+    // Delete on them). Record the name before numbering anything.
+    *crate::auth::CURRENT_USERNAME.lock().unwrap_or_else(|p| p.into_inner()) = me.handle.clone();
     LoginResult {
         user_id: live::see(me.id),
         // Web: `token` is null and the httpOnly `session` cookie the same
