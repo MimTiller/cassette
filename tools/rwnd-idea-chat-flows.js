@@ -344,6 +344,53 @@ async function main() {
     check("(i4) B sees the DM message without a reload", tB.includes(DM_TEXT), tB);
   }
 
+  // (j) roles on the roles-shaped backend: A mints a named role and hands it
+  //     to B through the chat API (the same /_srv calls the invite uses); the
+  //     role record and the holder land in the database, and A's Server
+  //     Settings → Roles panel lists the fresh role.
+  {
+    const ROLE_NAME = `Deputy ${tag}`;
+    const roleOut = (() => {
+      let out = "";
+      try {
+        out = execFileSync("curl", ["-s", "-X", "POST", `${BASE}/_srv/create_role`,
+          "-H", "content-type", "application/json",
+          ...(ck[1] ? ["-H", `cookie: ${ck[1]}=${ck[2]}`] : []),
+          "--data-raw", JSON.stringify([spaceId, ROLE_NAME, 0])], { encoding: "utf8" });
+      } catch (e) {}
+      return out;
+    })();
+    const roleUuid = (roleOut.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [""])[0];
+    check("(j1) A's create_role call answers a role record", roleOut.includes(ROLE_NAME) && !!roleUuid, roleOut);
+    const roleRows = dbRows(`select r.role_id from space_roles r where r.space_id = ${sqlQuote(spaceId)}::uuid and r.name = ${sqlQuote(ROLE_NAME)}`);
+    check("(j2) the role is stored in the database", roleRows >= 1, `rows: ${roleRows}`);
+    const bUser = psql(`select sm.user_id from space_members sm join users u on u.id = sm.user_id where sm.space_id = ${sqlQuote(spaceId)}::uuid and u.email = ${sqlQuote(EMAIL_B)}`);
+    const setOut = (() => {
+      let out = "";
+      if (!bUser || !roleUuid) return out;
+      try {
+        out = execFileSync("curl", ["-s", "-X", "POST", `${BASE}/_srv/set_roles`,
+          "-H", "content-type", "application/json",
+          ...(ck[1] ? ["-H", `cookie: ${ck[1]}=${ck[2]}`] : []),
+          "--data-raw", JSON.stringify([spaceId, bUser, [roleUuid]])], { encoding: "utf8" });
+      } catch (e) {}
+      return out;
+    })();
+    check("(j3) A's set_roles call hands the role to B", !!setOut && setOut.includes('"Ok"'), setOut || "no member/role ids to assign");
+    const holderRows = dbRows(`select sm.user_id from space_members sm where sm.space_id = ${sqlQuote(spaceId)}::uuid and sm.role_ids::text like ${sqlQuote(`%${roleUuid}%`)}`);
+    check("(j4) B holds the role in the database", holderRows >= 1, `rows: ${holderRows}`);
+    // A's Settings overlay: click the sidebar's server-name header (its
+    // dropdown entry), then Server Settings and the Roles section row.
+    const headerRow = pageA.getByText(SERVER_NAME, { exact: true });
+    if ((await headerRow.count()) > 0) { await headerRow.first().click(); await pageA.waitForTimeout(1200); }
+    const settingsEntry = pageA.getByText("Server Settings", { exact: true });
+    if ((await settingsEntry.count()) > 0) { await settingsEntry.first().click(); await pageA.waitForTimeout(1500); }
+    const rolesNav = pageA.getByText("Roles", { exact: true });
+    if ((await rolesNav.count()) > 0) { await rolesNav.first().click(); await pageA.waitForTimeout(1500); }
+    tA = await text(pageA);
+    check("(j5) A's Roles panel lists the role", tA.includes(ROLE_NAME), tA);
+  }
+
   await browserH.close();
   console.log(`\n${failures} failure${failures === 1 ? "" : "s"}`);
   process.exit(failures === 0 ? 0 : 1);
