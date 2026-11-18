@@ -335,6 +335,14 @@ pub(crate) fn display_of(user: User) -> Option<String> {
 }
 
 /// An edited-message frame: replace the stored content for the id.
+/// Hand the screens a run of frames one at a time. They watch ONE signal, and setting it several times in the same instant leaves
+/// only the last value to be read, so frames sent in a burst (a snapshot's refresh frames, a page of history) have to be spaced.
+fn deliver_spaced(incoming: Signal<Option<WsServerMsg>>, frames: Vec<WsServerMsg>) {
+    for (index, frame) in frames.into_iter().enumerate() {
+        runtime_core::after_ms_detached((index as i32) * 25, move || incoming.set_always(Some(frame)));
+    }
+}
+
 /// A stored body written the way people read it: the server keeps a mention as `<@uuid>` and a channel link as `<#uuid>`, but
 /// the app's mention pills and channel links work on `@handle` and `#name`. Tokens it cannot name stay as they are.
 pub(crate) fn readable_body(body: &str, world: &State) -> String {
@@ -367,14 +375,34 @@ pub(crate) fn readable_body(body: &str, world: &State) -> String {
     out
 }
 
+/// The people a message mentions, as the app counts them. `@everyone` names no one, but the server notifies everyone who can read
+/// the channel except the author, so for the viewer it counts as a mention of them (the app's unread-mention count and the row
+/// highlight both ask "is my id in the list").
+fn mentioned_ids(message: &Message, world: &State) -> Vec<i64> {
+    let mut ids: Vec<i64> = message.mentions.iter().map(move |u| see(*u)).collect();
+    if message.mentions_everyone {
+        if let Some(me) = world.me.as_ref() {
+            if me.user.id != message.author {
+                let mine = see(me.user.id);
+                if !ids.contains(&mine) {
+                    ids.push(mine);
+                }
+            }
+        }
+    }
+    ids
+}
+
 pub(crate) fn edited(message: Message) -> WsServerMsg {
-    let content = readable_body(&message.body, &snapshot());
+    let world = snapshot();
+    let content = readable_body(&message.body, &world);
+    let mentioned = mentioned_ids(&message, &world);
     WsServerMsg::MessageEdited {
         message_id: see(message.id),
         channel_id: see(message.channel),
         content,
         edited_at: millis_at(message.edited_at.unwrap_or(message.at)),
-        mentioned_user_ids: message.mentions.iter().map(move |u| see(*u)).collect(),
+        mentioned_user_ids: mentioned,
         seq: next_frame_seq(),
     }
 }
@@ -400,6 +428,7 @@ pub(crate) fn reaction(added: bool, channel: Id, message: Id, user: Id, emoji: S
 pub(crate) fn message_row(message: Message, new: bool) -> WsServerMsg {
     let world = snapshot();
     let content = readable_body(&message.body, &world);
+    let mentioned = mentioned_ids(&message, &world);
     let viewer = match world.me {
         Some(me) => me.user.id,
         None => message.author,
@@ -443,7 +472,7 @@ pub(crate) fn message_row(message: Message, new: bool) -> WsServerMsg {
             None => None,
         },
         new,
-        mentioned_user_ids: message.mentions.iter().map(move |u| see(*u)).collect(),
+        mentioned_user_ids: mentioned,
         reply_to_message_id: match message.reply_to {
             Some(reply) => Some(see(reply.id)),
             None => None,
@@ -538,14 +567,14 @@ impl GatewayHandle {
             move |page| {
                 match page {
                     Ok(rows) => {
-                        for message in rows.messages.iter() {
-                            incoming.set_always(Some(message_row(message.clone(), false)));
-                        }
-                        incoming.set_always(Some(WsServerMsg::History {
+                        // Every row, then the marker that says whether more lies behind them, each seen on its own.
+                        let mut frames: Vec<WsServerMsg> = rows.messages.iter().map(move |m| message_row(m.clone(), false)).collect();
+                        frames.push(WsServerMsg::History {
                             channel_id,
                             has_more: rows.older,
                             seq: next_frame_seq(),
-                        }));
+                        });
+                        deliver_spaced(incoming, frames);
                     }
                     Err(e) => incoming.set_always(Some(error_frame(reason(e)))),
                 }
@@ -732,9 +761,7 @@ pub(crate) fn connect(_token: String) -> GatewayHandle {
                                             // last value for them to read: a new server's settings frame (which puts its tile in the
                                             // rail and its name in the header) was overwritten by its roles frame. Spread the frames
                                             // out so each one is seen.
-                                            for (index, frame) in frames_for_world(&state).into_iter().enumerate() {
-                                                runtime_core::after_ms_detached((index as i32) * 25, move || incoming.set_always(Some(frame)));
-                                            }
+                                            deliver_spaced(incoming, frames_for_world(&state));
                                         }
                                         Down::Event { seq, event } => {
                                             if fold(event.clone(), seq) {

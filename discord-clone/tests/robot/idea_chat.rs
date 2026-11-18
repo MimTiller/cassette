@@ -297,6 +297,21 @@ pub fn mint_invite(app: &mut App) -> String {
     code
 }
 
+/// Add a text channel to the active server through the owner's menu and select it. A server starts with one text channel
+/// (#general), and opening a server selects that one, so a person is never "elsewhere" (and nothing is unread for them) until
+/// there is a second one to sit in.
+pub fn add_text_channel(app: &mut App, name: &str) {
+    app.set_timeout(WAIT);
+    app.test_id("server-header").click();
+    app.test_id("menu-create-channel").assert_visible();
+    app.test_id("menu-create-channel").click();
+    app.test_id("create-channel-name-input").fill(name);
+    app.test_id("create-channel-create").click();
+    app.text(name).assert_visible();
+    app.text(name).click();
+    app.set_timeout(WAIT);
+}
+
 /// B joins the server with `code` through the join modal, landing on it.
 pub fn join_by_code(app: &mut App, code: &str) {
     app.test_id("rail-create-server").click();
@@ -632,17 +647,28 @@ fn scrolling_back_pulls_earlier_pages_of_a_busy_channel(_app: &mut App) {
     assert_eq!(rows_in_channel(&server, &format!("m.body like {}", q("filler %"))), "60",
         "the channel holds sixty stored rows on the chat database");
 
+    // The live window above holds all sixty (they arrived one by one), so nothing earlier is left to load there. A fresh session
+    // reads the history page instead: the newest fifty rows, with more behind them.
+    let mut again = open_chat_browser("chat-scroll-again");
+    a.sign_chat_in(&mut again.app);
+    again.app.test_id("rail-server").assert_visible();
+    let tiles = again.app.test_id("rail-server").count();
+    again.app.test_id("rail-server").nth(tiles - 1).click();
+    again.app.set_timeout(WAIT);
+    again.app.text(&server).assert_visible();
+    again.app.text("filler 60").assert_visible();
+
     // Reading up to the top of the loaded window mounts the "Load earlier
     // messages" pill (load_earlier_button); tapping it pulls one more
     // history page, so the very first row comes onto the screen.
-    browser_a.app.test_id("msg-scroll").scroll_to(0.0, 0.0);
-    browser_a.app.text("Load earlier messages").assert_visible();
-    shot(&mut browser_a.app, "chat-scrollback-pill");
-    browser_a.app.text("Load earlier messages").click();
-    assert!(eventually(15, || browser_a.app.text("filler 1").count() > 0),
+    again.app.test_id("msg-scroll").scroll_to(0.0, 0.0);
+    again.app.text("Load earlier messages").assert_visible();
+    shot(&mut again.app, "chat-scrollback-pill");
+    again.app.text("Load earlier messages").click();
+    assert!(eventually(15, || again.app.text("filler 1").count() > 0),
         "the earlier page never loaded");
-    browser_a.app.text("filler 1").assert_in_viewport();
-    shot(&mut browser_a.app, "chat-scrollback-loaded");
+    again.app.text("filler 1").assert_in_viewport();
+    shot(&mut again.app, "chat-scrollback-loaded");
 }
 
 #[robot_test]
@@ -654,27 +680,36 @@ fn a_person_mention_highlights_and_counts(_app: &mut App) {
     b.sign_chat_in(&mut browser_b.app);
     let server = fresh_name("Chat Hq ");
     create_server(&mut browser_a.app, &server);
+    let side = fresh_name("side");
+    add_text_channel(&mut browser_a.app, &side);
     join_by_code(&mut browser_b.app, &mint_invite(&mut browser_a.app));
-    browser_b.app.text("general").click();
+    // B sits in the second channel, so a mention in #general is unread for B.
+    browser_b.app.text(&side).assert_visible();
+    browser_b.app.text(&side).click();
     browser_b.app.set_timeout(WAIT);
+    browser_a.app.text("general").click();
+    browser_a.app.set_timeout(WAIT);
 
-    // A mentions B by handle: the pill paints on A's row and B's view shows
-    // it live.
+    // A mentions B by handle: the pill paints on A's row.
     let msg = format!("@{} hello", b.handle);
     browser_a.app.test_id("composer").fill(&msg);
     browser_a.app.test_id("composer").press_key("Enter");
     browser_a.app.text("hello").assert_visible();
     browser_a.app.test_id("mention-pill").assert_visible();
+
+    // The count: B's unread @mention feeds #general's red count pill
+    // (unread-count-badge) on B's channel row.
+    browser_b.app.test_id("unread-count-badge").assert_visible();
+
+    // B opens #general and sees the pill on the row, live.
+    browser_b.app.text("general").click();
+    browser_b.app.set_timeout(WAIT);
     browser_b.app.text("hello").assert_visible();
     browser_b.app.test_id("mention-pill").assert_visible();
     shot(&mut browser_b.app, "chat-mention-pill");
 
-    // The count: B's unread @mention feeds their channel row's red count
-    // pill (unread-count-badge).
-    browser_b.app.test_id("unread-count-badge").assert_visible();
-
     // Stored: the message row records the mention target.
-    assert_eq!(db_row(&format!("select count(m.id) from messages m where m.channel_id = {} and array_length(m.mentions) > 0",
+    assert_eq!(db_row(&format!("select count(m.id) from messages m where m.channel_id = {} and cardinality(m.mentions) > 0",
         q(&channel_of(&server)))), "1", "the mention is recorded on the chat database");
 }
 
@@ -687,19 +722,27 @@ fn an_everyone_mention_highlights_and_counts(_app: &mut App) {
     b.sign_chat_in(&mut browser_b.app);
     let server = fresh_name("Chat Hq ");
     create_server(&mut browser_a.app, &server);
+    let side = fresh_name("side");
+    add_text_channel(&mut browser_a.app, &side);
     join_by_code(&mut browser_b.app, &mint_invite(&mut browser_a.app));
-    browser_b.app.text("general").click();
+    // B sits in the second channel, so a mention in #general is unread for B.
+    browser_b.app.text(&side).assert_visible();
+    browser_b.app.text(&side).click();
     browser_b.app.set_timeout(WAIT);
+    browser_a.app.text("general").click();
+    browser_a.app.set_timeout(WAIT);
 
-    // The `@everyone` token paints as its own pill and marks both readers'
-    // channel row unread with a mention.
+    // The `@everyone` token paints as its own pill and marks B's channel
+    // row unread with a mention.
     browser_a.app.test_id("composer").fill("@everyone stand up");
     browser_a.app.test_id("composer").press_key("Enter");
     browser_a.app.text("stand up").assert_visible();
     browser_a.app.test_id("mention-pill").assert_visible();
+    browser_b.app.test_id("unread-count-badge").assert_visible();
+    browser_b.app.text("general").click();
+    browser_b.app.set_timeout(WAIT);
     browser_b.app.text("stand up").assert_visible();
     browser_b.app.test_id("mention-pill").assert_visible();
-    browser_b.app.test_id("unread-count-badge").assert_visible();
     shot(&mut browser_b.app, "chat-everyone-pill");
 
     // Stored: the message row flags mentions_everyone.
@@ -740,21 +783,14 @@ fn unread_badges_show_on_the_channel_row(_app: &mut App) {
     b.sign_chat_in(&mut browser_b.app);
     let server = fresh_name("Chat Hq ");
     create_server(&mut browser_a.app, &server);
+    add_text_channel(&mut browser_a.app, &fresh_name("side"));
     join_by_code(&mut browser_b.app, &mint_invite(&mut browser_a.app));
 
-    // B posts while A never opens the channel, so A's unread state for it
-    // is live when they next see the sidebar.
+    // A sits in a second channel while B posts in #general, so #general is unread for A: its row carries the unread pill at
+    // its left edge (unread-side-pill: a plain unread; the red count pill belongs to @mentions).
     browser_b.app.text("general").click();
     browser_b.app.set_timeout(WAIT);
     send(&mut browser_b.app, "unread message");
-
-    // A taps the server tile: the enter-live fetch pulls the unread counts,
-    // and the channel row carries the unread pill at its left edge
-    // (unread-side-pill — a plain unread; the red count pill belongs to
-    // @mentions).
-    browser_a.app.test_id("rail-server").nth(0).click();
-    browser_a.app.set_timeout(WAIT);
-    browser_a.app.text("general").assert_visible();
     browser_a.app.test_id("unread-side-pill").assert_visible();
     shot(&mut browser_a.app, "chat-unread-badge");
 }
