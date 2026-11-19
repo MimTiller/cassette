@@ -1,10 +1,11 @@
 //! Named roles over the idea-chat RPCs: the snapshot and the edits translate
-//! through `perms_map` and the colour pair below. The model has no mentionable
-//! flag and no reordering verb — a role's position counts UP its ladder (lower
-//! is more senior), so RWND's position (higher first) is the negated idea-chat
-//! one, and a reorder refuses with a sentence naming what this server orders
-//! by. Colours go the other way: idea-chat's `Option<u32>` (0xRRGGBB) and RWND's
-//! `""`/`#rrggbb` string map through one conversion pair both ways.
+//! through `perms_map`, the colour pair below, and the `mentionable` flag, which
+//! rides the wire both ways on this branch. There is no reordering verb — a
+//! role's position counts UP its ladder (lower is more senior), so RWND's
+//! position (higher first) is the negated idea-chat one, and a reorder refuses
+//! with a sentence naming what this server orders by. Colours go the other way:
+//! idea-chat's `Option<u32>` (0xRRGGBB) and RWND's `""`/`#rrggbb` string map
+//! through one conversion pair both ways.
 
 use crate::backend::*;
 use crate::backend::idea_chat::{client, live, perms_map};
@@ -23,16 +24,16 @@ impl RolesApi for IdeaChatBackend {
         }
     }
 
-    // `create_role(space, name, permissions, colour)` answers the fresh role.
-    // The new role starts with the empty permission set — RWND sets powers
-    // through `update_role` after creating — and its colour goes over as idea-
-    // chat's `Option<u32>`; a malformed RWND colour refuses with a sentence.
-    // `mentionable` still has no counterpart and stays ignored.
+    // `create_role(space, name, permissions, colour, mentionable)` answers the
+    // fresh role. The new role starts with the empty permission set — RWND sets
+    // powers through `update_role` after creating — and its colour goes over as
+    // idea-chat's `Option<u32>`; a malformed RWND colour refuses with a
+    // sentence. RWND's `mentionable` rides the wire as idea-chat's own flag.
     async fn create_role(
         server_id: i64,
         name: String,
         color: String,
-        _mentionable: bool,
+        mentionable: bool,
     ) -> Result<CustomRole, ServerError> {
         let colour = match idea_color_of(color) {
             Err(why) => return Err(ServerError::failed(why)),
@@ -43,22 +44,23 @@ impl RolesApi for IdeaChatBackend {
         args.push(client::arg(&name));
         args.push(client::arg::<u64>(0));
         args.push(client::arg(colour));
+        args.push(client::arg(mentionable));
         match client::call_as::<Role>("create_role", args).await {
             Err(e) => Err(e),
             Ok(role) => Ok(custom_role_of(server_id, role.clone())),
         }
     }
 
-    // `update_role(space, role, name, permissions, colour)` answers unit: RWND's
-    // `None` permissions leave them as they are, so the current set comes
-    // back through unchanged; the colour is set to exactly what is sent, like
-    // the name, so RWND's `""` clears it. The fresh record is read off the
+    // `update_role(space, role, name, permissions, colour, mentionable)` answers
+    // unit: RWND's `None` permissions leave them as they are, so the current set
+    // comes back through unchanged; the colour and `mentionable` are set to
+    // exactly what is sent, like the name. The fresh record is read off the
     // snapshot the `RolesChanged` event updates.
     async fn update_role(
         role_id: i64,
         name: String,
         color: String,
-        _mentionable: bool,
+        mentionable: bool,
         permissions: Option<Permissions>,
     ) -> Result<CustomRole, ServerError> {
         let role_wire = live::wire_of(role_id);
@@ -84,6 +86,7 @@ impl RolesApi for IdeaChatBackend {
                 args.push(client::arg(&name));
                 args.push(client::arg::<u64>(new_perms));
                 args.push(client::arg(colour));
+                args.push(client::arg(mentionable));
                 match client::post("update_role", args).await {
                     Err(e) => Err(e),
                     Ok(_) => match live::snapshot().spaces.get(&space_id).and_then(move |space| space.roles.get(&role_wire)) {
@@ -159,16 +162,16 @@ impl RolesApi for IdeaChatBackend {
 // --- helpers this area shares -------------------------------------------
 
 /// RWND's role row from one idea-chat record: its colour translated to RWND's
-/// hex string (the neutral `""` for no colour), never mentionable
-/// (no mention grammar here), and the ladder position negated so RWND's
-/// higher-first ordering matches idea-chat's senior-lowest one.
+/// hex string (the neutral `""` for no colour), its `mentionable` flag carried
+/// across, and the ladder position negated so RWND's higher-first ordering
+/// matches idea-chat's senior-lowest one.
 pub(crate) fn custom_role_of(server_id: i64, role: Role) -> CustomRole {
     CustomRole {
         id: live::see(role.id),
         server_id: server_id,
         name: role.name.clone(),
         color: rwnd_color_of(role.colour),
-        mentionable: false,
+        mentionable: role.mentionable,
         position: -(role.position as i64),
         permissions: perms_map::to_rwnd(role.permissions),
     }
@@ -256,6 +259,7 @@ mod tests {
             permissions: perms::Permission::ViewChannel.bit() | perms::Permission::ManageMembers.bit(),
             position: 2,
             colour: Some(0xE74C3C),
+            mentionable: true,
         });
         let mut members: BTreeMap<Id, Member> = BTreeMap::new();
         members.insert(uid(8), Member { roles: vec!(uid(9)), joined_at: 0 });
@@ -275,7 +279,7 @@ mod tests {
         assert_eq!(snap.roles[0].name, "Helpers".to_string());
         assert_eq!(snap.roles[0].position, -2);
         assert_eq!(snap.roles[0].color, "#e74c3c".to_string());
-        assert_eq!(snap.roles[0].mentionable, false);
+        assert_eq!(snap.roles[0].mentionable, true);
         assert_eq!(snap.roles[0].permissions.contains(Permissions::VIEW_CHANNEL), true);
         assert_eq!(snap.roles[0].permissions.contains(Permissions::KICK_MEMBERS), true);
         assert_eq!(snap.roles[0].permissions.contains(Permissions::BAN_MEMBERS), false);
@@ -308,6 +312,23 @@ mod tests {
         // None, clearing the role.
         assert_eq!(rwnd_color_of(None), "".to_string());
         assert_eq!(idea_color_of("".to_string()), Ok(None));
+    }
+
+    #[test]
+    fn a_mentionable_flag_maps_both_ways() {
+        // The role row reads idea-chat's flag straight across, and a role
+        // written without it reads back without it, so RWND's mention picker
+        // and the wire agree on the same roles.
+        let role = Role {
+            id: uid(9),
+            name: "Helpers".to_string(),
+            permissions: 0,
+            position: 1,
+            colour: None,
+            mentionable: true,
+        };
+        assert_eq!(custom_role_of(1, role.clone()).mentionable, true);
+        assert_eq!(custom_role_of(1, Role { mentionable: false, ..role }).mentionable, false);
     }
 
     #[test]

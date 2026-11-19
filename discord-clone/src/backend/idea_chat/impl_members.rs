@@ -135,7 +135,7 @@ mod tests {
         members.insert(uid(7), Member { roles: Vec::new(), joined_at: 1_000 });
         members.insert(uid(8), Member { roles: vec!(uid(9)), joined_at: 2_000 });
         let mut defs: std::collections::BTreeMap<Id, chat_model::Role> = std::collections::BTreeMap::new();
-        defs.insert(uid(9), chat_model::Role { id: uid(9), name: "Admins".to_string(), permissions: chat_model::perms::ADMIN, position: 0, colour: None });
+        defs.insert(uid(9), chat_model::Role { id: uid(9), name: "Admins".to_string(), permissions: chat_model::perms::ADMIN, position: 0, colour: None, mentionable: false });
         s.spaces.insert(uid(3), Space {
             id: uid(3),
             name: "Alpha".to_string(),

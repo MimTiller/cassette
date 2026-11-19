@@ -343,19 +343,28 @@ fn deliver_spaced(incoming: Signal<Option<WsServerMsg>>, frames: Vec<WsServerMsg
     }
 }
 
-/// A stored body written the way people read it: the server keeps a mention as `<@uuid>` and a channel link as `<#uuid>`, but
-/// the app's mention pills and channel links work on `@handle` and `#name`. Tokens it cannot name stay as they are.
+/// A stored body written the way people read it: the server keeps a mention as
+/// `<@uuid>`, a role mention as `<%uuid>` and a channel link as `<#uuid>`, but
+/// the app's mention pills and channel links work on `@handle`, `@RoleName` and
+/// `#name`. Tokens it cannot name stay as they are.
 pub(crate) fn readable_body(body: &str, world: &State) -> String {
     let mut out = String::with_capacity(body.len());
     let mut rest = body;
     while let Some(at) = rest.find('<') {
         out.push_str(&rest[..at]);
         let tail = &rest[at..];
-        let token = tail.get(0..39).filter(|t| t.ends_with('>') && (t.starts_with("<@") || t.starts_with("<#")));
+        let token = tail.get(0..39).filter(|t| t.ends_with('>') && (t.starts_with("<@") || t.starts_with("<#") || t.starts_with("<%")));
         match token.and_then(|t| uuid::Uuid::parse_str(&t[2..38]).ok().map(|id| (t, id))) {
             Some((t, id)) => {
                 let name = if t.starts_with("<@") {
                     world.users.get(&id).map(|u| format!("@{}", u.handle))
+                } else if t.starts_with("<%") {
+                    // A deleted role answers an empty name, which leaves its
+                    // old mentions as the plain token, like chat-model's rule.
+                    match world.role_label(id).as_str() {
+                        "" => None,
+                        role_name => Some(format!("@{}", role_name)),
+                    }
                 } else {
                     world.channels.get(&id).map(|c| format!("#{}", c.name))
                 };
@@ -375,9 +384,13 @@ pub(crate) fn readable_body(body: &str, world: &State) -> String {
     out
 }
 
-/// The people a message mentions, as the app counts them. `@everyone` names no one, but the server notifies everyone who can read
-/// the channel except the author, so for the viewer it counts as a mention of them (the app's unread-mention count and the row
-/// highlight both ask "is my id in the list").
+/// The people a message mentions, as the app counts them. `@everyone` names no
+/// one, but the server notifies everyone who can read the channel except the
+/// author, so for the viewer it counts as a mention of them (the app's
+/// unread-mention count and the row highlight both ask "is my id in the list").
+/// A `<%role>` token names its holders, so a viewer holding a mentioned role
+/// reads exactly as a directly named person does — the row highlights and the
+/// mention badge count it, like RWND's own `resolve_mentions` for its roles.
 fn mentioned_ids(message: &Message, world: &State) -> Vec<i64> {
     let mut ids: Vec<i64> = message.mentions.iter().map(move |u| see(*u)).collect();
     if message.mentions_everyone {
@@ -386,6 +399,18 @@ fn mentioned_ids(message: &Message, world: &State) -> Vec<i64> {
                 let mine = see(me.user.id);
                 if !ids.contains(&mine) {
                     ids.push(mine);
+                }
+            }
+        }
+    }
+    for role_id in message.mention_roles.iter() {
+        let Some(space_id) = world.channels.get(&message.channel).and_then(move |c| c.space) else { continue };
+        let Some(space) = world.spaces.get(&space_id) else { continue };
+        for (user_id, member) in space.members.iter() {
+            if member.roles.contains(role_id) && *user_id != message.author {
+                let holder = see(*user_id);
+                if !ids.contains(&holder) {
+                    ids.push(holder);
                 }
             }
         }
@@ -847,6 +872,7 @@ mod tests {
                 thread: None,
                 mentions: Vec::new(),
                 mentions_everyone: false,
+                mention_roles: Vec::new(),
                 at: 1_700_000_000_000,
                 edited_at: None,
             }
@@ -882,6 +908,7 @@ mod tests {
                 thread: None,
                 mentions: Vec::new(),
                 mentions_everyone: false,
+                mention_roles: Vec::new(),
                 at: 1_700_000_000_000,
                 edited_at: Some(1_700_000_005_000),
             }
@@ -1097,6 +1124,7 @@ mod tests {
                     kind: MessageKind::Text, body: "one".to_string(),
                     attachments: Vec::new(), reply_to: None, reactions: Vec::new(),
                     thread: None, mentions: Vec::new(), mentions_everyone: false,
+                    mention_roles: Vec::new(),
                     at: 1_700_000_000_000, edited_at: None,
                 },
                 Message {
@@ -1104,6 +1132,7 @@ mod tests {
                     kind: MessageKind::Text, body: "two".to_string(),
                     attachments: Vec::new(), reply_to: None, reactions: Vec::new(),
                     thread: None, mentions: Vec::new(), mentions_everyone: false,
+                    mention_roles: Vec::new(),
                     at: 1_700_000_001_000, edited_at: None,
                 },
             ],
