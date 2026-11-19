@@ -131,7 +131,7 @@ media-stream = { version = "=1.10.0", registry = "idealyst" }
 # comes in through the adapter as a `web_glue::dom::MediaStream`, which the
 # video SDK downcasts out of the stream's native source. Same pin as the
 # idealyst crate's own web-glue dep, so one crate instance.
-web-glue = { version = "=2.2.0", registry = "idealyst", features = ["wasm-bindgen-bridge"] }
+web-glue = { version = "=2.4.0", registry = "idealyst", features = ["wasm-bindgen-bridge"] }
 # The secure-credentials SDK: the session token on NATIVE targets lives in
 # the platform's real secure store (Keychain / Keystore / OS vault). On web
 # every operation errors — by design, a browser has no secure client store —
@@ -169,8 +169,8 @@ net = { version = "=1.9.0", registry = "idealyst", optional = true }
 # datagrams to call-audio/call-video, renew grants). Pinned to the `rwnd-consumable`
 # branch commit, which builds as a git dependency against this app's idealyst
 # 9.x with exactly one copy of media-stream / web-glue / runtime-tls / runtime-core.
-call-session = { git = "https://github.com/MimTiller/idea-chat", rev = "51ac4f80b45ecfcf4b03d753584a07c5645571ed", optional = true }
-call-audio = { git = "https://github.com/MimTiller/idea-chat", rev = "51ac4f80b45ecfcf4b03d753584a07c5645571ed", optional = true }
+call-session = { git = "https://github.com/MimTiller/idea-chat", rev = "0e308fc01a4d512a833c1a4dfd4c3819c1f4de2d", optional = true }
+call-audio = { git = "https://github.com/MimTiller/idea-chat", rev = "0e308fc01a4d512a833c1a4dfd4c3819c1f4de2d", optional = true }
 
 # No backend deps: `register_scene_extensions` is generic over the scene
 # `Host` (this scaffold registers no third-party SDKs), so the app crate
@@ -260,6 +260,6 @@ ureq = { version = "2", features = ["json"] }
 # (through denoise) and call-session pull the registry copies, the app pulls the
 # git ones, and two copies fail to unify. Same pin as idea-chat's own [patch].
 [patch."sparse+https://crates.idealyst.io/index/"]
-media-stream = { git = "https://github.com/IdealystIO/idealyst-native", rev = "26a4aff7434b1c6169bbad6131ba4bedeff7f8c2" }
-web-glue     = { git = "https://github.com/IdealystIO/idealyst-native", rev = "26a4aff7434b1c6169bbad6131ba4bedeff7f8c2" }
-runtime-tls  = { git = "https://github.com/IdealystIO/idealyst-native", rev = "26a4aff7434b1c6169bbad6131ba4bedeff7f8c2" }
+media-stream = { git = "https://github.com/IdealystIO/idealyst-native", rev = "036bf4e5dfc4c3261d921ff9f82db3aaf3d8e5f3" }
+web-glue     = { git = "https://github.com/IdealystIO/idealyst-native", rev = "036bf4e5dfc4c3261d921ff9f82db3aaf3d8e5f3" }
+runtime-tls  = { git = "https://github.com/IdealystIO/idealyst-native", rev = "036bf4e5dfc4c3261d921ff9f82db3aaf3d8e5f3" }
