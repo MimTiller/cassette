@@ -369,7 +369,7 @@ const CHAT_BACKEND_KEY: &str = "chat_backend";
 static CHAT_IDEA_CHAT: std::sync::OnceLock<std::sync::atomic::AtomicBool> = std::sync::OnceLock::new();
 
 /// Pick the chat backend every accessor below runs against: `true` speaks
-/// the idea-chat server, `false` this RWND server. Startup config like
+/// the idea-chat server (the default: the RWND server is legacy), `false` this RWND server. Startup config like
 /// the server base URL, so a process-wide flag, not reactive app state.
 /// Re-apply the persisted startup choice: the flag must exist BEFORE
 /// `connect` runs at app start, so the flavor comes from the storage
@@ -388,7 +388,7 @@ pub fn install_chat_backend_choice() {
 pub fn choose_chat_backend(idea_chat: bool) {
     CHAT_IDEA_CHAT
         .get_or_init(
-            || std::sync::atomic::AtomicBool::new(false)
+            || std::sync::atomic::AtomicBool::new(true)
         )
         .store(idea_chat, std::sync::atomic::Ordering::SeqCst);
     let store = storage::platform_storage(CHAT_BACKEND_NS);
@@ -400,7 +400,7 @@ pub fn choose_chat_backend(idea_chat: bool) {
 pub fn chat_idea_chat() -> bool {
     CHAT_IDEA_CHAT
         .get_or_init(
-            || std::sync::atomic::AtomicBool::new(false)
+            || std::sync::atomic::AtomicBool::new(true)
         )
         .load(std::sync::atomic::Ordering::SeqCst)
 }

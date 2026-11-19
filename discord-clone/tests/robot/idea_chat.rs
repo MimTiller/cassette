@@ -221,19 +221,14 @@ pub fn make_chat_account(handle: String) -> ChatAccount {
 
 // ---- chat browsers and the flows' shared steps ------------------------------
 
-/// JS that seeds the persisted chat-backend pick before the page loads —
-/// the flows script's addInitScript: `install_chat_backend_choice` reads
-/// this storage entry at startup, and every accessor then speaks the chat
-/// wire.
-pub const CHAT_PICK: &str = "try { localStorage.setItem(\"discord-clone:chat:chat_backend\", \"idea-chat\"); } catch (e) {}";
-
 /// Open a browser on the app as the chat server serves it (its origin is the
 /// page's own, so the app's same-origin RPCs and live socket land on the
 /// chat wire). Dropping the Browser kills its Chrome — including when an
 /// assertion panics, since the local unwinds — so no test leaves tabs
 /// behind.
 pub fn open_chat_browser(label: &str) -> Browser {
-    open_browser_at(label, chat_base(), CHAT_PICK.to_string())
+    // No pre-seeded pick: idea-chat is the app's own default, and every row here proves it.
+    open_browser_at(label, chat_base(), String::new())
 }
 
 /// A fresh pair of chat browsers on one fresh server: A signs in, creates
