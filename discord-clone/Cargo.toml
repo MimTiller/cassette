@@ -60,8 +60,8 @@ idealyst = { version = "=9.0.0", registry = "idealyst" }
 # `::runtime_vocabulary::glue::…` paths, and `runtime-scene` because
 # `register_scene_extensions` is generic over the scene `Registry` host.
 runtime-core = { version = "=8.0.0", registry = "idealyst" }
-runtime-vocabulary = { version = "=9.1.0", registry = "idealyst" }
-runtime-scene = { version = "=2.1.0", registry = "idealyst" }
+runtime-vocabulary = { version = "=9.5.0", registry = "idealyst" }
+runtime-scene = { version = "=2.1.1", registry = "idealyst" }
 # The zero-cost Lucide icon pack — each `pub const IconData` referenced lands
 # in the binary (LTO drops the rest); used via `runtime_core::icon(…)`.
 icons-lucide = { version = "=8.0.0", registry = "idealyst" }
@@ -69,11 +69,11 @@ icons-lucide = { version = "=8.0.0", registry = "idealyst" }
 # / `local_offset_minutes` — the web backend installs a `js Date`-backed source
 # during bootstrap). Not re-exported at the `runtime_core` root, so the crate
 # is depended on directly.
-runtime-shared = { version = "=6.1.0", registry = "idealyst" }
+runtime-shared = { version = "=6.3.0", registry = "idealyst" }
 # Recorder backend for the runtime-server sidecar wrapper. Optional —
 # pulled in only by the `sidecar` feature (host-side sidecar build);
 # never compiled for device/web targets.
-dev-server = { version = "=11.0.0", registry = "idealyst", optional = true }
+dev-server = { version = "=11.2.0", registry = "idealyst", optional = true }
 # The backend half of the full-stack pair. We depend on it with DEFAULT
 # features (no `server`), so its `#[server]` fns — e.g. `auth::login` — compile
 # here as typed RPC *stubs* that POST over the `server` SDK's transport. That
@@ -112,7 +112,7 @@ pulldown-cmark = { version = "=0.12.2", default-features = false }
 # no scene handler — so `register_scene_extensions` gains nothing from it.
 # Its default `drop` feature pulls runtime-core/runtime-shared, which resolve
 # to the identical crate instances (same path root as the other SDK deps).
-file-picker = { version = "=8.0.0", registry = "idealyst" }
+file-picker = { version = "=8.1.0", registry = "idealyst" }
 # The plaintext storage SDK: non-secret client state (the signed-in
 # account's identity and per-user last-view spot, the notification level,
 # the accent color) persists through `platform_storage` — `localStorage`
@@ -164,7 +164,7 @@ uuid = { version = "1", features = ["serde"], optional = true }
 # server's `/_srv/` routes and live socket itself (chat-api's transport is
 # `server` 3.0, so the framework's `#[server]` stubs cannot reach it). Same
 # pin as the `server` SDK's own `net` dep, so one crate instance.
-net = { version = "=1.8.0", registry = "idealyst", optional = true }
+net = { version = "=1.9.0", registry = "idealyst", optional = true }
 # idea-chat calls: Nicho's call session (dial the quic-call relay, route
 # datagrams to call-audio/call-video, renew grants). Pinned to the `rwnd-consumable`
 # branch commit, which builds as a git dependency against this app's idealyst
@@ -247,10 +247,10 @@ server_bin      = "server"
 hmac = "0.12.1"
 sha2 = "0.10.9"
 # The robot E2E suite in tests/robot.rs, run by `idealyst test --web`.
-robot-test = { version = "=3.0.0", registry = "idealyst" }
+robot-test = { version = "=3.4.0", registry = "idealyst" }
 # More browsers for multi-user tests (tests/robot/users.rs): a relay each,
 # driven over DevTools; direct server calls for setup.
-robot-relay = { version = "=3.0.0", registry = "idealyst" }
+robot-relay = { version = "=3.1.1", registry = "idealyst" }
 serde_json = "1"
 tempfile = "3"
 tungstenite = "0.24"
