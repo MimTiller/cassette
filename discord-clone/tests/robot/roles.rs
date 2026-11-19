@@ -80,7 +80,7 @@ fn open_server_settings(app: &mut App) {
     app.set_timeout(WAIT);
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn manage_members_is_the_member_roster_tab(app: &mut App) {
     signed_out(app);
     let user = fresh_name("mmbrs");
@@ -104,7 +104,7 @@ fn manage_members_is_the_member_roster_tab(app: &mut App) {
     app.press_key("Escape");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn a_manager_hands_out_only_roles_below_their_own(app: &mut App) {
     // The hierarchy itself is driven over the server API (see the header), so
     // the browser only carries the suite through sign-in/out.

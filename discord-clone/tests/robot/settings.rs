@@ -25,7 +25,7 @@ fn shot(app: &mut App, label: &str) {
     eprintln!("[shot] {label}: {path}");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn the_server_settings_sections_switch(app: &mut App) {
     signed_out(app);
     let user = fresh_name("setsec");
@@ -54,7 +54,7 @@ fn the_server_settings_sections_switch(app: &mut App) {
     shot(app, "settings4-members");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn create_a_role_and_wear_it_from_the_card(app: &mut App) {
     signed_out(app);
     let user = fresh_name("setrole");
@@ -97,7 +97,7 @@ fn create_a_role_and_wear_it_from_the_card(app: &mut App) {
     assert_eq!(name_col, "#e91e63", "my name takes the role colour (got {name_col})");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn switching_the_theme_recolours_the_app(app: &mut App) {
     signed_out(app);
     let user = fresh_name("settheme");

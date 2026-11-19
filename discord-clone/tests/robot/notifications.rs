@@ -58,7 +58,7 @@ fn send(app: &mut App, body: String) {
     }
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn the_new_messages_bar_shows_on_entry_and_jumps(app: &mut App) {
     let (a, b, server, _sid) = crew("unread");
     signed_out(app);
@@ -101,7 +101,7 @@ fn the_new_messages_bar_shows_on_entry_and_jumps(app: &mut App) {
     app.text("lobby0").assert_in_viewport();
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn a_channel_mutes_from_its_menu_and_shows_it(app: &mut App) {
     let (a, _b, server, sid) = crew("mute");
     signed_out(app);

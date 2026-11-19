@@ -4,7 +4,7 @@ use robot_test::{robot_test, App};
 
 use crate::support::{fresh_name, sign_in, sign_out, sign_up, signed_out};
 
-#[robot_test]
+#[robot_test(suites = [legacy, smoke])]
 fn sign_up_sign_out_and_sign_back_in(app: &mut App) {
     signed_out(app);
     let user = fresh_name("auth");
@@ -20,7 +20,7 @@ fn sign_up_sign_out_and_sign_back_in(app: &mut App) {
     app.text(&user).assert_visible();
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, smoke])]
 fn wrong_password_is_refused(app: &mut App) {
     signed_out(app);
     let user = fresh_name("authbad");

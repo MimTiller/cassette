@@ -49,7 +49,7 @@ fn shot(app: &mut App, label: &str) {
     eprintln!("[shot] {label}: {path}");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn replying_shows_the_preview_and_lands_in_the_thread(app: &mut App) {
     let (a, _b, server) = crew("reply");
     signed_out(app);
@@ -79,7 +79,7 @@ fn replying_shows_the_preview_and_lands_in_the_thread(app: &mut App) {
     shot(app, "msg1-reply");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn a_reaction_pill_is_added_and_tapped_back_off(app: &mut App) {
     let (a, _b, server) = crew("react");
     signed_out(app);
@@ -115,7 +115,7 @@ fn a_reaction_pill_is_added_and_tapped_back_off(app: &mut App) {
     shot(app, "msg2-react-removed");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn pinning_toasts_badges_the_header_and_opens_the_pins_panel(app: &mut App) {
     let (a, _b, server) = crew("pin");
     signed_out(app);
@@ -155,7 +155,7 @@ fn pinning_toasts_badges_the_header_and_opens_the_pins_panel(app: &mut App) {
     app.test_id("pins-panel-title").assert_hidden();
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn markdown_bold_and_inline_code_get_their_own_runs(app: &mut App) {
     let (a, _b, server) = crew("md");
     signed_out(app);
@@ -199,7 +199,7 @@ fn md_runs(app: &mut App, body: &str) -> Vec<String> {
     }
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn editing_and_deleting_a_message_both_open_the_action_menu(app: &mut App) {
     let (a, _b, server) = crew("menuactions");
     signed_out(app);
@@ -236,7 +236,7 @@ fn editing_and_deleting_a_message_both_open_the_action_menu(app: &mut App) {
     shot(app, "menu-deleted");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn scrolling_up_offers_the_jump_to_bottom_pill(app: &mut App) {
     let (a, _b, server) = crew("jump");
     signed_out(app);
@@ -279,7 +279,7 @@ fn scrolling_up_offers_the_jump_to_bottom_pill(app: &mut App) {
     shot(app, "msg4-jumped");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn the_other_browser_sees_the_typing_indicator(app: &mut App) {
     let (a, b, server) = crew("type");
     signed_out(app);
@@ -302,7 +302,7 @@ fn the_other_browser_sees_the_typing_indicator(app: &mut App) {
     shot(&mut other.app, "msg5-typing-b");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn a_mention_carries_its_pill(app: &mut App) {
     let (a, b, server) = crew("mention");
     signed_out(app);

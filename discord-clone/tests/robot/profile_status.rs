@@ -43,7 +43,7 @@ fn crew(prefix: &str) -> Crew {
     Crew { a, b, server }
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn about_me_and_name_seen_from_the_others_card(app: &mut App) {
     let crew = crew("pf");
 
@@ -93,7 +93,7 @@ fn about_me_and_name_seen_from_the_others_card(app: &mut App) {
     sign_out(app);
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn do_not_disturb_reaches_the_other_user_as_red(app: &mut App) {
     let crew = crew("pdnd");
 
@@ -133,7 +133,7 @@ fn do_not_disturb_reaches_the_other_user_as_red(app: &mut App) {
     sign_out(app);
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn cat_ears_reach_the_other_browser_and_come_off_again(app: &mut App) {
     let crew = crew("ears");
 
@@ -176,7 +176,7 @@ fn cat_ears_reach_the_other_browser_and_come_off_again(app: &mut App) {
     sign_out(app);
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn a_profile_effect_shows_on_the_card_and_comes_off_again(app: &mut App) {
     let crew = crew("fx");
     signed_out(app);
@@ -225,7 +225,7 @@ fn a_profile_effect_shows_on_the_card_and_comes_off_again(app: &mut App) {
     sign_out(app);
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn the_appearance_picker_offers_rwnd_icons(app: &mut App) {
     signed_out(app);
     let account = Account::new("icon");

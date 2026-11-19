@@ -64,7 +64,7 @@ fn waits_for_emoji(app: &mut App, name: &str) {
     assert!(listed, "the uploaded emoji never reached the emoji table");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, look_and_feel])]
 fn an_animated_webp_server_emoji_uploads_and_renders_in_a_message(app: &mut App) {
     signed_out(app);
     let a = Account::new("covwebp");
@@ -90,7 +90,7 @@ fn an_animated_webp_server_emoji_uploads_and_renders_in_a_message(app: &mut App)
     shot(app, "webp-emoji-render");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, look_and_feel])]
 fn a_large_still_server_emoji_is_shrunk_before_upload(app: &mut App) {
     signed_out(app);
     let a = Account::new("covbig");
@@ -117,7 +117,7 @@ fn a_large_still_server_emoji_is_shrunk_before_upload(app: &mut App) {
     shot(app, "shrunk-emoji-render");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, look_and_feel])]
 fn a_sticker_sent_from_the_dm_picker_shows_for_the_other_friend(app: &mut App) {
     // A and B are friends before either signs in: the DM search starts
     // conversations with friends, like the dms_friends suite seeds them.
