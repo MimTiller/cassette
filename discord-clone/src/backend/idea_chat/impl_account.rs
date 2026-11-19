@@ -4,45 +4,35 @@
 use crate::backend::*;
 use crate::backend::idea_chat::{client, live, model};
 use chat_model::{User, Relation};
+use serde_json::Value;
 
 impl AccountApi for IdeaChatBackend {
-    // RWND signs in by username; idea-chat by email. On this server's account
-    // model signup stores `email: username`, so the username rides the email
-    // slot — see `signup` below, which does the same.
-    async fn login(username: String, password: String) -> Result<LoginResult, ServerError> {
-        let mut args = Vec::new();
-        args.push(client::arg(&username));
-        args.push(client::arg(&password));
-        let session = match client::call_as::<model::Session>("sign_in", args).await {
+    // idea-chat signs in by email. On the Cassette model signup stored
+    // `email: username`, but the real server refuses a non-email, so the
+    // UI's own path is `idea_chat_sign_in` below, where the login form's
+    // first field is labelled Email. This impl stays for any caller that
+    // only wants the signed-in-or-refused answer; an unverified account
+    // answers the `Unverified` refusal through the plain error channel.
+    async fn login(email: String, password: String) -> Result<LoginResult, ServerError> {
+        let args = sign_in_args(email, password);
+        match client::call_as::<model::Session>("sign_in", args).await {
             Err(e) => return Err(e),
-            Ok(session) => session,
-        };
-        let me = session.me.user;
-        Ok(LoginResult {
-            user_id: live::see(me.id),
-            // Web: `token` is null and the httpOnly `session` cookie the same
-            // response set carries the session; native: the bearer.
-            token: session.token.unwrap_or_default(),
-            username: me.handle.clone(),
-            display_name: shown_or_none(me.clone()),
-            avatar_url: me.avatar.clone(),
-            blocked_ids: blocked_ids_of_me(),
-        })
+            Ok(session) => Ok(login_from_session(session)),
+        }
     }
 
-    // idea-chat signs up by email + password + handle + display name and
-    // leaves a verification code on its way; RWND's flow answers the claim and
-    // the next `login` gets a session once the email is verified. The username
-    // is the handle and doubles as the email (see `login`).
+    // The real server makes accounts with an email: the username is the
+    // handle and display name, and a verification code rides an email.
+    // `signup` on the trait stays for callers that only want create-or-refuse
+    // (it still cannot reach the idea-chat server on the username alone);
+    // the UI's path is `idea_chat_signup` below, which also lands the
+    // email-code step.
     async fn signup(username: String, password: String) -> Result<SignupResult, ServerError> {
-        let mut args = Vec::new();
-        args.push(client::arg(&username));
-        args.push(client::arg(&password));
-        args.push(client::arg(&username));
-        args.push(client::arg(&username));
+        let email = username;
+        let args = sign_up_args(email.clone(), password, email.clone(), email.clone());
         match client::post("sign_up", args).await {
             Err(e) => Err(e),
-            Ok(_) => Ok(SignupResult { user_id: 0, username }),
+            Ok(_) => Ok(signup_from_email(email)),
         }
     }
 
@@ -223,6 +213,174 @@ fn blocked_ids_of_me() -> Vec<i64> {
         }
     }
     out
+}
+
+/// Pack a `Session` answer into the `LoginResult` the identity seam records.
+fn login_from_session(session: model::Session) -> LoginResult {
+    let me = session.me.user;
+    // The id table is keyed by the signed-in account's name, and `apply_identity` only records that name AFTER this result is
+    // built. Numbering "me" first would put the account's own id in the empty-name table, and every later lookup (which uses the
+    // account's table) would number it differently, so the app no longer knew which messages were the user's own (no Edit or
+    // Delete on them). Record the name before numbering anything.
+    *crate::auth::CURRENT_USERNAME.lock().unwrap_or_else(|p| p.into_inner()) = me.handle.clone();
+    LoginResult {
+        user_id: live::see(me.id),
+        // Web: `token` is null and the httpOnly `session` cookie the same
+        // response set carries the session; native: the bearer.
+        token: session.token.unwrap_or_default(),
+        username: me.handle.clone(),
+        display_name: shown_or_none(me.clone()),
+        avatar_url: me.avatar.clone(),
+        blocked_ids: blocked_ids_of_me(),
+    }
+}
+
+/// What `login` maps onto for the caller that only wants create-or-refuse.
+fn signup_from_email(email: String) -> SignupResult {
+    SignupResult { user_id: 0, username: email }
+}
+
+// --- the email-code auth surface the login/sign-up screens drive ------------
+//
+// The idea-chat server signs people in and up with an EMAIL, and a new
+// account must confirm an emailed code before it can be used. These entry
+// points (not part of `AccountApi`: the Cassette backend has no email half
+// of the model) sit beside the trait impl so the `crate::backend` accessors
+// below can dispatch on `chat_idea_chat()`. The argument builders and the
+// answer classifier are pure and unit-tested against the recorded wire
+// shapes; the refusals' `message` text reaches the form through
+// `crate::errors::friendly` like every other server error.
+
+/// Which step the login form shows after a `sign_in` answer: signed in, or
+/// the emailed-code step for that email.
+pub enum SignInAnswer {
+    /// The server answered a Session; the account is signed in.
+    SignedIn(LoginResult),
+    /// The account exists but its email is unverified: a code was just sent
+    /// to the email — the form moves to the code step.
+    VerifyEmail(String),
+}
+
+pub fn sign_in_args(email: String, password: String) -> Vec<Value> {
+    Vec::from([client::arg(&email), client::arg(&password)])
+}
+
+pub fn sign_up_args(email: String, password: String, handle: String, display_name: String) -> Vec<Value> {
+    Vec::from([
+        client::arg(&email),
+        client::arg(&password),
+        client::arg(&handle),
+        client::arg(&display_name),
+    ])
+}
+
+pub fn verify_email_args(email: String, code: String) -> Vec<Value> {
+    Vec::from([client::arg(&email), client::arg(&code)])
+}
+
+pub fn resend_code_args(email: String) -> Vec<Value> {
+    Vec::from([client::arg(&email)])
+}
+
+/// Create an account with an email, password, handle and display name — in
+/// the wire's declaration order — and answer the email the verification
+/// code was sent to.
+pub async fn signup_email(email: String, password: String, handle: String, display_name: String) -> Result<String, ServerError> {
+    let args = sign_up_args(email.clone(), password, handle, display_name);
+    match client::post("sign_up", args).await {
+        Err(e) => Err(e),
+        Ok(answer) => Ok(email_from_signup(answer, email)),
+    }
+}
+
+/// Sign in with an email and password, answering which step the form shows.
+pub async fn sign_in_email(email: String, password: String) -> Result<SignInAnswer, ServerError> {
+    let args = sign_in_args(email.clone(), password);
+    match client::post_envelope("sign_in", args).await {
+        Err(e) => Err(e),
+        Ok(envelope) => sign_in_step(envelope, email),
+    }
+}
+
+/// Confirm the emailed code: the answer is a Session and the browser's
+/// `session` cookie is set by the same response, so the caller lands signed
+/// in exactly as after a normal login.
+pub async fn verify_email(email: String, code: String) -> Result<LoginResult, ServerError> {
+    let args = verify_email_args(email.clone(), code);
+    match client::call_as::<model::Session>("verify_email", args).await {
+        Err(e) => Err(e),
+        Ok(session) => Ok(login_from_session(session)),
+    }
+}
+
+/// Send another verification code. The server is deliberately silent for
+/// unknown or already-verified addresses; success only says the call went
+/// through.
+pub async fn resend_code(email: String) -> Result<(), ServerError> {
+    let args = resend_code_args(email);
+    match client::post("resend_code", args).await {
+        Err(e) => Err(e),
+        Ok(_) => Ok(()),
+    }
+}
+
+/// Decide which step the login form shows from a raw `sign_in` envelope: the
+/// Session answer signs the account in, the `Unverified` refusal (the server
+/// also re-sent a code) moves the form to the code step for the email it
+/// names, and every other refusal reads as its `message`.
+pub(crate) fn sign_in_step(envelope: Value, submitted: String) -> Result<SignInAnswer, ServerError> {
+    if envelope.get("Err").is_some() || envelope.get("e").is_some() {
+        return match unverified_email(envelope.clone(), submitted) {
+            Some(email) => Ok(SignInAnswer::VerifyEmail(email)),
+            None => match client::open_envelope(envelope) {
+                Ok(_) => Err(ServerError::failed("The server refused without an error.".to_string())),
+                Err(e) => Err(e),
+            },
+        };
+    }
+    match client::open_envelope(envelope) {
+        Err(e) => Err(e),
+        Ok(answer) => match serde_json::from_value::<model::Session>(answer) {
+            Err(e) => Err(ServerError::Codec(e.to_string())),
+            Ok(session) => Ok(SignInAnswer::SignedIn(login_from_session(session))),
+        },
+    }
+}
+
+/// The email an `Unverified` refusal names, in either envelope shape
+/// (`{"Err":{"Failed":{"why":"unverified","email":…}}}` or `{"e":{…}}`).
+pub(crate) fn unverified_email(envelope: Value, submitted: String) -> Option<String> {
+    let payload: Value = match envelope.get("Err") {
+        Some(err) => match err.get("Failed") {
+            None => err.clone(),
+            Some(failed) => failed.clone(),
+        },
+        None => match envelope.get("e") {
+            None => envelope,
+            Some(older) => older.clone(),
+        },
+    };
+    match payload.get("why") {
+        Some(Value::String(why)) if why == "unverified" =>
+            Some(match payload.get("email") {
+                Some(Value::String(email)) if !email.trim().is_empty() => email.clone(),
+                _ => submitted.clone(),
+            }),
+        _ => None,
+    }
+}
+
+/// The email `sign_up` echoed back (`SignedUp { email }`), or the submitted
+/// one when the answer carries no usable email.
+pub(crate) fn email_from_signup(answer: Value, submitted: String) -> String {
+    let held = match serde_json::from_value::<model::SignedUp>(answer) {
+        Err(_) => return submitted.clone(),
+        Ok(signed_up) => signed_up,
+    };
+    match held.email.trim() {
+        "" => submitted.clone(),
+        email => email.to_string(),
+    }
 }
 
 /// The display name only when it differs from the handle (RWND treats

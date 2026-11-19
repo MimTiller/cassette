@@ -251,6 +251,53 @@ pub async fn sign_up(username: &str, password: &str) -> Result<i64, String> {
     }
 }
 
+// The email-code half of the seam: only the idea-chat provider has one, so
+// the login screen calls these when `crate::backend::chat_idea_chat()` holds
+// and the built-in screens never reach them. The answer types mirror the
+// backend accessors' (strings are already user-facing messages).
+
+/// Create an account with an email, password, handle and display name.
+/// Answers the email the verification code went to — the caller then shows
+/// the code step, so the account is NOT signed in yet.
+pub async fn sign_up_email(email: &str, password: &str, handle: &str, display_name: &str) -> Result<String, String> {
+    crate::backend::signup_email(email.to_string(), password.to_string(), handle.to_string(), display_name.to_string()).await
+}
+
+/// Sign in with an email and password. Answers `true` when the account is
+/// signed in, `false` when the server said the email is unverified (a fresh
+/// code went to it) and the form must move to the emailed-code step.
+///
+/// A successful sign-in records the identity exactly as the ordinary login and
+/// `verify_email` do: without it the shell opens but the app does not know who
+/// it is, and the server rail never shows the account's servers.
+pub async fn sign_in_email(email: &str, password: &str) -> Result<bool, String> {
+    match crate::backend::sign_in_email(email.to_string(), password.to_string()).await {
+        Err(message) => Err(message),
+        Ok(None) => Ok(false),
+        Ok(Some(login)) => apply_identity(Ok(identity_from_login(login)), current_provider()).map(|_| true),
+    }
+}
+
+/// Confirm the emailed code and record the identity it signs in, so the
+/// caller lands as after a normal login.
+pub async fn verify_email(email: &str, code: &str) -> Result<(), String> {
+    match apply_identity(
+        crate::backend::verify_email(email.to_string(), code.to_string()).await
+            .map(move |login| identity_from_login(login)),
+        current_provider(),
+    ) {
+        Err(message) => Err(message),
+        Ok(_) => Ok(()),
+    }
+}
+
+/// Send another verification code for an email. The server is silent for
+/// unknown or already-verified addresses; success only says the call went
+/// through.
+pub async fn resend_code(email: &str) -> Result<(), String> {
+    crate::backend::resend_code(email.to_string()).await
+}
+
 /// Change the signed-in account's password.
 pub async fn apply_password_change(current: &str, next: &str) -> Result<(), String> {
     match current_provider() {

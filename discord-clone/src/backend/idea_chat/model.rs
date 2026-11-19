@@ -95,6 +95,13 @@ pub struct Session {
     pub me: Me,
 }
 
+/// Sign-up went through; a verification code is on its way to `email`.
+/// Restated from `chat-api/src/auth.rs` at the pinned rev.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SignedUp {
+    pub email: String,
+}
+
 /// Decode an idea-chat error body (`{"e":{"<kind>":{"message":…}}}`) into a
 /// `ServerError` the accessors can render. Unknown kinds become `failed`.
 pub(crate) fn decode_error(body: serde_json::Value) -> ServerError {

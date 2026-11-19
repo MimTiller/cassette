@@ -141,16 +141,21 @@ tree.
   `Discord Clone:web`, never a path, port or pid. Keep one
   tab per dev server, since several tabs don't show up as separate apps; for
   a second user, script that side (or run a second dev server).
-- **Drive it:** `find_element` / `find_all_elements` (by `test_id`, label or
-  kind), `click` or `tap_native`, `type_text`, `get_state`, `get_snapshot`,
+- **Drive it:** `find_element` (by `test_id`, label or kind; `mode` is
+  `first`, `all` or `count`), `click` (the framework's handlers) or
+  `pointer_native` (real input: tap, hover, press), `type_text`,
+  `inspect_element` (`what`: state, frame, children, parent), `get_snapshot`,
   `screenshot`, `get_logs`, `read_signal`, and `call_function` for
-  `#[robot_fn]` hooks such as `avatar.upload`.
+  `#[robot_fn]` hooks such as `avatar.upload`. Any verb without its own tool
+  goes through `call_verb`.
 - **`test_id`s live in the app's tree, not the web page's DOM.** Look them
   up through MCP. Its results say whether each match is `visible` and
   `in_viewport`; text and position guesses in the DOM can hit hidden copies
   of a control.
-- **Look things up:** for idealyst questions, use `search`, `read_guide`,
-  `describe_primitive`, `describe_component` and `list_recipes`.
+- **Look things up:** for idealyst questions, use `search`, `list` (a slice
+  of the catalog: components, primitives, recipes, guides) and `describe` (one
+  entry in full, including a guide's text). `get_docs` documents the tools
+  themselves.
 - **Fall back to scripts only for gaps.** Drive Chrome over the DevTools
   protocol only for what MCP can't do, and say which gap you hit.
 

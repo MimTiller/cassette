@@ -11,6 +11,9 @@ enum Screen {
     SignUp,
     /// Opened from a password reset link (`/?reset=<token>`).
     Reset,
+    /// The emailed-code step, idea-chat only: after a sign-up or an
+    /// unverified sign-in the server sent a code, so the form asks for it.
+    VerifyEmail,
 }
 
 /// Decoration for the login canvas: a cassette-motif outline (a rounded
@@ -119,6 +122,10 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
     // Whether the "Forgot your password?" link has been opened.
     let forgot: Signal<bool> = signal(false);
     let reset_token: Signal<String> = signal(crate::auth::reset_token_in_url().unwrap_or_default());
+    // Idea-chat accounts are keyed by an email; the email the current
+    // flow's code was sent to, kept while on the VerifyEmail screen.
+    let email: Signal<String> = signal(String::new());
+    let code: Signal<String> = signal(String::new());
     let screen: Signal<Screen> =
         signal(if reset_token.get().is_empty() { Screen::LogIn } else { Screen::Reset });
     // A persisted session that was just dropped as stale leaves a one-shot
@@ -208,9 +215,42 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
         let root = crate::app::root_alive();
         let authed = authed.clone();
         let busy = busy.clone();
+        let screen = screen.clone();
+        let email = email.clone();
+        let code = code.clone();
         move || {
             let name = username.get();
             let pw = password.get();
+            if crate::backend::chat_idea_chat() {
+                let who = email.get();
+                if who.trim().is_empty() || pw.trim().is_empty() {
+                    error.set("Email and password are required.".to_string());
+                    return;
+                }
+                if busy.get() {
+                    return;
+                }
+                error.set(String::new());
+                notice.set(String::new());
+                busy.set(true);
+                runtime_core::spawn_then_in(&root, async move { crate::identity::sign_in_email(&who, &pw).await }, move |result| {
+                    match result {
+                        // The server's "unverified" refusal sent a fresh
+                        // code: move the form to the code step for it.
+                        Ok(false) => {
+                            screen.set(Screen::VerifyEmail);
+                            password.set(String::new());
+                            confirm.set(String::new());
+                            code.set(String::new());
+                            notice.set("We sent a new code to your email. Enter it to finish signing in.".to_string());
+                        }
+                        Ok(true) => authed.set(true),
+                        Err(message) => error.set(message),
+                    }
+                    busy.set(false);
+                });
+                return;
+            }
             if name.trim().is_empty() || pw.trim().is_empty() {
                 error.set("Username and password are required.".to_string());
                 return;
@@ -237,9 +277,45 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
         let root = crate::app::root_alive();
         let authed = authed.clone();
         let busy = busy.clone();
+        let screen = screen.clone();
+        let email = email.clone();
+        let code = code.clone();
         move || {
             let name = username.get();
             let pw = password.get();
+            if crate::backend::chat_idea_chat() {
+                let who = email.get();
+                if who.trim().is_empty() || pw.trim().is_empty() {
+                    error.set("Pick an email and a password.".to_string());
+                    return;
+                }
+                if pw != confirm.get() {
+                    error.set("The passwords don't match.".to_string());
+                    return;
+                }
+                if busy.get() {
+                    return;
+                }
+                error.set(String::new());
+                busy.set(true);
+                // The username doubles as the handle and the display name.
+                runtime_core::spawn_then_in(&root, async move { crate::identity::sign_up_email(&who, &pw, &name, &name).await }, move |result| {
+                    match result {
+                        // The account exists but waits on its code: the
+                        // answer is the email the code went to.
+                        Ok(_) => {
+                            screen.set(Screen::VerifyEmail);
+                            password.set(String::new());
+                            confirm.set(String::new());
+                            code.set(String::new());
+                            notice.set("Check your email: we sent a code that works for fifteen minutes.".to_string());
+                        }
+                        Err(message) => error.set(message),
+                    }
+                    busy.set(false);
+                });
+                return;
+            }
             if name.trim().is_empty() || pw.trim().is_empty() {
                 error.set("Pick a username and a password.".to_string());
                 return;
@@ -256,6 +332,55 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             runtime_core::spawn_then_in(&root, async move { crate::identity::sign_up(&name, &pw).await }, move |result| {
                 match result {
                     Ok(_) => authed.set(true),
+                    Err(message) => error.set(message),
+                }
+                busy.set(false);
+            });
+        }
+    };
+    // VerifyEmail (idea-chat only): confirm the emailed code, which signs
+    // the account in as a normal login does.
+    let do_verify = {
+        let root = crate::app::root_alive();
+        let authed = authed.clone();
+        let busy = busy.clone();
+        move || {
+            let who = email.get();
+            let digits = code.get();
+            if who.trim().is_empty() || digits.trim().is_empty() {
+                error.set("The email and the code are both needed.".to_string());
+                return;
+            }
+            if busy.get() {
+                return;
+            }
+            error.set(String::new());
+            busy.set(true);
+            runtime_core::spawn_then_in(&root, async move { crate::identity::verify_email(&who, &digits).await }, move |result| {
+                match result {
+                    Ok(_) => authed.set(true),
+                    Err(message) => error.set(message),
+                }
+                busy.set(false);
+            });
+        }
+    };
+    // A "Resend code" link for the code step: the call is fire-and-forget —
+    // its only visible effect is the green note under the fields.
+    let do_resend = {
+        let root = crate::app::root_alive();
+        let busy = busy.clone();
+        let email = email.clone();
+        move || {
+            if busy.get() {
+                return;
+            }
+            error.set(String::new());
+            notice.set(String::new());
+            busy.set(true);
+            runtime_core::spawn_then_in(&root, async move { crate::identity::resend_code(&email.get()).await }, move |result| {
+                match result {
+                    Ok(_) => notice.set("A new code was sent to your email.".to_string()),
                     Err(message) => error.set(message),
                 }
                 busy.set(false);
@@ -304,7 +429,11 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
         Screen::LogIn => do_login(),
         Screen::SignUp => do_signup(),
         Screen::Reset => do_reset(),
+        Screen::VerifyEmail => do_verify(),
     });
+    // The resend link calls the fire-and-forget resend through an Rc, so
+    // each render of the form can copy the handle instead of moving it.
+    let resend_fn: Rc<dyn Fn()> = Rc::new(move || do_resend());
     // Each input gets its own Enter-to-submit handler.
     let on_enter = {
         let on_submit = on_submit.clone();
@@ -323,6 +452,8 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
     let on_username_change = move |s: String| username.set(s);
     let on_pw_change = move |s: String| password.set(s);
     let on_confirm_change = move |s: String| confirm.set(s);
+    let on_email_change = move |s: String| email.set(s);
+    let on_code_change = move |s: String| code.set(s);
     // Switching forms clears the passwords and any messages, so nothing typed
     // or reported in one form carries into the other. Leaving the reset form
     // drops the link's token.
@@ -348,6 +479,11 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
             let (err, current, in_flight, note, forgot_open) = state.clone();
             let is_signup = current == Screen::SignUp;
             let is_reset = current == Screen::Reset;
+            let is_verify = current == Screen::VerifyEmail;
+            // In idea-chat mode the account is keyed by an email, so both the
+            // log-in and the sign-up form show one, and the code step keys on
+            // it too.
+            let ic = crate::backend::chat_idea_chat();
 
             let tab = |label: &str, target: Screen, test_id: &'static str| {
                 let active = target == current;
@@ -400,8 +536,13 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
 
             let (heading, sub) = match current {
                 Screen::LogIn => ("Welcome back!", "We're so excited to see you again!"),
-                Screen::SignUp => ("Create an account", "Pick a username and password to join."),
+                Screen::SignUp => ("Create an account", if ic {
+                        "Pick an email and a password to join."
+                    } else {
+                        "Pick a username and password to join."
+                    }),
                 Screen::Reset => ("Choose a new password", "This link works once."),
+                Screen::VerifyEmail => ("Check your email", "Enter the code we sent to your email to finish."),
             };
             let notice_el = (!note.is_empty()).then(|| {
                 ui! {
@@ -414,14 +555,19 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
                     }) { note }
                 }
             });
-            let username_el = (!is_reset).then(|| {
+            let username_label: String = if ic && current == Screen::LogIn {
+                "Email".to_string()
+            } else {
+                "Username".to_string()
+            };
+            let username_el = (is_signup || (current == Screen::LogIn && !ic)).then(|| {
                 ui! {
                     view(style = StyleRules {
                         align_self: Some(AlignSelf::Stretch),
                         flex_direction: Some(FlexDirection::Column),
                         ..Default::default()
                     }) {
-                        text(style = label_style.clone()) { "Username".to_string() }
+                        text(style = label_style.clone()) { username_label }
                         text_input(
                             value = username,
                             test_id = "login-email",
@@ -460,6 +606,49 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
                             }
                             TouchResponse::CONSUMED
                         })
+                    }
+                }
+            });
+            // Idea-chat: an Email field, shown on every step of the flow —
+            // the first field of the log-in form, the sign-up form, and the
+            // code step.
+            let email_el = ic.then(|| {
+                ui! {
+                    view(style = StyleRules {
+                        align_self: Some(AlignSelf::Stretch),
+                        flex_direction: Some(FlexDirection::Column),
+                        ..Default::default()
+                    }) {
+                        text(style = label_style.clone()) { "Email".to_string() }
+                        text_input(
+                            value = email,
+                            test_id = "login-email-field",
+                            on_change = on_email_change,
+                            placeholder = "you@example.com",
+                            style = field_style.clone(),
+                        )
+                        .on_key_down(on_enter())
+                    }
+                }
+            });
+            // Idea-chat's code step: the code the server emailed, entered
+            // against the email above.
+            let code_el = is_verify.then(|| {
+                ui! {
+                    view(style = StyleRules {
+                        align_self: Some(AlignSelf::Stretch),
+                        flex_direction: Some(FlexDirection::Column),
+                        ..Default::default()
+                    }) {
+                        text(style = label_style.clone()) { "Code".to_string() }
+                        text_input(
+                            value = code,
+                            test_id = "login-code",
+                            on_change = on_code_change,
+                            placeholder = "code from your email",
+                            style = field_style.clone(),
+                        )
+                        .on_key_down(on_enter())
                     }
                 }
             });
@@ -509,9 +698,54 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
                 (Screen::SignUp, false) => "Create Account",
                 (Screen::Reset, true) => "Saving…",
                 (Screen::Reset, false) => "Set Password",
+                (Screen::VerifyEmail, true) => "Verifying…",
+                (Screen::VerifyEmail, false) => "Verify",
             }
             .to_string();
             let password_label = if is_reset { "New password" } else { "Password" }.to_string();
+            let password_el = (!is_verify).then(|| ui! {
+                view(style = StyleRules {
+                    align_self: Some(AlignSelf::Stretch),
+                    flex_direction: Some(FlexDirection::Column),
+                    ..Default::default()
+                }) {
+                    text(style = label_style.clone()) { password_label }
+                    text_input(
+                        value = password,
+                        test_id = "login-password",
+                        on_change = on_pw_change,
+                        placeholder = "••••••••",
+                        secure = true,
+                        style = field_style.clone(),
+                    )
+                    .on_key_down(on_enter())
+                }
+            });
+            let resend_click = {
+                let resend_fn = resend_fn.clone();
+                move || resend_fn()
+            };
+            let resend_el = is_verify.then(|| {
+                ui! {
+                    view(style = StyleRules {
+                        margin_top: Some(px(6.0)),
+                        flex_direction: Some(FlexDirection::Row),
+                        ..Default::default()
+                    }, test_id = "login-resend-code") {
+                        text(style = StyleRules {
+                            font_size: Some(px(12.0)),
+                            color: Some(col(theme::TEXT_LINK)),
+                            ..Default::default()
+                        }) { "Resend code".to_string() }
+                    }
+                    .on_touch(move |ev| {
+                        if ev.phase == TouchPhase::Ended {
+                            resend_click();
+                        }
+                        TouchResponse::CONSUMED
+                    })
+                }
+            });
             let submit_click = {
                 let on_submit = on_submit.clone();
                 move || on_submit()
@@ -521,6 +755,7 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
                 Screen::LogIn => ("Need an account?", "Sign up", Screen::SignUp, "login-signup-toggle"),
                 Screen::SignUp => ("Already have an account?", "Log in", Screen::LogIn, "login-signin-toggle"),
                 Screen::Reset => ("Remembered it?", "Log in", Screen::LogIn, "login-signin-toggle"),
+                Screen::VerifyEmail => ("Wrong email?", "Start over", Screen::LogIn, "login-signin-toggle"),
             };
             let switch_link = ui! {
                 view(style = StyleRules {
@@ -575,16 +810,12 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
                     if let Some(el) = username_hint {
                         el
                     }
-                    text(style = label_style.clone()) { password_label }
-                    text_input(
-                        value = password,
-                        test_id = "login-password",
-                        on_change = on_pw_change,
-                        placeholder = "••••••••",
-                        secure = true,
-                        style = field_style.clone(),
-                    )
-                    .on_key_down(on_enter())
+                    if let Some(el) = email_el {
+                        el
+                    }
+                    if let Some(el) = password_el {
+                        el
+                    }
                     if let Some(el) = forgot_el {
                         el
                     }
@@ -592,6 +823,12 @@ pub(super) fn login_screen(authed: Signal<bool>, busy: Signal<bool>) -> Element 
                         el
                     }
                     if let Some(el) = err_el {
+                        el
+                    }
+                    if let Some(el) = code_el {
+                        el
+                    }
+                    if let Some(el) = resend_el {
                         el
                     }
                     view(style = submit_style.clone()) {

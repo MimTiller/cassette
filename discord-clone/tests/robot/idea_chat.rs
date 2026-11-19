@@ -42,12 +42,12 @@
 //! replayed in a `cookie:` header, the one credential the browser itself
 //! proves it holds.
 //!
-//! Rows that cannot work over idea-chat yet, written and marked ignored:
-//! `an_image_attachment_shows_in_both_browsers` (uploads need a storage
-//! bucket and this host runs none, so `begin_upload` answers its
-//! Unavailable refusal) and `a_server_tile_carries_an_unread_badge` (the
-//! rail's server tile draws no unread marker in the app at all — the
-//! channel rows do, which the unread test covers).
+//! A row that cannot work over idea-chat yet, written and marked ignored:
+//! `a_server_tile_carries_an_unread_badge` (the rail's server tile draws no
+//! unread marker in the app at all — the channel rows do, which the unread
+//! test covers). Uploads need an object store: the wrapper gives the chat
+//! server the host's Garage (`~/s3.env`), and `an_image_attachment_shows_in_both_browsers`
+//! pushes an image through the whole path.
 
 use robot_test::{json, robot_test, App, Value};
 
@@ -110,6 +110,16 @@ fn ureq_chat(function: String, args: Vec<Value>, session: &str) -> Result<ureq::
     req.send_string(&json!(args).to_string())
 }
 
+/// The sentence in a refusal: a bare string, or the `message` of an object that may be wrapped
+/// (`{"Err": {"Failed": {"message": ..., "why": ...}}}`).
+fn refusal_text(v: &Value) -> Option<&str> {
+    match v {
+        Value::String(text) => Some(text.as_str()),
+        Value::Object(map) => map.get("message").and_then(|m| m.as_str()).or_else(|| map.values().find_map(refusal_text)),
+        _ => None,
+    }
+}
+
 /// The same call when the rules should refuse it: answers the refusal's
 /// message text instead of panicking (the way roles.rs's `srv_refused` does
 /// against the RWND server).
@@ -121,7 +131,8 @@ pub fn chat_srv_refused(function: String, args: Vec<Value>, session: &str) -> St
     };
     let out: Value = response.into_json().unwrap_or_else(|_| panic!("chat {function}: refused with an unreadable body"));
     match out.get("Err").or_else(|| out.get("Failed")) {
-        Some(err) => err.as_str().unwrap_or_else(|| panic!("chat {function}: refused with a non-string body: {err}")).to_string(),
+        Some(err) => refusal_text(err)
+            .unwrap_or_else(|| panic!("chat {function}: refused with a body that has no message: {err}")).to_string(),
         None => panic!("chat {function}: succeeded when the rules should have refused it (reply {out})")
     }
 }
@@ -145,20 +156,26 @@ pub struct ChatAccount {
 
 impl ChatAccount {
     /// Sign this account in through the login screen — chat's login maps
-    /// the username onto the email slot, so the username field takes the
-    /// email. The 10/min sign-in route can throttle a burst of fresh
+    /// the form's email field (`login-email-field`) takes the email. The 10/min sign-in route can throttle a burst of fresh
     /// browsers: on refusal the login screen stays up, so Escape and
     /// pause, then retry until the shell answers.
     fn sign_chat_in(&self, app: &mut App) {
         let email = &self.email;
         let password = &self.password;
         let landed = eventually(150, move || {
+            // A retry can find the shell already up: the sign-in of the attempt before it landed after that attempt gave up.
+            if app.text("Online").count() > 0 {
+                return true;
+            }
             app.test_id("login-tab-signin").click();
-            app.test_id("login-email").fill(&email);
+            // In idea-chat mode the login form's email field is `login-email-field` (`login-email` is the built-in form's username).
+            app.test_id("login-email-field").fill(&email);
             app.test_id("login-password").fill(&password);
             app.test_id("login-submit").click();
             app.set_timeout(WAIT);
-            if app.text("Online").count() > 0 {
+            // `count()` answers at once, so it has to be polled: the sign-in takes a second or two, and checking
+            // straight after the click read "not signed in" while the request was still in flight.
+            if eventually(20, || app.text("Online").count() > 0) {
                 true
             } else {
                 app.press_key("Escape");
@@ -252,9 +269,12 @@ pub fn space_of(app_name: &str) -> String {
     db_row(&format!("select s.id from spaces s where s.name = {}", q(app_name)))
 }
 
-/// #general's channel id in the database for the space `space`.
+/// #general's channel id in the database for the space `space`: its id, or its
+/// name (each test makes its own fresh, unique one, and most keep only the name).
 pub fn channel_of(space: &str) -> String {
-    db_row(&format!("select c.id from channels c where c.space_id = {} and c.name = 'general'", q(space)))
+    db_row(&format!(
+        "select c.id from channels c join spaces s on s.id = c.space_id where (s.id::text = {0} or s.name = {0}) and c.name = 'general'",
+        q(space)))
 }
 
 /// Open A's invite overlay (perms re-armed first, the gap server.rs
@@ -277,6 +297,21 @@ pub fn mint_invite(app: &mut App) -> String {
     code
 }
 
+/// Add a text channel to the active server through the owner's menu and select it. A server starts with one text channel
+/// (#general), and opening a server selects that one, so a person is never "elsewhere" (and nothing is unread for them) until
+/// there is a second one to sit in.
+pub fn add_text_channel(app: &mut App, name: &str) {
+    app.set_timeout(WAIT);
+    app.test_id("server-header").click();
+    app.test_id("menu-create-channel").assert_visible();
+    app.test_id("menu-create-channel").click();
+    app.test_id("create-channel-name-input").fill(name);
+    app.test_id("create-channel-create").click();
+    app.text(name).assert_visible();
+    app.text(name).click();
+    app.set_timeout(WAIT);
+}
+
 /// B joins the server with `code` through the join modal, landing on it.
 pub fn join_by_code(app: &mut App, code: &str) {
     app.test_id("rail-create-server").click();
@@ -287,6 +322,11 @@ pub fn join_by_code(app: &mut App, code: &str) {
     app.test_id("join-server-join").click();
     app.text("Joined!").assert_visible();
     app.test_id("join-server-done").click();
+    app.set_timeout(WAIT);
+    // Joining lands on the server with no channel selected (A's create_server picks #general; B has to as well),
+    // and without a channel there is no composer to send from.
+    app.text("general").assert_visible();
+    app.text("general").click();
     app.set_timeout(WAIT);
 }
 
@@ -390,7 +430,7 @@ fn b_joins_a_server_through_an_invite(_app: &mut App) {
     // The script's (d2): B is a member of the space in the chat database,
     // and the invite row is stored with its code.
     assert_eq!(db_row(&format!("select count(sm.user_id) from space_members sm join users u on u.id = sm.user_id where sm.space_id = {}::uuid and u.email = {}",
-        space_of(&server), q(&b.email))), "1", "B is a member of A's space on the chat database");
+        q(&space_of(&server)), q(&b.email))), "1", "B is a member of A's space on the chat database");
     assert_ne!(db_row(&format!("select count(i.code) from invites i where i.code = {}",
         q(&code))), "0", "the invite is stored on the chat database");
 }
@@ -464,8 +504,19 @@ fn a_edits_and_deletes_her_message_and_b_follows(_app: &mut App) {
     // browsers see the edit without reloading.
     let target = "the target message";
     send(&mut browser_a.app, target);
-    browser_a.app.text(target).hover_native();
-    browser_a.app.test_id("msg-more").click();
+    // Let the invite dialog's closing and the join frames settle: hovering while something still covers the row is refused.
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    // The menu can close again when a live frame re-renders the list right after it opens, so open it until the Edit row is there.
+    let menu_up = eventually(30, || {
+        if browser_a.app.test_id("menu-edit-message").count() > 0 {
+            return true;   // already open; hovering again would be refused, the menu covers the row
+        }
+        browser_a.app.text(target).hover_native();
+        browser_a.app.test_id("msg-more").click();
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        browser_a.app.test_id("menu-edit-message").count() > 0
+    });
+    assert!(menu_up, "the message menu never offered Edit on A's own message");
     browser_a.app.test_id("menu-edit-message").click();
     let edited = "the edited text";
     browser_a.app.test_id("edit-input").fill(edited);
@@ -504,7 +555,7 @@ fn b_reacts_to_as_message_and_a_sees_the_count(_app: &mut App) {
 
     // The script's (h): B opens the react pill on A's row, taps a thumbs-up
     // cell in the picker; A sees the reaction without reloading.
-    browser_b.app.test_id("msg-row").hover_native();
+    browser_b.app.text(target).hover_native();
     browser_b.app.test_id("msg-react").click();
     browser_b.app.test_id("emoji-cell").assert_visible();
     browser_b.app.test_id("emoji-cell").nth(0).click();
@@ -555,25 +606,53 @@ fn a_opens_a_dm_with_b_that_delivers_to_both(_app: &mut App) {
 
 // ---- the rows the flows script lacks ----------------------------------------
 
+/// A 1x1 PNG: the smallest real image to push through the upload path.
+const TINY_PNG: &[u8] = &[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0x64, 0x60, 0xf8, 0x5f, 0x0f, 0x00, 0x02, 0x87, 0x01, 0x80, 0xeb, 0x47, 0xba, 0x92, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82];
+
 #[robot_test]
-#[ignore = "uploads need a storage bucket: the run's chat server has no S3 endpoint on this host, so begin_upload answers its Unavailable refusal (\"Uploads aren't working right now.\") and no attachment row can be staged"]
 fn an_image_attachment_shows_in_both_browsers(_app: &mut App) {
     let (a, b) = crew();
     let mut browser_a = open_chat_browser("chat-attach-a");
     let mut browser_b = open_chat_browser("chat-attach-b");
     a.sign_chat_in(&mut browser_a.app);
     b.sign_chat_in(&mut browser_b.app);
-    create_server(&mut browser_a.app, &fresh_name("Chat Hq "));
+    let server = fresh_name("Chat Hq ");
+    create_server(&mut browser_a.app, &server);
     join_by_code(&mut browser_b.app, &mint_invite(&mut browser_a.app));
 
-    // The upload triplet on this backend is begin_upload → PUT the bytes to
-    // the presigned slot → finish_upload, then send with the attachment id.
-    // Without a bucket the first leg answers the refusal; assert the refusal
-    // so the test documents the gap it stands for.
-    let refused = chat_srv_refused("begin_upload".to_string(),
-        vec![json!("shot.png"), json!(64u64), json!("image/png"), json!("message")], &a.session);
-    assert_eq!(refused, "Uploads aren't working right now.",
-        "the refusal this ignored row stands for: no bucket exists ({refused})");
+    // The upload triplet on this backend: begin_upload reserves a slot with a presigned PUT, the bytes go straight to the
+    // object store (the run's Garage, which the wrapper gives the chat server), finish_upload turns the slot into an
+    // attachment, and `send` carries its id.
+    let slot = chat_srv("begin_upload".to_string(),
+        vec![json!("shot.png"), json!(TINY_PNG.len() as u64), json!("image/png"), json!("message")], &a.session);
+    let id = slot["id"].as_str().expect("the slot has an id").to_string();
+    let put_url = slot["put_url"].as_str().expect("the slot has a put_url").to_string();
+    let put = ureq::put(&put_url).set("content-type", "image/png").send_bytes(TINY_PNG);
+    assert!(put.is_ok(), "the PUT to the presigned slot failed: {:?}", put.err());
+    let attachment = chat_srv("finish_upload".to_string(), vec![json!(id), json!(1u32), json!(1u32)], &a.session);
+    let mut url = attachment["url"].as_str().expect("the attachment has a url").to_string();
+    if url.starts_with('/') {
+        url = format!("{}{}", chat_base(), url);   // the chat server serves `/f/<id>/<id>` and hands out the object itself
+    }
+
+    // What was stored comes back from the attachment's own url, byte for byte.
+    let mut stored = Vec::new();
+    std::io::Read::read_to_end(
+        &mut ureq::get(&url).call().unwrap_or_else(|e| panic!("GET {url}: {e}")).into_reader(), &mut stored)
+        .expect("read the stored image");
+    assert_eq!(stored.as_slice(), TINY_PNG, "the stored object is not the image that was uploaded");
+
+    // Sent with a caption, it shows in both browsers.
+    let caption = fresh_name("pic ");
+    chat_srv("send".to_string(), vec![json!(channel_of(&server)), json!(caption), Value::Null, json!([id])], &a.session);
+    browser_a.app.text(&caption).assert_visible();
+    browser_b.app.text(&caption).assert_visible();
+    shot(&mut browser_a.app, "chat-attachment-a");
+    shot(&mut browser_b.app, "chat-attachment-b");
+
+    // The row is attached to its message and marked uploaded.
+    assert_eq!(db_row(&format!("select count(a.id) from attachments a where a.id = {}::uuid and a.message_id is not null and a.uploaded", q(&id))), "1",
+        "the attachment is not linked to the sent message on the chat database");
 }
 
 #[robot_test]
@@ -596,17 +675,28 @@ fn scrolling_back_pulls_earlier_pages_of_a_busy_channel(_app: &mut App) {
     assert_eq!(rows_in_channel(&server, &format!("m.body like {}", q("filler %"))), "60",
         "the channel holds sixty stored rows on the chat database");
 
+    // The live window above holds all sixty (they arrived one by one), so nothing earlier is left to load there. A fresh session
+    // reads the history page instead: the newest fifty rows, with more behind them.
+    let mut again = open_chat_browser("chat-scroll-again");
+    a.sign_chat_in(&mut again.app);
+    again.app.test_id("rail-server").assert_visible();
+    let tiles = again.app.test_id("rail-server").count();
+    again.app.test_id("rail-server").nth(tiles - 1).click();
+    again.app.set_timeout(WAIT);
+    again.app.text(&server).assert_visible();
+    again.app.text("filler 60").assert_visible();
+
     // Reading up to the top of the loaded window mounts the "Load earlier
     // messages" pill (load_earlier_button); tapping it pulls one more
     // history page, so the very first row comes onto the screen.
-    browser_a.app.test_id("msg-scroll").scroll_to(0.0, 0.0);
-    browser_a.app.text("Load earlier messages").assert_visible();
-    shot(&mut browser_a.app, "chat-scrollback-pill");
-    browser_a.app.text("Load earlier messages").click();
-    assert!(eventually(15, || browser_a.app.text("filler 1").count() > 0),
+    again.app.test_id("msg-scroll").scroll_to(0.0, 0.0);
+    again.app.text("Load earlier messages").assert_visible();
+    shot(&mut again.app, "chat-scrollback-pill");
+    again.app.text("Load earlier messages").click();
+    assert!(eventually(15, || again.app.text("filler 1").count() > 0),
         "the earlier page never loaded");
-    browser_a.app.text("filler 1").assert_in_viewport();
-    shot(&mut browser_a.app, "chat-scrollback-loaded");
+    again.app.text("filler 1").assert_in_viewport();
+    shot(&mut again.app, "chat-scrollback-loaded");
 }
 
 #[robot_test]
@@ -618,27 +708,36 @@ fn a_person_mention_highlights_and_counts(_app: &mut App) {
     b.sign_chat_in(&mut browser_b.app);
     let server = fresh_name("Chat Hq ");
     create_server(&mut browser_a.app, &server);
+    let side = fresh_name("side");
+    add_text_channel(&mut browser_a.app, &side);
     join_by_code(&mut browser_b.app, &mint_invite(&mut browser_a.app));
-    browser_b.app.text("general").click();
+    // B sits in the second channel, so a mention in #general is unread for B.
+    browser_b.app.text(&side).assert_visible();
+    browser_b.app.text(&side).click();
     browser_b.app.set_timeout(WAIT);
+    browser_a.app.text("general").click();
+    browser_a.app.set_timeout(WAIT);
 
-    // A mentions B by handle: the pill paints on A's row and B's view shows
-    // it live.
+    // A mentions B by handle: the pill paints on A's row.
     let msg = format!("@{} hello", b.handle);
     browser_a.app.test_id("composer").fill(&msg);
     browser_a.app.test_id("composer").press_key("Enter");
     browser_a.app.text("hello").assert_visible();
     browser_a.app.test_id("mention-pill").assert_visible();
+
+    // The count: B's unread @mention feeds #general's red count pill
+    // (unread-count-badge) on B's channel row.
+    browser_b.app.test_id("unread-count-badge").assert_visible();
+
+    // B opens #general and sees the pill on the row, live.
+    browser_b.app.text("general").click();
+    browser_b.app.set_timeout(WAIT);
     browser_b.app.text("hello").assert_visible();
     browser_b.app.test_id("mention-pill").assert_visible();
     shot(&mut browser_b.app, "chat-mention-pill");
 
-    // The count: B's unread @mention feeds their channel row's red count
-    // pill (unread-count-badge).
-    browser_b.app.test_id("unread-count-badge").assert_visible();
-
     // Stored: the message row records the mention target.
-    assert_eq!(db_row(&format!("select count(m.id) from messages m where m.channel_id = {} and array_length(m.mentions) > 0",
+    assert_eq!(db_row(&format!("select count(m.id) from messages m where m.channel_id = {} and cardinality(m.mentions) > 0",
         q(&channel_of(&server)))), "1", "the mention is recorded on the chat database");
 }
 
@@ -651,19 +750,27 @@ fn an_everyone_mention_highlights_and_counts(_app: &mut App) {
     b.sign_chat_in(&mut browser_b.app);
     let server = fresh_name("Chat Hq ");
     create_server(&mut browser_a.app, &server);
+    let side = fresh_name("side");
+    add_text_channel(&mut browser_a.app, &side);
     join_by_code(&mut browser_b.app, &mint_invite(&mut browser_a.app));
-    browser_b.app.text("general").click();
+    // B sits in the second channel, so a mention in #general is unread for B.
+    browser_b.app.text(&side).assert_visible();
+    browser_b.app.text(&side).click();
     browser_b.app.set_timeout(WAIT);
+    browser_a.app.text("general").click();
+    browser_a.app.set_timeout(WAIT);
 
-    // The `@everyone` token paints as its own pill and marks both readers'
-    // channel row unread with a mention.
+    // The `@everyone` token paints as its own pill and marks B's channel
+    // row unread with a mention.
     browser_a.app.test_id("composer").fill("@everyone stand up");
     browser_a.app.test_id("composer").press_key("Enter");
     browser_a.app.text("stand up").assert_visible();
     browser_a.app.test_id("mention-pill").assert_visible();
+    browser_b.app.test_id("unread-count-badge").assert_visible();
+    browser_b.app.text("general").click();
+    browser_b.app.set_timeout(WAIT);
     browser_b.app.text("stand up").assert_visible();
     browser_b.app.test_id("mention-pill").assert_visible();
-    browser_b.app.test_id("unread-count-badge").assert_visible();
     shot(&mut browser_b.app, "chat-everyone-pill");
 
     // Stored: the message row flags mentions_everyone.
@@ -704,21 +811,14 @@ fn unread_badges_show_on_the_channel_row(_app: &mut App) {
     b.sign_chat_in(&mut browser_b.app);
     let server = fresh_name("Chat Hq ");
     create_server(&mut browser_a.app, &server);
+    add_text_channel(&mut browser_a.app, &fresh_name("side"));
     join_by_code(&mut browser_b.app, &mint_invite(&mut browser_a.app));
 
-    // B posts while A never opens the channel, so A's unread state for it
-    // is live when they next see the sidebar.
+    // A sits in a second channel while B posts in #general, so #general is unread for A: its row carries the unread pill at
+    // its left edge (unread-side-pill: a plain unread; the red count pill belongs to @mentions).
     browser_b.app.text("general").click();
     browser_b.app.set_timeout(WAIT);
     send(&mut browser_b.app, "unread message");
-
-    // A taps the server tile: the enter-live fetch pulls the unread counts,
-    // and the channel row carries the unread pill at its left edge
-    // (unread-side-pill — a plain unread; the red count pill belongs to
-    // @mentions).
-    browser_a.app.test_id("rail-server").nth(0).click();
-    browser_a.app.set_timeout(WAIT);
-    browser_a.app.text("general").assert_visible();
     browser_a.app.test_id("unread-side-pill").assert_visible();
     shot(&mut browser_a.app, "chat-unread-badge");
 }

@@ -1004,6 +1004,44 @@ pub async fn signup(username: String, password: String) -> Result<SignupResult, 
     result
 }
 
+// The email-code half of the auth surface: only the idea-chat server has
+// one, so these accessors reach the idea_chat entry points directly and the
+// built-in screens never call them.
+
+/// Create an account with an email, password, handle and display name;
+/// answers the email the verification code was sent to.
+pub async fn signup_email(email: String, password: String, handle: String, display_name: String) -> Result<String, String> {
+    idea_chat::impl_account::signup_email(email, password, handle, display_name).await
+        .map_err(|e| crate::errors::friendly(&e))
+}
+
+/// Sign in with an email and password. Answers the signed-in account's
+/// login (the caller records the identity it carries), or `None` when the
+/// server said the email is unverified (a fresh code went to it) and the form
+/// must move to the emailed-code step.
+pub async fn sign_in_email(email: String, password: String) -> Result<Option<LoginResult>, String> {
+    idea_chat::impl_account::sign_in_email(email, password).await
+        .map(move |answer| match answer {
+            idea_chat::impl_account::SignInAnswer::SignedIn(login) => Some(login),
+            idea_chat::impl_account::SignInAnswer::VerifyEmail(_) => None,
+        })
+        .map_err(|e| crate::errors::friendly(&e))
+}
+
+/// Confirm the emailed code; on success the response's `session` cookie
+/// signs the browser in, so the caller lands as after a normal login.
+pub async fn verify_email(email: String, code: String) -> Result<LoginResult, String> {
+    idea_chat::impl_account::verify_email(email, code).await
+        .map_err(|e| crate::errors::friendly(&e))
+}
+
+/// Send another verification code. The server is silent for unknown or
+/// already-verified addresses; success only says the call went through.
+pub async fn resend_code(email: String) -> Result<(), String> {
+    idea_chat::impl_account::resend_code(email).await
+        .map_err(|e| crate::errors::friendly(&e))
+}
+
 pub async fn logout() -> Result<LogoutResult, String> {
     if chat_idea_chat() {
             IdeaChatBackend::logout().await

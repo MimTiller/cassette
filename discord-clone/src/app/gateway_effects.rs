@@ -527,6 +527,22 @@ pub(super) fn build(s: &ShellState) -> GatewayEffectsParts {
             if let Some(discord_server::server_settings::WsServerMsg::RolesChanged { server_id, .. }) = frame {
                 if crate::mentions::server_id() == Some(*server_id) {
                     crate::mentions::load_roles(*server_id);
+                } else if active_live_server.get() == Some(*server_id) {
+                    // The server is on screen but the permissions context never learned of it: entering a server
+                    // just made reads its members before the idea-chat snapshot that carries it has arrived, so that
+                    // fetch fails and nothing ever records the active server (the owner then has no Invite action).
+                    // This frame comes after the snapshot, so fetch the roster now; recording it loads the roles.
+                    let sid = *server_id;
+                    runtime_core::spawn_then_in(
+                        &crate::app::shell_alive(),
+                        crate::backend::list_members(sid),
+                        move |members| {
+                            if let Ok(members) = members {
+                                crate::mentions::members_loaded(sid, &members);
+                                live_members.set(members);
+                            }
+                        },
+                    );
                 }
                 // Roles and overwrites decide which channels this user can
                 // see; refetch them, and leave a channel that just vanished.
