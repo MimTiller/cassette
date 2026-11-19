@@ -943,19 +943,19 @@ fn changing_a_role_colour_repaints_the_roles_screen_live(_app: &mut App) {
     create_server(&mut browser_a.app, &server);
     let space = space_of(&server);
     let role = fresh_name("Shade ");
-    let made = chat_srv("create_role".to_string(), vec![json!(space), json!(role), json!(0), json!(0x3498db)], &a.session);
+    let made = chat_srv("create_role".to_string(), vec![json!(space), json!(role), json!(0), json!(0x3498db), json!(false)], &a.session);
     let role_id = made["id"].as_str().expect("create_role answers the role's id").to_string();
 
     open_roles_screen(&mut browser_a.app);
     browser_a.app.text(&role).assert_style(|s| s.color.map(rgb8) == Some((0x34, 0x98, 0xdb)));
 
     // The same change the Settings row makes, from outside the screen: the open screen repaints without a reload.
-    chat_srv("update_role".to_string(), vec![json!(space), json!(role_id), json!(role), json!(0), json!(0x1abc9c)], &a.session);
+    chat_srv("update_role".to_string(), vec![json!(space), json!(role_id), json!(role), json!(0), json!(0x1abc9c), json!(false)], &a.session);
     browser_a.app.text(&role).assert_style(|s| s.color.map(rgb8) == Some((0x1a, 0xbc, 0x9c)));
 
     // An out-of-range colour is refused with a sentence, not stored.
     let refused = chat_srv_refused(
-        "update_role".to_string(), vec![json!(space), json!(role_id), json!(role), json!(0), json!(0x11223344_u32)], &a.session);
+        "update_role".to_string(), vec![json!(space), json!(role_id), json!(role), json!(0), json!(0x11223344_u32), json!(false)], &a.session);
     assert_eq!(refused, "A role colour must be 0xRRGGBB.");
 }
 
@@ -976,7 +976,7 @@ fn a_members_name_on_a_message_takes_the_colour_of_their_role(_app: &mut App) {
 
     let space = space_of(&server);
     let role = fresh_name("Tint ");
-    let made = chat_srv("create_role".to_string(), vec![json!(space), json!(role), json!(0), json!(0x1abc9c)], &a.session);
+    let made = chat_srv("create_role".to_string(), vec![json!(space), json!(role), json!(0), json!(0x1abc9c), json!(false)], &a.session);
     let role_id = made["id"].as_str().expect("create_role answers the role's id").to_string();
     let b_id = db_row(&format!("select u.id from users u where u.email = {}", q(&b.email)));
     chat_srv("set_roles".to_string(), vec![json!(space), json!(b_id), json!([role_id])], &a.session);

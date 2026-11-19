@@ -400,7 +400,7 @@ async function main() {
   {
     const ROLE_NAME = `Deputy ${tag}`;
     const cookie = ck[1] ? `${ck[1]}=${ck[2]}` : null;
-    const roleOut = await srv("create_role", [spaceId, ROLE_NAME, 0, null], cookie);
+    const roleOut = await srv("create_role", [spaceId, ROLE_NAME, 0, null, false], cookie);
     const roleUuid = (roleOut.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [""])[0];
     check("(j1) A's create_role call answers a role record", roleOut.includes(ROLE_NAME) && !!roleUuid, roleOut);
     const roleRows = dbRows(`select r.role_id from space_roles r where r.space_id = ${sqlQuote(spaceId)}::uuid and r.name = ${sqlQuote(ROLE_NAME)}`);
@@ -431,7 +431,7 @@ async function main() {
     const CREATE_COLOR = 0x3498db; // blue, an idea-chat preset's hex value
     const UPDATE_COLOR = 0x1abc9c; // teal, a different preset
     const kcookie = ck[1] ? `${ck[1]}=${ck[2]}` : null;
-    const colourOut = await srv("create_role", [spaceId, COLOUR_ROLE, 0, CREATE_COLOR], kcookie);
+    const colourOut = await srv("create_role", [spaceId, COLOUR_ROLE, 0, CREATE_COLOR, false], kcookie);
     const colourUuid = (colourOut.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [""])[0];
     check("(k0) the coloured create_role call answers a role record", colourOut.includes(COLOUR_ROLE) && !!colourUuid, colourOut);
     const colourDb = psql(`select r.colour from space_roles r where r.space_id = ${sqlQuote(spaceId)}::uuid and r.name = ${sqlQuote(COLOUR_ROLE)}`);
@@ -446,7 +446,7 @@ async function main() {
     //     text colour of the role names.
     // (k5) change the colour the way the app's Settings row does (an
     //     update_role restatement with the new colour) and see it move live.
-    const recolorOut = await srv("update_role", [spaceId, colourUuid, COLOUR_ROLE, 0, UPDATE_COLOR], kcookie);
+    const recolorOut = await srv("update_role", [spaceId, colourUuid, COLOUR_ROLE, 0, UPDATE_COLOR, false], kcookie);
     check("(k5) the update_role call carrying the new colour is accepted", !!recolorOut && recolorOut.includes('"Ok"'), recolorOut);
     // (k6): the open Roles screen repainting after this update is the robot row
     //     `changing_a_role_colour_repaints_the_roles_screen_live` (same reason as (k3)).
@@ -457,8 +457,96 @@ async function main() {
     check("(k7) B's member name draws in the role's new colour", hits.some((c) => c === rgb("1abc9c")), hits);
     // (k8) a malformed colour refuses with a sentence, not a panic: RWND's
     //     own validation text rides the ServerError the app would show.
-    const badOut = await srv("update_role", [spaceId, colourUuid, COLOUR_ROLE, 0, 0x11223344], kcookie);
+    const badOut = await srv("update_role", [spaceId, colourUuid, COLOUR_ROLE, 0, 0x11223344, false], kcookie);
     check("(k8) an out-of-range colour refuses with a message", badOut.includes('"Err"') && badOut.includes("colour"), badOut);
+  }
+
+  // (l) role mentions on the roles-carrying backend: A mints a mentionable role,
+  //     hands it to B (a plain member, no MentionEveryone), and A's @RoleName
+  //     message reaches B — the row highlights in B's view (the same
+  //     MentionHighlight path a direct mention takes) and the message keeps the
+  //     role in messages.mention_roles. A non-mentionable role a plain member
+  //     names is refused and stays plain text (its id is never recorded);
+  //     flipping mentionable on in the role record makes the same mention
+  //     honoured, so the flag has effect over this backend.
+  {
+    // The computed background of every element whose visible text contains
+    // `needle`. The renderer paints a mention-highlighted row's background as
+    // CSS (theme::MENTION_ROW = rgba(240, 178, 50, 0.1)), so a role mention
+    // that highlights carries it exactly as a direct mention does.
+    const bgHits = async (page, needle) => await page.evaluate((needle) => {
+      const seen = [];
+      const walk = (el) => {
+        if (el.textContent.includes(needle) && el.children.length === 0) {
+          seen.push(getComputedStyle(el).background);
+        }
+        for (const kid of el.children) walk(kid);
+      };
+      walk(document.body);
+      return seen;
+    }, needle);
+    const mentionRow = "rgba(240, 178, 50, 0.1)";
+    // A composer send whose text carries a live @mention: Escape closes the
+    // autocomplete dropdown (Enter alone would select a row), then Enter sends.
+    const sendMention = async (page, placeholder, message) => {
+      const composer = page.getByPlaceholder(placeholder).first();
+      await composer.click();
+      await composer.pressSequentially(message, { delay: 20 });
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Enter");
+    };
+
+    const cookie = ck[1] ? `${ck[1]}=${ck[2]}` : null;
+    const bUser = psql(`select sm.user_id from space_members sm join users u on u.id = sm.user_id where sm.space_id = ${sqlQuote(spaceId)}::uuid and u.email = ${sqlQuote(EMAIL_B)}`);
+    const uuidRe = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+    // A (the owner, may mention everyone) mints a mentionable role and gives it
+    // to B. The name is one token: this server's mention grammar resolves
+    // `@word`, so a role name must not contain spaces to be nameable.
+    const PING_ROLE = `Pinger${tag}`;
+    const pingOut = await srv("create_role", [spaceId, PING_ROLE, 0, null, true], cookie);
+    const pingUuid = (pingOut.match(uuidRe) || [""])[0];
+    check("(l1) A's mentionable create_role call answers a role record", pingOut.includes(PING_ROLE) && !!pingUuid, pingOut);
+    const flagDb = psql(`select r.mentionable from space_roles r where r.space_id = ${sqlQuote(spaceId)}::uuid and r.name = ${sqlQuote(PING_ROLE)}`);
+    check("(l2) the mentionable flag is stored in the database", flagDb.trim() === "t", `db flag: ${flagDb}`);
+    const giveOut = await srv("set_roles", [spaceId, bUser, [pingUuid]], cookie);
+    check("(l3) the pingable role is handed to B", !!giveOut && giveOut.includes('"Ok"'), giveOut);
+
+    // A names the role in a live message; the stored body keeps the role as a
+    // resolved `<%uuid>` token and messages.mention_roles records it.
+    const PING_MSG = `ping @${PING_ROLE}`;
+    await sendMention(pageA, "Message #general", PING_MSG);
+    await pageA.waitForTimeout(5000);
+    const pingRows = dbRows(`select m.id from messages m where m.body like ${sqlQuote("ping <%" + "%")} and m.mention_roles::text like ${sqlQuote(`%${pingUuid}%`)}`);
+    check("(l4) the message names the role (mention_roles recorded)", pingRows >= 1, `rows: ${pingRows}`);
+    await pageB.waitForTimeout(1500);
+    const pingBg = await bgHits(pageB, PING_MSG);
+    check("(l5) B sees A's role mention highlighted (mention row)", pingBg.some((c) => c === mentionRow), pingBg);
+
+    // A non-mentionable role a plain member (B: everyone baseline, no
+    // MentionEveryone) names is refused: it stays plain text, id unrecorded.
+    const SILENT_ROLE = `Silent${tag}`;
+    const silentOut = await srv("create_role", [spaceId, SILENT_ROLE, 0, null, false], cookie);
+    const silentUuid = (silentOut.match(uuidRe) || [""])[0];
+    const sFlagDb = psql(`select r.mentionable from space_roles r where r.space_id = ${sqlQuote(spaceId)}::uuid and r.name = ${sqlQuote(SILENT_ROLE)}`);
+    check("(l6) a non-mentionable role stores mentionable false", sFlagDb.trim() === "f", `db flag: ${sFlagDb}`);
+    const giveSilent = await srv("set_roles", [spaceId, bUser, [pingUuid, silentUuid]], cookie);
+    check("(l7) B is handed both roles", !!giveSilent && giveSilent.includes('"Ok"'), giveSilent);
+    const SILENT_MSG = `quiet @${SILENT_ROLE}`;
+    await sendMention(pageB, "Message #general", SILENT_MSG);
+    await pageB.waitForTimeout(4000);
+    const silentRows = dbRows(`select m.id from messages m where m.body like ${sqlQuote("quiet @Silent" + "%")} and m.mention_roles::text like ${sqlQuote(`%${silentUuid}%`)}`);
+    check("(l8) B's mention of a non-mentionable role is refused (plain text, no role recorded)", silentRows === 0, `rows: ${silentRows}`);
+
+    // Flipping mentionable on (what the role screen's toggle calls: an
+    // update_role restatement) makes the same mention honoured again.
+    const flipOut = await srv("update_role", [spaceId, silentUuid, SILENT_ROLE, 0, null, true], cookie);
+    check("(l9) update_role flipping mentionable is accepted", !!flipOut && flipOut.includes('"Ok"'), flipOut);
+    const SILENT2_MSG = `now @${SILENT_ROLE}`;
+    await sendMention(pageB, "Message #general", SILENT2_MSG);
+    await pageB.waitForTimeout(5000);
+    const honoured = dbRows(`select m.id from messages m where m.body like ${sqlQuote("now <%" + "%")} and m.mention_roles::text like ${sqlQuote(`%${silentUuid}%`)}`);
+    check("(l10) once mentionable is on, the same mention is honoured (role recorded)", honoured >= 1, `rows: ${honoured}`);
   }
 
   await browserH.close();

@@ -824,7 +824,7 @@ mod tests {
     use super::*;
     use chat_model::{Id, User, Message, Presence, MessageKind, Relation, Me, Status};
     use chat_model::live::{Event, State};
-    use chat_model::{Channel, ChannelKind, Role};
+    use chat_model::{Channel, ChannelKind, Role, Space, Member};
 
     fn uid(n: u128) -> Id {
         Id::from_u128(n)
@@ -891,6 +891,89 @@ mod tests {
             },
             None => panic!("no frame for a MessageCreated event"),
         }
+    }
+
+    #[test]
+    fn a_role_mention_names_itself_and_counts_its_holders() {
+        // The server stored a mention of the `Helpers` role as `<%uuid>` plus
+        // mention_roles; for the viewer it lands like a direct mention: the
+        // readable body names the role and the mention list holds its holders
+        // (never the author), so the row highlights and the badge counts it.
+        let helper = uid(9);
+        let mut world = State::default();
+        world.spaces.insert(uid(3), Space {
+            id: uid(3),
+            name: "Alpha".to_string(),
+            icon: None,
+            owner: uid(7),
+            members: {
+                let mut members: std::collections::BTreeMap<Id, Member> = std::collections::BTreeMap::new();
+                members.insert(uid(7), Member { roles: Vec::new(), joined_at: 0 });
+                members.insert(uid(8), Member { roles: vec!(helper), joined_at: 0 });
+                members
+            },
+            roles: {
+                let mut roles: std::collections::BTreeMap<Id, Role> = std::collections::BTreeMap::new();
+                roles.insert(helper, Role {
+                    id: helper,
+                    name: "Helpers".to_string(),
+                    permissions: 0,
+                    position: 0,
+                    colour: None,
+                    mentionable: true,
+                });
+                roles
+            },
+            everyone: 0,
+            categories: Vec::new(),
+            created_at: 0,
+        });
+        world.channels.insert(uid(10), Channel {
+            id: uid(10),
+            kind: ChannelKind::Text,
+            space: Some(uid(3)),
+            name: "general".to_string(),
+            topic: "".to_string(),
+            category: None,
+            position: 0,
+            parent: None,
+            starter: None,
+            view: 0,
+            post: 0,
+            members: Vec::new(),
+            archived: false,
+            overwrites: std::collections::BTreeMap::new(),
+            last_message: None,
+            message_count: 0,
+            created_by: uid(7),
+            created_at: 0,
+        });
+        let mut message = Message {
+            id: uid(100),
+            channel: uid(10),
+            author: uid(7),
+            kind: MessageKind::Text,
+            body: format!("ping <%{}>", uuid_to_string(helper)),
+            attachments: Vec::new(),
+            reply_to: None,
+            reactions: Vec::new(),
+            thread: None,
+            mentions: Vec::new(),
+            mentions_everyone: false,
+            mention_roles: vec!(helper),
+            at: 1_700_000_000_000,
+            edited_at: None,
+        };
+        assert_eq!(readable_body(&message.body, &world), "ping @Helpers".to_string());
+        let holders = mentioned_ids(&message, &world);
+        assert_eq!(holders, vec!(see(uid(8))));
+        // A deleted role keeps its plain token in the body, like chat-model's
+        // rule, and names no holders.
+        let gone = uid(99);
+        message.mention_roles = vec!(gone);
+        message.body = format!("ping <%{}>", uuid_to_string(gone));
+        assert_eq!(readable_body(&message.body, &world), message.body);
+        assert_eq!(mentioned_ids(&message, &world).len(), 0);
     }
 
     #[test]
