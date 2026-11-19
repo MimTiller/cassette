@@ -126,7 +126,11 @@ pub fn signed_out(app: &mut App) {
     app.set_timeout(WAIT);
     // The merged app is large enough that a cold-booted first test can keep
     // the app busy past the 8 s one-call ceiling while settling its layout.
-    app.set_io_timeout(WAIT);
+    // The very first call of a run gets far longer: on a busy host the app is still starting (its hot-patch cache seeds for
+    // ~15 s) and a 20 s wait made the first test of a run fail with "the app is connected but busy or hung".
+    static COLD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+    let cold = COLD.swap(false, std::sync::atomic::Ordering::SeqCst);
+    app.set_io_timeout(if cold { std::time::Duration::from_secs(90) } else { WAIT });
     for _ in 0..3 {
         app.press_key("Escape");
     }

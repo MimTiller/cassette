@@ -7,7 +7,7 @@ use robot_test::{json, robot_test, App, Value};
 use crate::support::{fresh_name, sign_up, signed_out};
 use crate::support::WAIT;
 
-#[robot_test]
+#[robot_test(suites = [legacy, look_and_feel])]
 fn picking_sunset_recolours_the_app(app: &mut App) {
     signed_out(app);
     let user = fresh_name("sunsettheme");
@@ -33,7 +33,7 @@ fn picking_sunset_recolours_the_app(app: &mut App) {
     for _ in 0..3 { app.press_key("Escape"); }
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, look_and_feel])]
 fn picking_miami_recolours_the_app(app: &mut App) {
     signed_out(app);
     let user = fresh_name("miamitheme");
@@ -58,7 +58,7 @@ fn picking_miami_recolours_the_app(app: &mut App) {
     for _ in 0..3 { app.press_key("Escape"); }
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, look_and_feel])]
 fn picking_memphis_recolours_the_app(app: &mut App) {
     signed_out(app);
     let user = fresh_name("memphistheme");
@@ -83,7 +83,7 @@ fn picking_memphis_recolours_the_app(app: &mut App) {
     for _ in 0..3 { app.press_key("Escape"); }
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, look_and_feel])]
 fn picking_bubblegum_recolours_the_app(app: &mut App) {
     signed_out(app);
     let user = fresh_name("bubblegumtheme");
@@ -108,7 +108,7 @@ fn picking_bubblegum_recolours_the_app(app: &mut App) {
     for _ in 0..3 { app.press_key("Escape"); }
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, look_and_feel])]
 fn picking_gameboy_recolours_the_app(app: &mut App) {
     signed_out(app);
     let user = fresh_name("gameboytheme");
@@ -133,7 +133,7 @@ fn picking_gameboy_recolours_the_app(app: &mut App) {
     for _ in 0..3 { app.press_key("Escape"); }
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, look_and_feel])]
 fn picking_win95_recolours_the_app(app: &mut App) {
     signed_out(app);
     let user = fresh_name("win95theme");
@@ -158,7 +158,7 @@ fn picking_win95_recolours_the_app(app: &mut App) {
     for _ in 0..3 { app.press_key("Escape"); }
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, look_and_feel])]
 fn picking_vhs_recolours_the_app(app: &mut App) {
     signed_out(app);
     let user = fresh_name("vhstheme");
@@ -183,7 +183,7 @@ fn picking_vhs_recolours_the_app(app: &mut App) {
     for _ in 0..3 { app.press_key("Escape"); }
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, look_and_feel])]
 fn picking_blockbuster_recolours_the_app(app: &mut App) {
     signed_out(app);
     let user = fresh_name("blockbustertheme");
@@ -208,7 +208,7 @@ fn picking_blockbuster_recolours_the_app(app: &mut App) {
     for _ in 0..3 { app.press_key("Escape"); }
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, look_and_feel])]
 fn picking_miami_offers_the_matching_cassette(app: &mut App) {
     signed_out(app);
     let user = fresh_name("miamicassette");
@@ -241,7 +241,7 @@ fn picking_miami_offers_the_matching_cassette(app: &mut App) {
     for _ in 0..3 { app.press_key("Escape"); }
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, look_and_feel])]
 fn no_thanks_leaves_the_icon_unchanged(app: &mut App) {
     signed_out(app);
     let user = fresh_name("nothanksmiami");
@@ -278,7 +278,7 @@ fn no_thanks_leaves_the_icon_unchanged(app: &mut App) {
     for _ in 0..3 { app.press_key("Escape"); }
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, look_and_feel])]
 fn picking_memphis_cassette_offers_the_theme(app: &mut App) {
     signed_out(app);
     let user = fresh_name("memphisthemeoffer");
@@ -300,7 +300,7 @@ fn picking_memphis_cassette_offers_the_theme(app: &mut App) {
     for _ in 0..3 { app.press_key("Escape"); }
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, look_and_feel])]
 fn a_theme_without_a_cassette_offers_nothing(app: &mut App) {
     signed_out(app);
     let user = fresh_name("gameboynoop");

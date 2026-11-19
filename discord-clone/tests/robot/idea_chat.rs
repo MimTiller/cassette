@@ -358,7 +358,7 @@ pub fn rows_in_channel(space: &str, sql_tail: &str) -> String {
 
 // ---- the flows script's cases, a to i ----------------------------------------
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn a_signs_in_on_the_chat_server(_app: &mut App) {
     let (a, _b) = crew();
     let mut browser_a = open_chat_browser("chat-a-signin");
@@ -373,7 +373,7 @@ fn a_signs_in_on_the_chat_server(_app: &mut App) {
         q(&a.email))), "1", "A's chat account is on the run's chat database, verified");
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn a_creates_a_server_and_its_channels_show(_app: &mut App) {
     let (a, _b) = crew();
     let mut browser_a = open_chat_browser("chat-create");
@@ -393,7 +393,7 @@ fn a_creates_a_server_and_its_channels_show(_app: &mut App) {
         q(&space))), "0", "A is a member of their own space");
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn a_sends_a_message_that_shows_and_stores(_app: &mut App) {
     let (a, _b) = crew();
     let mut browser_a = open_chat_browser("chat-send");
@@ -411,7 +411,7 @@ fn a_sends_a_message_that_shows_and_stores(_app: &mut App) {
         "A's message is stored in the chat database");
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn b_joins_a_server_through_an_invite(_app: &mut App) {
     let (a, b) = crew();
     let mut browser_a = open_chat_browser("chat-inv-a");
@@ -435,7 +435,7 @@ fn b_joins_a_server_through_an_invite(_app: &mut App) {
         q(&code))), "0", "the invite is stored on the chat database");
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn the_member_list_shows_both_users(_app: &mut App) {
     let (mut browser_a, mut browser_b) = duo();
     let server = fresh_name("Chat Hq ");
@@ -452,7 +452,7 @@ fn the_member_list_shows_both_users(_app: &mut App) {
     shot(&mut browser_b.app, "chat-member-list-b");
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn typing_shows_on_the_other_user_both_ways(_app: &mut App) {
     let (mut browser_a, mut browser_b) = duo();
     let server = fresh_name("Chat Hq ");
@@ -475,7 +475,7 @@ fn typing_shows_on_the_other_user_both_ways(_app: &mut App) {
     browser_b.app.text("typing from B").assert_visible();
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn a_message_delivers_live_both_ways(_app: &mut App) {
     let (mut browser_a, mut browser_b) = duo();
     let server = fresh_name("Chat Hq ");
@@ -493,7 +493,7 @@ fn a_message_delivers_live_both_ways(_app: &mut App) {
     shot(&mut browser_a.app, "chat-live-b-to-a");
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn a_edits_and_deletes_her_message_and_b_follows(_app: &mut App) {
     let (mut browser_a, mut browser_b) = duo();
     let server = fresh_name("Chat Hq ");
@@ -543,7 +543,7 @@ fn a_edits_and_deletes_her_message_and_b_follows(_app: &mut App) {
         "the deleted message is gone from the chat database");
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn b_reacts_to_as_message_and_a_sees_the_count(_app: &mut App) {
     let (mut browser_a, mut browser_b) = duo();
     let server = fresh_name("Chat Hq ");
@@ -569,7 +569,7 @@ fn b_reacts_to_as_message_and_a_sees_the_count(_app: &mut App) {
         "the reaction is not stored on the chat database");
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn a_opens_a_dm_with_b_that_delivers_to_both(_app: &mut App) {
     let (mut browser_a, mut browser_b) = duo();
     let server = fresh_name("Chat Hq ");
@@ -609,7 +609,7 @@ fn a_opens_a_dm_with_b_that_delivers_to_both(_app: &mut App) {
 /// A 1x1 PNG: the smallest real image to push through the upload path.
 const TINY_PNG: &[u8] = &[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0x64, 0x60, 0xf8, 0x5f, 0x0f, 0x00, 0x02, 0x87, 0x01, 0x80, 0xeb, 0x47, 0xba, 0x92, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82];
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn an_image_attachment_shows_in_both_browsers(_app: &mut App) {
     let (a, b) = crew();
     let mut browser_a = open_chat_browser("chat-attach-a");
@@ -655,7 +655,7 @@ fn an_image_attachment_shows_in_both_browsers(_app: &mut App) {
         "the attachment is not linked to the sent message on the chat database");
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn scrolling_back_pulls_earlier_pages_of_a_busy_channel(_app: &mut App) {
     let (a, _b) = crew();
     let mut browser_a = open_chat_browser("chat-scroll");
@@ -699,7 +699,7 @@ fn scrolling_back_pulls_earlier_pages_of_a_busy_channel(_app: &mut App) {
     shot(&mut again.app, "chat-scrollback-loaded");
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn a_person_mention_highlights_and_counts(_app: &mut App) {
     let (a, b) = crew();
     let mut browser_a = open_chat_browser("chat-mention-a");
@@ -741,7 +741,7 @@ fn a_person_mention_highlights_and_counts(_app: &mut App) {
         q(&channel_of(&server)))), "1", "the mention is recorded on the chat database");
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn an_everyone_mention_highlights_and_counts(_app: &mut App) {
     let (a, b) = crew();
     let mut browser_a = open_chat_browser("chat-every-a");
@@ -778,7 +778,7 @@ fn an_everyone_mention_highlights_and_counts(_app: &mut App) {
         q(&channel_of(&server)))), "1", "the everyone mention is flagged on the chat database");
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn a_reply_carries_its_preview_and_links_the_row(_app: &mut App) {
     let (a, _b) = crew();
     let mut browser_a = open_chat_browser("chat-reply");
@@ -802,7 +802,7 @@ fn a_reply_carries_its_preview_and_links_the_row(_app: &mut App) {
         q(&channel_of(&server)))), "1", "the reply is linked on the chat database");
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn unread_badges_show_on_the_channel_row(_app: &mut App) {
     let (a, b) = crew();
     let mut browser_a = open_chat_browser("chat-unread-a");
@@ -823,15 +823,15 @@ fn unread_badges_show_on_the_channel_row(_app: &mut App) {
     shot(&mut browser_a.app, "chat-unread-badge");
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 #[ignore = "the app draws no unread marker on the rail's server tile: the tile renders its face and the active pill only, so a server-level badge is a screen feature, not a backend gap — the channel-row badge above covers what the chat state can feed"]
 fn a_server_tile_carries_an_unread_badge(_app: &mut App) {
-    unread_badges_show_on_the_channel_row();
-    // If the rail ever grows a server badge, this is where its test_id
-    // assertion belongs.
+    // The scenario is `unread_badges_show_on_the_channel_row` (a second channel, a message in the other one). If the rail
+    // ever grows a server badge, this is where its test_id assertion belongs. (A tagged test is a module, so it can no
+    // longer be called from another test.)
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn a_plain_member_cannot_delete_another_users_message(_app: &mut App) {
     let (a, b) = crew();
     let mut browser_a = open_chat_browser("chat-refuse-a");

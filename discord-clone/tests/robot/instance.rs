@@ -42,7 +42,7 @@ fn open_instance_settings(app: &mut App) {
     }
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn the_chat_backend_picker_opens_on_built_in(app: &mut App) {
     signed_out(app);
     let host = admin();
@@ -66,7 +66,7 @@ fn the_chat_backend_picker_opens_on_built_in(app: &mut App) {
     assert!(shown, "the empty-URL refusal should paint under the button");
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn escape_closes_the_instance_settings_page(app: &mut App) {
     signed_out(app);
     let host = admin();
@@ -80,7 +80,7 @@ fn escape_closes_the_instance_settings_page(app: &mut App) {
     assert!(closed, "Escape should close the instance settings page");
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn the_chat_connection_test_refuses_a_bad_url(app: &mut App) {
     signed_out(app);
     let host = admin();
@@ -97,7 +97,7 @@ fn the_chat_connection_test_refuses_a_bad_url(app: &mut App) {
     assert!(shown, "the URL-shape refusal should paint under the button");
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn an_unreachable_idea_chat_server_answers_clearly(app: &mut App) {
     signed_out(app);
     let host = admin();
@@ -115,7 +115,7 @@ fn an_unreachable_idea_chat_server_answers_clearly(app: &mut App) {
     assert!(shown, "the unreachable-server refusal should paint under the button");
 }
 
-#[robot_test]
+#[robot_test(suites = idea_chat)]
 fn switching_the_chat_backend_asks_to_confirm(app: &mut App) {
     signed_out(app);
     let host = admin();

@@ -21,7 +21,9 @@ inside the seam. It exits 0 when the boundary holds and 1 with a `file:line`
 list of the violations.
 
 For a UI change, also look at it in a browser (see "Testing in a browser"),
-driving it through the idealyst MCP server (see "Driving the app").
+driving it through the idealyst MCP server (see "Driving the app"). For a change
+to app behaviour, run the robot **pack** for the area you touched, and `smoke`
+(see "Test packs"); the whole suite is for before a merge, not for every edit.
 
 ## Rules
 
@@ -106,6 +108,33 @@ audio comes last, after everything else.
 ## Testing in a browser
 
 The end-to-end browser suite is the Rust robot suite in `discord-clone/tests/robot/` (see `e2e/README.md`): `idealyst test --web discord-clone`, or `sh /root/bin/robot-test [filter]` from the worktree root on this host.
+
+### Test packs
+
+The robot suite is split into packs by capability, so a run is minutes, not ten. **Everything except `idea_chat` is legacy**: it runs against the built-in RWND server, which we are not extending; features go into idea-chat, with their tests in `idea_chat`. A plain run is the `idea_chat` pack; `--pack legacy` (or `--all`) runs the rest, and every legacy test is also in its old pack below.
+
+```bash
+sh /root/bin/robot-test --list-packs          # the packs and their sizes
+sh /root/bin/robot-test --pack messaging      # one pack
+sh /root/bin/robot-test --pack smoke,voice    # several
+sh /root/bin/robot-test --pack messaging edit # a pack, narrowed by a substring of the test name
+sh /root/bin/robot-test                       # the default: the idea_chat pack
+sh /root/bin/robot-test --pack legacy         # the old RWND-server tests
+sh /root/bin/robot-test --all                 # everything
+```
+
+| Pack | Covers | Modules |
+| --- | --- | --- |
+| `smoke` | sign up, sign out, sign in, wrong password; the first thing to run | `auth` |
+| `messaging` | messages, replies, reactions, DMs, friends, roles and permissions, two-user flows | `messages`, `roles`, `dms_friends`, `two_users`, `multi_user` |
+| `idea_chat` | the idea-chat backend end to end: sign-in, servers, invites, mentions, unread, history, uploads, instance settings | `idea_chat`, `instance` |
+| `server` | server settings, channels, uploads of emoji and icons, profiles and status, notifications, settings | `server`, `coverage`, `profile_status`, `settings`, `notifications` |
+| `look_and_feel` | themes, stickers and emoji | `themes`, `stickers_emoji` |
+| `voice` | calls and the voice screen | `voice` |
+
+- **Tag every new test** `#[robot_test(suites = idea_chat)]`. An untagged test only runs in `--all`.
+- **A tagged test is a module**, named `module::test::idea_suites_<pack>`. A substring filter still works, but one test cannot call another: put shared steps in a plain helper function.
+- **Run it from the worktree root**; one run at a time per host (the wrapper queues on a lock). Under heavy host load a run can time out on the first wait; run it again before blaming the code.
 
 Start a dev server from the **repo root**, with the crate as an argument:
 

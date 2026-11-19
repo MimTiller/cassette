@@ -101,7 +101,7 @@ fn voice_crew(app: &mut App, prefix: &str) -> Account {
     a
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, voice])]
 fn joining_the_voice_row_goes_through_the_backend_seam(app: &mut App) {
     signed_out_off_call(app);
     let live = live_provider();
@@ -128,7 +128,7 @@ fn joining_the_voice_row_goes_through_the_backend_seam(app: &mut App) {
     signed_out_off_call(app);
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, voice])]
 fn leaving_a_live_call_clears_the_roster_and_the_line(app: &mut App) {
     signed_out_off_call(app);
     let live = live_provider();
@@ -181,7 +181,7 @@ fn redeem_invite(app: &mut App, code: &str) {
     app.set_timeout(WAIT);
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, voice])]
 fn a_fresh_browser_restores_only_a_real_in_progress_call(app: &mut App) {
     signed_out_off_call(app);
     let live = live_provider();
@@ -289,7 +289,7 @@ fn mic_element_of(list: &[Value], identity: &str) -> Option<Value> {
 /// the element is muted in B's page but keeps playing (nothing changes on the
 /// call server), and undeafen unmutes it. A's fake-mic tone also lights A as
 /// speaking in B's voice list.
-#[robot_test]
+#[robot_test(suites = [legacy, voice])]
 fn the_other_caller_is_heard_deafen_is_local_and_speaking_shows(app: &mut App) {
     signed_out_off_call(app);
     // Every assertion here reads the client's own hooks (the call-audio rows
@@ -402,7 +402,7 @@ fn the_other_caller_is_heard_deafen_is_local_and_speaking_shows(app: &mut App) {
 /// `MediaStream`, read through `cassette.video_playing`). Like the camera test,
 /// but the observable is the idea-chat client's hooks, not a media server
 /// server, so it runs under CALL_PROVIDER=idea-chat.
-#[robot_test]
+#[robot_test(suites = [legacy, voice])]
 fn the_idea_chat_camera_shows_a_tile_to_the_other_browser(app: &mut App) {
     signed_out_off_call(app);
     // Only for the idea-chat relay: this names the client's own streams.
@@ -472,7 +472,7 @@ fn the_idea_chat_camera_shows_a_tile_to_the_other_browser(app: &mut App) {
 /// Muting keeps the slider position: B dials while muted, unmutes, and
 /// the dial comes back. Runs on the idea-chat relay, where per-remote
 /// volume lives in the client's own `Call`.
-#[robot_test]
+#[robot_test(suites = [legacy, voice])]
 fn the_tile_menu_volume_and_mute_stay_in_the_listeners_tab(app: &mut App) {
     signed_out_off_call(app);
     if env::var("CALL_PROVIDER").unwrap_or_default() != "idea-chat" {
