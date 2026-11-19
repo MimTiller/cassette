@@ -42,12 +42,12 @@
 //! replayed in a `cookie:` header, the one credential the browser itself
 //! proves it holds.
 //!
-//! Rows that cannot work over idea-chat yet, written and marked ignored:
-//! `an_image_attachment_shows_in_both_browsers` (uploads need a storage
-//! bucket and this host runs none, so `begin_upload` answers its
-//! Unavailable refusal) and `a_server_tile_carries_an_unread_badge` (the
-//! rail's server tile draws no unread marker in the app at all — the
-//! channel rows do, which the unread test covers).
+//! A row that cannot work over idea-chat yet, written and marked ignored:
+//! `a_server_tile_carries_an_unread_badge` (the rail's server tile draws no
+//! unread marker in the app at all — the channel rows do, which the unread
+//! test covers). Uploads need an object store: the wrapper gives the chat
+//! server the host's Garage (`~/s3.env`), and `an_image_attachment_shows_in_both_browsers`
+//! pushes an image through the whole path.
 
 use robot_test::{json, robot_test, App, Value};
 
@@ -606,25 +606,53 @@ fn a_opens_a_dm_with_b_that_delivers_to_both(_app: &mut App) {
 
 // ---- the rows the flows script lacks ----------------------------------------
 
+/// A 1x1 PNG: the smallest real image to push through the upload path.
+const TINY_PNG: &[u8] = &[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0x64, 0x60, 0xf8, 0x5f, 0x0f, 0x00, 0x02, 0x87, 0x01, 0x80, 0xeb, 0x47, 0xba, 0x92, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82];
+
 #[robot_test]
-#[ignore = "uploads need a storage bucket: the run's chat server has no S3 endpoint on this host, so begin_upload answers its Unavailable refusal (\"Uploads aren't working right now.\") and no attachment row can be staged"]
 fn an_image_attachment_shows_in_both_browsers(_app: &mut App) {
     let (a, b) = crew();
     let mut browser_a = open_chat_browser("chat-attach-a");
     let mut browser_b = open_chat_browser("chat-attach-b");
     a.sign_chat_in(&mut browser_a.app);
     b.sign_chat_in(&mut browser_b.app);
-    create_server(&mut browser_a.app, &fresh_name("Chat Hq "));
+    let server = fresh_name("Chat Hq ");
+    create_server(&mut browser_a.app, &server);
     join_by_code(&mut browser_b.app, &mint_invite(&mut browser_a.app));
 
-    // The upload triplet on this backend is begin_upload → PUT the bytes to
-    // the presigned slot → finish_upload, then send with the attachment id.
-    // Without a bucket the first leg answers the refusal; assert the refusal
-    // so the test documents the gap it stands for.
-    let refused = chat_srv_refused("begin_upload".to_string(),
-        vec![json!("shot.png"), json!(64u64), json!("image/png"), json!("message")], &a.session);
-    assert_eq!(refused, "Uploads aren't working right now.",
-        "the refusal this ignored row stands for: no bucket exists ({refused})");
+    // The upload triplet on this backend: begin_upload reserves a slot with a presigned PUT, the bytes go straight to the
+    // object store (the run's Garage, which the wrapper gives the chat server), finish_upload turns the slot into an
+    // attachment, and `send` carries its id.
+    let slot = chat_srv("begin_upload".to_string(),
+        vec![json!("shot.png"), json!(TINY_PNG.len() as u64), json!("image/png"), json!("message")], &a.session);
+    let id = slot["id"].as_str().expect("the slot has an id").to_string();
+    let put_url = slot["put_url"].as_str().expect("the slot has a put_url").to_string();
+    let put = ureq::put(&put_url).set("content-type", "image/png").send_bytes(TINY_PNG);
+    assert!(put.is_ok(), "the PUT to the presigned slot failed: {:?}", put.err());
+    let attachment = chat_srv("finish_upload".to_string(), vec![json!(id), json!(1u32), json!(1u32)], &a.session);
+    let mut url = attachment["url"].as_str().expect("the attachment has a url").to_string();
+    if url.starts_with('/') {
+        url = format!("{}{}", chat_base(), url);   // the chat server serves `/f/<id>/<id>` and hands out the object itself
+    }
+
+    // What was stored comes back from the attachment's own url, byte for byte.
+    let mut stored = Vec::new();
+    std::io::Read::read_to_end(
+        &mut ureq::get(&url).call().unwrap_or_else(|e| panic!("GET {url}: {e}")).into_reader(), &mut stored)
+        .expect("read the stored image");
+    assert_eq!(stored.as_slice(), TINY_PNG, "the stored object is not the image that was uploaded");
+
+    // Sent with a caption, it shows in both browsers.
+    let caption = fresh_name("pic ");
+    chat_srv("send".to_string(), vec![json!(channel_of(&server)), json!(caption), Value::Null, json!([id])], &a.session);
+    browser_a.app.text(&caption).assert_visible();
+    browser_b.app.text(&caption).assert_visible();
+    shot(&mut browser_a.app, "chat-attachment-a");
+    shot(&mut browser_b.app, "chat-attachment-b");
+
+    // The row is attached to its message and marked uploaded.
+    assert_eq!(db_row(&format!("select count(a.id) from attachments a where a.id = {}::uuid and a.message_id is not null and a.uploaded", q(&id))), "1",
+        "the attachment is not linked to the sent message on the chat database");
 }
 
 #[robot_test]
