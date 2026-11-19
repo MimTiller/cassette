@@ -343,19 +343,28 @@ fn deliver_spaced(incoming: Signal<Option<WsServerMsg>>, frames: Vec<WsServerMsg
     }
 }
 
-/// A stored body written the way people read it: the server keeps a mention as `<@uuid>` and a channel link as `<#uuid>`, but
-/// the app's mention pills and channel links work on `@handle` and `#name`. Tokens it cannot name stay as they are.
+/// A stored body written the way people read it: the server keeps a mention as
+/// `<@uuid>`, a role mention as `<%uuid>` and a channel link as `<#uuid>`, but
+/// the app's mention pills and channel links work on `@handle`, `@RoleName` and
+/// `#name`. Tokens it cannot name stay as they are.
 pub(crate) fn readable_body(body: &str, world: &State) -> String {
     let mut out = String::with_capacity(body.len());
     let mut rest = body;
     while let Some(at) = rest.find('<') {
         out.push_str(&rest[..at]);
         let tail = &rest[at..];
-        let token = tail.get(0..39).filter(|t| t.ends_with('>') && (t.starts_with("<@") || t.starts_with("<#")));
+        let token = tail.get(0..39).filter(|t| t.ends_with('>') && (t.starts_with("<@") || t.starts_with("<#") || t.starts_with("<%")));
         match token.and_then(|t| uuid::Uuid::parse_str(&t[2..38]).ok().map(|id| (t, id))) {
             Some((t, id)) => {
                 let name = if t.starts_with("<@") {
                     world.users.get(&id).map(|u| format!("@{}", u.handle))
+                } else if t.starts_with("<%") {
+                    // A deleted role answers an empty name, which leaves its
+                    // old mentions as the plain token, like chat-model's rule.
+                    match world.role_label(id).as_str() {
+                        "" => None,
+                        role_name => Some(format!("@{}", role_name)),
+                    }
                 } else {
                     world.channels.get(&id).map(|c| format!("#{}", c.name))
                 };
@@ -375,9 +384,13 @@ pub(crate) fn readable_body(body: &str, world: &State) -> String {
     out
 }
 
-/// The people a message mentions, as the app counts them. `@everyone` names no one, but the server notifies everyone who can read
-/// the channel except the author, so for the viewer it counts as a mention of them (the app's unread-mention count and the row
-/// highlight both ask "is my id in the list").
+/// The people a message mentions, as the app counts them. `@everyone` names no
+/// one, but the server notifies everyone who can read the channel except the
+/// author, so for the viewer it counts as a mention of them (the app's
+/// unread-mention count and the row highlight both ask "is my id in the list").
+/// A `<%role>` token names its holders, so a viewer holding a mentioned role
+/// reads exactly as a directly named person does — the row highlights and the
+/// mention badge count it, like RWND's own `resolve_mentions` for its roles.
 fn mentioned_ids(message: &Message, world: &State) -> Vec<i64> {
     let mut ids: Vec<i64> = message.mentions.iter().map(move |u| see(*u)).collect();
     if message.mentions_everyone {
@@ -386,6 +399,18 @@ fn mentioned_ids(message: &Message, world: &State) -> Vec<i64> {
                 let mine = see(me.user.id);
                 if !ids.contains(&mine) {
                     ids.push(mine);
+                }
+            }
+        }
+    }
+    for role_id in message.mention_roles.iter() {
+        let Some(space_id) = world.channels.get(&message.channel).and_then(move |c| c.space) else { continue };
+        let Some(space) = world.spaces.get(&space_id) else { continue };
+        for (user_id, member) in space.members.iter() {
+            if member.roles.contains(role_id) && *user_id != message.author {
+                let holder = see(*user_id);
+                if !ids.contains(&holder) {
+                    ids.push(holder);
                 }
             }
         }
@@ -799,7 +824,7 @@ mod tests {
     use super::*;
     use chat_model::{Id, User, Message, Presence, MessageKind, Relation, Me, Status};
     use chat_model::live::{Event, State};
-    use chat_model::{Channel, ChannelKind, Role};
+    use chat_model::{Channel, ChannelKind, Role, Space, Member};
 
     fn uid(n: u128) -> Id {
         Id::from_u128(n)
@@ -847,6 +872,7 @@ mod tests {
                 thread: None,
                 mentions: Vec::new(),
                 mentions_everyone: false,
+                mention_roles: Vec::new(),
                 at: 1_700_000_000_000,
                 edited_at: None,
             }
@@ -868,6 +894,89 @@ mod tests {
     }
 
     #[test]
+    fn a_role_mention_names_itself_and_counts_its_holders() {
+        // The server stored a mention of the `Helpers` role as `<%uuid>` plus
+        // mention_roles; for the viewer it lands like a direct mention: the
+        // readable body names the role and the mention list holds its holders
+        // (never the author), so the row highlights and the badge counts it.
+        let helper = uid(9);
+        let mut world = State::default();
+        world.spaces.insert(uid(3), Space {
+            id: uid(3),
+            name: "Alpha".to_string(),
+            icon: None,
+            owner: uid(7),
+            members: {
+                let mut members: std::collections::BTreeMap<Id, Member> = std::collections::BTreeMap::new();
+                members.insert(uid(7), Member { roles: Vec::new(), joined_at: 0 });
+                members.insert(uid(8), Member { roles: vec!(helper), joined_at: 0 });
+                members
+            },
+            roles: {
+                let mut roles: std::collections::BTreeMap<Id, Role> = std::collections::BTreeMap::new();
+                roles.insert(helper, Role {
+                    id: helper,
+                    name: "Helpers".to_string(),
+                    permissions: 0,
+                    position: 0,
+                    colour: None,
+                    mentionable: true,
+                });
+                roles
+            },
+            everyone: 0,
+            categories: Vec::new(),
+            created_at: 0,
+        });
+        world.channels.insert(uid(10), Channel {
+            id: uid(10),
+            kind: ChannelKind::Text,
+            space: Some(uid(3)),
+            name: "general".to_string(),
+            topic: "".to_string(),
+            category: None,
+            position: 0,
+            parent: None,
+            starter: None,
+            view: 0,
+            post: 0,
+            members: Vec::new(),
+            archived: false,
+            overwrites: std::collections::BTreeMap::new(),
+            last_message: None,
+            message_count: 0,
+            created_by: uid(7),
+            created_at: 0,
+        });
+        let mut message = Message {
+            id: uid(100),
+            channel: uid(10),
+            author: uid(7),
+            kind: MessageKind::Text,
+            body: format!("ping <%{}>", uuid_to_string(helper)),
+            attachments: Vec::new(),
+            reply_to: None,
+            reactions: Vec::new(),
+            thread: None,
+            mentions: Vec::new(),
+            mentions_everyone: false,
+            mention_roles: vec!(helper),
+            at: 1_700_000_000_000,
+            edited_at: None,
+        };
+        assert_eq!(readable_body(&message.body, &world), "ping @Helpers".to_string());
+        let holders = mentioned_ids(&message, &world);
+        assert_eq!(holders, vec!(see(uid(8))));
+        // A deleted role keeps its plain token in the body, like chat-model's
+        // rule, and names no holders.
+        let gone = uid(99);
+        message.mention_roles = vec!(gone);
+        message.body = format!("ping <%{}>", uuid_to_string(gone));
+        assert_eq!(readable_body(&message.body, &world), message.body);
+        assert_eq!(mentioned_ids(&message, &world).len(), 0);
+    }
+
+    #[test]
     fn an_edit_carries_the_fresh_body_and_edited_at() {
         let edited = Event::MessageEdited {
             message: Message {
@@ -882,6 +991,7 @@ mod tests {
                 thread: None,
                 mentions: Vec::new(),
                 mentions_everyone: false,
+                mention_roles: Vec::new(),
                 at: 1_700_000_000_000,
                 edited_at: Some(1_700_000_005_000),
             }
@@ -1097,6 +1207,7 @@ mod tests {
                     kind: MessageKind::Text, body: "one".to_string(),
                     attachments: Vec::new(), reply_to: None, reactions: Vec::new(),
                     thread: None, mentions: Vec::new(), mentions_everyone: false,
+                    mention_roles: Vec::new(),
                     at: 1_700_000_000_000, edited_at: None,
                 },
                 Message {
@@ -1104,6 +1215,7 @@ mod tests {
                     kind: MessageKind::Text, body: "two".to_string(),
                     attachments: Vec::new(), reply_to: None, reactions: Vec::new(),
                     thread: None, mentions: Vec::new(), mentions_everyone: false,
+                    mention_roles: Vec::new(),
                     at: 1_700_000_001_000, edited_at: None,
                 },
             ],

@@ -140,19 +140,19 @@ web-glue = { version = "=2.4.0", registry = "idealyst", features = ["wasm-bindge
 credentials = { version = "=1.5.3", registry = "idealyst" }
 
 # Only with the `idea-chat` feature: the vocabulary of the second backend.
-# The chat-model crate (from the idea-chat repo, pinned to the commit the
-# wire study documents) only needs serde, uuid and idea-state, so it stays
+# The chat-model crate (from our fork of the idea-chat repo, `roles-defaults`: the upstream roles work plus
+# the role colour, seeded Admin and Moderator roles and role mentions with a `mentionable` flag) only needs serde, uuid and idea-state, so it stays
 # light; the chat-api crate it sits beside is built on idealyst server 3.0
 # and RWND never links it. serde_json/uuid are pulled as feature-gated
 # direct deps only because IdeaChatBackend's codec speaks JSON and Uuid
 # directly; the rest of the crate stays free of them. The pinned rev's repo
 # is a workspace whose members live in `crates/<name>` — cargo resolves
 # each member by name from the git URL, so no subdirectory key is needed.
-chat-model = { git = "https://github.com/IdealystIO/idea-chat", rev = "982fe4198719dbad336aa33c23e1802aff9f727e", optional = true }
+chat-model = { git = "https://github.com/MimTiller/idea-chat", rev = "490ebda341fae5d3721baab3010050f315333508", optional = true }
 # The reducer's frame enums (`Down`/`Up`/`Cursor`) that chat-model re-exports as
 # its `idea_state` dep — pulled at the SAME pinned rev, so it is the identical
 # crate instance chat-model already links (shared git cache; no new download).
-idea-state = { git = "https://github.com/IdealystIO/idea-chat", rev = "982fe4198719dbad336aa33c23e1802aff9f727e", optional = true }
+idea-state = { git = "https://github.com/MimTiller/idea-chat", rev = "490ebda341fae5d3721baab3010050f315333508", optional = true }
 serde_json = { version = "1", optional = true }
 # Restate-a-few chat-api wire types (`Window`, `Session`, …) need serde derives
 # in this crate, and serde comes along only transitively otherwise — pull it

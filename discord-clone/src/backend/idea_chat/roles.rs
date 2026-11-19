@@ -1,12 +1,16 @@
 //! Named roles over the idea-chat RPCs: the snapshot and the edits translate
-//! through `perms_map`. The model has no colour, no mentionable flag and no
-//! reordering verb — a role's position counts UP its ladder (lower is more
-//! senior), so RWND's position (higher first) is the negated idea-chat one,
-//! and a reorder refuses with a sentence naming what this server orders by.
+//! through `perms_map`, the colour pair below, and the `mentionable` flag, which
+//! rides the wire both ways on this branch. There is no reordering verb — a
+//! role's position counts UP its ladder (lower is more senior), so RWND's
+//! position (higher first) is the negated idea-chat one, and a reorder refuses
+//! with a sentence naming what this server orders by. Colours go the other way:
+//! idea-chat's `Option<u32>` (0xRRGGBB) and RWND's `""`/`#rrggbb` string map
+//! through one conversion pair both ways.
 
 use crate::backend::*;
 use crate::backend::idea_chat::{client, live, perms_map};
 use chat_model::{Id, Role, Space};
+use discord_server::server_roles::{validate_color, CustomRole};
 
 impl RolesApi for IdeaChatBackend {
     // The reducer state carries the space's role records and every member's
@@ -20,35 +24,43 @@ impl RolesApi for IdeaChatBackend {
         }
     }
 
-    // `create_role(space, name, permissions)` answers the fresh role. The
-    // new role starts with the empty permission set — RWND sets powers
-    // through `update_role` after creating — and its colour/mentionable have
-    // no counterpart on this model, so they are accepted and ignored.
+    // `create_role(space, name, permissions, colour, mentionable)` answers the
+    // fresh role. The new role starts with the empty permission set — RWND sets
+    // powers through `update_role` after creating — and its colour goes over as
+    // idea-chat's `Option<u32>`; a malformed RWND colour refuses with a
+    // sentence. RWND's `mentionable` rides the wire as idea-chat's own flag.
     async fn create_role(
         server_id: i64,
         name: String,
-        _color: String,
-        _mentionable: bool,
+        color: String,
+        mentionable: bool,
     ) -> Result<CustomRole, ServerError> {
+        let colour = match idea_color_of(color) {
+            Err(why) => return Err(ServerError::failed(why)),
+            Ok(colour) => colour,
+        };
         let mut args = Vec::new();
         args.push(client::arg(live::wire_of(server_id)));
         args.push(client::arg(&name));
         args.push(client::arg::<u64>(0));
+        args.push(client::arg(colour));
+        args.push(client::arg(mentionable));
         match client::call_as::<Role>("create_role", args).await {
             Err(e) => Err(e),
             Ok(role) => Ok(custom_role_of(server_id, role.clone())),
         }
     }
 
-    // `update_role(space, role, name, permissions)` answers unit: RWND's
-    // `None` permissions leave them as they are, so the current set comes
-    // back through unchanged. The fresh record is read off the snapshot the
-    // `RolesChanged` event updates.
+    // `update_role(space, role, name, permissions, colour, mentionable)` answers
+    // unit: RWND's `None` permissions leave them as they are, so the current set
+    // comes back through unchanged; the colour and `mentionable` are set to
+    // exactly what is sent, like the name. The fresh record is read off the
+    // snapshot the `RolesChanged` event updates.
     async fn update_role(
         role_id: i64,
         name: String,
-        _color: String,
-        _mentionable: bool,
+        color: String,
+        mentionable: bool,
         permissions: Option<Permissions>,
     ) -> Result<CustomRole, ServerError> {
         let role_wire = live::wire_of(role_id);
@@ -64,11 +76,17 @@ impl RolesApi for IdeaChatBackend {
                     None => held,
                     Some(permissions) => perms_map::to_idea(permissions),
                 };
+                let colour = match idea_color_of(color) {
+                    Err(why) => return Err(ServerError::failed(why)),
+                    Ok(colour) => colour,
+                };
                 let mut args = Vec::new();
                 args.push(client::arg(space_id));
                 args.push(client::arg(role_wire));
                 args.push(client::arg(&name));
                 args.push(client::arg::<u64>(new_perms));
+                args.push(client::arg(colour));
+                args.push(client::arg(mentionable));
                 match client::post("update_role", args).await {
                     Err(e) => Err(e),
                     Ok(_) => match live::snapshot().spaces.get(&space_id).and_then(move |space| space.roles.get(&role_wire)) {
@@ -143,18 +161,48 @@ impl RolesApi for IdeaChatBackend {
 
 // --- helpers this area shares -------------------------------------------
 
-/// RWND's role row from one idea-chat record: no colour, never mentionable
-/// (no mention grammar here), and the ladder position negated so RWND's
-/// higher-first ordering matches idea-chat's senior-lowest one.
+/// RWND's role row from one idea-chat record: its colour translated to RWND's
+/// hex string (the neutral `""` for no colour), its `mentionable` flag carried
+/// across, and the ladder position negated so RWND's higher-first ordering
+/// matches idea-chat's senior-lowest one.
 pub(crate) fn custom_role_of(server_id: i64, role: Role) -> CustomRole {
     CustomRole {
         id: live::see(role.id),
         server_id: server_id,
         name: role.name.clone(),
-        color: "".to_string(),
-        mentionable: false,
+        color: rwnd_color_of(role.colour),
+        mentionable: role.mentionable,
         position: -(role.position as i64),
         permissions: perms_map::to_rwnd(role.permissions),
+    }
+}
+
+/// idea-chat's `Option<u32>` colour from RWND's string: `""` (no colour) is
+/// `None`, and a well-formed `#rrggbb` becomes the 0xRRGGBB number. Anything
+/// else — "red", `#12345`, a number without `#` — refuses with RWND's own
+/// message rather than guessing or panicking.
+pub(crate) fn idea_color_of(color: String) -> Result<Option<u32>, String> {
+    match validate_color(&color) {
+        Err(why) => Err(why.clone()),
+        Ok(c) if c.is_empty() => Ok(None),
+        // `validate_color` already guaranteed exactly six hex digits after the
+        // `#`, so the parse cannot fail; the arms keep it total anyway.
+        Ok(c) => match c.strip_prefix("#") {
+            None => Err("a role colour must look like #a1b2c3".to_string()),
+            Some(hex) => match u32::from_str_radix(hex, 16) {
+                Err(_) => Err("a role colour must look like #a1b2c3".to_string()),
+                Ok(value) => Ok(Some(value)),
+            },
+        },
+    }
+}
+
+/// RWND's colour string from idea-chat's `Option<u32>`: no colour is the
+/// neutral `""`, otherwise the lower-case `#rrggbb` RWND draws.
+pub(crate) fn rwnd_color_of(colour: Option<u32>) -> String {
+    match colour {
+        None => "".to_string(),
+        Some(c) => format!("#{:06x}", c),
     }
 }
 
@@ -210,6 +258,8 @@ mod tests {
             name: "Helpers".to_string(),
             permissions: perms::Permission::ViewChannel.bit() | perms::Permission::ManageMembers.bit(),
             position: 2,
+            colour: Some(0xE74C3C),
+            mentionable: true,
         });
         let mut members: BTreeMap<Id, Member> = BTreeMap::new();
         members.insert(uid(8), Member { roles: vec!(uid(9)), joined_at: 0 });
@@ -228,8 +278,8 @@ mod tests {
         assert_eq!(snap.roles.len(), 1);
         assert_eq!(snap.roles[0].name, "Helpers".to_string());
         assert_eq!(snap.roles[0].position, -2);
-        assert_eq!(snap.roles[0].color, "".to_string());
-        assert_eq!(snap.roles[0].mentionable, false);
+        assert_eq!(snap.roles[0].color, "#e74c3c".to_string());
+        assert_eq!(snap.roles[0].mentionable, true);
         assert_eq!(snap.roles[0].permissions.contains(Permissions::VIEW_CHANNEL), true);
         assert_eq!(snap.roles[0].permissions.contains(Permissions::KICK_MEMBERS), true);
         assert_eq!(snap.roles[0].permissions.contains(Permissions::BAN_MEMBERS), false);
@@ -244,5 +294,50 @@ mod tests {
         // idea-chat set it writes holds exactly the mapped bits.
         let rw = Permissions::VIEW_CHANNEL.union(Permissions::MANAGE_ROLES);
         assert_eq!(perms_map::to_idea(rw), perms::Permission::ViewChannel.bit() | perms::Permission::ManageRoles.bit());
+    }
+
+    #[test]
+    fn a_role_colour_round_trips_both_ways() {
+        // RWND's "#e74c3c" goes over as 0xE74C3C and back as the same string,
+        // upper-case input normalising to RWND's lower-case form.
+        assert_eq!(idea_color_of("#e74C3C".to_string()), Ok(Some(0xE74C3C)));
+        assert_eq!(rwnd_color_of(idea_color_of("#e74c3c".to_string()).unwrap()), "#e74c3c".to_string());
+        assert_eq!(idea_color_of(rwnd_color_of(Some(0x2ECC71))).unwrap(), Some(0x2ECC71));
+    }
+
+    #[test]
+    fn no_colour_maps_to_rwnd_s_neutral_default() {
+        // idea-chat's None reads as RWND's "" (which its roles screen and the
+        // member-name colour check treat as no colour), and "" writes back as
+        // None, clearing the role.
+        assert_eq!(rwnd_color_of(None), "".to_string());
+        assert_eq!(idea_color_of("".to_string()), Ok(None));
+    }
+
+    #[test]
+    fn a_mentionable_flag_maps_both_ways() {
+        // The role row reads idea-chat's flag straight across, and a role
+        // written without it reads back without it, so RWND's mention picker
+        // and the wire agree on the same roles.
+        let role = Role {
+            id: uid(9),
+            name: "Helpers".to_string(),
+            permissions: 0,
+            position: 1,
+            colour: None,
+            mentionable: true,
+        };
+        assert_eq!(custom_role_of(1, role.clone()).mentionable, true);
+        assert_eq!(custom_role_of(1, Role { mentionable: false, ..role }).mentionable, false);
+    }
+
+    #[test]
+    fn a_malformed_rwnd_colour_refuses_with_a_sentence() {
+        // "red", a short hex, and a number without the `#` all answer RWND's
+        // own colour message, which the callers wrap in a ServerError::failed —
+        // no panic.
+        assert_eq!(idea_color_of("red".to_string()), Err("colour must look like #a1b2c3".to_string()));
+        assert_eq!(idea_color_of("#12345".to_string()), Err("colour must look like #a1b2c3".to_string()));
+        assert_eq!(idea_color_of("1abc9c".to_string()), Err("colour must look like #a1b2c3".to_string()));
     }
 }

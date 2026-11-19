@@ -49,7 +49,7 @@
 //! server the host's Garage (`~/s3.env`), and `an_image_attachment_shows_in_both_browsers`
 //! pushes an image through the whole path.
 
-use robot_test::{json, robot_test, App, Value};
+use robot_test::{json, robot_test, App, Selector, Value};
 
 use std::process::Command;
 use std::sync::OnceLock;
@@ -878,4 +878,115 @@ fn a_plain_member_cannot_delete_another_users_message(_app: &mut App) {
 /// included.
 pub fn duo() -> (Browser, Browser) {
     setup_pair()
+}
+
+// ---- role colours -------------------------------------------------------------
+//
+// idea-chat's role `colour: Option<u32>` (0xRRGGBB) is drawn by RWND in three places: the Roles screen's name text, its seeded
+// Admin and Moderator rows, and a member's name in the member list. These rows read the text colour the app resolved (the
+// `get_style` verb), so they fail when the colour is dropped, mapped wrongly or never repainted.
+
+/// The resolved text colour of the first element showing `label`, as 0-255 channels.
+fn colour_of(app: &mut App, label: &str) -> (u8, u8, u8) {
+    rgb8(app.text(label).style().color.unwrap_or([0.0; 4]))
+}
+
+fn rgb8(c: [f32; 4]) -> (u8, u8, u8) {
+    let b = |v: f32| (v * 255.0).round() as u8;
+    (b(c[0]), b(c[1]), b(c[2]))
+}
+
+/// Open the active server's Server Settings > Roles screen.
+fn open_roles_screen(app: &mut App) {
+    app.set_timeout(WAIT);
+    app.call_function("cassette.rearm_perms", json!({}));
+    app.test_id("server-header").click();
+    app.test_id("menu-server-settings").assert_visible();
+    app.test_id("menu-server-settings").click();
+    app.test_id("settings-nav-roles").assert_visible();
+    app.test_id("settings-nav-roles").click();
+    app.test_id("role-create-name-input").assert_visible();
+    app.set_timeout(WAIT);
+}
+
+#[robot_test(suites = idea_chat)]
+fn a_role_made_with_a_colour_shows_in_it_and_the_seeded_roles_keep_theirs(_app: &mut App) {
+    let (mut a, _b) = duo();
+    let server = fresh_name("Hue Hq ");
+    create_server(&mut a.app, &server);
+    open_roles_screen(&mut a.app);
+
+    // The seeded Admin and Moderator roles carry their standing colours.
+    assert_eq!(colour_of(&mut a.app, "Admin"), (0xe7, 0x4c, 0x3c), "the seeded Admin role is drawn red");
+    assert_eq!(colour_of(&mut a.app, "Moderator"), (0x2e, 0xcc, 0x71), "the seeded Moderator role is drawn green");
+
+    // A role made through the screen with the blue swatch is drawn blue and stored with the colour.
+    let role = fresh_name("Blue ");
+    a.app.test_id("role-create-name-input").fill(&role);
+    a.app.test_id("role-swatch-blue").click();
+    a.app.test_id("create-role").click();
+    a.app.text(&role).assert_visible();
+    a.app.text(&role).assert_style(|s| s.color.map(rgb8) == Some((0x34, 0x98, 0xdb)));
+    let stored = db_row(&format!(
+        "select r.colour from space_roles r join spaces s on s.id = r.space_id where s.name = {} and r.name = {}",
+        q(&server), q(&role)));
+    assert_eq!(stored, (0x3498db_u32).to_string(), "the role's colour is stored as 0xRRGGBB");
+    shot(&mut a.app, "chat-role-colours");
+}
+
+#[robot_test(suites = idea_chat)]
+fn changing_a_role_colour_repaints_the_roles_screen_live(_app: &mut App) {
+    let (a, _b) = crew();
+    let mut browser_a = open_chat_browser("chat-recolour-a");
+    a.sign_chat_in(&mut browser_a.app);
+    let server = fresh_name("Recolour Hq ");
+    create_server(&mut browser_a.app, &server);
+    let space = space_of(&server);
+    let role = fresh_name("Shade ");
+    let made = chat_srv("create_role".to_string(), vec![json!(space), json!(role), json!(0), json!(0x3498db), json!(false)], &a.session);
+    let role_id = made["id"].as_str().expect("create_role answers the role's id").to_string();
+
+    open_roles_screen(&mut browser_a.app);
+    browser_a.app.text(&role).assert_style(|s| s.color.map(rgb8) == Some((0x34, 0x98, 0xdb)));
+
+    // The same change the Settings row makes, from outside the screen: the open screen repaints without a reload.
+    chat_srv("update_role".to_string(), vec![json!(space), json!(role_id), json!(role), json!(0), json!(0x1abc9c), json!(false)], &a.session);
+    browser_a.app.text(&role).assert_style(|s| s.color.map(rgb8) == Some((0x1a, 0xbc, 0x9c)));
+
+    // An out-of-range colour is refused with a sentence, not stored.
+    let refused = chat_srv_refused(
+        "update_role".to_string(), vec![json!(space), json!(role_id), json!(role), json!(0), json!(0x11223344_u32), json!(false)], &a.session);
+    assert_eq!(refused, "A role colour must be 0xRRGGBB.");
+}
+
+#[robot_test(suites = idea_chat)]
+fn a_members_name_on_a_message_takes_the_colour_of_their_role(_app: &mut App) {
+    let (a, b) = crew();
+    let mut browser_a = open_chat_browser("chat-name-a");
+    let mut browser_b = open_chat_browser("chat-name-b");
+    a.sign_chat_in(&mut browser_a.app);
+    b.sign_chat_in(&mut browser_b.app);
+    let server = fresh_name("Name Hq ");
+    create_server(&mut browser_a.app, &server);
+    join_by_code(&mut browser_b.app, &mint_invite(&mut browser_a.app));
+    browser_a.app.text("general").click();
+    browser_b.app.text("general").click();
+    browser_a.app.set_timeout(WAIT);
+    browser_b.app.set_timeout(WAIT);
+
+    let space = space_of(&server);
+    let role = fresh_name("Tint ");
+    let made = chat_srv("create_role".to_string(), vec![json!(space), json!(role), json!(0), json!(0x1abc9c), json!(false)], &a.session);
+    let role_id = made["id"].as_str().expect("create_role answers the role's id").to_string();
+    let b_id = db_row(&format!("select u.id from users u where u.email = {}", q(&b.email)));
+    chat_srv("set_roles".to_string(), vec![json!(space), json!(b_id), json!([role_id])], &a.session);
+
+    // B's message shows B's name in the held role's colour, in A's view and in B's own.
+    send(&mut browser_b.app, "a message from a coloured member");
+    let handle = b.handle.clone();
+    for app in [&mut browser_a.app, &mut browser_b.app] {
+        app.text(&handle).within(Selector::test_id("msg-author-name"))
+            .assert_style(|s| s.color.map(rgb8) == Some((0x1a, 0xbc, 0x9c)));
+    }
+    shot(&mut browser_b.app, "chat-member-name-colour");
 }

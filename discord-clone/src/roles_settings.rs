@@ -429,8 +429,15 @@ pub fn roles_section(server_id: Option<i64>) -> Element {
             }
         };
     let list = ui! {
-        match (roles.get(), everyone.get(), selected.get()) {
-            key => {{ (render_list)(&key) }},
+        match (roles.get(), everyone.get(), selected.get(), crate::mentions::revision()) {
+            key => {{
+                // A role can change from outside this screen (another admin, the API): a live RolesChanged frame
+                // refetches the shared store and bumps its revision, so draw the store's copy, not this screen's
+                // own (loaded once, and after its own edits).
+                let (_, _, sel, _) = key;
+                let snap = crate::mentions::roles();
+                (render_list)(&(snap.roles, snap.everyone_permissions, *sel))
+            }},
         }
     };
 
