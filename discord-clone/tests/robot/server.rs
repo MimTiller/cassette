@@ -21,7 +21,7 @@ use robot_test::{json, robot_test, App};
 use crate::support::{Account, fresh_name, sign_in_as, sign_up, signed_out};
 use crate::support::WAIT;
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn create_a_server_shows_it_in_the_sidebar(app: &mut App) {
     signed_out(app);
     let user = fresh_name("srvu");
@@ -38,7 +38,7 @@ fn create_a_server_shows_it_in_the_sidebar(app: &mut App) {
     eprintln!("[shot] create server: {shot}");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn the_server_rail_stays_beside_the_dms_and_switches_back(app: &mut App) {
     signed_out(app);
     let account = Account::new("railsw");
@@ -67,7 +67,7 @@ fn the_server_rail_stays_beside_the_dms_and_switches_back(app: &mut App) {
     eprintln!("[shot] back on the server: {shot}");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn the_owners_menu_offers_create_channel(app: &mut App) {
     signed_out(app);
     let account = Account::new("srvperm");
@@ -104,7 +104,7 @@ fn the_owners_menu_offers_create_channel(app: &mut App) {
     eprintln!("[shot] owner posts in fresh channel: {shot}");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn create_a_channel_shows_it_in_the_sidebar(app: &mut App) {
     signed_out(app);
     let account = Account::new("srvchan");
@@ -124,7 +124,7 @@ fn create_a_channel_shows_it_in_the_sidebar(app: &mut App) {
     eprintln!("[shot] channel in sidebar: {shot}");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn send_a_message_and_see_it_appear(app: &mut App) {
     signed_out(app);
     let account = Account::new("srvsend");
@@ -143,7 +143,7 @@ fn send_a_message_and_see_it_appear(app: &mut App) {
     app.test_id("composer").assert_value("");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn edit_shows_the_new_text_with_the_edited_marker(app: &mut App) {
     signed_out(app);
     let account = Account::new("srvedit");
@@ -170,7 +170,7 @@ fn edit_shows_the_new_text_with_the_edited_marker(app: &mut App) {
     eprintln!("[shot] edited message: {shot}");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn delete_removes_the_message(app: &mut App) {
     signed_out(app);
     let account = Account::new("srvdel");

@@ -7,7 +7,7 @@ use crate::users::open_browser;
 
 /// Two extra browsers sign in as two other accounts beside the suite's own:
 /// each keeps its own session, and each can be screenshotted.
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn three_browsers_are_three_users(app: &mut App) {
     let (a, b, c) = (Account::new("mua"), Account::new("mub"), Account::new("muc"));
     signed_out(app);

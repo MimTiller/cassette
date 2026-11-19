@@ -99,7 +99,7 @@ fn server_of(account: &Account, name: String) -> i64 {
 
 // ---- invite minted from the header is joinable, expired refused ------------
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn an_invite_from_the_header_is_joinable_by_a_second_browser(app: &mut App) {
     signed_out(app);
     let a = Account::new("covinva");
@@ -125,7 +125,7 @@ fn an_invite_from_the_header_is_joinable_by_a_second_browser(app: &mut App) {
     eprintln!("[shot] cov-invite-joinable: {shot}");
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn an_expired_invite_is_refused_at_the_join_modal(app: &mut App) {
     signed_out(app);
     let a = Account::new("covexpa");
@@ -162,7 +162,7 @@ fn an_expired_invite_is_refused_at_the_join_modal(app: &mut App) {
 
 // ---- the GIF picker opens, searches, sends (or shows its no-key state) ----
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn the_gif_picker_opens_searches_and_sends_or_reports_no_key(app: &mut App) {
     signed_out(app);
     let a = Account::new("covgifa");
@@ -203,7 +203,7 @@ fn the_gif_picker_opens_searches_and_sends_or_reports_no_key(app: &mut App) {
 
 // ---- a custom server emoji uploads and renders in a message ---------------
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn a_custom_server_emoji_uploads_and_renders_in_a_message(app: &mut App) {
     signed_out(app);
     let a = Account::new("covemora");
@@ -250,7 +250,7 @@ fn a_custom_server_emoji_uploads_and_renders_in_a_message(app: &mut App) {
 
 // ---- a JPEG server emoji uploads through the hook and renders in a message --
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn a_jpeg_server_emoji_uploads_and_renders_in_a_message(app: &mut App) {
     signed_out(app);
     let a = Account::new("covjpeg");
@@ -298,7 +298,7 @@ fn a_jpeg_server_emoji_uploads_and_renders_in_a_message(app: &mut App) {
 
 // ---- a server rename + icon change show live for a second browser ---------
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn a_renamed_server_with_a_new_icon_shows_live_on_another_browser(app: &mut App) {
     signed_out(app);
     let a = Account::new("covrena");
@@ -350,7 +350,7 @@ fn a_renamed_server_with_a_new_icon_shows_live_on_another_browser(app: &mut App)
 
 // ---- a password change signs other sessions out; new password works -------
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn a_password_change_signs_other_sessions_out_and_the_new_password_works(app: &mut App) {
     signed_out(app);
     let a = Account::new("covpwda");
@@ -407,7 +407,7 @@ fn a_password_change_signs_other_sessions_out_and_the_new_password_works(app: &m
 
 // ---- a sticker uploads, sends from the picker and shows for a second browser
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn a_sticker_uploads_sends_from_the_picker_and_shows_for_another_browser(app: &mut App) {
     signed_out(app);
     let a = Account::new("covstka");
@@ -469,7 +469,7 @@ fn a_sticker_uploads_sends_from_the_picker_and_shows_for_another_browser(app: &m
 
 // ---- the bottom-left user profile bar renders after signing in -------------
 
-#[robot_test]
+#[robot_test(suites = [legacy, server])]
 fn the_user_profile_bar_renders_after_signing_in(app: &mut App) {
     signed_out(app);
     let a = Account::new("covbar");

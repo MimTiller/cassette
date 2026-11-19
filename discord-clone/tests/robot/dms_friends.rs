@@ -70,7 +70,7 @@ fn close_dms(app: &mut App) {
     app.test_id("user-settings").assert_visible();
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn a_friend_request_is_sent_and_accepted_across_browsers(app: &mut App) {
     let (a, b, _c, server) = crew("dms");
     signed_out(app);
@@ -120,7 +120,7 @@ fn a_friend_request_is_sent_and_accepted_across_browsers(app: &mut App) {
     close_dms(app);
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn a_dm_opens_from_the_search_and_both_read_it_live(app: &mut App) {
     let (a, b, _c, _server) = crew("dmdm");
     // A and B are friends before either signs in: the search starts DMs
@@ -168,7 +168,7 @@ fn a_dm_opens_from_the_search_and_both_read_it_live(app: &mut App) {
     close_dms(app);
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn a_group_dm_opens_for_three_people_from_the_picker(app: &mut App) {
     let (a, b, c, _server) = crew("grp");
     // Seed A's friendships through the server (the Python seed for the
@@ -205,7 +205,7 @@ fn a_group_dm_opens_for_three_people_from_the_picker(app: &mut App) {
     close_dms(app);
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn a_server_seeded_group_dm_shows_in_the_dm_list(app: &mut App) {
     let (a, b, c, _server) = crew("seedgrp");
     a.call("send_friend_request", json!({ "username": b.name }));
@@ -229,7 +229,7 @@ fn a_server_seeded_group_dm_shows_in_the_dm_list(app: &mut App) {
     close_dms(app);
 }
 
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn blocking_in_the_dm_hides_the_blocked_messages(app: &mut App) {
     let (a, b, _c, _server) = crew("blk");
     a.call("send_friend_request", json!({ "username": b.name }));

@@ -33,7 +33,7 @@ use crate::users::open_browser;
 /// A creates a server and mints an invite code; B, in its own browser with its
 /// own fresh account, joins through the join modal with that code and lands on
 /// the new server open, with A already online in its member list.
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn b_joins_a_server_through_an_invite(app: &mut App) {
     signed_out(app);
     let a = Account::new("twoA");
@@ -91,7 +91,7 @@ fn b_joins_a_server_through_an_invite(app: &mut App) {
 
 /// A sends "@B hello"; B's browser receives it live over the gateway with the
 /// mention pill on B's name; B replies and A receives the reply live too.
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn a_message_and_a_reply_cross_between_two_browsers(app: &mut App) {
     signed_out(app);
     let a = Account::new("twoA");
@@ -135,7 +135,7 @@ fn a_message_and_a_reply_cross_between_two_browsers(app: &mut App) {
 /// Presence both ways: B came online after A entered the channel, and Presence
 /// frames only fire on changes, so each side's member list — not a fresh frame
 /// — must carry the other user online.
-#[robot_test]
+#[robot_test(suites = [legacy, messaging])]
 fn both_users_are_online_in_each_member_list(app: &mut App) {
     signed_out(app);
     let a = Account::new("twoA");
