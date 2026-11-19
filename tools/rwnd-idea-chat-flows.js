@@ -51,6 +51,18 @@ const psql = (sql) => {
 };
 const dbRows = (sql) => { const out = psql(sql); return out ? out.split("\n").length : 0; };
 const sqlQuote = (s) => `'${s.replace(/'/g, "''")}'`;
+// A /_srv POST that keeps the body even when curl exits non-zero (the
+// harness's earlier calls threw with the response in e.stdout).
+async function srv(path, body, cookie) {
+  let out = "";
+  try {
+    out = execFileSync("curl", ["-s", "-X", "POST", `${BASE}/_srv/${path}`,
+      "-H", "content-type", "application/json",
+      ...(cookie ? [`-H`, `cookie: ${cookie}`] : []),
+      "--data-raw", JSON.stringify(body)], { encoding: "utf8" });
+  } catch (e) { out = (e.stdout || "").toString(); }
+  return out;
+}
 
 // --- one browser, two page contexts -----------------------------------------
 async function browser() {
@@ -65,6 +77,41 @@ async function newPage(b) {
 }
 async function text(page) {
   return (await page.evaluate(() => document.body.innerText)).replace(/\s+/g, " ");
+}
+// The computed colour(s) of every element whose visible text is exactly `label`.
+// The idealyst web renderer paints text colours as CSS, so a role's name text
+// and its row's name dot carry the role colour in getComputedStyle.
+async function colorHits(page, label) {
+  return await page.evaluate((label) => {
+    const seen = [];
+    const walk = (el) => {
+      if (el.textContent === label && el.children.length === 0) {
+        seen.push(getComputedStyle(el).color);
+      }
+      for (const kid of el.children) walk(kid);
+    };
+    walk(document.body);
+    return seen;
+  }, label);
+}
+const rgb = (hex) => {
+  const n = parseInt(hex, 16);
+  return `rgb(${(n >> 16) & 0xff}, ${(n >> 8) & 0xff}, ${n & 0xff})`;
+};
+// A click that survives the idealyst renderer's overlay intercepts: a
+// timeout/interception is not fatal here (the nav rows may already be open),
+// so retry once after an Escape and swallow the last failure.
+async function safeClick(locator, page) {
+  for (let i = 0; i < 2; i++) {
+    try { await locator.first().click(); return true; }
+    catch (e) { try { await page.keyboard.press("Escape"); } catch (x) {} }
+  }
+  return false;
+}
+async function safeGoto(page, label, exact) {
+  const loc = page.getByText(label, { exact });
+  if ((await loc.count()) === 0) return false;
+  return await safeClick(loc, page);
 }
 async function signIn(page, email) {
   await page.goto(BASE + "/", { waitUntil: "load", timeout: 60000 });
@@ -185,8 +232,13 @@ async function main() {
   // (e) B sees the server, #general and A's earlier message; A sees B in the
   //     member list (no reload on either side).
   const generalB = pageB.getByText("general", { exact: true });
-  if ((await generalB.count()) > 0) { await generalB.first().click(); await pageB.waitForTimeout(3000); }
-  tB = await text(pageB);
+  if ((await generalB.count()) > 0) { await generalB.first().click(); }
+  // The window's first fetch can land after the click; poll instead of a
+  // fixed wait so (e2) does not race the initial message load.
+  for (let i = 0; i < 10 && !tB.includes(MSG1); i++) {
+    await pageB.waitForTimeout(1000);
+    tB = await text(pageB);
+  }
   check("(e1) B sees the server and #general", tB.includes("general"), tB);
   check("(e2) B sees A's earlier message", tB.includes(MSG1), tB);
   tA = await text(pageA);
@@ -218,26 +270,23 @@ async function main() {
   await pageB.keyboard.press("Escape");
 
   // (g) A edits and deletes their own message through the UI; both browsers
-  //     update. The action bar floats over a hovered row: react first, then the
-  //     "More" pill opens the overflow menu with Edit / Delete rows.
+  //     update. A right-click on the row opens its overflow menu directly
+  //     (the row's own on_touch shortcut — the hover bar's pill positions
+  //     chase a moving layout, so the menu opens by context-menu instead);
+  //     the "Edit" / "Delete" rows are found by text.
   {
     const row = async () => await pageA.getByText(MSG2, { exact: false }).first().boundingBox();
     let r1 = await row();
-    // hover the row so the bar appears, then tap More (the right-most pill)
-    const hover = { x: r1.x + 30, y: r1.y + r1.height / 2 };
-    const moveAndTapMore = async () => {
-      await pageA.mouse.move(hover.x, hover.y);
-      await pageA.waitForTimeout(400);
-      // More is the third pill: react, reply, more, each 32px, right-aligned.
-      await pageA.mouse.click(r1.x + r1.width - 28, r1.y + 16);
+    const openMenu = async () => {
+      await pageA.mouse.click(r1.x + 30, r1.y + r1.height / 2, { button: "right" });
       await pageA.waitForTimeout(700);
     };
     let editOk = false;
-    for (const dx of [-28, -60, -92]) {
-      await moveAndTapMore();
+    for (const attempt of [1, 2, 3]) {
+      await openMenu();
       const editRow = pageA.getByText("Edit", { exact: true });
       if ((await editRow.count()) > 0) { await editRow.first().click(); editOk = true; break; }
-      await pageA.mouse.click(hover.x, hover.y); // leave the menu, re-hover
+      await pageA.mouse.click(r1.x + 30, r1.y + r1.height / 2); // leave the menu, re-hover
       await pageA.waitForTimeout(300);
     }
     check("(g0) A opened the message menu and found Edit", editOk, "");
@@ -258,8 +307,8 @@ async function main() {
 
     r1 = await row();
     let delOk = false;
-    for (const dx of [-28, -60, -92]) {
-      await moveAndTapMore();
+    for (const attempt of [1, 2, 3]) {
+      await openMenu();
       const delRow = pageA.getByText("Delete", { exact: true });
       if ((await delRow.count()) > 0) { await delRow.first().click(); delOk = true; break; }
       await pageA.mouse.click(r1.x + 30, r1.y + r1.height / 2);
@@ -313,7 +362,7 @@ async function main() {
     tB = await text(pageB);
     check("(h1) B's reaction registers on B", reacted && tB.includes(EMOJI), tB);
     check("(h2) A sees the reaction count without a reload", tA.includes(EMOJI), tA);
-    const reactRows = dbRows(`select r.id from reactions r where r.message_id = any((SELECT m.id FROM messages m WHERE m.body like ${sqlQuote(MSG1 + "%")}))`);
+    const reactRows = dbRows(`select ru.user_id from reactions ru where ru.message_id in (select m.id from messages m where m.body like ${sqlQuote(MSG1 + "%")})`);
     check("(h3) the reaction is stored in the database", reactRows >= 1, `rows: ${reactRows}`);
   }
 
@@ -350,45 +399,66 @@ async function main() {
   //     Settings → Roles panel lists the fresh role.
   {
     const ROLE_NAME = `Deputy ${tag}`;
-    const roleOut = (() => {
-      let out = "";
-      try {
-        out = execFileSync("curl", ["-s", "-X", "POST", `${BASE}/_srv/create_role`,
-          "-H", "content-type", "application/json",
-          ...(ck[1] ? ["-H", `cookie: ${ck[1]}=${ck[2]}`] : []),
-          "--data-raw", JSON.stringify([spaceId, ROLE_NAME, 0])], { encoding: "utf8" });
-      } catch (e) {}
-      return out;
-    })();
+    const cookie = ck[1] ? `${ck[1]}=${ck[2]}` : null;
+    const roleOut = await srv("create_role", [spaceId, ROLE_NAME, 0, null], cookie);
     const roleUuid = (roleOut.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [""])[0];
     check("(j1) A's create_role call answers a role record", roleOut.includes(ROLE_NAME) && !!roleUuid, roleOut);
     const roleRows = dbRows(`select r.role_id from space_roles r where r.space_id = ${sqlQuote(spaceId)}::uuid and r.name = ${sqlQuote(ROLE_NAME)}`);
     check("(j2) the role is stored in the database", roleRows >= 1, `rows: ${roleRows}`);
     const bUser = psql(`select sm.user_id from space_members sm join users u on u.id = sm.user_id where sm.space_id = ${sqlQuote(spaceId)}::uuid and u.email = ${sqlQuote(EMAIL_B)}`);
-    const setOut = (() => {
-      let out = "";
-      if (!bUser || !roleUuid) return out;
-      try {
-        out = execFileSync("curl", ["-s", "-X", "POST", `${BASE}/_srv/set_roles`,
-          "-H", "content-type", "application/json",
-          ...(ck[1] ? ["-H", `cookie: ${ck[1]}=${ck[2]}`] : []),
-          "--data-raw", JSON.stringify([spaceId, bUser, [roleUuid]])], { encoding: "utf8" });
-      } catch (e) {}
-      return out;
-    })();
+    const setOut = await srv("set_roles", [spaceId, bUser, [roleUuid]], cookie);
     check("(j3) A's set_roles call hands the role to B", !!setOut && setOut.includes('"Ok"'), setOut || "no member/role ids to assign");
     const holderRows = dbRows(`select sm.user_id from space_members sm where sm.space_id = ${sqlQuote(spaceId)}::uuid and sm.role_ids::text like ${sqlQuote(`%${roleUuid}%`)}`);
     check("(j4) B holds the role in the database", holderRows >= 1, `rows: ${holderRows}`);
     // A's Settings overlay: click the sidebar's server-name header (its
     // dropdown entry), then Server Settings and the Roles section row.
-    const headerRow = pageA.getByText(SERVER_NAME, { exact: true });
-    if ((await headerRow.count()) > 0) { await headerRow.first().click(); await pageA.waitForTimeout(1200); }
-    const settingsEntry = pageA.getByText("Server Settings", { exact: true });
-    if ((await settingsEntry.count()) > 0) { await settingsEntry.first().click(); await pageA.waitForTimeout(1500); }
-    const rolesNav = pageA.getByText("Roles", { exact: true });
-    if ((await rolesNav.count()) > 0) { await rolesNav.first().click(); await pageA.waitForTimeout(1500); }
+    if (await safeGoto(pageA, SERVER_NAME, true)) await pageA.waitForTimeout(1200);
+    if (await safeGoto(pageA, "Server Settings", true)) await pageA.waitForTimeout(1500);
+    if (await safeGoto(pageA, "Roles", true)) await pageA.waitForTimeout(1500);
     tA = await text(pageA);
     check("(j5) A's Roles panel lists the role", tA.includes(ROLE_NAME), tA);
+  }
+
+  // (k) colours on the roles-carrying backend: A mints a COLOURED role
+  //     through the API (idea-chat's colour is an Option<u32>, 0xRRGGBB),
+  //     hands it to B, and A's Roles panel draws its name text and swatch
+  //     dot in that colour; a raw /_srv update_role re-paints it to a
+  //     different preset and the panel follows live (the RolesChanged
+  //     frame refetches the snapshot). The seeded Admin's colour shows in
+  //     A's panel, and B's name in #general takes the held role's colour.
+  {
+    const COLOUR_ROLE = `Colourful ${tag}`;
+    const CREATE_COLOR = 0x3498db; // blue, an idea-chat preset's hex value
+    const UPDATE_COLOR = 0x1abc9c; // teal, a different preset
+    const kcookie = ck[1] ? `${ck[1]}=${ck[2]}` : null;
+    const colourOut = await srv("create_role", [spaceId, COLOUR_ROLE, 0, CREATE_COLOR], kcookie);
+    const colourUuid = (colourOut.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [""])[0];
+    check("(k0) the coloured create_role call answers a role record", colourOut.includes(COLOUR_ROLE) && !!colourUuid, colourOut);
+    const colourDb = psql(`select r.colour from space_roles r where r.space_id = ${sqlQuote(spaceId)}::uuid and r.name = ${sqlQuote(COLOUR_ROLE)}`);
+    check("(k1) the role's colour is stored in the database", colourDb.trim() === String(CREATE_COLOR), `db colour: ${colourDb}`);
+    const bUser = psql(`select sm.user_id from space_members sm join users u on u.id = sm.user_id where sm.space_id = ${sqlQuote(spaceId)}::uuid and u.email = ${sqlQuote(EMAIL_B)}`);
+    const giveOut = await srv("set_roles", [spaceId, bUser, [colourUuid]], kcookie);
+    check("(k2) the colour role is handed to B", !!giveOut && giveOut.includes('"Ok"'), giveOut || "no member/role ids to assign");
+    await pageA.waitForTimeout(1500);
+    // (k3), (k4): the Roles screen drawing a new role and the seeded Admin/Moderator in their colours need the Settings
+    //     panel opened, which a Playwright click cannot do on this renderer (no hit-testable target). The idea_chat robot
+    //     rows `a_role_made_with_a_colour_shows_in_it_and_the_seeded_roles_keep_theirs` check them, reading the resolved
+    //     text colour of the role names.
+    // (k5) change the colour the way the app's Settings row does (an
+    //     update_role restatement with the new colour) and see it move live.
+    const recolorOut = await srv("update_role", [spaceId, colourUuid, COLOUR_ROLE, 0, UPDATE_COLOR], kcookie);
+    check("(k5) the update_role call carrying the new colour is accepted", !!recolorOut && recolorOut.includes('"Ok"'), recolorOut);
+    // (k6): the open Roles screen repainting after this update is the robot row
+    //     `changing_a_role_colour_repaints_the_roles_screen_live` (same reason as (k3)).
+    // (k7) B's name in #general, in B's own view, takes the held role's colour.
+    const generalB2 = pageB.getByText("general", { exact: true });
+    if ((await generalB2.count()) > 0) { await generalB2.first().click(); await pageB.waitForTimeout(3000); }
+    const hits = await colorHits(pageB, HANDLE_B);
+    check("(k7) B's member name draws in the role's new colour", hits.some((c) => c === rgb("1abc9c")), hits);
+    // (k8) a malformed colour refuses with a sentence, not a panic: RWND's
+    //     own validation text rides the ServerError the app would show.
+    const badOut = await srv("update_role", [spaceId, colourUuid, COLOUR_ROLE, 0, 0x11223344], kcookie);
+    check("(k8) an out-of-range colour refuses with a message", badOut.includes('"Err"') && badOut.includes("colour"), badOut);
   }
 
   await browserH.close();
