@@ -12,35 +12,5 @@ mod support;
 #[path = "robot/users.rs"]
 mod users;
 
-#[path = "robot/auth.rs"]
-mod auth;
-#[path = "robot/multi_user.rs"]
-mod multi_user;
-#[path = "robot/server.rs"]
-mod server;
-#[path = "robot/settings.rs"]
-mod settings;
-#[path = "robot/roles.rs"]
-mod roles;
-#[path = "robot/profile_status.rs"]
-mod profile_status;
-#[path = "robot/two_users.rs"]
-mod two_users;
-#[path = "robot/messages.rs"]
-mod messages;
-#[path = "robot/dms_friends.rs"]
-mod dms_friends;
-#[path = "robot/themes.rs"]
-mod themes;
-#[path = "robot/notifications.rs"]
-mod notifications;
-#[path = "robot/coverage.rs"]
-mod coverage;
-#[path = "robot/voice.rs"]
-mod voice;
-#[path = "robot/instance.rs"]
-mod instance;
-#[path = "robot/stickers_emoji.rs"]
-mod stickers_emoji;
 #[path = "robot/idea_chat.rs"]
 mod idea_chat;
